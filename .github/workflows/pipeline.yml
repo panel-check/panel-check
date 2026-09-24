@@ -11,6 +11,9 @@ on:
         required: false
         default: ""
 
+permissions:
+  contents: write
+
 jobs:
   procesar:
     runs-on: ubuntu-latest
@@ -51,6 +54,18 @@ jobs:
         run: |
           python3 scripts/parse_boletin.py --text-dir data/textos --out-dir data/csv
 
+      - name: Diagnóstico — muestra de texto y filas parseadas
+        run: |
+          for t in data/textos/*_text.txt; do
+            echo "=== $t: $(wc -c < "$t") caracteres ==="
+            head -c 1500 "$t"
+            echo
+          done
+          for c in data/csv/*.csv; do
+            echo "=== $c: $(wc -l < "$c") líneas ==="
+            head -5 "$c"
+          done
+
       - name: Completar Mixtas/Figurativas
         run: |
           for f in data/csv/*.csv; do
@@ -73,8 +88,20 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
 
       - name: Subir resultados como artifact
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: resultados-boletines
-          path: data/csv/
+          path: data/
           retention-days: 30
+          if-no-files-found: ignore
+
+      - name: Subir datos intermedios a una rama de debug (siempre, para poder inspeccionar)
+        if: always()
+        run: |
+          git config user.email "actions@github.com"
+          git config user.name "github-actions"
+          git checkout -b "debug-run-${{ github.run_id }}"
+          git add -f data/ 2>/dev/null || true
+          git commit -m "debug: datos intermedios de la corrida ${{ github.run_id }}" || echo "nada para commitear"
+          git push origin "debug-run-${{ github.run_id }}" || echo "no se pudo pushear la rama de debug"
