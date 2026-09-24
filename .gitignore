@@ -1,0 +1,7 @@
+.env
+data/textos/
+data/csv/
+data/boletines.json
+__pycache__/
+*.pyc
+.venv/
