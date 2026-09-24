@@ -26,10 +26,18 @@ jobs:
           pip install -r requirements.txt
           playwright install --with-deps chromium
 
-      - name: Listar boletines nuevos
+      - name: Listar boletines nuevos (o usar el número forzado manualmente)
         id: listar
         run: |
-          python3 scripts/listar_boletines.py --out data/boletines.json
+          mkdir -p data
+          if [ -n "${{ inputs.boletin }}" ]; then
+            numero="${{ inputs.boletin }}"
+            echo "[{\"numero\": \"$numero\", \"fecha\": null, \"pdf_url\": \"https://portaltramites.inpi.gob.ar/Uploads/Boletines/${numero}_3_.pdf\", \"comentario\": \"forzado manualmente\"}]" > data/boletines.json
+            echo "Boletín forzado manualmente: $numero"
+          else
+            python3 scripts/listar_boletines.py --out data/boletines.json
+          fi
+          cat data/boletines.json
         env:
           PYTHONUNBUFFERED: "1"
 
