@@ -27,7 +27,7 @@ APIFY_BASE = "https://api.apify.com/v2"
 
 def correr_actor(urls: list[str], token: str, timeout_per_pdf: int = 300) -> list[dict]:
     """Corre el actor de forma síncrona y devuelve los items del dataset
-    (uno por PDF: {url, text, ...})."""
+    (uno por PDF: {url, fullText, pageCount, fileSizeBytes, ...})."""
     run_url = f"{APIFY_BASE}/acts/{ACTOR}/run-sync-get-dataset-items"
     resp = requests.post(
         run_url,
@@ -55,9 +55,9 @@ def main():
 
     if args.url:
         items = correr_actor([args.url], token)
-        if not items or not items[0].get("text"):
+        if not items or not items[0].get("fullText"):
             sys.exit(f"No se pudo extraer texto de {args.url}")
-        texto = items[0]["text"]
+        texto = items[0]["fullText"]
         if args.out:
             with open(args.out, "w", encoding="utf-8") as f:
                 f.write(texto)
@@ -99,7 +99,7 @@ def main():
 
         for item in items:
             numero = url_a_numero.get(item.get("url"), "desconocido")
-            texto = item.get("text", "")
+            texto = item.get("fullText", "")
             if not texto:
                 print(f"  ADVERTENCIA: boletín {numero} sin texto extraído (claves: {list(item.keys())})", file=sys.stderr)
                 continue
