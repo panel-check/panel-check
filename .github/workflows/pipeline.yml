@@ -93,10 +93,15 @@ jobs:
 
       - name: Cargar a la base (Railway)
         run: |
-          for f in data/csv/*_completo_leads.csv; do
-            numero=$(basename "$f" | sed 's/_completo_leads.csv//')
-            python3 scripts/cargar_db.py --in "$f" --boletin "$numero"
-          done
+          mkdir -p data
+          {
+            echo "DATABASE_URL configurada: $([ -n "$DATABASE_URL" ] && echo si || echo no)"
+            echo "Host en DATABASE_URL: $(python3 -c "import os,urllib.parse as u; p=u.urlparse(os.environ.get('DATABASE_URL','')); print(p.hostname, p.port)" 2>&1)"
+            for f in data/csv/*_completo_leads.csv; do
+              numero=$(basename "$f" | sed 's/_completo_leads.csv//')
+              python3 scripts/cargar_db.py --in "$f" --boletin "$numero"
+            done
+          } > >(tee data/debug_carga_db.log) 2> >(tee -a data/debug_carga_db.log >&2)
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
 
