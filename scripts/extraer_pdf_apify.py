@@ -76,15 +76,32 @@ def main():
     url_a_numero = {b["pdf_url"]: b["numero"] for b in boletines}
     urls = list(url_a_numero.keys())
 
+    debug_path = os.path.join(args.out_dir or ".", "_debug_apify_response.json")
+
     for i in range(0, len(urls), args.batch_size):
         lote = urls[i : i + args.batch_size]
         print(f"Procesando lote {i // args.batch_size + 1} ({len(lote)} PDFs)...", file=sys.stderr)
         items = correr_actor(lote, token)
+
+        # Volcado de diagnóstico: qué devolvió realmente Apify (claves y un resumen),
+        # para poder detectar si el esquema de salida del actor cambió.
+        resumen_debug = {
+            "cantidad_items": len(items),
+            "items": [
+                {k: (v if not isinstance(v, str) else f"{v[:200]}... ({len(v)} chars)") for k, v in it.items()}
+                for it in items
+            ],
+        }
+        with open(debug_path, "w", encoding="utf-8") as f:
+            json.dump(resumen_debug, f, ensure_ascii=False, indent=2)
+        print(f"  DEBUG: {len(items)} items devueltos. Claves del primero: "
+              f"{list(items[0].keys()) if items else 'N/A'}", file=sys.stderr)
+
         for item in items:
             numero = url_a_numero.get(item.get("url"), "desconocido")
             texto = item.get("text", "")
             if not texto:
-                print(f"  ADVERTENCIA: boletín {numero} sin texto extraído", file=sys.stderr)
+                print(f"  ADVERTENCIA: boletín {numero} sin texto extraído (claves: {list(item.keys())})", file=sys.stderr)
                 continue
             out_path = os.path.join(args.out_dir or ".", f"{numero}_text.txt")
             with open(out_path, "w", encoding="utf-8") as f:

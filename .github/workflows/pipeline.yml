@@ -55,7 +55,13 @@ jobs:
           python3 scripts/parse_boletin.py --text-dir data/textos --out-dir data/csv
 
       - name: Diagnóstico — muestra de texto y filas parseadas
+        if: always()
         run: |
+          shopt -s nullglob
+          if [ -f data/textos/_debug_apify_response.json ]; then
+            echo "=== respuesta cruda de Apify (resumen) ==="
+            cat data/textos/_debug_apify_response.json
+          fi
           for t in data/textos/*_text.txt; do
             echo "=== $t: $(wc -c < "$t") caracteres ==="
             head -c 1500 "$t"
@@ -65,10 +71,17 @@ jobs:
             echo "=== $c: $(wc -l < "$c") líneas ==="
             head -5 "$c"
           done
+          echo "diagnóstico completo (no falla el job)"
 
       - name: Completar Mixtas/Figurativas
         run: |
-          for f in data/csv/*.csv; do
+          shopt -s nullglob
+          archivos=(data/csv/*.csv)
+          if [ ${#archivos[@]} -eq 0 ]; then
+            echo "No hay CSVs para completar (revisar el paso de extracción/parseo)."
+            exit 1
+          fi
+          for f in "${archivos[@]}"; do
             numero=$(basename "$f" .csv)
             python3 scripts/completar_mixtas.py --in "$f" --out "data/csv/${numero}_completo.csv"
           done
