@@ -23,12 +23,48 @@ jobs:
 
       - name: Instalar dependencias
         run: |
-          pip install playwright
+          pip install playwright requests
           playwright install --with-deps chromium
 
-      - name: Dump HTML de Resultado y de Grilla
+      - name: Probar con requests plano (sin navegador) y con headers de navegador real
         run: |
           mkdir -p data/debug_html
+          python3 - "${{ inputs.acta }}" << 'PYEOF'
+          import sys, requests
+
+          acta = sys.argv[1]
+          BASE = "https://portaltramites.inpi.gob.ar"
+
+          pruebas = {
+              "plain_no_headers": {},
+              "browser_headers": {
+                  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
+                  "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                  "Accept-Language": "es-AR,es;q=0.9",
+                  "Referer": f"{BASE}/MarcasConsultas",
+              },
+          }
+          for nombre, headers in pruebas.items():
+              try:
+                  r = requests.get(f"{BASE}/MarcasConsultas/Resultado?acta={acta}", headers=headers, timeout=20)
+                  bloqueado = "Web Page Blocked" in r.text or "Attack ID" in r.text
+                  print(f"[requests:{nombre}] status={r.status_code} len={len(r.text)} bloqueado={bloqueado}")
+                  with open(f"data/debug_html/requests_{nombre}_{acta}.html", "w", encoding="utf-8") as f:
+                      f.write(r.text)
+              except Exception as e:
+                  print(f"[requests:{nombre}] ERROR {e}")
+
+          # también probar la página de listado, que sabemos que sí funciona hoy
+          try:
+              r = requests.get(f"{BASE}/Boletines?Tipo_Item=3", timeout=20)
+              bloqueado = "Web Page Blocked" in r.text or "Attack ID" in r.text
+              print(f"[requests:listado_boletines] status={r.status_code} len={len(r.text)} bloqueado={bloqueado}")
+          except Exception as e:
+              print(f"[requests:listado_boletines] ERROR {e}")
+          PYEOF
+
+      - name: Dump HTML de Resultado y de Grilla (Playwright)
+        run: |
           python3 - "${{ inputs.acta }}" << 'PYEOF'
           import sys
           from playwright.sync_api import sync_playwright
