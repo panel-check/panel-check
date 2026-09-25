@@ -1,0 +1,69 @@
+name: Debug — dump HTML de un expediente INPI
+
+on:
+  workflow_dispatch:
+    inputs:
+      acta:
+        description: "Número de acta a inspeccionar"
+        required: true
+        default: "4616749"
+
+permissions:
+  contents: write
+
+jobs:
+  dump:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Instalar dependencias
+        run: |
+          pip install playwright
+          playwright install --with-deps chromium
+
+      - name: Dump HTML de Resultado y de Grilla
+        run: |
+          mkdir -p data/debug_html
+          python3 - "${{ inputs.acta }}" << 'PYEOF'
+          import sys
+          from playwright.sync_api import sync_playwright
+
+          acta = sys.argv[1]
+          BASE = "https://portaltramites.inpi.gob.ar"
+
+          with sync_playwright() as p:
+              browser = p.chromium.launch(headless=True)
+              page = browser.new_page()
+
+              for nombre, url in [
+                  ("resultado", f"{BASE}/MarcasConsultas/Resultado?acta={acta}"),
+                  ("grilla", f"{BASE}/MarcasConsultas/Grilla?acta={acta}"),
+              ]:
+                  try:
+                      page.goto(url, timeout=30000)
+                      page.wait_for_load_state("networkidle", timeout=30000)
+                      html = page.content()
+                      with open(f"data/debug_html/{nombre}_{acta}.html", "w", encoding="utf-8") as f:
+                          f.write(html)
+                      page.screenshot(path=f"data/debug_html/{nombre}_{acta}.png", full_page=True)
+                      print(f"{nombre}: {len(html)} chars, url final: {page.url}")
+                  except Exception as e:
+                      print(f"{nombre}: ERROR {e}")
+
+              browser.close()
+          PYEOF
+
+      - name: Subir dump a rama de debug
+        if: always()
+        run: |
+          git config user.email "actions@github.com"
+          git config user.name "github-actions"
+          git checkout -b "debug-html-${{ github.run_id }}"
+          git add -f data/debug_html/
+          git commit -m "debug: dump HTML acta ${{ inputs.acta }}" || echo "nada para commitear"
+          git push origin "debug-html-${{ github.run_id }}"
