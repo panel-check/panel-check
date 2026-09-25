@@ -88,6 +88,17 @@ jobs:
           except Exception as e:
               print(f"[GrillaDigital POST] ERROR {e}")
 
+          # 1.6) listar los archivos de la Grilla Digital (para encontrar el "Formulario")
+          try:
+              r = s.post(f"{BASE}/Home/GrillaDigitales",
+                         headers={"Referer": f"{BASE}/Home/GrillaDigital", "X-Requested-With": "XMLHttpRequest"},
+                         data={"numero": acta_sin, "dir": "1", "limit": 50, "offset": 0}, timeout=30)
+              print(f"[GrillaDigitales POST] status={r.status_code} len={len(r.text)}")
+              with open("data/debug_html/grilla_digitales_response.txt", "w", encoding="utf-8") as f:
+                  f.write(r.text[:8000])
+          except Exception as e:
+              print(f"[GrillaDigitales POST] ERROR {e}")
+
           # 2) probar el endpoint JSON que usa la grilla de busqueda avanzada
           try:
               r = s.post(f"{BASE}/MarcasConsultas/GrillaMarcasPuntual",
