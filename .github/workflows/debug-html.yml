@@ -99,6 +99,15 @@ jobs:
           except Exception as e:
               print(f"[GrillaDigitales POST] ERROR {e}")
 
+          # 1.7) ver el JS que arma el link de descarga de cada archivo (verFormat / grillaDigital.js)
+          try:
+              r = s.get(f"{BASE}/Scripts/Home/grillaDigital.js", timeout=20)
+              print(f"[grillaDigital.js] status={r.status_code} len={len(r.text)}")
+              with open("data/debug_html/grillaDigital_js.txt", "w", encoding="utf-8") as f:
+                  f.write(r.text)
+          except Exception as e:
+              print(f"[grillaDigital.js] ERROR {e}")
+
           # 2) probar el endpoint JSON que usa la grilla de busqueda avanzada
           try:
               r = s.post(f"{BASE}/MarcasConsultas/GrillaMarcasPuntual",
