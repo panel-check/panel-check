@@ -4,9 +4,13 @@ on:
   workflow_dispatch:
     inputs:
       acta:
-        description: "Número de acta a inspeccionar"
+        description: "Número de acta a inspeccionar (sin agente)"
         required: true
         default: "4616749"
+      acta_con_agente:
+        description: "Número de acta a inspeccionar (con agente/apoderado)"
+        required: true
+        default: "4565634"
 
 permissions:
   contents: write
@@ -25,74 +29,65 @@ jobs:
         run: |
           pip install requests
 
-      - name: Probar con requests plano (sin navegador) y con headers de navegador real
+      - name: Probar con sesión (cookies) y comparar acta con/sin agente
         run: |
           mkdir -p data/debug_html
           {
-          python3 - "${{ inputs.acta }}" << 'PYEOF'
-          import sys, requests
+          python3 - "${{ inputs.acta }}" "${{ inputs.acta_con_agente }}" << 'PYEOF'
+          import sys, requests, time
 
-          acta = sys.argv[1]
+          acta_sin, acta_con = sys.argv[1], sys.argv[2]
           BASE = "https://portaltramites.inpi.gob.ar"
-
-          pruebas = {
-              "plain_no_headers": {},
-              "browser_headers": {
-                  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
-                  "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-                  "Accept-Language": "es-AR,es;q=0.9",
-                  "Referer": f"{BASE}/MarcasConsultas",
-              },
+          HEADERS = {
+              "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
+              "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+              "Accept-Language": "es-AR,es;q=0.9",
           }
-          for nombre, headers in pruebas.items():
-              try:
-                  r = requests.get(f"{BASE}/MarcasConsultas/Resultado?acta={acta}", headers=headers, timeout=20)
-                  bloqueado = "Web Page Blocked" in r.text or "Attack ID" in r.text
-                  print(f"[requests:{nombre}] status={r.status_code} len={len(r.text)} bloqueado={bloqueado}")
-                  with open(f"data/debug_html/requests_{nombre}_{acta}.html", "w", encoding="utf-8") as f:
-                      f.write(r.text)
-              except Exception as e:
-                  print(f"[requests:{nombre}] ERROR {e}")
 
-          # también probar la página de listado, que sabemos que sí funciona hoy
-          try:
-              r = requests.get(f"{BASE}/Boletines?Tipo_Item=3", timeout=20)
-              bloqueado = "Web Page Blocked" in r.text or "Attack ID" in r.text
-              print(f"[requests:listado_boletines] status={r.status_code} len={len(r.text)} bloqueado={bloqueado}")
-          except Exception as e:
-              print(f"[requests:listado_boletines] ERROR {e}")
+          s = requests.Session()
+          s.headers.update(HEADERS)
 
-          # probar /MarcasConsultas/Grilla (donde el script original busca CARACTER)
+          # 1) visitar Grilla primero para tener cookies de sesion, como haria un browser real
           try:
-              r = requests.get(f"{BASE}/MarcasConsultas/Grilla?acta={acta}", headers=pruebas["browser_headers"], timeout=20)
-              bloqueado = "Web Page Blocked" in r.text or "Attack ID" in r.text
-              print(f"[requests:grilla] status={r.status_code} len={len(r.text)} bloqueado={bloqueado}")
-              with open(f"data/debug_html/requests_grilla_{acta}.html", "w", encoding="utf-8") as f:
-                  f.write(r.text)
+              r = s.get(f"{BASE}/MarcasConsultas/Grilla", timeout=30)
+              print(f"[grilla inicial] status={r.status_code} len={len(r.text)} cookies={list(s.cookies.keys())}")
           except Exception as e:
-              print(f"[requests:grilla] ERROR {e}")
+              print(f"[grilla inicial] ERROR {e}")
 
-          # el .js de la página de Resultado, para ver si carga algo por AJAX
-          try:
-              r = requests.get(f"{BASE}/Scripts/MarcasConsultas/Resultado.js", headers=pruebas["browser_headers"], timeout=20)
-              print(f"[requests:resultado.js] status={r.status_code} len={len(r.text)}")
-              with open("data/debug_html/resultado_js.txt", "w", encoding="utf-8") as f:
-                  f.write(r.text)
-          except Exception as e:
-              print(f"[requests:resultado.js] ERROR {e}")
+          time.sleep(1)
 
-          # comparar con un acta que SI tiene agente (matricula 1881), para ver el bloque GESTION
-          acta_con_agente = "4565634"
+          for etiqueta, acta in [("sin_agente", acta_sin), ("con_agente", acta_con)]:
+              for intento in range(3):
+                  try:
+                      r = s.get(f"{BASE}/MarcasConsultas/Resultado?acta={acta}",
+                                headers={"Referer": f"{BASE}/MarcasConsultas/Grilla"}, timeout=30)
+                      bloqueado = "Web Page Blocked" in r.text or "Attack ID" in r.text
+                      print(f"[resultado:{etiqueta}:{acta}] intento={intento} status={r.status_code} len={len(r.text)} bloqueado={bloqueado}")
+                      with open(f"data/debug_html/sesion_resultado_{etiqueta}_{acta}.html", "w", encoding="utf-8") as f:
+                          f.write(r.text)
+                      # contar cuantos paneles/accordion hay
+                      import re
+                      paneles = re.findall(r'panel-title">\s*(?:<a[^>]*>)?\s*([^<\n]+)', r.text)
+                      print(f"    paneles encontrados: {paneles}")
+                      break
+                  except Exception as e:
+                      print(f"[resultado:{etiqueta}:{acta}] intento={intento} ERROR {e}")
+                      time.sleep(3)
+              time.sleep(2)
+
+          # 2) probar el endpoint JSON que usa la grilla de busqueda avanzada
           try:
-              r = requests.get(f"{BASE}/MarcasConsultas/Resultado?acta={acta_con_agente}", headers=pruebas["browser_headers"], timeout=20)
-              print(f"[requests:resultado_con_agente] status={r.status_code} len={len(r.text)}")
-              with open(f"data/debug_html/requests_resultado_{acta_con_agente}.html", "w", encoding="utf-8") as f:
-                  f.write(r.text)
+              r = s.post(f"{BASE}/MarcasConsultas/GrillaMarcasPuntual",
+                         headers={"Referer": f"{BASE}/MarcasConsultas/Grilla", "X-Requested-With": "XMLHttpRequest"},
+                         data={"Acta": acta_sin, "limit": 10, "offset": 0}, timeout=30)
+              print(f"[GrillaMarcasPuntual POST] status={r.status_code} len={len(r.text)}")
+              with open("data/debug_html/grilla_marcas_puntual_response.txt", "w", encoding="utf-8") as f:
+                  f.write(r.text[:5000])
           except Exception as e:
-              print(f"[requests:resultado_con_agente] ERROR {e}")
+              print(f"[GrillaMarcasPuntual POST] ERROR {e}")
           PYEOF
-          } > data/debug_html/log_requests.txt 2>&1
-          cat data/debug_html/log_requests.txt
+          } > data/debug_html/log_sesion.txt 2>&1
+          cat data/debug_html/log_sesion.txt
 
       - name: Subir dump a rama de debug
         if: always()
@@ -101,5 +96,5 @@ jobs:
           git config user.name "github-actions"
           git checkout -b "debug-html-${{ github.run_id }}"
           git add -f data/debug_html/
-          git commit -m "debug: dump HTML acta ${{ inputs.acta }}" || echo "nada para commitear"
+          git commit -m "debug: probar sesion/cookies y comparar acta con y sin agente" || echo "nada para commitear"
           git push origin "debug-html-${{ github.run_id }}"
