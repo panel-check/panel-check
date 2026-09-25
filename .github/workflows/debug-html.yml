@@ -23,12 +23,12 @@ jobs:
 
       - name: Instalar dependencias
         run: |
-          pip install playwright requests
-          playwright install --with-deps chromium
+          pip install requests
 
       - name: Probar con requests plano (sin navegador) y con headers de navegador real
         run: |
           mkdir -p data/debug_html
+          {
           python3 - "${{ inputs.acta }}" << 'PYEOF'
           import sys, requests
 
@@ -61,38 +61,38 @@ jobs:
               print(f"[requests:listado_boletines] status={r.status_code} len={len(r.text)} bloqueado={bloqueado}")
           except Exception as e:
               print(f"[requests:listado_boletines] ERROR {e}")
+
+          # probar /MarcasConsultas/Grilla (donde el script original busca CARACTER)
+          try:
+              r = requests.get(f"{BASE}/MarcasConsultas/Grilla?acta={acta}", headers=pruebas["browser_headers"], timeout=20)
+              bloqueado = "Web Page Blocked" in r.text or "Attack ID" in r.text
+              print(f"[requests:grilla] status={r.status_code} len={len(r.text)} bloqueado={bloqueado}")
+              with open(f"data/debug_html/requests_grilla_{acta}.html", "w", encoding="utf-8") as f:
+                  f.write(r.text)
+          except Exception as e:
+              print(f"[requests:grilla] ERROR {e}")
+
+          # el .js de la página de Resultado, para ver si carga algo por AJAX
+          try:
+              r = requests.get(f"{BASE}/Scripts/MarcasConsultas/Resultado.js", headers=pruebas["browser_headers"], timeout=20)
+              print(f"[requests:resultado.js] status={r.status_code} len={len(r.text)}")
+              with open("data/debug_html/resultado_js.txt", "w", encoding="utf-8") as f:
+                  f.write(r.text)
+          except Exception as e:
+              print(f"[requests:resultado.js] ERROR {e}")
+
+          # comparar con un acta que SI tiene agente (matricula 1881), para ver el bloque GESTION
+          acta_con_agente = "4565634"
+          try:
+              r = requests.get(f"{BASE}/MarcasConsultas/Resultado?acta={acta_con_agente}", headers=pruebas["browser_headers"], timeout=20)
+              print(f"[requests:resultado_con_agente] status={r.status_code} len={len(r.text)}")
+              with open(f"data/debug_html/requests_resultado_{acta_con_agente}.html", "w", encoding="utf-8") as f:
+                  f.write(r.text)
+          except Exception as e:
+              print(f"[requests:resultado_con_agente] ERROR {e}")
           PYEOF
-
-      - name: Dump HTML de Resultado y de Grilla (Playwright)
-        run: |
-          python3 - "${{ inputs.acta }}" << 'PYEOF'
-          import sys
-          from playwright.sync_api import sync_playwright
-
-          acta = sys.argv[1]
-          BASE = "https://portaltramites.inpi.gob.ar"
-
-          with sync_playwright() as p:
-              browser = p.chromium.launch(headless=True)
-              page = browser.new_page()
-
-              for nombre, url in [
-                  ("resultado", f"{BASE}/MarcasConsultas/Resultado?acta={acta}"),
-                  ("grilla", f"{BASE}/MarcasConsultas/Grilla?acta={acta}"),
-              ]:
-                  try:
-                      page.goto(url, timeout=30000)
-                      page.wait_for_load_state("networkidle", timeout=30000)
-                      html = page.content()
-                      with open(f"data/debug_html/{nombre}_{acta}.html", "w", encoding="utf-8") as f:
-                          f.write(html)
-                      page.screenshot(path=f"data/debug_html/{nombre}_{acta}.png", full_page=True)
-                      print(f"{nombre}: {len(html)} chars, url final: {page.url}")
-                  except Exception as e:
-                      print(f"{nombre}: ERROR {e}")
-
-              browser.close()
-          PYEOF
+          } > data/debug_html/log_requests.txt 2>&1
+          cat data/debug_html/log_requests.txt
 
       - name: Subir dump a rama de debug
         if: always()
