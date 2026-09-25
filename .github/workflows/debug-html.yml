@@ -95,7 +95,7 @@ jobs:
                          data={"acta": acta_sin, "limit": 50, "offset": 0, "direccion": 1}, timeout=30)
               print(f"[GrillaDigitales POST] status={r.status_code} len={len(r.text)}")
               with open("data/debug_html/grilla_digitales_response.txt", "w", encoding="utf-8") as f:
-                  f.write(r.text[:8000])
+                  f.write(r.text)
           except Exception as e:
               print(f"[GrillaDigitales POST] ERROR {e}")
 
@@ -107,6 +107,24 @@ jobs:
                   f.write(r.text)
           except Exception as e:
               print(f"[grillaDigital.js] ERROR {e}")
+
+          # 1.8) descargar el PDF del Formulario usando el link armado por verFormat()
+          try:
+              id_doc = "0x0100000035CC33CF6550B6BA9CE57A0FC82F60DB37D7EA15C63A23DC801E1DFCB97082F1"  # placeholder, se reemplaza abajo
+              import json as _json
+              data_json = _json.loads(open("data/debug_html/grilla_digitales_response.txt", encoding="utf-8").read())
+              formulario = next((row for row in data_json["rows"] if row.get("Indice") == "Formulario"), None)
+              print(f"[formulario encontrado] {formulario is not None}")
+              if formulario:
+                  id_doc = formulario["id_Documento_encriptado"]
+                  nombre = formulario["ruta"].rsplit("/", 1)[-1]
+                  url_pdf = f"{BASE}/Home/edmsxidd?id={id_doc}&nombre={nombre}"
+                  r = s.get(url_pdf, headers={"Referer": f"{BASE}/Home/GrillaDigital"}, timeout=30)
+                  print(f"[descarga Formulario] status={r.status_code} content-type={r.headers.get('Content-Type')} len={len(r.content)}")
+                  with open(f"data/debug_html/formulario_{acta_sin}.pdf", "wb") as f:
+                      f.write(r.content)
+          except Exception as e:
+              print(f"[descarga Formulario] ERROR {e}")
 
           # 2) probar el endpoint JSON que usa la grilla de busqueda avanzada
           try:
