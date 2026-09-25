@@ -76,6 +76,18 @@ jobs:
                       time.sleep(3)
               time.sleep(2)
 
+          # 1.5) probar el flujo de GRILLA DIGITAL (form POST a /Home/GrillaDigital) para el acta sin agente
+          try:
+              r = s.post(f"{BASE}/Home/GrillaDigital",
+                         headers={"Referer": f"{BASE}/MarcasConsultas/Resultado"},
+                         data={"fname": f"1-{acta_sin}"}, timeout=30)
+              bloqueado = "Web Page Blocked" in r.text or "Attack ID" in r.text
+              print(f"[GrillaDigital POST] status={r.status_code} len={len(r.text)} bloqueado={bloqueado}")
+              with open(f"data/debug_html/grilla_digital_{acta_sin}.html", "w", encoding="utf-8") as f:
+                  f.write(r.text)
+          except Exception as e:
+              print(f"[GrillaDigital POST] ERROR {e}")
+
           # 2) probar el endpoint JSON que usa la grilla de busqueda avanzada
           try:
               r = s.post(f"{BASE}/MarcasConsultas/GrillaMarcasPuntual",
