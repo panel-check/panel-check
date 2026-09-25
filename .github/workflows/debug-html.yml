@@ -59,19 +59,20 @@ jobs:
           for etiqueta, acta in [("sin_agente", acta_sin), ("con_agente", acta_con)]:
               for intento in range(3):
                   try:
-                      r = s.get(f"{BASE}/MarcasConsultas/Resultado?acta={acta}",
-                                headers={"Referer": f"{BASE}/MarcasConsultas/Grilla"}, timeout=30)
+                      # replicar el POST que hace frmGD (action=/MarcasConsultas/Resultado, method=post)
+                      r = s.post(f"{BASE}/MarcasConsultas/Resultado",
+                                 headers={"Referer": f"{BASE}/MarcasConsultas/Grilla"},
+                                 data={"acta": acta}, timeout=30)
                       bloqueado = "Web Page Blocked" in r.text or "Attack ID" in r.text
-                      print(f"[resultado:{etiqueta}:{acta}] intento={intento} status={r.status_code} len={len(r.text)} bloqueado={bloqueado}")
-                      with open(f"data/debug_html/sesion_resultado_{etiqueta}_{acta}.html", "w", encoding="utf-8") as f:
+                      print(f"[resultado-POST:{etiqueta}:{acta}] intento={intento} status={r.status_code} len={len(r.text)} bloqueado={bloqueado}")
+                      with open(f"data/debug_html/sesion_resultado_POST_{etiqueta}_{acta}.html", "w", encoding="utf-8") as f:
                           f.write(r.text)
-                      # contar cuantos paneles/accordion hay
                       import re
                       paneles = re.findall(r'panel-title">\s*(?:<a[^>]*>)?\s*([^<\n]+)', r.text)
                       print(f"    paneles encontrados: {paneles}")
                       break
                   except Exception as e:
-                      print(f"[resultado:{etiqueta}:{acta}] intento={intento} ERROR {e}")
+                      print(f"[resultado-POST:{etiqueta}:{acta}] intento={intento} ERROR {e}")
                       time.sleep(3)
               time.sleep(2)
 
