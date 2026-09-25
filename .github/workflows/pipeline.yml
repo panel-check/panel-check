@@ -103,7 +103,7 @@ jobs:
             done
           } > >(tee data/debug_carga_db.log) 2> >(tee -a data/debug_carga_db.log >&2)
         env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL || secrets.DATABASE_PUBLIC_URL }}
 
       - name: Subir resultados como artifact
         if: always()
