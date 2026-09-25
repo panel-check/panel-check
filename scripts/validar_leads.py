@@ -4,15 +4,33 @@ completo en el portal de trámites de INPI, lee CARACTER (GESTION DEL TRAMITE) y
 si está vacío (lead real), abre GRILLA DIGITAL y descarga el Formulario para
 sacarle el email.
 
-Usa Playwright (no Apify, sin costo extra más allá del cómputo). Pensado para
-correr dentro del mismo GitHub Action, ~10-15s por marca revisada.
+Reescrito para usar `requests` puro (sin navegador). El WAF de INPI bloquea
+las visitas hechas con Chromium/Playwright headless (respuesta "Web Page
+Blocked! Attack ID: 20000051"), pero no bloquea peticiones HTTP simples con
+`requests` — probablemente por fingerprinting del navegador headless. Además,
+el dato de CARACTER no está en la página `Resultado?acta=X` (GET, la que
+aparece en el CSV) ni en `Grilla?acta=X`: hay que hacer un POST a
+`/MarcasConsultas/Resultado` con `acta` en el body (replicando el form
+`frmGD` que usa el propio sitio), que devuelve la página completa con la
+sección "GESTION DEL TRAMITE".
+
+Flujo real (confirmado a mano, ver docs/proceso-original.md):
+  1. GET  /MarcasConsultas/Grilla                     (cookies de sesión)
+  2. POST /MarcasConsultas/Resultado  {acta}           -> HTML con GESTION DEL TRAMITE
+     - Si no aparece ningún campo AGENTE/CARACTER en esa sección: lead real.
+     - Si aparece CARACTER: <valor> (ej. "Apoderado", "Gestor Ratificado"): no es lead.
+  3. Si es lead, para sacar el email:
+     POST /Home/GrillaDigital       {fname: "1-{acta}"}
+     POST /Home/GrillaDigitales     {acta, limit, offset, direccion:1}  -> JSON de archivos
+     buscar el archivo con Indice == "Formulario"
+     GET  /Home/edmsxidd?id={id_Documento_encriptado}&nombre={archivo}  -> PDF
+     leer el PDF con pdfplumber y buscar "EMAIL:" por regex
 
 Uso:
     python3 validar_leads.py --in 11121_completo.csv --out 11121_leads.csv --limit 20
 
-Nota: este script asume la estructura de la página que se relevó a mano (ver
-SKILL.md, Paso 4 y 5). Si INPI cambia el HTML del portal, los selectores de abajo
-van a necesitar un ajuste — quedan comentados los puntos exactos a revisar.
+Nota: si INPI cambia el HTML o los endpoints, ajustar las constantes/regex de
+abajo (quedan comentados los puntos exactos revisados el 2026-09-25).
 """
 
 import argparse
@@ -21,56 +39,124 @@ import re
 import sys
 import time
 
-from playwright.sync_api import sync_playwright
+import requests
 
 BASE = "https://portaltramites.inpi.gob.ar"
 
+HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                  "(KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "es-AR,es;q=0.9",
+}
 
-def revisar_acta(page, acta: str, timeout_ms: int = 30000) -> dict:
+# Dentro del bloque "GESTION DEL TRAMITE", el campo CARACTER aparece como:
+#   <label class="input">CARACTER:<span class="text-danger"> Apoderado </span></label>
+RE_GESTION = re.compile(r"GESTION DEL TRAMITE.*?</h4>\s*</div>\s*<div[^>]*>(.*?)</div>\s*</div>\s*</div>", re.S)
+RE_CARACTER = re.compile(r"CARACTER\s*:?\s*</label>|CARACTER\s*:", re.S)
+RE_CARACTER_SPAN = re.compile(r"CARACTER\s*:?\s*<span[^>]*>(.*?)</span>", re.S)
+
+
+def crear_sesion() -> requests.Session:
+    s = requests.Session()
+    s.headers.update(HEADERS)
+    try:
+        s.get(f"{BASE}/MarcasConsultas/Grilla", timeout=30)
+    except requests.RequestException as e:
+        print(f"  aviso: no se pudo pre-cargar sesión ({e})", file=sys.stderr)
+    return s
+
+
+def _get_con_reintentos(fn, intentos: int = 3, espera: int = 3):
+    ultimo_error = None
+    for i in range(intentos):
+        try:
+            return fn()
+        except requests.RequestException as e:
+            ultimo_error = e
+            time.sleep(espera)
+    raise ultimo_error
+
+
+def revisar_acta(s: requests.Session, acta: str, timeout: int = 30) -> dict:
     """Devuelve {caracter, es_lead, email, email_apoderado}. Si algo falla,
-    devuelve caracter=None para marcarlo como "no se pudo verificar"."""
+    devuelve es_lead=None para marcarlo como "no se pudo verificar" (en vez
+    de asumir por defecto que es lead)."""
     resultado = {"caracter": None, "es_lead": None, "email": "", "email_apoderado": ""}
     try:
-        # Buscar por acta en Consultas de Marcas -> Seguimiento de Trámite
-        page.goto(f"{BASE}/MarcasConsultas/Grilla?acta={acta}", timeout=timeout_ms)
+        r = _get_con_reintentos(
+            lambda: s.post(
+                f"{BASE}/MarcasConsultas/Resultado",
+                headers={"Referer": f"{BASE}/MarcasConsultas/Grilla"},
+                data={"acta": acta},
+                timeout=timeout,
+            )
+        )
+        if "Web Page Blocked" in r.text or "Attack ID" in r.text:
+            print(f"  acta {acta}: bloqueado por el WAF de INPI (no se pudo verificar)", file=sys.stderr)
+            return resultado
 
-        # Expandir el resultado (botón "+") para llegar a la página Resultado completa
-        boton_expandir = page.locator("text=+").first
-        if boton_expandir.count() > 0:
-            boton_expandir.click(timeout=timeout_ms)
-            page.wait_for_load_state("networkidle", timeout=timeout_ms)
+        m_gestion = RE_GESTION.search(r.text)
+        bloque_gestion = m_gestion.group(1) if m_gestion else r.text  # fallback: buscar en toda la página
 
-        # Sección "GESTION DEL TRAMITE": campos AGENTE y CARACTER
-        # AJUSTAR SELECTOR si INPI cambia el markup: buscamos la celda que sigue
-        # a la etiqueta "CARACTER" dentro de esa sección.
-        caracter_locator = page.locator("text=CARACTER").locator("xpath=following::td[1]")
-        caracter = caracter_locator.inner_text(timeout=timeout_ms).strip() if caracter_locator.count() > 0 else ""
+        m_caracter = RE_CARACTER_SPAN.search(bloque_gestion)
+        if m_caracter:
+            caracter = re.sub(r"\s+", " ", m_caracter.group(1)).strip()
+        else:
+            caracter = ""
+
         resultado["caracter"] = caracter
         resultado["es_lead"] = caracter == ""
 
         if not resultado["es_lead"]:
             return resultado  # ya tiene apoderado/gestor, no hace falta el email
 
-        # GRILLA DIGITAL -> descargar "Formulario" -> leer EMAIL
-        grilla_btn = page.locator("text=GRILLA DIGITAL").first
-        if grilla_btn.count() == 0:
+        # GRILLA DIGITAL -> listar archivos -> descargar "Formulario" -> leer EMAIL
+        r_gd = _get_con_reintentos(
+            lambda: s.post(
+                f"{BASE}/Home/GrillaDigital",
+                headers={"Referer": f"{BASE}/MarcasConsultas/Resultado"},
+                data={"fname": f"1-{acta}"},
+                timeout=timeout,
+            )
+        )
+        if "Web Page Blocked" in r_gd.text or "Attack ID" in r_gd.text:
             return resultado
-        grilla_btn.click(timeout=timeout_ms)
-        page.wait_for_load_state("networkidle", timeout=timeout_ms)
 
-        fila_formulario = page.locator("tr", has_text="Formulario").first
-        if fila_formulario.count() == 0:
+        r_archivos = _get_con_reintentos(
+            lambda: s.post(
+                f"{BASE}/Home/GrillaDigitales",
+                headers={"Referer": f"{BASE}/Home/GrillaDigital", "X-Requested-With": "XMLHttpRequest"},
+                data={"acta": acta, "limit": 50, "offset": 0, "direccion": 1},
+                timeout=timeout,
+            )
+        )
+        try:
+            archivos = r_archivos.json().get("rows", [])
+        except ValueError:
+            archivos = []
+
+        formulario = next((a for a in archivos if a.get("Indice") == "Formulario"), None)
+        if not formulario:
             return resultado
 
-        with page.expect_download(timeout=timeout_ms) as download_info:
-            fila_formulario.locator("text=descargar").click(timeout=timeout_ms)
-        download = download_info.value
-        pdf_path = download.path()
+        id_doc = formulario["id_Documento_encriptado"]
+        nombre_archivo = formulario["ruta"].rsplit("/", 1)[-1]
+        r_pdf = _get_con_reintentos(
+            lambda: s.get(
+                f"{BASE}/Home/edmsxidd",
+                params={"id": id_doc, "nombre": nombre_archivo},
+                headers={"Referer": f"{BASE}/Home/GrillaDigital"},
+                timeout=timeout,
+            )
+        )
+        if r_pdf.headers.get("Content-Type", "").lower() != "application/pdf":
+            return resultado
 
-        # Extraer texto del PDF del formulario
+        import io
         import pdfplumber
 
-        with pdfplumber.open(pdf_path) as pdf:
+        with pdfplumber.open(io.BytesIO(r_pdf.content)) as pdf:
             texto = "\n".join(p.extract_text() or "" for p in pdf.pages)
 
         m_email = re.search(r"EMAIL:\s*([\w.+-]+@[\w-]+\.[\w.-]+)", texto)
@@ -85,20 +171,26 @@ def revisar_acta(page, acta: str, timeout_ms: int = 30000) -> dict:
 
     except Exception as e:
         print(f"  acta {acta}: error ({e})", file=sys.stderr)
+        resultado["caracter"] = None
+        resultado["es_lead"] = None
     return resultado
 
 
 def calcular_lead_score(row: dict) -> int:
-    """Puntaje simple: suma puntos si no tiene apoderado/matrícula, resta si sí."""
+    """Puntaje simple: suma puntos si no tiene apoderado/matrícula, resta si sí.
+    Si no se pudo verificar (es_lead is None), no se suma ni resta nada por
+    ese concepto: mejor subestimar el score que arriesgar un falso positivo."""
     score = 0
     matricula = (row.get("matricula_agente") or "").strip()
     caracter = row.get("caracter")
+    es_lead = row.get("es_lead")
     if matricula == "" or matricula == "Part.":
         score += 50
-    if caracter == "":
+    if es_lead is True:
         score += 50
-    elif caracter:  # Apoderado, Gestor Ratificado, etc.
+    elif es_lead is False:
         score -= 100
+    # es_lead is None (no verificado): no se suma ni resta
     if row.get("email"):
         score += 20
     return score
@@ -112,7 +204,7 @@ def main():
         "--limit", type=int, default=None,
         help="revisar como máximo N actas candidatas (matrícula vacía o 'Part.'); útil para pruebas",
     )
-    ap.add_argument("--headless", action="store_true", default=True)
+    ap.add_argument("--delay", type=float, default=1.5, help="segundos de espera entre actas (freno de mano)")
     args = ap.parse_args()
 
     with open(args.in_path, encoding="utf-8") as f:
@@ -123,17 +215,14 @@ def main():
         candidatas = candidatas[: args.limit]
     print(f"Actas candidatas a revisar (sin matrícula o 'Part.'): {len(candidatas)}")
 
-    with sync_playwright() as p:
-        browser = p.chromium.launch(headless=args.headless)
-        page = browser.new_page()
-        for i, row in enumerate(candidatas, 1):
-            info = revisar_acta(page, row["acta"])
-            row.update(info)
-            row["lead_score"] = calcular_lead_score(row)
-            print(f"  [{i}/{len(candidatas)}] acta {row['acta']}: caracter={info['caracter']!r} "
-                  f"es_lead={info['es_lead']} email={'sí' if info['email'] else 'no'}")
-            time.sleep(1)  # freno de mano, no golpear el portal
-        browser.close()
+    s = crear_sesion()
+    for i, row in enumerate(candidatas, 1):
+        info = revisar_acta(s, row["acta"])
+        row.update(info)
+        row["lead_score"] = calcular_lead_score(row)
+        print(f"  [{i}/{len(candidatas)}] acta {row['acta']}: caracter={info['caracter']!r} "
+              f"es_lead={info['es_lead']} email={'sí' if info['email'] else 'no'}")
+        time.sleep(args.delay)  # freno de mano, no golpear el portal
 
     for row in rows:
         row.setdefault("caracter", "")
@@ -149,7 +238,8 @@ def main():
         w.writerows(rows)
 
     leads = sum(1 for r in rows if r.get("es_lead") is True or r.get("es_lead") == "True")
-    print(f"\nLeads confirmados: {leads}. Guardado: {args.out}")
+    no_verificados = sum(1 for r in rows if r.get("es_lead") is None)
+    print(f"\nLeads confirmados: {leads}. No verificados (bloqueo/error): {no_verificados}. Guardado: {args.out}")
 
 
 if __name__ == "__main__":

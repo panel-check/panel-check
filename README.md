@@ -10,7 +10,7 @@ en el proceso probado sobre el Boletín Nº 11116 (ver `docs/proceso-original.md
 2. `scripts/extraer_pdf_apify.py` — extrae el texto de los PDFs vía Apify (actor `automation-lab/pdf-text-extractor`).
 3. `scripts/parse_boletin.py` — parsea el texto a filas estructuradas (regex WIPO ST.60, con el fix del campo matrícula).
 4. `scripts/completar_mixtas.py` — completa el nombre de las marcas Mixtas/Figurativas contra el webservice SOAP de INPI.
-5. `scripts/validar_leads.py` — para las candidatas sin apoderado, entra al expediente (Playwright), confirma si son leads reales y saca el email del Formulario.
+5. `scripts/validar_leads.py` — para las candidatas sin apoderado, entra al expediente (POST directo con `requests`, sin navegador — ver nota abajo), confirma si son leads reales y saca el email del Formulario.
 6. `scripts/cargar_db.py` — carga todo a Postgres (Railway), sin duplicar actas.
 
 El workflow `.github/workflows/pipeline.yml` corre estos 6 pasos automáticamente,
@@ -95,5 +95,10 @@ data/                salidas locales (ignorado por git)
   `ConsultaCuitOTitular` con titulares que tienen apóstrofe.
 - Definir la vía legal para el envío de emails de prospección antes de conectar
   Resend/Mailrelay.
-- Los selectores de Playwright en `validar_leads.py` están basados en el relevamiento
-  manual — revisar si INPI cambia el HTML del portal de trámites.
+- `validar_leads.py` usa `requests` puro (sin navegador) porque el WAF de INPI
+  bloquea las visitas hechas con Chromium/Playwright headless ("Web Page
+  Blocked! Attack ID: 20000051"), pero no bloquea peticiones HTTP simples. El
+  dato de CARACTER se obtiene con un POST a `/MarcasConsultas/Resultado`
+  (no con el GET `?acta=` que aparece en el link del CSV, que no devuelve la
+  sección "GESTION DEL TRAMITE"). Si INPI cambia el HTML o esos endpoints,
+  revisar las constantes/regex al principio del script.

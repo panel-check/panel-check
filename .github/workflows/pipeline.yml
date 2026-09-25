@@ -27,7 +27,6 @@ jobs:
       - name: Instalar dependencias
         run: |
           pip install -r requirements.txt
-          playwright install --with-deps chromium
 
       - name: Listar boletines nuevos (o usar el número forzado manualmente)
         id: listar
@@ -86,7 +85,7 @@ jobs:
             python3 scripts/completar_mixtas.py --in "$f" --out "data/csv/${numero}_completo.csv"
           done
 
-      - name: Validar leads reales (Playwright) — solo boletín más reciente, prueba
+      - name: Validar leads reales (requests, sin navegador) — solo boletín más reciente, prueba
         run: |
           ultimo=$(ls -t data/csv/*_completo.csv | head -1)
           python3 scripts/validar_leads.py --in "$ultimo" --out "${ultimo%.csv}_leads.csv" --limit 30

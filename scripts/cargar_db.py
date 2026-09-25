@@ -27,6 +27,19 @@ def parse_fecha(fecha_str: str):
     return f"{y}-{mo}-{d} {hms}"
 
 
+def parse_bool(valor: str):
+    """'True'/'False'/'' -> True/False/None. csv.DictWriter escribe los booleanos
+    de Python como los strings 'True'/'False'/'None'."""
+    if valor is None:
+        return None
+    v = valor.strip()
+    if v == "True":
+        return True
+    if v == "False":
+        return False
+    return None  # "" o "None" -> no verificado
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--in", dest="in_path", required=True)
@@ -76,6 +89,11 @@ def main():
                     r.get("cuit") or None,
                     r.get("matricula_agente") or None,
                     r.get("link"),
+                    r.get("caracter") or None,
+                    parse_bool(r.get("es_lead")),
+                    r.get("email") or None,
+                    r.get("email_apoderado") or None,
+                    int(r["lead_score"]) if r.get("lead_score") else 0,
                 )
                 for r in rows
             ]
@@ -84,12 +102,18 @@ def main():
                 """
                 INSERT INTO marcas (
                     acta, boletin, clase, tipo, denominacion, denominacion_inpi,
-                    fecha_presentacion, titular, pais, cuit, matricula_agente, link
+                    fecha_presentacion, titular, pais, cuit, matricula_agente, link,
+                    caracter, es_lead, email, email_apoderado, lead_score
                 ) VALUES %s
                 ON CONFLICT (acta) DO UPDATE SET
                     denominacion_inpi = EXCLUDED.denominacion_inpi,
                     cuit = EXCLUDED.cuit,
                     matricula_agente = EXCLUDED.matricula_agente,
+                    caracter = EXCLUDED.caracter,
+                    es_lead = EXCLUDED.es_lead,
+                    email = EXCLUDED.email,
+                    email_apoderado = EXCLUDED.email_apoderado,
+                    lead_score = EXCLUDED.lead_score,
                     actualizado_en = now()
                 """,
                 valores,
