@@ -303,6 +303,27 @@ function fmtFecha(f) {
   return f.split("T")[0].split(" ")[0];
 }
 
+function abrirActa(acta) {
+  // Un <a href> normal solo puede hacer GET, y esa versión de la página de
+  // INPI viene recortada (solo "PROTECCION"). La ficha completa (titularidad,
+  // datos generales, botón GRILLA DIGITAL) solo aparece cuando la consulta
+  // se hace por POST con el acta en el body — lo mismo que hace el pipeline
+  // en validar_leads.py. Por eso armamos un form y lo mandamos por POST en
+  // una pestaña nueva en vez de usar un link directo.
+  const form = document.createElement("form");
+  form.method = "POST";
+  form.action = "https://portaltramites.inpi.gob.ar/MarcasConsultas/Resultado";
+  form.target = "_blank";
+  const input = document.createElement("input");
+  input.type = "hidden";
+  input.name = "acta";
+  input.value = acta;
+  form.appendChild(input);
+  document.body.appendChild(form);
+  form.submit();
+  form.remove();
+}
+
 async function marcarContactado(acta, valorActual) {
   const nuevo = !valorActual;
   await fetch(`/api/marcas/${encodeURIComponent(acta)}/contactado?valor=${nuevo}`, {
@@ -331,7 +352,7 @@ async function cargar(offset) {
       <tr class="${r.es_lead ? "lead" : ""} ${r.contactado ? "contactado" : ""}">
         <td class="score">${r.lead_score ?? ""}</td>
         <td>${r.boletin}</td>
-        <td><a class="link-acta" href="${r.link}" target="_blank">${r.acta}</a></td>
+        <td><a class="link-acta" href="javascript:void(0)" onclick="abrirActa('${r.acta}')">${r.acta}</a></td>
         <td>${r.clase ?? ""}</td>
         <td class="denominacion" title="${r.denominacion_inpi || r.denominacion || ""}">${r.denominacion_inpi || r.denominacion || "<em>(mixta/fig.)</em>"}</td>
         <td class="titular" title="${r.titular || ""}">${r.titular || ""}</td>
