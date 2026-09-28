@@ -4,210 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Panel de leads — Kom Marcas Inpi</title>
-<style>
-  :root {
-    --azul: #015197;
-    --azul-claro: #e8f1fa;
-    --verde: #1a8754;
-    --gris: #6b7280;
-    --borde: #e2e5ea;
-    --rojo: #c0392b;
-  }
-  * { box-sizing: border-box; }
-  body {
-    margin: 0;
-    font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
-    background: #f7f8fa;
-    color: #1f2430;
-  }
-  header {
-    background: var(--azul);
-    color: white;
-    padding: 14px 20px;
-    display: flex;
-    align-items: baseline;
-    gap: 10px;
-    flex-wrap: wrap;
-  }
-  header h1 { font-size: 17px; margin: 0; font-weight: 600; }
-  header .sub { font-size: 12px; opacity: 0.85; }
-  .filtros {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 10px;
-    padding: 14px 20px;
-    background: white;
-    border-bottom: 1px solid var(--borde);
-    align-items: end;
-  }
-  .filtros label {
-    display: flex;
-    flex-direction: column;
-    font-size: 11px;
-    color: var(--gris);
-    gap: 3px;
-  }
-  .filtros select, .filtros input {
-    padding: 6px 8px;
-    border: 1px solid var(--borde);
-    border-radius: 6px;
-    font-size: 13px;
-    min-width: 120px;
-  }
-  .filtros input[type="text"] { min-width: 200px; }
-  .filtros button {
-    padding: 7px 14px;
-    border: none;
-    border-radius: 6px;
-    background: var(--azul);
-    color: white;
-    font-size: 13px;
-    cursor: pointer;
-  }
-  .filtros button.secundario {
-    background: white;
-    color: var(--azul);
-    border: 1px solid var(--azul);
-  }
-  .resumen {
-    padding: 8px 20px;
-    font-size: 12px;
-    color: var(--gris);
-  }
-  table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 13px;
-    background: white;
-  }
-  th, td {
-    padding: 8px 10px;
-    border-bottom: 1px solid var(--borde);
-    text-align: left;
-    white-space: nowrap;
-  }
-  th {
-    background: #fafbfc;
-    position: sticky;
-    top: 0;
-    cursor: pointer;
-    user-select: none;
-    color: #374151;
-    font-weight: 600;
-  }
-  th.activo { color: var(--azul); }
-  td.denominacion, td.titular { max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  tr.lead { background: #fffaf0; }
-  tr.contactado { opacity: 0.55; }
-  .badge {
-    display: inline-block;
-    padding: 2px 8px;
-    border-radius: 10px;
-    font-size: 11px;
-    font-weight: 600;
-  }
-  .badge.lead { background: #fde8e8; color: var(--rojo); }
-  .badge.no-lead { background: #e6f4ea; color: var(--verde); }
-  .badge.sin-dato { background: #eef0f2; color: var(--gris); }
-  .score {
-    font-weight: 700;
-  }
-  button.contactar {
-    padding: 4px 10px;
-    border-radius: 6px;
-    border: 1px solid var(--borde);
-    background: white;
-    cursor: pointer;
-    font-size: 12px;
-  }
-  button.contactar.marcado {
-    background: var(--verde);
-    color: white;
-    border-color: var(--verde);
-  }
-  a.link-acta { color: var(--azul); text-decoration: none; }
-  .sin-email {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-  }
-  .tooltip {
-    position: relative;
-    display: inline-block;
-    border-bottom: 1px dotted var(--gris);
-    color: var(--gris);
-    font-size: 11px;
-    cursor: help;
-  }
-  .tooltip .globo {
-    visibility: hidden;
-    opacity: 0;
-    position: absolute;
-    z-index: 20;
-    bottom: 130%;
-    left: 0;
-    width: 220px;
-    background: #1f2430;
-    color: white;
-    padding: 8px 10px;
-    border-radius: 6px;
-    font-size: 11px;
-    line-height: 1.4;
-    white-space: normal;
-    transition: opacity 0.1s ease;
-    pointer-events: none;
-  }
-  .tooltip:hover .globo { visibility: visible; opacity: 1; }
-  button.reintentar {
-    padding: 3px 8px;
-    border-radius: 6px;
-    border: 1px solid var(--borde);
-    background: white;
-    cursor: pointer;
-    font-size: 11px;
-    color: var(--azul);
-  }
-  button.reintentar:disabled {
-    opacity: 0.5;
-    cursor: wait;
-  }
-  .fila-oculta { display: none; }
-  button.flecha-grupo {
-    border: none;
-    background: none;
-    cursor: pointer;
-    color: var(--azul);
-    font-size: 12px;
-    padding: 0 2px;
-  }
-  .cant-grupo {
-    color: var(--gris);
-    font-size: 11px;
-  }
-  .contenedor-tabla {
-    overflow: auto;
-    max-height: calc(100vh - 160px);
-  }
-  .vacio {
-    padding: 40px;
-    text-align: center;
-    color: var(--gris);
-  }
-  .paginado {
-    display: flex;
-    gap: 10px;
-    align-items: center;
-    padding: 10px 20px;
-    font-size: 13px;
-  }
-  .paginado button {
-    padding: 5px 10px;
-    border-radius: 6px;
-    border: 1px solid var(--borde);
-    background: white;
-    cursor: pointer;
-  }
-</style>
+<link rel="stylesheet" href="/static/comun.css" />
 </head>
 <body>
 
@@ -274,21 +71,17 @@
   <button onclick="pagina(1)">Siguiente &rarr;</button>
 </div>
 
+<script src="/static/comun.js"></script>
 <script>
 const LIMIT = 100;
 let estado = { offset: 0, total: 0, sort: "lead_score", order: "desc" };
+window.alRecargar = () => cargar(estado.offset);
 
 function qs(params) {
   return Object.entries(params)
     .filter(([, v]) => v !== "" && v !== null && v !== undefined)
     .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
     .join("&");
-}
-
-async function api(path) {
-  const r = await fetch(path, { credentials: "include" });
-  if (!r.ok) throw new Error(`${r.status}`);
-  return r.json();
 }
 
 async function cargarFiltrosIniciales() {
@@ -350,94 +143,14 @@ function pagina(delta) {
   cargar(nuevo);
 }
 
-function badgeLead(row) {
-  if (row.es_lead === true) return '<span class="badge lead">LEAD</span>';
-  if (row.es_lead === false) return `<span class="badge no-lead">${row.caracter || "con agente"}</span>`;
-  return '<span class="badge sin-dato">sin verificar</span>';
-}
-
-function fmtFecha(f) {
-  if (!f) return "";
-  return f.split("T")[0].split(" ")[0];
-}
-
-function celdaEmail(r) {
-  if (r.email) {
-    return `<a href="mailto:${r.email}">${r.email}</a>`;
-  }
-  if (r.es_lead !== true) {
-    return ""; // no aplica (tiene apoderado) o todavía no se verificó
-  }
-  const motivo = r.motivo_sin_email || "no se pudo determinar el motivo";
-  return `
-    <span class="sin-email">
-      <span class="tooltip">sin email<span class="globo">${motivo}</span></span>
-      <button class="reintentar" onclick="reintentarEmail('${r.acta}', this)">Reintentar</button>
-      <a class="link-acta" href="javascript:void(0)" onclick="abrirActa('${r.acta}')" title="Ver expediente completo en INPI">Ver ficha ↗</a>
-    </span>
-  `;
-}
-
-async function reintentarEmail(acta, boton) {
-  boton.disabled = true;
-  const textoOriginal = boton.textContent;
-  boton.textContent = "Consultando...";
-  try {
-    const r = await fetch(`/api/marcas/${encodeURIComponent(acta)}/reintentar-email`, {
-      method: "POST",
-      credentials: "include",
-    });
-    if (!r.ok) throw new Error(`${r.status}`);
-    await cargar(estado.offset);
-  } catch (e) {
-    boton.disabled = false;
-    boton.textContent = textoOriginal;
-    alert(`No se pudo reintentar el acta ${acta}: ${e.message}`);
-  }
-}
-
-function abrirActa(acta) {
-  // Un <a href> normal solo puede hacer GET, y esa versión de la página de
-  // INPI viene recortada (solo "PROTECCION"). La ficha completa (titularidad,
-  // datos generales, botón GRILLA DIGITAL) solo aparece cuando la consulta
-  // se hace por POST con el acta en el body — lo mismo que hace el pipeline
-  // en validar_leads.py. Por eso armamos un form y lo mandamos por POST en
-  // una pestaña nueva en vez de usar un link directo.
-  const form = document.createElement("form");
-  form.method = "POST";
-  form.action = "https://portaltramites.inpi.gob.ar/MarcasConsultas/Resultado";
-  form.target = "_blank";
-  const input = document.createElement("input");
-  input.type = "hidden";
-  input.name = "acta";
-  input.value = acta;
-  form.appendChild(input);
-  document.body.appendChild(form);
-  form.submit();
-  form.remove();
-}
-
-async function marcarContactado(acta, valorActual) {
-  const nuevo = !valorActual;
-  await fetch(`/api/marcas/${encodeURIComponent(acta)}/contactado?valor=${nuevo}`, {
-    method: "POST",
-    credentials: "include",
-  });
-  cargar(estado.offset);
-}
-
-function normalizarTitular(titular) {
-  return (titular || "").trim().toUpperCase().replace(/\s+/g, " ");
-}
-
 function agruparPorTitular(rows) {
-  // Junta filas del mismo titular (mismo texto normalizado) en un solo
-  // grupo, conservando el orden en que ya vinieron (por lead_score desc).
-  // No agrupamos por CUIT porque solo se completa para Mixtas/Figurativas
-  // (via el webservice), la mayoría de las Denominativas no lo tienen.
+  // Junta filas del mismo titular en un solo grupo, conservando el orden
+  // en que ya vinieron (por lead_score desc). La clave es el CUIT cuando
+  // ya se pudo leer del expediente; si no, el nombre normalizado (ver
+  // claveTitular en comun.js).
   const grupos = new Map();
   for (const r of rows) {
-    const clave = normalizarTitular(r.titular) || `__acta_${r.acta}`; // sin titular: no agrupa
+    const clave = claveTitular(r) || `__acta_${r.acta}`; // sin nada: no agrupa
     if (!grupos.has(clave)) grupos.set(clave, []);
     grupos.get(clave).push(r);
   }
@@ -447,9 +160,10 @@ function agruparPorTitular(rows) {
 function filaHtml(r, { flecha = false, oculta = false, idGrupo = null, cantidadResto = 0 } = {}) {
   const claseOculta = oculta ? "fila-oculta" : "";
   const atributoGrupo = idGrupo ? `data-grupo="${idGrupo}"` : "";
+  const tituLink = linkTitular(r);
   const celdaTitular = flecha
-    ? `<button class="flecha-grupo" onclick="toggleGrupo('${idGrupo}', this)" title="Ver ${cantidadResto} marca(s) más de este titular">▸</button> ${r.titular || ""} <span class="cant-grupo">(+${cantidadResto})</span>`
-    : `${r.titular || ""}`;
+    ? `<button class="flecha-grupo" onclick="toggleGrupo('${idGrupo}', this)" title="Ver ${cantidadResto} marca(s) más de este titular">▸</button> ${tituLink} <span class="cant-grupo">(+${cantidadResto})</span>`
+    : tituLink;
   return `
     <tr class="${r.es_lead ? "lead" : ""} ${r.contactado ? "contactado" : ""} ${claseOculta}" ${atributoGrupo}>
       <td class="score">${r.lead_score ?? ""}</td>

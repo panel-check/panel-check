@@ -20,6 +20,7 @@ Correr local:
 """
 
 import os
+import re
 import secrets
 from contextlib import contextmanager
 from typing import Optional
@@ -74,6 +75,15 @@ COLUMNAS_ORDENABLES = {
     "lead_score", "acta", "boletin", "clase", "titular", "fecha_presentacion",
     "creado_en", "actualizado_en",
 }
+
+COLUMNAS_MARCA = """
+    acta, boletin, clase, tipo, denominacion, denominacion_inpi,
+    fecha_presentacion, titular, pais, cuit, matricula_agente,
+    caracter, es_lead, email, email_apoderado, lead_score, link,
+    contactado, contactado_en, motivo_sin_email
+"""
+
+RE_CUIT_VALIDO = re.compile(r"^\d{10,11}$")
 
 
 def verificar_login(credenciales: HTTPBasicCredentials = Depends(security)) -> str:
@@ -136,10 +146,7 @@ def listar_marcas(
     where_sql = f"WHERE {' AND '.join(condiciones)}" if condiciones else ""
 
     sql = f"""
-        SELECT acta, boletin, clase, tipo, denominacion, denominacion_inpi,
-               fecha_presentacion, titular, pais, cuit, matricula_agente,
-               caracter, es_lead, email, email_apoderado, lead_score, link,
-               contactado, contactado_en, motivo_sin_email
+        SELECT {COLUMNAS_MARCA}
         FROM marcas
         {where_sql}
         ORDER BY {sort} {order_sql} NULLS LAST, acta DESC
@@ -177,6 +184,42 @@ def listar_clases(_: str = Depends(verificar_login)):
                 "SELECT DISTINCT clase FROM marcas WHERE clase IS NOT NULL ORDER BY clase"
             )
             return [r[0] for r in cur.fetchall()]
+
+
+@app.get("/api/titular/{clave}")
+def ver_titular(clave: str, _: str = Depends(verificar_login)):
+    """Todas las marcas de un mismo titular, en cualquier boletín.
+    `clave` es el CUIT cuando ya se pudo leer del expediente (la clave
+    real), o el nombre del titular normalizado como respaldo (mismo
+    criterio que agruparPorTitular en el frontend)."""
+    with conexion() as conn:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            if RE_CUIT_VALIDO.match(clave):
+                cur.execute(
+                    f"SELECT {COLUMNAS_MARCA} FROM marcas WHERE cuit = %s "
+                    f"ORDER BY fecha_presentacion DESC",
+                    (clave,),
+                )
+            else:
+                cur.execute(
+                    f"""
+                    SELECT {COLUMNAS_MARCA} FROM marcas
+                    WHERE upper(regexp_replace(trim(titular), '\\s+', ' ', 'g')) = %s
+                    ORDER BY fecha_presentacion DESC
+                    """,
+                    (clave.strip().upper(),),
+                )
+            filas = cur.fetchall()
+
+    if not filas:
+        raise HTTPException(status_code=404, detail="No se encontraron marcas para ese titular")
+
+    return {
+        "clave": clave,
+        "titular": filas[0]["titular"],
+        "cuit": filas[0]["cuit"],
+        "rows": filas,
+    }
 
 
 @app.post("/api/marcas/{acta}/contactado")
@@ -239,6 +282,11 @@ def reintentar_email(acta: str, _: str = Depends(verificar_login)):
 @app.get("/")
 def index(_: str = Depends(verificar_login)):
     return FileResponse(os.path.join(os.path.dirname(__file__), "static", "index.html"))
+
+
+@app.get("/titular/{clave}")
+def pagina_titular(clave: str, _: str = Depends(verificar_login)):
+    return FileResponse(os.path.join(os.path.dirname(__file__), "static", "titular.html"))
 
 
 app.mount("/static", StaticFiles(directory=os.path.join(os.path.dirname(__file__), "static")), name="static")
