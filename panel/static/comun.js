@@ -54,6 +54,25 @@ function celdaEmail(r) {
   `;
 }
 
+function celdaEmailIcono(r) {
+  // Versión resumida para el dashboard principal: no expone la dirección,
+  // solo si se pudo recuperar o no (el detalle por titular sí muestra el
+  // email completo).
+  if (r.email) {
+    return '<span class="icono-email ok" title="Tiene email recuperado">&#10003;</span>';
+  }
+  if (r.es_lead !== true) {
+    return ""; // no aplica (tiene apoderado) o todavía no se verificó
+  }
+  const motivo = r.motivo_sin_email || "no se pudo determinar el motivo";
+  return `
+    <span class="sin-email">
+      <span class="icono-email no tooltip">&#10007;<span class="globo">${motivo}</span></span>
+      <button class="reintentar" onclick="reintentarEmail('${r.acta}', this)">Reintentar</button>
+    </span>
+  `;
+}
+
 async function reintentarEmail(acta, boton) {
   boton.disabled = true;
   const textoOriginal = boton.textContent;
