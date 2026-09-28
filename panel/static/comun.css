@@ -137,7 +137,8 @@ button.contactar.marcado {
 a.link-acta { color: var(--azul); text-decoration: none; }
 a.link-titular { color: var(--azul); text-decoration: none; }
 a.link-titular:hover { text-decoration: underline; }
-button.abrir {
+.abrir {
+  display: inline-block;
   padding: 4px 10px;
   border-radius: 6px;
   border: 1px solid var(--azul);
@@ -145,8 +146,9 @@ button.abrir {
   color: var(--azul);
   cursor: pointer;
   font-size: 12px;
+  text-decoration: none;
 }
-button.abrir:hover { background: var(--azul-claro); }
+.abrir:hover { background: var(--azul-claro); }
 .celda-email { text-align: center; }
 .icono-email {
   font-size: 15px;

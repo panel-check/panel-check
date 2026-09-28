@@ -163,6 +163,8 @@ function filaHtml(r, { flecha = false, oculta = false, idGrupo = null, cantidadR
   const celdaTitular = flecha
     ? `<button class="flecha-grupo" onclick="toggleGrupo('${idGrupo}', this)" title="Ver ${cantidadResto} marca(s) más de este titular">▸</button> ${tituLink} <span class="cant-grupo">(+${cantidadResto})</span>`
     : tituLink;
+  const clave = claveTitular(r);
+  const hrefTitular = clave ? `/titular/${encodeURIComponent(clave)}` : "javascript:void(0)";
   return `
     <tr class="${r.es_lead ? "lead" : ""} ${r.contactado ? "contactado" : ""} ${claseOculta}" ${atributoGrupo}>
       <td class="score">${r.lead_score ?? ""}</td>
@@ -172,7 +174,7 @@ function filaHtml(r, { flecha = false, oculta = false, idGrupo = null, cantidadR
       <td>${badgeLead(r)}</td>
       <td class="celda-email">${celdaEmailIcono(r)}</td>
       <td>${fmtFecha(r.fecha_presentacion)}</td>
-      <td><button class="abrir" onclick="abrirActa('${r.acta}')" title="Abrir expediente en INPI (boletín ${r.boletin}, acta ${r.acta})">Abrir ↗</button></td>
+      <td><a class="abrir" href="${hrefTitular}" target="_blank" title="Ver ficha completa del titular (boletín ${r.boletin}, acta ${r.acta})">Abrir</a></td>
     </tr>
   `;
 }
