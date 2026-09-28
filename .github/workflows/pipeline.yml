@@ -37,7 +37,21 @@ jobs:
             echo "[{\"numero\": \"$numero\", \"fecha\": null, \"pdf_url\": \"https://portaltramites.inpi.gob.ar/Uploads/Boletines/${numero}_3_.pdf\", \"comentario\": \"forzado manualmente\"}]" > data/boletines.json
             echo "Boletín forzado manualmente: $numero"
           else
-            python3 scripts/listar_boletines.py --out data/boletines.json
+            # listar_boletines.py devuelve TODO el historial de "MARCAS NUEVAS" visible en el
+            # listado (no solo el último) — en modo automático nos quedamos solo con el de
+            # número más alto, para no mandarle a Apify decenas de PDFs de una.
+            python3 scripts/listar_boletines.py --out data/boletines_todos.json
+            python3 - << 'PYEOF'
+          import json
+          with open("data/boletines_todos.json", encoding="utf-8") as f:
+              todos = json.load(f)
+          if not todos:
+              raise SystemExit("listar_boletines.py no devolvió ningún boletín")
+          ultimo = max(todos, key=lambda b: int(b["numero"]))
+          with open("data/boletines.json", "w", encoding="utf-8") as f:
+              json.dump([ultimo], f, ensure_ascii=False, indent=2)
+          print(f"Boletín más reciente detectado: {ultimo['numero']} ({ultimo.get('fecha')}) de {len(todos)} encontrados")
+          PYEOF
           fi
           cat data/boletines.json
         env:
