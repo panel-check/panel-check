@@ -139,9 +139,15 @@ def listar_marcas(
         condiciones.append("contactado = %s")
         valores.append(contactado)
     if q:
-        condiciones.append("(titular ILIKE %s OR denominacion ILIKE %s OR denominacion_inpi ILIKE %s)")
+        condiciones.append(
+            """(
+                titular ILIKE %s OR denominacion ILIKE %s OR denominacion_inpi ILIKE %s
+                OR email ILIKE %s OR email_apoderado ILIKE %s
+                OR cuit ILIKE %s OR acta ILIKE %s
+            )"""
+        )
         patron = f"%{q}%"
-        valores.extend([patron, patron, patron])
+        valores.extend([patron, patron, patron, patron, patron, patron, patron])
 
     where_sql = f"WHERE {' AND '.join(condiciones)}" if condiciones else ""
 
