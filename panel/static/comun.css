@@ -137,10 +137,28 @@ button.contactar.marcado {
 a.link-acta { color: var(--azul); text-decoration: none; }
 a.link-titular { color: var(--azul); text-decoration: none; }
 a.link-titular:hover { text-decoration: underline; }
+button.abrir {
+  padding: 4px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--azul);
+  background: white;
+  color: var(--azul);
+  cursor: pointer;
+  font-size: 12px;
+}
+button.abrir:hover { background: var(--azul-claro); }
+.celda-email { text-align: center; }
+.icono-email {
+  font-size: 15px;
+  font-weight: 700;
+}
+.icono-email.ok { color: var(--verde); }
+.icono-email.no { color: var(--rojo); cursor: help; }
 .sin-email {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  justify-content: center;
 }
 .tooltip {
   position: relative;
