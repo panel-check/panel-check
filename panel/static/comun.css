@@ -34,6 +34,14 @@ header a.volver {
   margin-right: 6px;
 }
 header a.volver:hover { opacity: 1; text-decoration: underline; }
+header a.ayuda {
+  margin-left: auto;
+  color: white;
+  opacity: 0.85;
+  text-decoration: none;
+  font-size: 13px;
+}
+header a.ayuda:hover { opacity: 1; text-decoration: underline; }
 .filtros {
   display: flex;
   flex-wrap: wrap;

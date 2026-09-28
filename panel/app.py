@@ -289,4 +289,9 @@ def pagina_titular(clave: str, _: str = Depends(verificar_login)):
     return FileResponse(os.path.join(os.path.dirname(__file__), "static", "titular.html"))
 
 
+@app.get("/ayuda")
+def pagina_ayuda(_: str = Depends(verificar_login)):
+    return FileResponse(os.path.join(os.path.dirname(__file__), "static", "ayuda.html"))
+
+
 app.mount("/static", StaticFiles(directory=os.path.join(os.path.dirname(__file__), "static")), name="static")

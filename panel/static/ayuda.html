@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Ayuda — Kom Marcas Inpi</title>
+<link rel="stylesheet" href="/static/comun.css" />
+<style>
+  .contenido {
+    max-width: 720px;
+    margin: 0 auto;
+    padding: 24px 20px 60px;
+    background: white;
+  }
+  .contenido h2 {
+    font-size: 15px;
+    color: var(--azul);
+    margin: 28px 0 8px;
+  }
+  .contenido h2:first-child { margin-top: 0; }
+  .contenido p, .contenido li { font-size: 13px; line-height: 1.6; color: #374151; }
+  .tabla-score {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 10px 0;
+    font-size: 13px;
+  }
+  .tabla-score th, .tabla-score td {
+    border: 1px solid var(--borde);
+    padding: 8px 10px;
+    text-align: left;
+  }
+  .tabla-score th { background: #fafbfc; }
+  .puntos { font-weight: 700; }
+  .puntos.pos { color: var(--verde); }
+  .puntos.neg { color: var(--rojo); }
+  code {
+    background: #f1f3f5;
+    padding: 1px 5px;
+    border-radius: 4px;
+    font-size: 12px;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <a class="volver" href="/">&larr; Volver al panel</a>
+  <h1>Ayuda</h1>
+</header>
+
+<div class="contenido">
+
+  <h2>¿Cómo se calcula el Score?</h2>
+  <p>Cada marca arranca en 0 y se le suman o restan puntos según lo que se sabe de ella. Cuanto más alto, más prioridad como lead para contactar.</p>
+  <table class="tabla-score">
+    <thead>
+      <tr><th>Condición</th><th>Puntos</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>La matrícula de agente que trae el boletín está vacía o dice "Part." (presentación particular, sin agente registrado)</td>
+        <td class="puntos pos">+50</td>
+      </tr>
+      <tr>
+        <td>Se verificó contra el expediente de INPI y es lead real (no tiene "Apoderado" ni "Gestor Ratificado" en GESTION DEL TRAMITE)</td>
+        <td class="puntos pos">+50</td>
+      </tr>
+      <tr>
+        <td>Se verificó y <strong>tiene</strong> agente/apoderado (no es lead)</td>
+        <td class="puntos neg">−100</td>
+      </tr>
+      <tr>
+        <td>Se pudo recuperar el email desde el Formulario (Grilla Digital)</td>
+        <td class="puntos pos">+20</td>
+      </tr>
+    </tbody>
+  </table>
+  <p>Ejemplo: una marca sin matrícula, verificada como lead real y con email recuperado llega a <strong>120</strong> (50+50+20). Una marca que resultó tener apoderado queda en <strong>−50</strong> (50−100), bien abajo en la lista.</p>
+  <p>Si todavía no se verificó contra INPI (columna "Lead" en gris, "sin verificar"), no se suma ni resta nada por esa parte — mejor subestimar el score que arriesgar marcar como lead algo que no se confirmó.</p>
+
+  <h2>La columna "Lead"</h2>
+  <ul>
+    <li><span class="badge lead" style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;background:#fde8e8;color:#c0392b;">LEAD</span> — se confirmó contra el expediente de INPI que se presentó sin agente ni gestor.</li>
+    <li><span class="badge no-lead" style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;background:#e6f4ea;color:#1a8754;">Apoderado / Gestor Ratificado</span> — tiene agente, no es un lead para prospección.</li>
+    <li><span class="badge sin-dato" style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;background:#eef0f2;color:#6b7280;">sin verificar</span> — todavía no se corrió la consulta contra INPI para esta marca (pasa con boletines recién cargados, o si el <code>--limit</code> del pipeline no llegó a cubrirla).</li>
+  </ul>
+
+  <h2>"Sin email" y el botón Reintentar</h2>
+  <p>Cuando un lead no tiene email, pasando el mouse por "sin email" aparece el motivo exacto: bloqueo del WAF de INPI, el expediente no tiene un Formulario en Grilla Digital, no se pudo descargar el PDF, o el Formulario no tenía el campo EMAIL completo.</p>
+  <p>El botón <strong>Reintentar</strong> vuelve a consultar ese expediente puntual contra INPI en vivo (tarda unos segundos) y actualiza caracter, email, CUIT y score si encuentra algo nuevo.</p>
+
+  <h2>Agrupado por titular</h2>
+  <p>Cuando un mismo titular tiene varias marcas, se muestra una sola fila con una flecha (<strong>▸ +N</strong>) para desplegar el resto sin saturar la tabla. El click en el nombre del titular abre su ficha completa (<code>/titular/...</code>), con <strong>todas</strong> sus marcas de cualquier boletín, no solo el que se está mirando.</p>
+  <p>La unificación usa el <strong>CUIT</strong> cuando ya se pudo leer del expediente (es el dato real, no depende de cómo esté tipeado el nombre). Si todavía no se verificó esa marca, se usa el nombre del titular normalizado como respaldo — puede fallar si el mismo titular está tipeado distinto en dos presentaciones distintas.</p>
+
+  <h2>Contactado</h2>
+  <p>Es un estado propio del panel — el pipeline que carga los boletines nunca lo toca. Se marca por acta (por ahora no está unificado por titular), y queda con la fecha en que se marcó.</p>
+
+</div>
+
+</body>
+</html>
