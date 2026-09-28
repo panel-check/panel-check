@@ -126,6 +126,51 @@
     border-color: var(--verde);
   }
   a.link-acta { color: var(--azul); text-decoration: none; }
+  .sin-email {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .tooltip {
+    position: relative;
+    display: inline-block;
+    border-bottom: 1px dotted var(--gris);
+    color: var(--gris);
+    font-size: 11px;
+    cursor: help;
+  }
+  .tooltip .globo {
+    visibility: hidden;
+    opacity: 0;
+    position: absolute;
+    z-index: 20;
+    bottom: 130%;
+    left: 0;
+    width: 220px;
+    background: #1f2430;
+    color: white;
+    padding: 8px 10px;
+    border-radius: 6px;
+    font-size: 11px;
+    line-height: 1.4;
+    white-space: normal;
+    transition: opacity 0.1s ease;
+    pointer-events: none;
+  }
+  .tooltip:hover .globo { visibility: visible; opacity: 1; }
+  button.reintentar {
+    padding: 3px 8px;
+    border-radius: 6px;
+    border: 1px solid var(--borde);
+    background: white;
+    cursor: pointer;
+    font-size: 11px;
+    color: var(--azul);
+  }
+  button.reintentar:disabled {
+    opacity: 0.5;
+    cursor: wait;
+  }
   .contenedor-tabla {
     overflow: auto;
     max-height: calc(100vh - 160px);
@@ -303,6 +348,41 @@ function fmtFecha(f) {
   return f.split("T")[0].split(" ")[0];
 }
 
+function celdaEmail(r) {
+  if (r.email) {
+    return `<a href="mailto:${r.email}">${r.email}</a>`;
+  }
+  if (r.es_lead !== true) {
+    return ""; // no aplica (tiene apoderado) o todavía no se verificó
+  }
+  const motivo = r.motivo_sin_email || "no se pudo determinar el motivo";
+  return `
+    <span class="sin-email">
+      <span class="tooltip">sin email<span class="globo">${motivo}</span></span>
+      <button class="reintentar" onclick="reintentarEmail('${r.acta}', this)">Reintentar</button>
+      <a class="link-acta" href="javascript:void(0)" onclick="abrirActa('${r.acta}')" title="Ver expediente completo en INPI">Ver ficha ↗</a>
+    </span>
+  `;
+}
+
+async function reintentarEmail(acta, boton) {
+  boton.disabled = true;
+  const textoOriginal = boton.textContent;
+  boton.textContent = "Consultando...";
+  try {
+    const r = await fetch(`/api/marcas/${encodeURIComponent(acta)}/reintentar-email`, {
+      method: "POST",
+      credentials: "include",
+    });
+    if (!r.ok) throw new Error(`${r.status}`);
+    await cargar(estado.offset);
+  } catch (e) {
+    boton.disabled = false;
+    boton.textContent = textoOriginal;
+    alert(`No se pudo reintentar el acta ${acta}: ${e.message}`);
+  }
+}
+
 function abrirActa(acta) {
   // Un <a href> normal solo puede hacer GET, y esa versión de la página de
   // INPI viene recortada (solo "PROTECCION"). La ficha completa (titularidad,
@@ -357,7 +437,7 @@ async function cargar(offset) {
         <td class="denominacion" title="${r.denominacion_inpi || r.denominacion || ""}">${r.denominacion_inpi || r.denominacion || "<em>(mixta/fig.)</em>"}</td>
         <td class="titular" title="${r.titular || ""}">${r.titular || ""}</td>
         <td>${badgeLead(r)}</td>
-        <td>${r.email ? `<a href="mailto:${r.email}">${r.email}</a>` : ""}</td>
+        <td>${celdaEmail(r)}</td>
         <td>${fmtFecha(r.fecha_presentacion)}</td>
         <td><button class="contactar ${r.contactado ? "marcado" : ""}" onclick="marcarContactado('${r.acta}', ${!!r.contactado})">
           ${r.contactado ? "✓ Contactado" : "Marcar"}

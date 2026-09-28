@@ -37,6 +37,11 @@ CREATE TABLE IF NOT EXISTS marcas (
 ALTER TABLE marcas ADD COLUMN IF NOT EXISTS contactado BOOLEAN DEFAULT false;
 ALTER TABLE marcas ADD COLUMN IF NOT EXISTS contactado_en TIMESTAMPTZ;
 
+-- Agregado para explicar por qué no se pudo recuperar el email de un lead
+-- (se completa en validar_leads.py y también se puede reintentar a mano
+-- desde el panel).
+ALTER TABLE marcas ADD COLUMN IF NOT EXISTS motivo_sin_email TEXT;
+
 CREATE INDEX IF NOT EXISTS idx_marcas_boletin ON marcas(boletin);
 CREATE INDEX IF NOT EXISTS idx_marcas_es_lead ON marcas(es_lead);
 CREATE INDEX IF NOT EXISTS idx_marcas_titular ON marcas(titular);

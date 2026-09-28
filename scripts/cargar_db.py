@@ -94,6 +94,7 @@ def main():
                     r.get("email") or None,
                     r.get("email_apoderado") or None,
                     int(r["lead_score"]) if r.get("lead_score") else 0,
+                    r.get("motivo_sin_email") or None,
                 )
                 for r in rows
             ]
@@ -103,7 +104,7 @@ def main():
                 INSERT INTO marcas (
                     acta, boletin, clase, tipo, denominacion, denominacion_inpi,
                     fecha_presentacion, titular, pais, cuit, matricula_agente, link,
-                    caracter, es_lead, email, email_apoderado, lead_score
+                    caracter, es_lead, email, email_apoderado, lead_score, motivo_sin_email
                 ) VALUES %s
                 ON CONFLICT (acta) DO UPDATE SET
                     denominacion_inpi = EXCLUDED.denominacion_inpi,
@@ -114,6 +115,7 @@ def main():
                     email = EXCLUDED.email,
                     email_apoderado = EXCLUDED.email_apoderado,
                     lead_score = EXCLUDED.lead_score,
+                    motivo_sin_email = EXCLUDED.motivo_sin_email,
                     actualizado_en = now()
                 """,
                 valores,

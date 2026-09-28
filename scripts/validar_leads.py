@@ -79,10 +79,14 @@ def _get_con_reintentos(fn, intentos: int = 3, espera: int = 3):
 
 
 def revisar_acta(s: requests.Session, acta: str, timeout: int = 30) -> dict:
-    """Devuelve {caracter, es_lead, email, email_apoderado}. Si algo falla,
-    devuelve es_lead=None para marcarlo como "no se pudo verificar" (en vez
-    de asumir por defecto que es lead)."""
-    resultado = {"caracter": None, "es_lead": None, "email": "", "email_apoderado": ""}
+    """Devuelve {caracter, es_lead, email, email_apoderado, motivo_sin_email}.
+    Si algo falla, devuelve es_lead=None para marcarlo como "no se pudo
+    verificar" (en vez de asumir por defecto que es lead). motivo_sin_email
+    queda vacío cuando sí hay email o cuando no aplica (tiene apoderado)."""
+    resultado = {
+        "caracter": None, "es_lead": None, "email": "", "email_apoderado": "",
+        "motivo_sin_email": "",
+    }
     try:
         r = _get_con_reintentos(
             lambda: s.post(
@@ -94,6 +98,7 @@ def revisar_acta(s: requests.Session, acta: str, timeout: int = 30) -> dict:
         )
         if "Web Page Blocked" in r.text or "Attack ID" in r.text:
             print(f"  acta {acta}: bloqueado por el WAF de INPI (no se pudo verificar)", file=sys.stderr)
+            resultado["motivo_sin_email"] = "bloqueado por el WAF de INPI al consultar el expediente"
             return resultado
 
         m_gestion = RE_GESTION.search(r.text)
@@ -121,6 +126,7 @@ def revisar_acta(s: requests.Session, acta: str, timeout: int = 30) -> dict:
             )
         )
         if "Web Page Blocked" in r_gd.text or "Attack ID" in r_gd.text:
+            resultado["motivo_sin_email"] = "bloqueado por el WAF de INPI al abrir Grilla Digital"
             return resultado
 
         r_archivos = _get_con_reintentos(
@@ -138,6 +144,7 @@ def revisar_acta(s: requests.Session, acta: str, timeout: int = 30) -> dict:
 
         formulario = next((a for a in archivos if a.get("Indice") == "Formulario"), None)
         if not formulario:
+            resultado["motivo_sin_email"] = "el expediente no tiene un archivo Formulario en Grilla Digital"
             return resultado
 
         id_doc = formulario["id_Documento_encriptado"]
@@ -151,6 +158,7 @@ def revisar_acta(s: requests.Session, acta: str, timeout: int = 30) -> dict:
             )
         )
         if r_pdf.headers.get("Content-Type", "").lower() != "application/pdf":
+            resultado["motivo_sin_email"] = "no se pudo descargar el PDF del Formulario"
             return resultado
 
         import io
@@ -162,6 +170,8 @@ def revisar_acta(s: requests.Session, acta: str, timeout: int = 30) -> dict:
         m_email = re.search(r"EMAIL:\s*([\w.+-]+@[\w-]+\.[\w.-]+)", texto)
         if m_email:
             resultado["email"] = m_email.group(1)
+        else:
+            resultado["motivo_sin_email"] = "el Formulario no tiene el campo EMAIL completo"
 
         m_email_apoderado = re.search(
             r"REPRESENTACION.*?EMAIL:\s*([\w.+-]+@[\w-]+\.[\w.-]+)", texto, re.S
@@ -173,6 +183,7 @@ def revisar_acta(s: requests.Session, acta: str, timeout: int = 30) -> dict:
         print(f"  acta {acta}: error ({e})", file=sys.stderr)
         resultado["caracter"] = None
         resultado["es_lead"] = None
+        resultado["motivo_sin_email"] = f"error de conexión al consultar INPI: {e}"
     return resultado
 
 
@@ -229,6 +240,7 @@ def main():
         row.setdefault("es_lead", "")
         row.setdefault("email", "")
         row.setdefault("email_apoderado", "")
+        row.setdefault("motivo_sin_email", "")
         row.setdefault("lead_score", row.get("lead_score", 0))
 
     fieldnames = list(rows[0].keys())

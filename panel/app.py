@@ -31,6 +31,8 @@ from fastapi.responses import FileResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.staticfiles import StaticFiles
 
+import inpi_lead
+
 DATABASE_URL = os.environ.get("DATABASE_URL")
 PANEL_USER = os.environ.get("PANEL_USER", "admin")
 PANEL_PASSWORD = os.environ.get("PANEL_PASSWORD")
@@ -62,6 +64,9 @@ def migrar_columnas_panel():
             )
             cur.execute(
                 "CREATE INDEX IF NOT EXISTS idx_marcas_contactado ON marcas(contactado)"
+            )
+            cur.execute(
+                "ALTER TABLE marcas ADD COLUMN IF NOT EXISTS motivo_sin_email TEXT"
             )
         conn.commit()
 
@@ -134,7 +139,7 @@ def listar_marcas(
         SELECT acta, boletin, clase, tipo, denominacion, denominacion_inpi,
                fecha_presentacion, titular, pais, cuit, matricula_agente,
                caracter, es_lead, email, email_apoderado, lead_score, link,
-               contactado, contactado_en
+               contactado, contactado_en, motivo_sin_email
         FROM marcas
         {where_sql}
         ORDER BY {sort} {order_sql} NULLS LAST, acta DESC
@@ -191,6 +196,42 @@ def marcar_contactado(acta: str, valor: bool = True, _: str = Depends(verificar_
                 raise HTTPException(status_code=404, detail=f"No existe el acta {acta}")
         conn.commit()
     return {"acta": acta, "contactado": valor}
+
+
+@app.post("/api/marcas/{acta}/reintentar-email")
+def reintentar_email(acta: str, _: str = Depends(verificar_login)):
+    """Vuelve a consultar el expediente en INPI para esta acta puntual y
+    actualiza caracter/es_lead/email/email_apoderado/motivo_sin_email/lead_score.
+    Tarda unos segundos (varias requests contra INPI en serie)."""
+    with conexion() as conn:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute("SELECT matricula_agente FROM marcas WHERE acta = %s", (acta,))
+            fila = cur.fetchone()
+            if not fila:
+                raise HTTPException(status_code=404, detail=f"No existe el acta {acta}")
+
+        info = inpi_lead.revisar_acta(acta)
+        nuevo_score = inpi_lead.calcular_lead_score(
+            fila["matricula_agente"], info["es_lead"], bool(info["email"])
+        )
+
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE marcas
+                SET caracter = %s, es_lead = %s, email = %s, email_apoderado = %s,
+                    motivo_sin_email = %s, lead_score = %s, actualizado_en = now()
+                WHERE acta = %s
+                """,
+                (
+                    info["caracter"], info["es_lead"], info["email"] or None,
+                    info["email_apoderado"] or None, info["motivo_sin_email"] or None,
+                    nuevo_score, acta,
+                ),
+            )
+        conn.commit()
+
+    return {"acta": acta, **info, "lead_score": nuevo_score}
 
 
 @app.get("/")
