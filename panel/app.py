@@ -220,13 +220,15 @@ def reintentar_email(acta: str, _: str = Depends(verificar_login)):
                 """
                 UPDATE marcas
                 SET caracter = %s, es_lead = %s, email = %s, email_apoderado = %s,
-                    motivo_sin_email = %s, lead_score = %s, actualizado_en = now()
+                    motivo_sin_email = %s, lead_score = %s,
+                    cuit = COALESCE(%s, cuit),
+                    actualizado_en = now()
                 WHERE acta = %s
                 """,
                 (
                     info["caracter"], info["es_lead"], info["email"] or None,
                     info["email_apoderado"] or None, info["motivo_sin_email"] or None,
-                    nuevo_score, acta,
+                    nuevo_score, info.get("cuit"), acta,
                 ),
             )
         conn.commit()

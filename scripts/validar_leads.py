@@ -56,6 +56,13 @@ RE_GESTION = re.compile(r"GESTION DEL TRAMITE.*?</h4>\s*</div>\s*<div[^>]*>(.*?)
 RE_CARACTER = re.compile(r"CARACTER\s*:?\s*</label>|CARACTER\s*:", re.S)
 RE_CARACTER_SPAN = re.compile(r"CARACTER\s*:?\s*<span[^>]*>(.*?)</span>", re.S)
 
+# Dentro de TITULARIDAD aparece igual que CARACTER: "CUIT:<span>30715260898</span>".
+# Se agregó cuando notamos que también viene para Denominativas (antes solo se
+# guardaba para Mixtas/Figurativas, vía el webservice de completar_mixtas.py).
+# Sirve como clave real para unificar leads del mismo titular en el panel
+# (mejor que comparar texto de titular, que puede variar de tipeo).
+RE_CUIT_SPAN = re.compile(r"CUIT\s*:?\s*<span[^>]*>(.*?)</span>", re.S)
+
 
 def crear_sesion() -> requests.Session:
     s = requests.Session()
@@ -112,6 +119,14 @@ def revisar_acta(s: requests.Session, acta: str, timeout: int = 30) -> dict:
 
         resultado["caracter"] = caracter
         resultado["es_lead"] = caracter == ""
+
+        m_cuit = RE_CUIT_SPAN.search(r.text)
+        if m_cuit:
+            cuit_encontrado = re.sub(r"[^\d]", "", m_cuit.group(1))
+            if len(cuit_encontrado) in (10, 11):
+                resultado["cuit"] = cuit_encontrado
+        # si no matchea o no parece un CUIT válido, no seteamos la clave: así
+        # row.update(info) no pisa un cuit que ya venía de completar_mixtas.py
 
         if not resultado["es_lead"]:
             return resultado  # ya tiene apoderado/gestor, no hace falta el email

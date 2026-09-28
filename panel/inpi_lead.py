@@ -28,6 +28,7 @@ HEADERS = {
 
 RE_GESTION = re.compile(r"GESTION DEL TRAMITE.*?</h4>\s*</div>\s*<div[^>]*>(.*?)</div>\s*</div>\s*</div>", re.S)
 RE_CARACTER_SPAN = re.compile(r"CARACTER\s*:?\s*<span[^>]*>(.*?)</span>", re.S)
+RE_CUIT_SPAN = re.compile(r"CUIT\s*:?\s*<span[^>]*>(.*?)</span>", re.S)
 
 
 def _crear_sesion() -> requests.Session:
@@ -53,7 +54,9 @@ def _get_con_reintentos(fn, intentos: int = 3, espera: int = 3):
 
 def revisar_acta(acta: str, timeout: int = 30) -> dict:
     """Igual que validar_leads.revisar_acta: devuelve
-    {caracter, es_lead, email, email_apoderado, motivo_sin_email}."""
+    {caracter, es_lead, email, email_apoderado, motivo_sin_email} y, cuando
+    se pudo leer de la sección TITULARIDAD, también "cuit" (clave real para
+    unificar leads del mismo titular, mejor que comparar texto)."""
     s = _crear_sesion()
     resultado = {
         "caracter": None, "es_lead": None, "email": "", "email_apoderado": "",
@@ -80,6 +83,12 @@ def revisar_acta(acta: str, timeout: int = 30) -> dict:
 
         resultado["caracter"] = caracter
         resultado["es_lead"] = caracter == ""
+
+        m_cuit = RE_CUIT_SPAN.search(r.text)
+        if m_cuit:
+            cuit_encontrado = re.sub(r"[^\d]", "", m_cuit.group(1))
+            if len(cuit_encontrado) in (10, 11):
+                resultado["cuit"] = cuit_encontrado
 
         if not resultado["es_lead"]:
             return resultado
