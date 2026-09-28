@@ -171,6 +171,19 @@
     opacity: 0.5;
     cursor: wait;
   }
+  .fila-oculta { display: none; }
+  button.flecha-grupo {
+    border: none;
+    background: none;
+    cursor: pointer;
+    color: var(--azul);
+    font-size: 12px;
+    padding: 0 2px;
+  }
+  .cant-grupo {
+    color: var(--gris);
+    font-size: 11px;
+  }
   .contenedor-tabla {
     overflow: auto;
     max-height: calc(100vh - 160px);
@@ -413,6 +426,56 @@ async function marcarContactado(acta, valorActual) {
   cargar(estado.offset);
 }
 
+function normalizarTitular(titular) {
+  return (titular || "").trim().toUpperCase().replace(/\s+/g, " ");
+}
+
+function agruparPorTitular(rows) {
+  // Junta filas del mismo titular (mismo texto normalizado) en un solo
+  // grupo, conservando el orden en que ya vinieron (por lead_score desc).
+  // No agrupamos por CUIT porque solo se completa para Mixtas/Figurativas
+  // (via el webservice), la mayoría de las Denominativas no lo tienen.
+  const grupos = new Map();
+  for (const r of rows) {
+    const clave = normalizarTitular(r.titular) || `__acta_${r.acta}`; // sin titular: no agrupa
+    if (!grupos.has(clave)) grupos.set(clave, []);
+    grupos.get(clave).push(r);
+  }
+  return [...grupos.values()];
+}
+
+function filaHtml(r, { flecha = false, oculta = false, idGrupo = null, cantidadResto = 0 } = {}) {
+  const claseOculta = oculta ? "fila-oculta" : "";
+  const atributoGrupo = idGrupo ? `data-grupo="${idGrupo}"` : "";
+  const celdaTitular = flecha
+    ? `<button class="flecha-grupo" onclick="toggleGrupo('${idGrupo}', this)" title="Ver ${cantidadResto} marca(s) más de este titular">▸</button> ${r.titular || ""} <span class="cant-grupo">(+${cantidadResto})</span>`
+    : `${r.titular || ""}`;
+  return `
+    <tr class="${r.es_lead ? "lead" : ""} ${r.contactado ? "contactado" : ""} ${claseOculta}" ${atributoGrupo}>
+      <td class="score">${r.lead_score ?? ""}</td>
+      <td>${r.boletin}</td>
+      <td><a class="link-acta" href="javascript:void(0)" onclick="abrirActa('${r.acta}')">${r.acta}</a></td>
+      <td>${r.clase ?? ""}</td>
+      <td class="denominacion" title="${r.denominacion_inpi || r.denominacion || ""}">${r.denominacion_inpi || r.denominacion || "<em>(mixta/fig.)</em>"}</td>
+      <td class="titular" title="${r.titular || ""}">${celdaTitular}</td>
+      <td>${badgeLead(r)}</td>
+      <td>${celdaEmail(r)}</td>
+      <td>${fmtFecha(r.fecha_presentacion)}</td>
+      <td><button class="contactar ${r.contactado ? "marcado" : ""}" onclick="marcarContactado('${r.acta}', ${!!r.contactado})">
+        ${r.contactado ? "✓ Contactado" : "Marcar"}
+      </button></td>
+    </tr>
+  `;
+}
+
+function toggleGrupo(idGrupo, boton) {
+  const abierto = boton.classList.toggle("abierta");
+  boton.textContent = abierto ? "▾" : "▸";
+  document.querySelectorAll(`tr[data-grupo="${idGrupo}"]`).forEach(tr => {
+    tr.classList.toggle("fila-oculta", !abierto);
+  });
+}
+
 async function cargar(offset) {
   estado.offset = offset;
   document.getElementById("tbody").innerHTML = '<tr><td colspan="10" class="vacio">Cargando...</td></tr>';
@@ -428,22 +491,17 @@ async function cargar(offset) {
   if (data.rows.length === 0) {
     tbody.innerHTML = '<tr><td colspan="10" class="vacio">No hay resultados con estos filtros.</td></tr>';
   } else {
-    tbody.innerHTML = data.rows.map(r => `
-      <tr class="${r.es_lead ? "lead" : ""} ${r.contactado ? "contactado" : ""}">
-        <td class="score">${r.lead_score ?? ""}</td>
-        <td>${r.boletin}</td>
-        <td><a class="link-acta" href="javascript:void(0)" onclick="abrirActa('${r.acta}')">${r.acta}</a></td>
-        <td>${r.clase ?? ""}</td>
-        <td class="denominacion" title="${r.denominacion_inpi || r.denominacion || ""}">${r.denominacion_inpi || r.denominacion || "<em>(mixta/fig.)</em>"}</td>
-        <td class="titular" title="${r.titular || ""}">${r.titular || ""}</td>
-        <td>${badgeLead(r)}</td>
-        <td>${celdaEmail(r)}</td>
-        <td>${fmtFecha(r.fecha_presentacion)}</td>
-        <td><button class="contactar ${r.contactado ? "marcado" : ""}" onclick="marcarContactado('${r.acta}', ${!!r.contactado})">
-          ${r.contactado ? "✓ Contactado" : "Marcar"}
-        </button></td>
-      </tr>
-    `).join("");
+    tbody.innerHTML = agruparPorTitular(data.rows).map((grupo, i) => {
+      const idGrupo = `g${estado.offset}_${i}`;
+      const [principal, ...resto] = grupo;
+      const filaPrincipal = filaHtml(principal, {
+        flecha: resto.length > 0,
+        idGrupo,
+        cantidadResto: resto.length,
+      });
+      const filasResto = resto.map(r => filaHtml(r, { oculta: true, idGrupo })).join("");
+      return filaPrincipal + filasResto;
+    }).join("");
   }
 
   const desde = data.total === 0 ? 0 : estado.offset + 1;
