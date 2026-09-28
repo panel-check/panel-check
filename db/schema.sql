@@ -33,6 +33,11 @@ CREATE TABLE IF NOT EXISTS marcas (
     actualizado_en      TIMESTAMPTZ DEFAULT now()
 );
 
+-- Agregado para el panel propio (marcar leads como gestionados).
+ALTER TABLE marcas ADD COLUMN IF NOT EXISTS contactado BOOLEAN DEFAULT false;
+ALTER TABLE marcas ADD COLUMN IF NOT EXISTS contactado_en TIMESTAMPTZ;
+
 CREATE INDEX IF NOT EXISTS idx_marcas_boletin ON marcas(boletin);
 CREATE INDEX IF NOT EXISTS idx_marcas_es_lead ON marcas(es_lead);
 CREATE INDEX IF NOT EXISTS idx_marcas_titular ON marcas(titular);
+CREATE INDEX IF NOT EXISTS idx_marcas_contactado ON marcas(contactado);

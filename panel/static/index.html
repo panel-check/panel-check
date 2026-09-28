@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Panel de leads — Kom Marcas Inpi</title>
+<style>
+  :root {
+    --azul: #015197;
+    --azul-claro: #e8f1fa;
+    --verde: #1a8754;
+    --gris: #6b7280;
+    --borde: #e2e5ea;
+    --rojo: #c0392b;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+    background: #f7f8fa;
+    color: #1f2430;
+  }
+  header {
+    background: var(--azul);
+    color: white;
+    padding: 14px 20px;
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  header h1 { font-size: 17px; margin: 0; font-weight: 600; }
+  header .sub { font-size: 12px; opacity: 0.85; }
+  .filtros {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    padding: 14px 20px;
+    background: white;
+    border-bottom: 1px solid var(--borde);
+    align-items: end;
+  }
+  .filtros label {
+    display: flex;
+    flex-direction: column;
+    font-size: 11px;
+    color: var(--gris);
+    gap: 3px;
+  }
+  .filtros select, .filtros input {
+    padding: 6px 8px;
+    border: 1px solid var(--borde);
+    border-radius: 6px;
+    font-size: 13px;
+    min-width: 120px;
+  }
+  .filtros input[type="text"] { min-width: 200px; }
+  .filtros button {
+    padding: 7px 14px;
+    border: none;
+    border-radius: 6px;
+    background: var(--azul);
+    color: white;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  .filtros button.secundario {
+    background: white;
+    color: var(--azul);
+    border: 1px solid var(--azul);
+  }
+  .resumen {
+    padding: 8px 20px;
+    font-size: 12px;
+    color: var(--gris);
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+    background: white;
+  }
+  th, td {
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--borde);
+    text-align: left;
+    white-space: nowrap;
+  }
+  th {
+    background: #fafbfc;
+    position: sticky;
+    top: 0;
+    cursor: pointer;
+    user-select: none;
+    color: #374151;
+    font-weight: 600;
+  }
+  th.activo { color: var(--azul); }
+  td.denominacion, td.titular { max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  tr.lead { background: #fffaf0; }
+  tr.contactado { opacity: 0.55; }
+  .badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 11px;
+    font-weight: 600;
+  }
+  .badge.lead { background: #fde8e8; color: var(--rojo); }
+  .badge.no-lead { background: #e6f4ea; color: var(--verde); }
+  .badge.sin-dato { background: #eef0f2; color: var(--gris); }
+  .score {
+    font-weight: 700;
+  }
+  button.contactar {
+    padding: 4px 10px;
+    border-radius: 6px;
+    border: 1px solid var(--borde);
+    background: white;
+    cursor: pointer;
+    font-size: 12px;
+  }
+  button.contactar.marcado {
+    background: var(--verde);
+    color: white;
+    border-color: var(--verde);
+  }
+  a.link-acta { color: var(--azul); text-decoration: none; }
+  .contenedor-tabla {
+    overflow: auto;
+    max-height: calc(100vh - 160px);
+  }
+  .vacio {
+    padding: 40px;
+    text-align: center;
+    color: var(--gris);
+  }
+  .paginado {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    padding: 10px 20px;
+    font-size: 13px;
+  }
+  .paginado button {
+    padding: 5px 10px;
+    border-radius: 6px;
+    border: 1px solid var(--borde);
+    background: white;
+    cursor: pointer;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Panel de leads — INPI</h1>
+  <span class="sub">Marcas autopresentadas, listas para prospección</span>
+</header>
+
+<div class="filtros">
+  <label>Boletín
+    <select id="f-boletin"><option value="">Todos</option></select>
+  </label>
+  <label>Clase
+    <select id="f-clase"><option value="">Todas</option></select>
+  </label>
+  <label>Lead
+    <select id="f-lead">
+      <option value="">Todos</option>
+      <option value="true" selected>Solo leads</option>
+      <option value="false">Con agente</option>
+    </select>
+  </label>
+  <label>Contactado
+    <select id="f-contactado">
+      <option value="">Todos</option>
+      <option value="false" selected>Sin contactar</option>
+      <option value="true">Ya contactados</option>
+    </select>
+  </label>
+  <label>Buscar
+    <input type="text" id="f-q" placeholder="titular o marca..." />
+  </label>
+  <button onclick="cargar(0)">Filtrar</button>
+  <button class="secundario" onclick="limpiarFiltros()">Limpiar</button>
+</div>
+
+<div class="resumen" id="resumen">Cargando...</div>
+
+<div class="contenedor-tabla">
+<table>
+  <thead>
+    <tr>
+      <th data-col="lead_score" onclick="ordenarPor('lead_score')">Score</th>
+      <th data-col="boletin" onclick="ordenarPor('boletin')">Boletín</th>
+      <th data-col="acta" onclick="ordenarPor('acta')">Acta</th>
+      <th data-col="clase" onclick="ordenarPor('clase')">Clase</th>
+      <th>Marca</th>
+      <th data-col="titular" onclick="ordenarPor('titular')">Titular</th>
+      <th>Lead</th>
+      <th>Email</th>
+      <th data-col="fecha_presentacion" onclick="ordenarPor('fecha_presentacion')">Fecha</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody id="tbody">
+    <tr><td colspan="10" class="vacio">Cargando...</td></tr>
+  </tbody>
+</table>
+</div>
+
+<div class="paginado">
+  <button onclick="pagina(-1)">&larr; Anterior</button>
+  <span id="pag-info"></span>
+  <button onclick="pagina(1)">Siguiente &rarr;</button>
+</div>
+
+<script>
+const LIMIT = 100;
+let estado = { offset: 0, total: 0, sort: "lead_score", order: "desc" };
+
+function qs(params) {
+  return Object.entries(params)
+    .filter(([, v]) => v !== "" && v !== null && v !== undefined)
+    .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
+    .join("&");
+}
+
+async function api(path) {
+  const r = await fetch(path, { credentials: "include" });
+  if (!r.ok) throw new Error(`${r.status}`);
+  return r.json();
+}
+
+async function cargarFiltrosIniciales() {
+  const boletines = await api("/api/boletines");
+  const selB = document.getElementById("f-boletin");
+  boletines.forEach(b => {
+    const opt = document.createElement("option");
+    opt.value = b.numero;
+    opt.textContent = `${b.numero} (${b.total_marcas ?? "?"})`;
+    selB.appendChild(opt);
+  });
+
+  const clases = await api("/api/clases");
+  const selC = document.getElementById("f-clase");
+  clases.forEach(c => {
+    const opt = document.createElement("option");
+    opt.value = c;
+    opt.textContent = c;
+    selC.appendChild(opt);
+  });
+}
+
+function filtrosActuales() {
+  return {
+    boletin: document.getElementById("f-boletin").value,
+    clase: document.getElementById("f-clase").value,
+    es_lead: document.getElementById("f-lead").value,
+    contactado: document.getElementById("f-contactado").value,
+    q: document.getElementById("f-q").value,
+    sort: estado.sort,
+    order: estado.order,
+    limit: LIMIT,
+    offset: estado.offset,
+  };
+}
+
+function limpiarFiltros() {
+  document.getElementById("f-boletin").value = "";
+  document.getElementById("f-clase").value = "";
+  document.getElementById("f-lead").value = "true";
+  document.getElementById("f-contactado").value = "false";
+  document.getElementById("f-q").value = "";
+  cargar(0);
+}
+
+function ordenarPor(col) {
+  if (estado.sort === col) {
+    estado.order = estado.order === "desc" ? "asc" : "desc";
+  } else {
+    estado.sort = col;
+    estado.order = "desc";
+  }
+  cargar(estado.offset);
+}
+
+function pagina(delta) {
+  const nuevo = estado.offset + delta * LIMIT;
+  if (nuevo < 0 || nuevo >= estado.total) return;
+  cargar(nuevo);
+}
+
+function badgeLead(row) {
+  if (row.es_lead === true) return '<span class="badge lead">LEAD</span>';
+  if (row.es_lead === false) return `<span class="badge no-lead">${row.caracter || "con agente"}</span>`;
+  return '<span class="badge sin-dato">sin verificar</span>';
+}
+
+function fmtFecha(f) {
+  if (!f) return "";
+  return f.split("T")[0].split(" ")[0];
+}
+
+async function marcarContactado(acta, valorActual) {
+  const nuevo = !valorActual;
+  await fetch(`/api/marcas/${encodeURIComponent(acta)}/contactado?valor=${nuevo}`, {
+    method: "POST",
+    credentials: "include",
+  });
+  cargar(estado.offset);
+}
+
+async function cargar(offset) {
+  estado.offset = offset;
+  document.getElementById("tbody").innerHTML = '<tr><td colspan="10" class="vacio">Cargando...</td></tr>';
+  const params = filtrosActuales();
+  const data = await api(`/api/marcas?${qs(params)}`);
+  estado.total = data.total;
+
+  document.querySelectorAll("th[data-col]").forEach(th => {
+    th.classList.toggle("activo", th.dataset.col === estado.sort);
+  });
+
+  const tbody = document.getElementById("tbody");
+  if (data.rows.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="10" class="vacio">No hay resultados con estos filtros.</td></tr>';
+  } else {
+    tbody.innerHTML = data.rows.map(r => `
+      <tr class="${r.es_lead ? "lead" : ""} ${r.contactado ? "contactado" : ""}">
+        <td class="score">${r.lead_score ?? ""}</td>
+        <td>${r.boletin}</td>
+        <td><a class="link-acta" href="${r.link}" target="_blank">${r.acta}</a></td>
+        <td>${r.clase ?? ""}</td>
+        <td class="denominacion" title="${r.denominacion_inpi || r.denominacion || ""}">${r.denominacion_inpi || r.denominacion || "<em>(mixta/fig.)</em>"}</td>
+        <td class="titular" title="${r.titular || ""}">${r.titular || ""}</td>
+        <td>${badgeLead(r)}</td>
+        <td>${r.email ? `<a href="mailto:${r.email}">${r.email}</a>` : ""}</td>
+        <td>${fmtFecha(r.fecha_presentacion)}</td>
+        <td><button class="contactar ${r.contactado ? "marcado" : ""}" onclick="marcarContactado('${r.acta}', ${!!r.contactado})">
+          ${r.contactado ? "✓ Contactado" : "Marcar"}
+        </button></td>
+      </tr>
+    `).join("");
+  }
+
+  const desde = data.total === 0 ? 0 : estado.offset + 1;
+  const hasta = Math.min(estado.offset + LIMIT, data.total);
+  document.getElementById("resumen").textContent = `${data.total} resultados`;
+  document.getElementById("pag-info").textContent = `${desde}–${hasta} de ${data.total}`;
+}
+
+(async function init() {
+  await cargarFiltrosIniciales();
+  document.getElementById("f-lead").value = "true";
+  document.getElementById("f-contactado").value = "false";
+  await cargar(0);
+})();
+</script>
+
+</body>
+</html>
