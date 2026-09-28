@@ -43,6 +43,28 @@ if not PANEL_PASSWORD:
 app = FastAPI(title="Panel de leads — Kom Marcas Inpi")
 security = HTTPBasic()
 
+
+@app.on_event("startup")
+def migrar_columnas_panel():
+    """Asegura que existan las columnas que usa el panel (contactado/contactado_en).
+
+    El pipeline las agrega vía schema.sql, pero sólo la próxima vez que corra.
+    El panel no puede esperar a eso, así que se asegura de tenerlas ni bien
+    arranca (idempotente: no rompe nada si ya existen).
+    """
+    with conexion() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "ALTER TABLE marcas ADD COLUMN IF NOT EXISTS contactado BOOLEAN DEFAULT false"
+            )
+            cur.execute(
+                "ALTER TABLE marcas ADD COLUMN IF NOT EXISTS contactado_en TIMESTAMPTZ"
+            )
+            cur.execute(
+                "CREATE INDEX IF NOT EXISTS idx_marcas_contactado ON marcas(contactado)"
+            )
+        conn.commit()
+
 COLUMNAS_ORDENABLES = {
     "lead_score", "acta", "boletin", "clase", "titular", "fecha_presentacion",
     "creado_en", "actualizado_en",
