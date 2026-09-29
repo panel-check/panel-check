@@ -252,6 +252,16 @@ tr.contactado { opacity: 0.55; }
 }
 .modal-cerrar:hover { color: #1f2430; }
 .modal-caja h3 { margin: 0 0 12px; font-size: 16px; color: #92720d; }
+.modal-caja .mo-representacion-posterior {
+  margin: 0 0 12px;
+  padding: 8px 10px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #7a2e0e;
+  background: #fde8dc;
+  border: 1px solid #f4c3a4;
+  border-radius: 6px;
+}
 .modal-caja .mo-oponente { margin: 0 0 10px; font-size: 14px; }
 .modal-caja .mo-doc { color: var(--gris); font-weight: 400; }
 .modal-caja .mo-fundamento {

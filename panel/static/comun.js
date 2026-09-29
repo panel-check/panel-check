@@ -105,10 +105,22 @@ function abrirModalOposicion(acta) {
   const cuit = row.oponente_cuit ? `CUIT ${row.oponente_cuit}` : "";
   const identificacion = [doc, cuit].filter(Boolean).join(" · ");
 
+  // Si después de la oposición apareció alguien sumándose como
+  // apoderado/gestor ("Acompaña Poder"/"Ratifica" — ver
+  // revisar_oposiciones.py), es señal de que el titular ya está trabajando
+  // con alguien para responderla: se muestra un badge bien visible arriba
+  // del todo, para descartarlo de un vistazo como lead frío prioritario.
+  const badgeRepresentacion = row.representacion_posterior_oposicion
+    ? `<p class="mo-representacion-posterior">⚖ Ya se sumó un apoderado/gestor después de la oposición` +
+      `${row.detalle_representacion_posterior ? ` <span class="mo-doc">(${_escapeHtml(row.detalle_representacion_posterior)})</span>` : ""}` +
+      `</p>`
+    : "";
+
   const contenido = document.getElementById("modal-oposicion-contenido");
   let cuerpo;
   if (row.oponente_nombre || row.fundamento_oposicion) {
     cuerpo = `
+      ${badgeRepresentacion}
       ${row.oponente_nombre ? `<p class="mo-oponente"><strong>${_escapeHtml(row.oponente_nombre)}</strong>${identificacion ? ` <span class="mo-doc">(${_escapeHtml(identificacion)})</span>` : ""}</p>` : ""}
       ${row.fundamento_oposicion ? `<p class="mo-fundamento">${_escapeHtml(row.fundamento_oposicion)}</p>` : ""}
       <div id="mo-marca-oponente">Buscando la marca del oponente…</div>
@@ -121,6 +133,7 @@ function abrirModalOposicion(acta) {
     // popup vacío.
     const fecha = _fechaDeDetalleCrudo(row.detalle_oposicion);
     cuerpo = `
+      ${badgeRepresentacion}
       <p class="mo-fundamento">No se pudo obtener el detalle completo (oponente y fundamento) de esta oposición —
       el trámite no tiene un Formulario propio listado en Grilla Digital, o no se pudo descargar.
       ${fecha ? `Se detectó un ingreso de "Opo. de Marcas" el ${fecha}.` : ""}</p>

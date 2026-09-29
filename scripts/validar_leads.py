@@ -143,6 +143,33 @@ def buscar_fila_oposicion(archivos: list[dict], fecha_publicacion: str | None = 
     return None
 
 
+# Términos que usa INPI en Grilla Digital cuando alguien se suma como
+# apoderado/gestor de un trámite ya en curso -- típicamente para responder
+# una oposición. "PODER" cubre "Acompaña Poder"; "RATIFICA" cubre "Ratifica
+# Gestión"/"Ratificación". Si aparece un caso real con otra redacción,
+# agregar el término acá (mismo criterio que TERMINOS_OPOSICION).
+TERMINOS_REPRESENTACION_POSTERIOR = ("PODER", "RATIFICA")
+
+
+def buscar_fila_representacion_posterior(archivos: list[dict], fecha_desde: str | None) -> dict | None:
+    """Busca, entre los archivos de Grilla Digital fechados en o después de
+    fecha_desde (se pasa la fecha de la oposición detectada), una fila que
+    indique que alguien se sumó como apoderado/gestor -- señal de que el
+    titular ya no está solo respondiendo la oposición. Sin fecha_desde no
+    filtra por fecha (mejor esfuerzo, no debería pasar en uso normal)."""
+    for a in archivos:
+        indice = (a.get("Indice") or "").upper()
+        referencia = (a.get("Referencia") or "").upper()
+        if not any(t in indice or t in referencia for t in TERMINOS_REPRESENTACION_POSTERIOR):
+            continue
+        if fecha_desde:
+            fecha_fila = _parsear_fecha_grilla(a.get("Fecha") or "")
+            if not fecha_fila or fecha_fila < fecha_desde:
+                continue
+        return a
+    return None
+
+
 def detectar_oposicion(archivos: list[dict], fecha_publicacion: str | None = None) -> tuple[bool, str]:
     """Recorre los archivos de Grilla Digital buscando una fila de oposición
     o vista. Devuelve (tuvo_oposicion, detalle) — detalle queda vacío si no

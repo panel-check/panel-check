@@ -64,6 +64,13 @@ ALTER TABLE marcas ADD COLUMN IF NOT EXISTS fecha_concesion DATE;
 ALTER TABLE marcas ADD COLUMN IF NOT EXISTS numero_disposicion TEXT;
 ALTER TABLE marcas ADD COLUMN IF NOT EXISTS fecha_vencimiento_marca DATE;
 
+-- Agregado el 29/09/2026: si después de detectada la oposición aparece en
+-- Grilla Digital una presentación de "Acompaña Poder" o "Ratifica" (alguien
+-- se sumó como apoderado/gestor para responder), señal fuerte de que el
+-- titular ya no es un lead frío -- ver revisar_oposiciones.py.
+ALTER TABLE marcas ADD COLUMN IF NOT EXISTS representacion_posterior_oposicion BOOLEAN;
+ALTER TABLE marcas ADD COLUMN IF NOT EXISTS detalle_representacion_posterior TEXT;
+
 CREATE INDEX IF NOT EXISTS idx_marcas_boletin ON marcas(boletin);
 CREATE INDEX IF NOT EXISTS idx_marcas_es_lead ON marcas(es_lead);
 CREATE INDEX IF NOT EXISTS idx_marcas_titular ON marcas(titular);

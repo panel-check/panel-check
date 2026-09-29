@@ -46,8 +46,10 @@ import psycopg2
 import psycopg2.extras
 
 from validar_leads import (
+    _parsear_fecha_grilla,
     buscar_archivos_grilla,
     buscar_fila_oposicion,
+    buscar_fila_representacion_posterior,
     crear_sesion,
     descargar_formulario_oposicion,
     detectar_oposicion,
@@ -81,7 +83,10 @@ def main():
                 WHERE es_lead = true
                   AND fecha_publicacion IS NOT NULL
                   AND fecha_publicacion <= %s
-                  AND revisado_oposicion_en IS NULL
+                  AND (
+                    revisado_oposicion_en IS NULL
+                    OR (tuvo_oposicion = true AND representacion_posterior_oposicion IS NOT TRUE)
+                  )
                 ORDER BY fecha_publicacion
                 """,
                 (corte,),
@@ -125,17 +130,41 @@ def main():
             if fila_opo and "OPO" in (fila_opo.get("Referencia") or "").upper():
                 detalle_rico = descargar_formulario_oposicion(s, archivos, fila_opo, acta_propia=acta)
 
+            # Si ya hay oposición, buscamos además si DESPUÉS de esa fecha
+            # apareció alguien sumándose como apoderado/gestor ("Acompaña
+            # Poder"/"Ratifica") -- señal de que el titular ya está
+            # trabajando con alguien para responderla, así que deja de ser
+            # un lead frío prioritario. Mientras esto no aparezca, NO
+            # marcamos revisado_oposicion_en (ver el SELECT de arriba): se
+            # sigue reintentando en corridas futuras hasta encontrarlo o
+            # hasta que deje de tener sentido seguir mirando.
+            representacion_posterior = None
+            detalle_representacion = None
+            if tuvo_oposicion:
+                fecha_opo = _parsear_fecha_grilla(fila_opo.get("Fecha") or "")
+                fila_rep = buscar_fila_representacion_posterior(archivos, fecha_opo)
+                representacion_posterior = fila_rep is not None
+                if fila_rep:
+                    detalle_representacion = (
+                        f"{fila_rep.get('Fecha', '')} - {fila_rep.get('Indice', '')} - "
+                        f"{fila_rep.get('Referencia', '')}"
+                    )
+
+            revisado_en = "now()" if (not tuvo_oposicion or representacion_posterior) else None
+
             with conn.cursor() as cur:
                 cur.execute(
-                    """
+                    f"""
                     UPDATE marcas
                     SET tuvo_oposicion = %s, detalle_oposicion = %s,
-                        revisado_oposicion_en = now(),
+                        revisado_oposicion_en = {revisado_en or 'revisado_oposicion_en'},
                         oponente_nombre = %s, oponente_tipo_doc = %s,
                         oponente_numero_doc = %s, oponente_cuit = %s,
                         fundamento_oposicion = %s,
                         actas_marca_oponente = %s, marca_oponente_denominacion = %s,
-                        marca_oponente_numero_registro = %s
+                        marca_oponente_numero_registro = %s,
+                        representacion_posterior_oposicion = %s,
+                        detalle_representacion_posterior = %s
                     WHERE acta = %s
                     """,
                     (
@@ -148,6 +177,8 @@ def main():
                         detalle_rico.get("actas_marca_oponente"),
                         detalle_rico.get("marca_oponente_denominacion"),
                         detalle_rico.get("marca_oponente_numero_registro"),
+                        representacion_posterior,
+                        detalle_representacion,
                         acta,
                     ),
                 )
@@ -159,7 +190,8 @@ def main():
                 # personales de terceros (nombre, CUIT/DNI, fundamento) que no
                 # deben quedar en los logs de Actions (repo público). Sí se
                 # siguen guardando en la base (UPDATE de arriba), sin cambios.
-                print(f"  [{i}/{len(pendientes)}] acta {acta}: CON OPOSICIÓN/VISTA")
+                extra = " (ya con apoderado/gestor posterior)" if representacion_posterior else ""
+                print(f"  [{i}/{len(pendientes)}] acta {acta}: CON OPOSICIÓN/VISTA{extra}")
             else:
                 print(f"  [{i}/{len(pendientes)}] acta {acta}: sin oposición")
 

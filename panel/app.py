@@ -180,6 +180,18 @@ def _correr_alters_panel(cur):
     cur.execute(
         "ALTER TABLE marcas ADD COLUMN IF NOT EXISTS marca_oponente_numero_registro TEXT"
     )
+    # Si después de detectar la oposición aparece en Grilla Digital una
+    # presentación de "Acompaña Poder" o "Ratifica" (alguien se sumó como
+    # apoderado/gestor para responder), lo marcamos acá -- ver
+    # revisar_oposiciones.py. Es una señal fuerte de que el titular ya está
+    # trabajando con alguien para la oposición, así que deja de ser
+    # prioritario como lead frío.
+    cur.execute(
+        "ALTER TABLE marcas ADD COLUMN IF NOT EXISTS representacion_posterior_oposicion BOOLEAN"
+    )
+    cur.execute(
+        "ALTER TABLE marcas ADD COLUMN IF NOT EXISTS detalle_representacion_posterior TEXT"
+    )
 
 COLUMNAS_ORDENABLES = {
     "lead_score", "acta", "boletin", "clase", "titular", "fecha_presentacion",
@@ -195,6 +207,7 @@ COLUMNAS_MARCA = """
     oponente_nombre, oponente_tipo_doc, oponente_numero_doc, oponente_cuit,
     fundamento_oposicion, actas_marca_oponente, marca_oponente_denominacion,
     marca_oponente_numero_registro,
+    representacion_posterior_oposicion, detalle_representacion_posterior,
     estado_tramite, fecha_concesion, numero_disposicion, fecha_vencimiento_marca
 """
 
