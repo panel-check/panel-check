@@ -43,21 +43,14 @@ def main():
     m_cuit = RE_CUIT_SPAN.search(html)
     if m_cuit:
         i = m_cuit.start()
-        # bastante antes y bastante después: el nombre puede venir antes
-        # (mismo <label>/fila) o después (siguiente <label>).
-        crudo = html[max(0, i - 700): i + 300].replace("\n", " ")
+        # Ventana grande hacia atrás: el bloque TITULARIDAD tiene varios
+        # <label class="input"> antes del de CUIT (PAIS, TIPO, y el nombre
+        # debería estar entre ellos) — 700 no alcanzó, probamos con 1800.
+        inicio = max(0, i - 1800)
+        crudo = html[inicio:i + 50].replace("\n", " ")
         crudo = re.sub(r"\s+", " ", crudo)
-        print(f"::notice::HTML alrededor del CUIT @{i}: {crudo}")
-    else:
-        print("::notice::CUIT no encontrado en esta corrida")
-
-    for palabra in ["RAZON SOCIAL", "APELLIDO", "NOMBRE Y APELLIDO", "DENOMINACION DEL TITULAR"]:
-        m = re.search(re.escape(palabra), html, re.I)
-        if m:
-            i = m.start()
-            crudo = html[i: i + 300].replace("\n", " ")
-            crudo = re.sub(r"\s+", " ", crudo)
-            print(f"::notice::HTML {palabra} @{i}: {crudo}")
+        crudo = re.sub(r"<(?!label|/label|span|/span)[^>]*>", "", crudo)  # solo dejamos label/span
+        print(f"::notice::HTML antes del CUIT @{i}: {crudo[-950:]}")
 
 
 if __name__ == "__main__":
