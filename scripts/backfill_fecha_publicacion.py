@@ -104,10 +104,16 @@ def main():
         time.sleep(args.delay)
 
     conn.close()
-    print(
-        f"\nListo. Actualizadas: {actualizadas}. Todavía sin 'Hoja Publicacion': {sin_publicar_aun}. "
-        f"Con oposición ya detectada: {con_oposicion}."
+    resumen = (
+        f"Backfill listo. Actualizadas: {actualizadas}. Todavía sin 'Hoja Publicacion': "
+        f"{sin_publicar_aun}. Con oposición ya detectada: {con_oposicion}."
     )
+    # además de stdout, como "::notice::" para poder leerlo por la API de
+    # GitHub sin bajar el log completo (ver el mismo truco en el manejo de
+    # errores, arriba) — así se puede confirmar el resultado de una corrida
+    # vieja sin depender de blob storage.
+    print(f"::notice::{resumen}")
+    print(f"\n{resumen}")
 
 
 if __name__ == "__main__":
