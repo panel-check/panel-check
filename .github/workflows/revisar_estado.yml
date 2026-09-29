@@ -1,0 +1,39 @@
+name: Revisar estado del trámite (Concedida/Denegada)
+
+on:
+  schedule:
+    # Una vez por semana, lunes 11:00 UTC (08:00 ART) — la Resolución de un
+    # expediente demora meses, no hace falta revisar todos los días.
+    - cron: "0 11 * * 1"
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: "Tope de actas a revisar en esta corrida (dejar vacío = todas)"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  revisar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Instalar dependencias
+        run: pip install -r requirements.txt
+
+      - name: Revisar RESOLUCIÓN de marcas sin estado firme
+        run: |
+          cd scripts
+          args=""
+          if [ -n "${{ inputs.limit }}" ]; then args="$args --limit ${{ inputs.limit }}"; fi
+          python3 revisar_estado.py $args
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL || secrets.DATABASE_PUBLIC_URL }}
+          PYTHONUNBUFFERED: "1"

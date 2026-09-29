@@ -174,15 +174,111 @@ def fecha_publicacion_de_archivos(archivos: list[dict]) -> str | None:
     return _parsear_fecha_grilla(fila["Fecha"])
 
 
+# Sección RESOLUCIÓN de la misma página de /MarcasConsultas/Resultado (la
+# que ya se pide para leer CARACTER/CUIT — no cuesta un request aparte).
+# Confirmado a mano contra un caso real (acta 4534497, marca "Concedida"):
+#   RESOLUCIÓN: [ Proyecto de Concesion ]
+#     FEC DE PROY: 20/01/2026   NRO: 3790975   TIPO: Concedida
+#     DISPOSICION: Fecha: 03/02/2026 - Numero: DI-2026-48-APN-DNM#INPI
+#     VENCE: 03/02/2036 0:00:00
+# VENCE ya viene calculado por INPI (concesión + 10 años) — no hace falta
+# calcularlo nosotros. \w en vez de la letra acentuada cubre "RESOLUCIÓN"
+# y "RESOLUCION", "DICTÁMENES" y "DICTAMENES", sin asumir cuál usa INPI.
+RE_RESOLUCION_BLOQUE = re.compile(r"RESOLUCI\wN.*?(?=DICT\wMENES|$)", re.S)
+# El valor de TIPO ("Concedida", "Denegada") va en minúscula-inicial; la
+# siguiente etiqueta (MOTIVO, NOTIFICACION, etc.) siempre en MAYÚSCULAS
+# seguida de ":" — eso es lo que corta el valor cuando no hay <span> de
+# por medio y todo viene en la misma línea/nodo de texto.
+RE_TIPO_RESOLUCION = re.compile(
+    r"TIPO\s*:?\s*(?:<span[^>]*>)?\s*([^<\n]+?)(?=\s+[A-ZÁÉÍÓÚÑ]{2,}\s*:|\s*<|\n|$)"
+)
+RE_DISPOSICION = re.compile(
+    r"DISPOSICION\s*:?\s*(?:<span[^>]*>)?\s*Fecha\s*:?\s*(?:<span[^>]*>)?\s*([\d/]+)"
+    r"\s*-\s*Numero\s*:?\s*(?:<span[^>]*>)?\s*([^\s<]+)",
+    re.S,
+)
+RE_VENCE = re.compile(r"VENCE\s*:?\s*(?:<span[^>]*>)?\s*([\d/]+)")
+
+
+def _fecha_ddmmyyyy_a_iso(valor: str) -> str | None:
+    m = re.match(r"^(\d{1,2})/(\d{1,2})/(\d{4})", valor.strip())
+    if not m:
+        return None
+    d, mes, anio = m.groups()
+    return f"{anio}-{mes.zfill(2)}-{d.zfill(2)}"
+
+
+def parsear_resolucion(texto_pagina: str) -> dict:
+    """Busca la sección RESOLUCIÓN del expediente y devuelve
+    {estado_tramite, fecha_concesion, numero_disposicion,
+    fecha_vencimiento_marca}. Todo en None si la marca todavía está en
+    trámite (no hay sección RESOLUCIÓN todavía) o el formato no matchea."""
+    resultado = {
+        "estado_tramite": None, "fecha_concesion": None,
+        "numero_disposicion": None, "fecha_vencimiento_marca": None,
+    }
+    m_bloque = RE_RESOLUCION_BLOQUE.search(texto_pagina)
+    if not m_bloque:
+        return resultado
+    bloque = m_bloque.group(0)
+
+    m_tipo = RE_TIPO_RESOLUCION.search(bloque)
+    if m_tipo:
+        resultado["estado_tramite"] = re.sub(r"\s+", " ", m_tipo.group(1)).strip()
+
+    m_disp = RE_DISPOSICION.search(bloque)
+    if m_disp:
+        resultado["fecha_concesion"] = _fecha_ddmmyyyy_a_iso(m_disp.group(1))
+        resultado["numero_disposicion"] = m_disp.group(2).strip()
+
+    m_vence = RE_VENCE.search(bloque)
+    if m_vence:
+        resultado["fecha_vencimiento_marca"] = _fecha_ddmmyyyy_a_iso(m_vence.group(1))
+
+    return resultado
+
+
+def consultar_resolucion(s: requests.Session, acta: str, timeout: int = 30) -> dict:
+    """Versión liviana de revisar_acta(), pensada para revisar_estado.py:
+    solo pide la página de /MarcasConsultas/Resultado y parsea la sección
+    RESOLUCIÓN — no toca Grilla Digital ni descarga el PDF del Formulario,
+    porque para actas ya cargadas eso ya se hizo (o no aplica). Devuelve
+    {estado_tramite, fecha_concesion, numero_disposicion,
+    fecha_vencimiento_marca, bloqueado} — bloqueado=True si el WAF de INPI
+    frenó la consulta (para reintentar en la próxima corrida, no como error
+    definitivo)."""
+    resultado = {
+        "estado_tramite": None, "fecha_concesion": None,
+        "numero_disposicion": None, "fecha_vencimiento_marca": None,
+        "bloqueado": False,
+    }
+    r = _get_con_reintentos(
+        lambda: s.post(
+            f"{BASE}/MarcasConsultas/Resultado",
+            headers={"Referer": f"{BASE}/MarcasConsultas/Grilla"},
+            data={"acta": acta},
+            timeout=timeout,
+        )
+    )
+    if "Web Page Blocked" in r.text or "Attack ID" in r.text:
+        resultado["bloqueado"] = True
+        return resultado
+    resultado.update(parsear_resolucion(r.text))
+    return resultado
+
+
 def revisar_acta(s: requests.Session, acta: str, timeout: int = 30) -> dict:
     """Devuelve {caracter, es_lead, email, email_apoderado, motivo_sin_email,
-    fecha_publicacion, tuvo_oposicion, detalle_oposicion}. Si algo falla,
-    devuelve es_lead=None para marcarlo como "no se pudo verificar" (en vez
-    de asumir por defecto que es lead). motivo_sin_email queda vacío cuando
-    sí hay email o cuando no aplica (tiene apoderado)."""
+    fecha_publicacion, tuvo_oposicion, detalle_oposicion, estado_tramite,
+    fecha_concesion, numero_disposicion, fecha_vencimiento_marca}. Si algo
+    falla, devuelve es_lead=None para marcarlo como "no se pudo verificar"
+    (en vez de asumir por defecto que es lead). motivo_sin_email queda
+    vacío cuando sí hay email o cuando no aplica (tiene apoderado)."""
     resultado = {
         "caracter": None, "es_lead": None, "email": "", "email_apoderado": "",
         "motivo_sin_email": "", "fecha_publicacion": None,
+        "estado_tramite": None, "fecha_concesion": None,
+        "numero_disposicion": None, "fecha_vencimiento_marca": None,
     }
     try:
         r = _get_con_reintentos(
@@ -217,6 +313,10 @@ def revisar_acta(s: requests.Session, acta: str, timeout: int = 30) -> dict:
                 resultado["cuit"] = cuit_encontrado
         # si no matchea o no parece un CUIT válido, no seteamos la clave: así
         # row.update(info) no pisa un cuit que ya venía de completar_mixtas.py
+
+        # RESOLUCIÓN está en esta misma página, para leads y no-leads por
+        # igual — se guarda siempre, sin costo de un request extra.
+        resultado.update(parsear_resolucion(r.text))
 
         if not resultado["es_lead"]:
             return resultado  # ya tiene apoderado/gestor, no hace falta el email
@@ -335,6 +435,10 @@ def main():
         row.setdefault("fecha_publicacion", "")
         row.setdefault("tuvo_oposicion", "")
         row.setdefault("detalle_oposicion", "")
+        row.setdefault("estado_tramite", "")
+        row.setdefault("fecha_concesion", "")
+        row.setdefault("numero_disposicion", "")
+        row.setdefault("fecha_vencimiento_marca", "")
         row.setdefault("lead_score", row.get("lead_score", 0))
 
     fieldnames = list(rows[0].keys())

@@ -52,8 +52,21 @@ ALTER TABLE marcas ADD COLUMN IF NOT EXISTS tuvo_oposicion BOOLEAN;
 ALTER TABLE marcas ADD COLUMN IF NOT EXISTS detalle_oposicion TEXT;
 ALTER TABLE marcas ADD COLUMN IF NOT EXISTS revisado_oposicion_en TIMESTAMPTZ;
 
+-- Agregado para el seguimiento del ciclo de vida de la marca ya concedida
+-- (ver scripts/revisar_estado.py): permite ofrecer vigilancia marcaria,
+-- avisar de la declaración jurada de uso (a los 5 años) y de la renovación
+-- (a los 10 años). estado_tramite/fecha_concesion/numero_disposicion vienen
+-- de la sección RESOLUCIÓN del expediente ("TIPO:" y "DISPOSICION:");
+-- fecha_vencimiento_marca viene directo de "VENCE:" (INPI ya calcula
+-- concesión + 10 años, no hace falta calcularlo nosotros).
+ALTER TABLE marcas ADD COLUMN IF NOT EXISTS estado_tramite TEXT;
+ALTER TABLE marcas ADD COLUMN IF NOT EXISTS fecha_concesion DATE;
+ALTER TABLE marcas ADD COLUMN IF NOT EXISTS numero_disposicion TEXT;
+ALTER TABLE marcas ADD COLUMN IF NOT EXISTS fecha_vencimiento_marca DATE;
+
 CREATE INDEX IF NOT EXISTS idx_marcas_boletin ON marcas(boletin);
 CREATE INDEX IF NOT EXISTS idx_marcas_es_lead ON marcas(es_lead);
 CREATE INDEX IF NOT EXISTS idx_marcas_titular ON marcas(titular);
 CREATE INDEX IF NOT EXISTS idx_marcas_contactado ON marcas(contactado);
 CREATE INDEX IF NOT EXISTS idx_marcas_fecha_publicacion ON marcas(fecha_publicacion);
+CREATE INDEX IF NOT EXISTS idx_marcas_estado_tramite ON marcas(estado_tramite);

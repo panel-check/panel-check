@@ -109,6 +109,20 @@ def migrar_columnas_panel():
             cur.execute(
                 "ALTER TABLE marcas ADD COLUMN IF NOT EXISTS revisado_oposicion_en TIMESTAMPTZ"
             )
+            # Estado del trámite (Concedida/Denegada/etc.) y fechas de la
+            # sección RESOLUCIÓN del expediente — ver revisar_estado.py.
+            cur.execute(
+                "ALTER TABLE marcas ADD COLUMN IF NOT EXISTS estado_tramite TEXT"
+            )
+            cur.execute(
+                "ALTER TABLE marcas ADD COLUMN IF NOT EXISTS fecha_concesion DATE"
+            )
+            cur.execute(
+                "ALTER TABLE marcas ADD COLUMN IF NOT EXISTS numero_disposicion TEXT"
+            )
+            cur.execute(
+                "ALTER TABLE marcas ADD COLUMN IF NOT EXISTS fecha_vencimiento_marca DATE"
+            )
         conn.commit()
 
 COLUMNAS_ORDENABLES = {
@@ -121,7 +135,8 @@ COLUMNAS_MARCA = """
     fecha_presentacion, fecha_publicacion, titular, pais, cuit, matricula_agente,
     caracter, es_lead, email, email_apoderado, lead_score, link,
     contactado, contactado_en, motivo_sin_email,
-    tuvo_oposicion, detalle_oposicion, revisado_oposicion_en
+    tuvo_oposicion, detalle_oposicion, revisado_oposicion_en,
+    estado_tramite, fecha_concesion, numero_disposicion, fecha_vencimiento_marca
 """
 
 RE_CUIT_VALIDO = re.compile(r"^\d{10,11}$")
@@ -151,6 +166,14 @@ CRONS_DEFINIDOS = [
                         "apareció una oposición de tercero o una vista de INPI.",
         "workflow_file": "revisar_oposiciones.yml",
         "cron": "0 10 * * *",
+    },
+    {
+        "nombre": "Revisión de estado del trámite",
+        "descripcion": "Para las marcas que todavía no tienen una resolución firme "
+                        "(ni Concedida ni Denegada), vuelve a mirar el expediente y guarda "
+                        "el estado, la fecha de concesión y el vencimiento apenas INPI resuelve.",
+        "workflow_file": "revisar_estado.yml",
+        "cron": "0 11 * * 1",
     },
 ]
 
@@ -439,13 +462,20 @@ def reintentar_email(acta: str, _: str = Depends(verificar_login)):
                     motivo_sin_email = %s, lead_score = %s,
                     cuit = COALESCE(%s, cuit),
                     fecha_publicacion = COALESCE(%s, fecha_publicacion),
+                    estado_tramite = COALESCE(%s, estado_tramite),
+                    fecha_concesion = COALESCE(%s, fecha_concesion),
+                    numero_disposicion = COALESCE(%s, numero_disposicion),
+                    fecha_vencimiento_marca = COALESCE(%s, fecha_vencimiento_marca),
                     actualizado_en = now()
                 WHERE acta = %s
                 """,
                 (
                     info["caracter"], info["es_lead"], info["email"] or None,
                     info["email_apoderado"] or None, info["motivo_sin_email"] or None,
-                    nuevo_score, info.get("cuit"), info.get("fecha_publicacion"), acta,
+                    nuevo_score, info.get("cuit"), info.get("fecha_publicacion"),
+                    info.get("estado_tramite"), info.get("fecha_concesion"),
+                    info.get("numero_disposicion"), info.get("fecha_vencimiento_marca"),
+                    acta,
                 ),
             )
         conn.commit()

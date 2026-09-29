@@ -43,6 +43,27 @@ function fmtFecha(f) {
   return f.split("T")[0].split(" ")[0];
 }
 
+// estado_tramite lo completa scripts/revisar_estado.py leyendo la sección
+// RESOLUCIÓN del expediente — null mientras el trámite sigue en curso
+// (examen de forma/fondo, publicación, oposición), no es un error. En el
+// dashboard compacto (index.html) no mostramos nada mientras está en
+// trámite (sería un badge gris en casi todas las filas, sin aportar nada);
+// en el detalle por titular sí conviene aclararlo (ver mostrarSinDato).
+function badgeEstadoTramite(row, mostrarSinDato = false) {
+  if (!row.estado_tramite) {
+    return mostrarSinDato ? '<span class="badge sin-dato">en trámite</span>' : "";
+  }
+  if (row.estado_tramite === "Concedida") {
+    const detalle = `Concedida el ${fmtFecha(row.fecha_concesion) || "?"}`
+      + (row.fecha_vencimiento_marca ? ` · vence ${fmtFecha(row.fecha_vencimiento_marca)}` : "");
+    return `<span class="tooltip badge-concedida">✓ CONCEDIDA<span class="globo">${detalle}</span></span>`;
+  }
+  if (row.estado_tramite === "Denegada") {
+    return '<span class="badge no-lead">DENEGADA</span>';
+  }
+  return `<span class="badge sin-dato">${row.estado_tramite}</span>`;
+}
+
 function fechaPublicacionOFallback(r) {
   // Preferimos fecha_publicacion (la real, de "Hoja Publicacion" en Grilla
   // Digital) — solo la tienen los leads ya verificados. Para el resto (sin

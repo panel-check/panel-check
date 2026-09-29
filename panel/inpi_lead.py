@@ -33,6 +33,49 @@ RE_CARACTER_SPAN = re.compile(r"CARACTER\s*:?\s*<span[^>]*>(.*?)</span>", re.S)
 # "CUIT: 20302361291" sin span. El <span> es opcional para cubrir ambos casos.
 RE_CUIT_SPAN = re.compile(r"CUIT\s*:?\s*(?:<span[^>]*>)?\s*([\d.\-]{6,})", re.S)
 
+# Ver el mismo comentario en validar_leads.py: sección RESOLUCIÓN, en la
+# misma página. VENCE ya viene calculado por INPI (concesión + 10 años).
+RE_RESOLUCION_BLOQUE = re.compile(r"RESOLUCI\wN.*?(?=DICT\wMENES|$)", re.S)
+RE_TIPO_RESOLUCION = re.compile(
+    r"TIPO\s*:?\s*(?:<span[^>]*>)?\s*([^<\n]+?)(?=\s+[A-ZÁÉÍÓÚÑ]{2,}\s*:|\s*<|\n|$)"
+)
+RE_DISPOSICION = re.compile(
+    r"DISPOSICION\s*:?\s*(?:<span[^>]*>)?\s*Fecha\s*:?\s*(?:<span[^>]*>)?\s*([\d/]+)"
+    r"\s*-\s*Numero\s*:?\s*(?:<span[^>]*>)?\s*([^\s<]+)",
+    re.S,
+)
+RE_VENCE = re.compile(r"VENCE\s*:?\s*(?:<span[^>]*>)?\s*([\d/]+)")
+
+
+def _fecha_ddmmyyyy_a_iso(valor: str):
+    m = re.match(r"^(\d{1,2})/(\d{1,2})/(\d{4})", valor.strip())
+    if not m:
+        return None
+    d, mes, anio = m.groups()
+    return f"{anio}-{mes.zfill(2)}-{d.zfill(2)}"
+
+
+def _parsear_resolucion(texto_pagina: str) -> dict:
+    resultado = {
+        "estado_tramite": None, "fecha_concesion": None,
+        "numero_disposicion": None, "fecha_vencimiento_marca": None,
+    }
+    m_bloque = RE_RESOLUCION_BLOQUE.search(texto_pagina)
+    if not m_bloque:
+        return resultado
+    bloque = m_bloque.group(0)
+    m_tipo = RE_TIPO_RESOLUCION.search(bloque)
+    if m_tipo:
+        resultado["estado_tramite"] = re.sub(r"\s+", " ", m_tipo.group(1)).strip()
+    m_disp = RE_DISPOSICION.search(bloque)
+    if m_disp:
+        resultado["fecha_concesion"] = _fecha_ddmmyyyy_a_iso(m_disp.group(1))
+        resultado["numero_disposicion"] = m_disp.group(2).strip()
+    m_vence = RE_VENCE.search(bloque)
+    if m_vence:
+        resultado["fecha_vencimiento_marca"] = _fecha_ddmmyyyy_a_iso(m_vence.group(1))
+    return resultado
+
 
 def _crear_sesion() -> requests.Session:
     s = requests.Session()
@@ -136,6 +179,8 @@ def revisar_acta(acta: str, timeout: int = 30) -> dict:
     resultado = {
         "caracter": None, "es_lead": None, "email": "", "email_apoderado": "",
         "motivo_sin_email": "", "fecha_publicacion": None,
+        "estado_tramite": None, "fecha_concesion": None,
+        "numero_disposicion": None, "fecha_vencimiento_marca": None,
     }
     try:
         r = _get_con_reintentos(
@@ -164,6 +209,8 @@ def revisar_acta(acta: str, timeout: int = 30) -> dict:
             cuit_encontrado = re.sub(r"[^\d]", "", m_cuit.group(1))
             if len(cuit_encontrado) in (10, 11):
                 resultado["cuit"] = cuit_encontrado
+
+        resultado.update(_parsear_resolucion(r.text))
 
         if not resultado["es_lead"]:
             return resultado

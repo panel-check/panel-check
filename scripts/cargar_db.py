@@ -129,6 +129,9 @@ def main():
                     -- se tocan acá a propósito: los administra únicamente
                     -- scripts/revisar_oposiciones.py. Si el pipeline reprocesa un
                     -- boletín viejo no debe pisar un resultado ya detectado.
+                    -- Mismo criterio para estado_tramite / fecha_concesion /
+                    -- numero_disposicion / fecha_vencimiento_marca: los administra
+                    -- únicamente scripts/revisar_estado.py.
                 """,
                 valores,
             )
