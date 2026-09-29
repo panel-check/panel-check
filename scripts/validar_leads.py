@@ -271,6 +271,94 @@ def parsear_formulario_oposicion(texto: str, acta_propia: str | None = None) -> 
     return resultado
 
 
+def buscar_marca_por_denominacion(s: "requests.Session", denominacion: str, clase: str = "", timeout: int = 30) -> list:
+    """Busca marcas por denominación (contiene) en la API JSON
+    GrillaMarcasAvanzada. Misma función que panel/inpi_lead.py (duplicada
+    a propósito, ver el comentario de ese archivo: Railway deploya solo
+    panel/, no tiene acceso a scripts/).
+
+    Ojo: esta API necesita la sesión/cookies de la página de "búsqueda
+    avanzada" puntual (Cod_Funcion=NQA0ADE) — la sesión de
+    /MarcasConsultas/Grilla (la que arma crear_sesion() para el resto del
+    pipeline) no alcanza, devuelve 0 resultados aunque el status sea 200.
+    Confirmado a mano el 29/09/2026."""
+    try:
+        s.get(f"{BASE}/marcasconsultas/busqueda/?Cod_Funcion=NQA0ADE", timeout=timeout)
+    except requests.RequestException:
+        pass
+    payload = {
+        "Tipo_Resolucion": "", "Clase": str(clase or ""),
+        "TipoBusquedaDenominacion": "1", "Denominacion": denominacion,
+        "Titular": "", "TipoBusquedaTitular": "0",
+        "Fecha_IngresoDesde": "", "Fecha_IngresoHasta": "",
+        "Fecha_ResolucionDesde": "", "Fecha_ResolucionHasta": "",
+        "vigentes": False, "limit": 20, "offset": 0,
+    }
+    try:
+        r = _get_con_reintentos(
+            lambda: s.post(
+                f"{BASE}/MarcasConsultas/GrillaMarcasAvanzada",
+                json=payload,
+                headers={
+                    "Referer": f"{BASE}/marcasconsultas/busqueda/?Cod_Funcion=NQA0ADE",
+                    "X-Requested-With": "XMLHttpRequest",
+                },
+                timeout=timeout,
+            )
+        )
+        data = r.json()
+    except (requests.RequestException, ValueError):
+        return []
+    return [
+        {
+            "acta": str(row.get("Acta", "")).strip(),
+            "denominacion": str(row.get("Denominacion", "")).strip(),
+            "clase": row.get("Clase"),
+            "numero_resolucion": str(row.get("Numero_Resolucion") or "").strip(),
+        }
+        for row in (data.get("rows") or [])[:20]
+    ]
+
+
+def resolver_marca_oponente(s: "requests.Session", detalle: dict) -> dict:
+    """Si parsear_marca_oponente solo pudo sacar denominación + número de
+    registro (sin ACTA directa en el fundamento), intenta resolverla a una
+    ACTA concreta buscando por denominación y comparando el número de
+    registro — para que el panel muestre un link directo ("Ver ficha",
+    igual que cuando el fundamento sí da la ACTA) en vez de un botón
+    "Buscar" que la persona tiene que resolver a mano.
+
+    Mejor esfuerzo, no modifica detalle si no hay una coincidencia clara:
+      - Prueba primero la denominación tal cual, y si no matchea ningún
+        número de registro, reintenta sin espacios (confirmado a mano:
+        "BALI STONE" con espacio no encontró nada en INPI, pero la
+        denominación puede estar cargada pegada — ver "BALISTONE") ni con
+        acentos (aplica lo mismo por consistencia, aunque no se confirmó
+        un caso real con acento).
+      - Solo reemplaza por una ACTA cuando hay EXACTAMENTE UNA fila cuyo
+        Numero_Resolucion (sin puntos) coincide con marca_oponente_numero_registro.
+        Con cero o más de una coincidencia, deja denominación/número como
+        estaban (la UI ofrece el botón "Buscar" para que la persona elija)."""
+    denominacion = detalle.get("marca_oponente_denominacion")
+    numero = detalle.get("marca_oponente_numero_registro")
+    if not denominacion or not numero or detalle.get("actas_marca_oponente"):
+        return detalle
+    candidatos_denominacion = [denominacion, re.sub(r"\s+", "", denominacion)]
+    for candidato in candidatos_denominacion:
+        filas = buscar_marca_por_denominacion(s, candidato)
+        coincidencias = [
+            f for f in filas
+            if f.get("numero_resolucion") and f["numero_resolucion"].replace(".", "") == numero
+        ]
+        if len(coincidencias) == 1:
+            nuevo = dict(detalle)
+            nuevo.pop("marca_oponente_denominacion", None)
+            nuevo.pop("marca_oponente_numero_registro", None)
+            nuevo["actas_marca_oponente"] = coincidencias[0]["acta"]
+            return nuevo
+    return detalle
+
+
 def descargar_formulario_oposicion(
     s: "requests.Session", archivos: list[dict], fila_opo: dict,
     acta_propia: str | None = None, timeout: int = 30,
@@ -331,7 +419,8 @@ def descargar_formulario_oposicion(
     except Exception:
         return {}
     texto_plano = re.sub(r"\s+", " ", texto).strip()
-    return parsear_formulario_oposicion(texto_plano, acta_propia)
+    detalle = parsear_formulario_oposicion(texto_plano, acta_propia)
+    return resolver_marca_oponente(s, detalle)
 
 
 # A veces el campo Fecha no viene como texto "DD/MM/YYYY" sino en el formato

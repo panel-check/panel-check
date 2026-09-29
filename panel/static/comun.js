@@ -85,6 +85,16 @@ function cerrarModalOposicion() {
   if (modal) modal.classList.remove("abierto");
 }
 
+function _fechaDeDetalleCrudo(detalle) {
+  // detalle_oposicion viene como "fecha - Indice - Referencia", con la
+  // fecha en formato .NET /Date(ms)/ tal cual la devuelve Grilla Digital.
+  const m = /Date\((-?\d+)/.exec(detalle || "");
+  if (!m) return "";
+  const d = new Date(parseInt(m[1], 10));
+  if (isNaN(d.getTime())) return "";
+  return d.toLocaleDateString("es-AR");
+}
+
 function abrirModalOposicion(acta) {
   const row = window._filasOposicion[acta];
   if (!row) return;
@@ -96,16 +106,31 @@ function abrirModalOposicion(acta) {
   const identificacion = [doc, cuit].filter(Boolean).join(" · ");
 
   const contenido = document.getElementById("modal-oposicion-contenido");
-  contenido.innerHTML = `
-    <h3>⚠ Oposición — acta ${_escapeHtml(row.acta)}</h3>
-    ${row.oponente_nombre ? `<p class="mo-oponente"><strong>${_escapeHtml(row.oponente_nombre)}</strong>${identificacion ? ` <span class="mo-doc">(${_escapeHtml(identificacion)})</span>` : ""}</p>` : ""}
-    ${row.fundamento_oposicion
-      ? `<p class="mo-fundamento">${_escapeHtml(row.fundamento_oposicion)}</p>`
-      : `<p class="mo-fundamento">${_escapeHtml(row.detalle_oposicion) || "Sin más detalle disponible."}</p>`}
-    <div id="mo-marca-oponente">Buscando la marca del oponente…</div>
-  `;
+  let cuerpo;
+  if (row.oponente_nombre || row.fundamento_oposicion) {
+    cuerpo = `
+      ${row.oponente_nombre ? `<p class="mo-oponente"><strong>${_escapeHtml(row.oponente_nombre)}</strong>${identificacion ? ` <span class="mo-doc">(${_escapeHtml(identificacion)})</span>` : ""}</p>` : ""}
+      ${row.fundamento_oposicion ? `<p class="mo-fundamento">${_escapeHtml(row.fundamento_oposicion)}</p>` : ""}
+      <div id="mo-marca-oponente">Buscando la marca del oponente…</div>
+    `;
+  } else {
+    // No se pudo bajar/parsear el Formulario de esta oposición (pasa en
+    // algunos trámites que no lo listan aparte en Grilla Digital — ver
+    // manual). Mostramos lo poco que sabemos, en texto legible, y un link
+    // para que la persona lo confirme a mano en INPI en vez de dejar el
+    // popup vacío.
+    const fecha = _fechaDeDetalleCrudo(row.detalle_oposicion);
+    cuerpo = `
+      <p class="mo-fundamento">No se pudo obtener el detalle completo (oponente y fundamento) de esta oposición —
+      el trámite no tiene un Formulario propio listado en Grilla Digital, o no se pudo descargar.
+      ${fecha ? `Se detectó un ingreso de "Opo. de Marcas" el ${fecha}.` : ""}</p>
+      <a class="link-acta" href="javascript:void(0)" onclick="abrirActa('${row.acta}')">Ver expediente completo en INPI ↗</a>
+    `;
+  }
+
+  contenido.innerHTML = `<h3>⚠ Oposición — acta ${_escapeHtml(row.acta)}</h3>${cuerpo}`;
   document.getElementById("modal-oposicion").classList.add("abierto");
-  _renderMarcaOponente(row);
+  if (row.oponente_nombre || row.fundamento_oposicion) _renderMarcaOponente(row);
 }
 
 function _renderMarcaOponente(row) {
