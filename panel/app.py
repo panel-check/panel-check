@@ -6,14 +6,17 @@ Backend chiquito (FastAPI) que se conecta a la misma Postgres del pipeline
 prospección, y para marcar leads como "contactado" (el pipeline nunca toca
 esa columna, es exclusiva del panel).
 
-Login: HTTP Basic simple, un solo usuario (PANEL_USER / PANEL_PASSWORD por
-variable de entorno). No es para datos súper sensibles, es para no dejar el
-link completamente abierto.
+Login: HTTP Basic simple, con uno o varios usuarios. No es para datos súper
+sensibles, es para no dejar el link completamente abierto.
 
 Variables de entorno requeridas:
     DATABASE_URL    - la misma que usa cargar_db.py
-    PANEL_USER      - usuario para el login
-    PANEL_PASSWORD  - clave para el login
+    PANEL_USER      - usuario para el login (modo de un solo usuario)
+    PANEL_PASSWORD  - clave para el login (modo de un solo usuario)
+    PANEL_USERS     - opcional, para varios usuarios a la vez: pares
+                      "usuario:clave" separados por coma, ej.
+                      "pamela:pame20@26,tomasbott:Coderhouse21@"
+                      (se suma a PANEL_USER/PANEL_PASSWORD si también están)
 
 Correr local:
     DATABASE_URL=... PANEL_USER=admin PANEL_PASSWORD=... uvicorn app:app --reload
@@ -35,13 +38,32 @@ from fastapi.staticfiles import StaticFiles
 import inpi_lead
 
 DATABASE_URL = os.environ.get("DATABASE_URL")
-PANEL_USER = os.environ.get("PANEL_USER", "admin")
+PANEL_USER = os.environ.get("PANEL_USER")
 PANEL_PASSWORD = os.environ.get("PANEL_PASSWORD")
+PANEL_USERS_RAW = os.environ.get("PANEL_USERS", "")
 
 if not DATABASE_URL:
     raise RuntimeError("Falta la variable de entorno DATABASE_URL")
-if not PANEL_PASSWORD:
-    raise RuntimeError("Falta la variable de entorno PANEL_PASSWORD")
+
+# Usuarios habilitados para entrar al panel: {usuario: clave}. Se puede definir
+# un solo usuario (PANEL_USER/PANEL_PASSWORD) y/o varios a la vez (PANEL_USERS,
+# pares "usuario:clave" separados por coma) — ambos se combinan.
+USUARIOS_PANEL: dict[str, str] = {}
+if PANEL_USER and PANEL_PASSWORD:
+    USUARIOS_PANEL[PANEL_USER] = PANEL_PASSWORD
+for par in PANEL_USERS_RAW.split(","):
+    par = par.strip()
+    if not par:
+        continue
+    usuario, _, clave = par.partition(":")
+    if usuario and clave:
+        USUARIOS_PANEL[usuario] = clave
+
+if not USUARIOS_PANEL:
+    raise RuntimeError(
+        "No hay ningún usuario configurado: definí PANEL_USER + PANEL_PASSWORD "
+        "y/o PANEL_USERS"
+    )
 
 app = FastAPI(title="Panel de leads — Kom Marcas Inpi")
 security = HTTPBasic()
@@ -100,9 +122,11 @@ RE_CUIT_VALIDO = re.compile(r"^\d{10,11}$")
 
 
 def verificar_login(credenciales: HTTPBasicCredentials = Depends(security)) -> str:
-    usuario_ok = secrets.compare_digest(credenciales.username, PANEL_USER)
-    clave_ok = secrets.compare_digest(credenciales.password, PANEL_PASSWORD)
-    if not (usuario_ok and clave_ok):
+    clave_esperada = USUARIOS_PANEL.get(credenciales.username)
+    # comparación en tiempo constante incluso cuando el usuario no existe,
+    # para no filtrar por timing qué usuarios son válidos
+    clave_ok = secrets.compare_digest(credenciales.password, clave_esperada or "")
+    if clave_esperada is None or not clave_ok:
         raise HTTPException(
             status_code=401,
             detail="Usuario o clave incorrectos",
