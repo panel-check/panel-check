@@ -8,6 +8,19 @@ async function api(path, opciones = {}) {
   return r.json();
 }
 
+const TIPOS_MARCA = {
+  D: "Denominativa",
+  M: "Mixta",
+  F: "Figurativa",
+  T: "Tridimensional",
+};
+
+function tipoLegible(tipo) {
+  if (!tipo) return "";
+  const letra = tipo.trim().toUpperCase();
+  return TIPOS_MARCA[letra] || tipo;
+}
+
 function badgeLead(row) {
   if (row.es_lead === true) return '<span class="badge lead">LEAD</span>';
   if (row.es_lead === false) return `<span class="badge no-lead">${row.caracter || "con agente"}</span>`;
