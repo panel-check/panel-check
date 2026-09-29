@@ -2,15 +2,21 @@ name: Reintentar marcas sin verificar
 
 on:
   schedule:
-    # Cada 30 minutos, en lotes de 50 (ver "limit" del step de abajo) — antes
-    # corría una sola vez por día procesando TODO el pendiente de una, lo que
-    # además de tardar mucho (864 marcas x 2s = casi 30 min de un saque)
-    # dejaba todo el "reintento" librado a un único intento diario. En lotes
-    # más chicos y frecuentes, una marca bloqueada por el WAF en un lote
-    # tiene más oportunidades de resolverse en el día, y el progreso se ve
-    # bajar de a poco en /crons ("Pendientes ahora") en vez de solo una vez
-    # por día.
-    - cron: "0,30 * * * *"
+    # Cada 2 horas (antes cada 30 min), en lotes de 50 (ver "limit" del step
+    # de abajo) — antes corría una sola vez por día procesando TODO el
+    # pendiente de una, lo que además de tardar mucho (864 marcas x 2s =
+    # casi 30 min de un saque) dejaba todo el "reintento" librado a un único
+    # intento diario. En lotes más chicos y frecuentes, una marca bloqueada
+    # por el WAF en un lote tiene más oportunidades de resolverse en el día,
+    # y el progreso se ve bajar de a poco en /crons ("Pendientes ahora") en
+    # vez de solo una vez por día.
+    #
+    # Bajado de cada 30 min a cada 2 horas el 29/09/2026: era, junto con
+    # verificar_despliegue, la mayor parte del consumo de minutos de Actions
+    # (48 corridas/día x varios minutos cada una). Sigue dando 12
+    # oportunidades de reintento por día en vez de 48 — de sobra para un
+    # bloqueo temporal del WAF, que se resuelve en minutos/horas, no días.
+    - cron: "0 0,2,4,6,8,10,12,14,16,18,20,22 * * *"
   workflow_dispatch:
     inputs:
       limit:

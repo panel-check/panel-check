@@ -2,10 +2,16 @@ name: Verificar despliegue
 
 on:
   schedule:
-    # Cada 15 minutos — barato (dos requests HTTP, nada de INPI ni de la
-    # base) y así un deploy atascado en Railway se nota en /crons en minutos,
-    # no cuando alguien lo pesca a mano en una captura.
-    - cron: "0,15,30,45 * * * *"
+    # Cada hora (antes cada 15 min) — GitHub Actions factura por minuto
+    # SIEMPRE redondeando para arriba, así que aunque esta corrida tarde
+    # ~15s, cada una cuesta 1 minuto facturado igual. A cada 15 min salía
+    # ~2.880 min/mes solo este workflow (96 corridas/día x 1 min), más de
+    # lo que da el plan free de un repo privado (2.000 min/mes). A cada
+    # hora sigue detectando un deploy atascado el mismo día (24
+    # corridas/día, ~720 min/mes), solo que en vez de enterarnos en 15 min
+    # tardamos hasta 1 hora — aceptable para algo que no es urgente al
+    # segundo. Ver 29/09/2026.
+    - cron: "0 * * * *"
   workflow_dispatch: {}
 
 permissions:
