@@ -93,6 +93,15 @@ def main():
     titularidad = _bloque_seccion(r.text, "TITULARIDAD")
     m_clase = re.search(r"CLASE:\s*(\d+)", titularidad)
 
+    # El nombre real del titular está en un <label class="input"> aparte,
+    # como "NOMBRE: <span class="text-danger"> BOTTERO TOMAS 100.00%</span>"
+    # (el % es el porcentaje de titularidad, no parte del nombre). Confirmado
+    # a mano contra esta misma acta — no tan probado como CARACTER/CUIT.
+    m_nombre = re.search(
+        r"NOMBRE\s*:?\s*(?:<span[^>]*>)?\s*([^<]+?)\s*[\d.]+\s*%", r.text
+    )
+    titular_nombre = re.sub(r"\s+", " ", m_nombre.group(1)).strip() if m_nombre else None
+
     denominacion = m_denom.group(1).strip() if m_denom else None
     tipo_legible = m_tipo.group(1).strip() if m_tipo else None
     tipo = TIPOS_MARCA_INVERSO.get(tipo_legible)
@@ -100,7 +109,8 @@ def main():
     clase = int(m_clase.group(1)) if m_clase else None
 
     print(f"::notice::Datos a insertar acta {acta}: denominacion={denominacion!r} tipo={tipo!r} "
-          f"clase={clase} fecha_presentacion={fecha_presentacion} cuit={cuit} resolucion={resolucion}")
+          f"clase={clase} fecha_presentacion={fecha_presentacion} cuit={cuit} "
+          f"titular={titular_nombre!r} resolucion={resolucion}")
 
     if not denominacion:
         print(f"::error::no se pudo extraer la denominación de DATOS GENERALES, no se inserta nada")
@@ -122,6 +132,7 @@ def main():
                 %(estado_tramite)s, %(fecha_concesion)s, %(numero_disposicion)s, %(fecha_vencimiento_marca)s
             )
             ON CONFLICT (acta) DO UPDATE SET
+                titular = EXCLUDED.titular,
                 estado_tramite = EXCLUDED.estado_tramite,
                 fecha_concesion = EXCLUDED.fecha_concesion,
                 numero_disposicion = EXCLUDED.numero_disposicion,
@@ -131,10 +142,10 @@ def main():
             {
                 "acta": acta, "clase": clase, "tipo": tipo, "denominacion": denominacion,
                 "fecha_presentacion": fecha_presentacion,
-                # Placeholder explícito: no se pudo ubicar el nombre real del
-                # titular en esta página (ver docstring). Mejor esto que
-                # dejarlo vacío sin explicación en el panel.
-                "titular": "(titular a confirmar manualmente)",
+                # Placeholder explícito solo si no se pudo ubicar el nombre
+                # real (ver regex de NOMBRE arriba) — mejor esto que dejarlo
+                # vacío sin explicación en el panel.
+                "titular": titular_nombre or "(titular a confirmar manualmente)",
                 "cuit": cuit, "link": f"{BASE}/MarcasConsultas/Resultado?acta={acta}",
                 "estado_tramite": resolucion["estado_tramite"],
                 "fecha_concesion": resolucion["fecha_concesion"],
