@@ -108,7 +108,10 @@ def main():
                 ) VALUES %s
                 ON CONFLICT (acta) DO UPDATE SET
                     denominacion_inpi = EXCLUDED.denominacion_inpi,
-                    cuit = EXCLUDED.cuit,
+                    -- No pisar un CUIT que ya teníamos con NULL si esta corrida
+                    -- no lo pudo encontrar (webservice de INPI es flaky, o esta
+                    -- fila no es M/F y nunca intenta buscarlo).
+                    cuit = COALESCE(EXCLUDED.cuit, marcas.cuit),
                     matricula_agente = EXCLUDED.matricula_agente,
                     caracter = EXCLUDED.caracter,
                     es_lead = EXCLUDED.es_lead,

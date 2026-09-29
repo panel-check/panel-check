@@ -14,6 +14,7 @@ SKILL.md), donde no conviene golpear el webservice de INPI en paralelo.
 
 import argparse
 import csv
+import re
 import subprocess
 import sys
 import time
@@ -120,9 +121,12 @@ def completar(rows: list[dict], workers: int = 8, delay: float = 0.0) -> tuple[l
         if match:
             r["denominacion_inpi"] = match.get("Denominacion", "")
             titulares_raw = match.get("Titulares", "")
-            # el campo Titulares trae "CUIT    NOMBRE   PORCENTAJE%"
-            cuit = titulares_raw.strip().split()[0] if titulares_raw.strip() else ""
-            r["cuit"] = cuit
+            # el campo Titulares trae "CUIT    NOMBRE   PORCENTAJE%". A veces
+            # el webservice devuelve "0" en vez de vacío cuando no tiene el
+            # CUIT del titular registrado — lo tratamos igual que vacío en
+            # vez de guardar "0" como si fuera un CUIT real.
+            cuit_bruto = titulares_raw.strip().split()[0] if titulares_raw.strip() else ""
+            r["cuit"] = cuit_bruto if re.match(r"^\d{10,11}$", cuit_bruto) else ""
             if match.get("Denominacion"):
                 completados += 1
         else:
