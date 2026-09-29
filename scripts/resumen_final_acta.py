@@ -46,11 +46,16 @@ def main():
         # Ventana grande hacia atrás: el bloque TITULARIDAD tiene varios
         # <label class="input"> antes del de CUIT (PAIS, TIPO, y el nombre
         # debería estar entre ellos) — 700 no alcanzó, probamos con 1800.
-        inicio = max(0, i - 1800)
+        inicio = max(0, i - 3400)
         crudo = html[inicio:i + 50].replace("\n", " ")
         crudo = re.sub(r"\s+", " ", crudo)
         crudo = re.sub(r"<(?!label|/label|span|/span)[^>]*>", "", crudo)  # solo dejamos label/span
-        print(f"::notice::HTML antes del CUIT @{i}: {crudo[-950:]}")
+        # Ya sabemos que TIPO DNI/DNI/GENERO/PAIS/CUIT están inmediatamente
+        # antes; el nombre debería estar un poco más atrás todavía (encabezado
+        # del titular). Mandamos el tramo justo ANTES de "TIPO DNI".
+        idx_tipo_dni = crudo.find("TIPO DNI")
+        tramo = crudo[:idx_tipo_dni] if idx_tipo_dni != -1 else crudo
+        print(f"::notice::HTML justo antes de TIPO DNI: {tramo[-950:]}")
 
 
 if __name__ == "__main__":
