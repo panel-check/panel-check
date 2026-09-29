@@ -209,9 +209,24 @@ RE_GRUPO_ACTAS = re.compile(
     re.IGNORECASE,
 )
 RE_NUMERO_EN_GRUPO_ACTAS = re.compile(r"(\d{5,8})\s*\(clase", re.IGNORECASE)
+# "identificada en las actas de referencia 4277865" (acta 4757941, confirmado
+# 29/09/2026) — misma idea que ACTA N° pero sin el "N°", con "de referencia".
+# También cubre varias separadas por coma/"y": "actas de referencia X, Y y Z".
+RE_ACTA_REFERENCIA = re.compile(
+    r"actas?\s+de\s+referencia\s*(\d{5,8}(?:\s*[,y]\s*\d{5,8})*)", re.IGNORECASE
+)
 RE_MARCA_OPONENTE_COMILLAS = re.compile(r'["“]([^"”]{2,60})["”]\s*Nro\.?\s*([\d.]{4,})')
 RE_MARCA_OPONENTE_REG = re.compile(
     r"\b([A-ZÁÉÍÓÚÑ][A-ZÁÉÍÓÚÑ0-9]*(?:\s+[A-ZÁÉÍÓÚÑ][A-ZÁÉÍÓÚÑ0-9]*){0,4})\s+Reg\.?\s*Nr\.?\s*([\d.]{4,})"
+)
+# "...con las marcas "$ ARGENFEST TE HACE FELIZ", Registros Nº 3687367,
+# 3687368 y 3687369..." (acta 4760629, confirmado 29/09/2026) — variante de
+# RE_MARCA_OPONENTE_COMILLAS con "Registro(s)" en vez de "Nro." pegado a la
+# marca, y plural ("las marcas" en vez de "mi marca"); solo tomamos el
+# primer número de la lista, igual que con RE_GRUPO_ACTAS.
+RE_MARCA_OPONENTE_REGISTROS = re.compile(
+    r'["“]([^"”]{2,60})["”][^"0-9]{0,40}?Registro?s?\.?\s*N?[°ºo]?\.?\s*([\d.]{4,})',
+    re.IGNORECASE,
 )
 
 
@@ -234,10 +249,19 @@ def parsear_marca_oponente(fundamento: str, acta_propia: str | None = None) -> d
             acta = m.group(1)
             if acta != acta_propia and acta not in actas:
                 actas.append(acta)
+    m_ref = RE_ACTA_REFERENCIA.search(fundamento)
+    if m_ref:
+        for acta in re.findall(r"\d{5,8}", m_ref.group(1)):
+            if acta != acta_propia and acta not in actas:
+                actas.append(acta)
     if actas:
         return {"actas_marca_oponente": ",".join(actas)}
 
-    m = RE_MARCA_OPONENTE_COMILLAS.search(fundamento) or RE_MARCA_OPONENTE_REG.search(fundamento)
+    m = (
+        RE_MARCA_OPONENTE_COMILLAS.search(fundamento)
+        or RE_MARCA_OPONENTE_REG.search(fundamento)
+        or RE_MARCA_OPONENTE_REGISTROS.search(fundamento)
+    )
     if m:
         return {
             "marca_oponente_denominacion": m.group(1).strip(),
