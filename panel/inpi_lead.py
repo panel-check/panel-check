@@ -96,15 +96,34 @@ def _detectar_oposicion(archivos: list) -> tuple:
     return False, ""
 
 
+# Ver el mismo comentario en validar_leads.py: el campo Fecha no siempre
+# viene como "DD/MM/YYYY" — a veces viene en un formato de fecha .NET con
+# los milisegundos desde 1970 dentro de "Date(...)".
+_RE_FECHA_DOTNET = re.compile(r"Date\((-?\d+)")
+
+
+def _parsear_fecha_grilla(valor: str):
+    m_dotnet = _RE_FECHA_DOTNET.search(valor)
+    if m_dotnet:
+        try:
+            import datetime as _dt
+
+            ms = int(m_dotnet.group(1))
+            return _dt.datetime.fromtimestamp(ms / 1000, tz=_dt.timezone.utc).date().isoformat()
+        except (ValueError, OverflowError, OSError):
+            return None
+    m_ddmmyyyy = re.match(r"^(\d{1,2})/(\d{1,2})/(\d{4})$", valor.strip())
+    if not m_ddmmyyyy:
+        return None  # formato inesperado: mejor None que adivinar mal
+    d, m, y = m_ddmmyyyy.groups()
+    return f"{y}-{m.zfill(2)}-{d.zfill(2)}"
+
+
 def _fecha_publicacion_de_archivos(archivos: list):
     fila = next((a for a in archivos if a.get("Indice") == "Hoja Publicacion"), None)
     if not fila or not fila.get("Fecha"):
         return None
-    try:
-        d, m, y = fila["Fecha"].split("/")
-        return f"{y}-{m.zfill(2)}-{d.zfill(2)}"
-    except (ValueError, AttributeError):
-        return None
+    return _parsear_fecha_grilla(fila["Fecha"])
 
 
 def revisar_acta(acta: str, timeout: int = 30) -> dict:

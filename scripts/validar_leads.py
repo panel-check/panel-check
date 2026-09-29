@@ -138,6 +138,32 @@ def detectar_oposicion(archivos: list[dict]) -> tuple[bool, str]:
     return False, ""
 
 
+# A veces el campo Fecha no viene como texto "DD/MM/YYYY" sino en el formato
+# de fecha .NET clásico de ASP.NET AJAX, con variaciones raras vistas en la
+# práctica (ej. "-Date(1790132400000)-00" en vez del clásico "/Date(...)/"):
+# lo que importa es el número de milisegundos desde 1970 dentro de "Date(...)".
+RE_FECHA_DOTNET = re.compile(r"Date\((-?\d+)")
+
+
+def _parsear_fecha_grilla(valor: str) -> str | None:
+    """Convierte el campo Fecha de un archivo de Grilla Digital (string
+    "DD/MM/YYYY" o fecha .NET "Date(ms_desde_epoch)") a ISO (YYYY-MM-DD)."""
+    m_dotnet = RE_FECHA_DOTNET.search(valor)
+    if m_dotnet:
+        try:
+            import datetime as _dt
+
+            ms = int(m_dotnet.group(1))
+            return _dt.datetime.fromtimestamp(ms / 1000, tz=_dt.timezone.utc).date().isoformat()
+        except (ValueError, OverflowError, OSError):
+            return None
+    m_ddmmyyyy = re.match(r"^(\d{1,2})/(\d{1,2})/(\d{4})$", valor.strip())
+    if not m_ddmmyyyy:
+        return None  # formato inesperado: mejor None que adivinar mal
+    d, m, y = m_ddmmyyyy.groups()
+    return f"{y}-{m.zfill(2)}-{d.zfill(2)}"
+
+
 def fecha_publicacion_de_archivos(archivos: list[dict]) -> str | None:
     """Busca la fila 'Hoja Publicacion' en Grilla Digital y devuelve su
     fecha en formato ISO (YYYY-MM-DD) para guardar en la base, o None si no
@@ -145,11 +171,7 @@ def fecha_publicacion_de_archivos(archivos: list[dict]) -> str | None:
     fila = next((a for a in archivos if a.get("Indice") == "Hoja Publicacion"), None)
     if not fila or not fila.get("Fecha"):
         return None
-    try:
-        d, m, y = fila["Fecha"].split("/")
-        return f"{y}-{m.zfill(2)}-{d.zfill(2)}"
-    except (ValueError, AttributeError):
-        return None
+    return _parsear_fecha_grilla(fila["Fecha"])
 
 
 def revisar_acta(s: requests.Session, acta: str, timeout: int = 30) -> dict:
