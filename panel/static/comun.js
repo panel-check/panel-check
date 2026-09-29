@@ -151,11 +151,13 @@ function _renderMarcaOponente(row) {
   // fundamento (sin ACTA propia) — hay que buscarla. Mejor esfuerzo: no
   // siempre encuentra el registro exacto (el nombre en el texto legal
   // puede tener espaciado distinto al cargado en INPI), así que mostramos
-  // la lista completa de resultados y que la persona elija.
+  // la lista completa de resultados y que la persona elija. Se dispara
+  // sola al abrir el popup (antes había que apretar un botón "Buscar" —
+  // reportado como confuso/no funcional el 29/09/2026, la persona
+  // esperaba el mismo comportamiento directo que con actas_marca_oponente);
+  // el botón de reintentar queda como respaldo si la búsqueda falla.
   if (row.marca_oponente_denominacion) {
-    cont.innerHTML = `<button type="button" onclick="_buscarMarcaOponente('${_escapeHtml(row.marca_oponente_denominacion)}', '${_escapeHtml(row.marca_oponente_numero_registro || "")}')">
-      🔍 Buscar "${_escapeHtml(row.marca_oponente_denominacion)}" en INPI
-    </button>`;
+    _buscarMarcaOponente(row.marca_oponente_denominacion, row.marca_oponente_numero_registro || "");
     return;
   }
 
@@ -181,7 +183,7 @@ async function _buscarMarcaOponente(denominacion, numeroBuscado) {
         </div>`;
       }).join("");
   } catch (e) {
-    cont.innerHTML = `No se pudo buscar (${e.message}).`;
+    cont.innerHTML = `No se pudo buscar (${e.message}). <button type="button" onclick="_buscarMarcaOponente('${_escapeHtml(denominacion)}', '${_escapeHtml(numeroBuscado)}')">Reintentar</button>`;
   }
 }
 
