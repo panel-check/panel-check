@@ -155,10 +155,13 @@ def main():
 
             if tuvo_oposicion:
                 con_oposicion += 1
-                extra = f" (oponente: {detalle_rico['oponente_nombre']})" if detalle_rico.get("oponente_nombre") else ""
-                print(f"  [{i}/{len(pendientes)}] acta {acta} ({fila['titular']}): CON OPOSICIÓN/VISTA — {detalle}{extra}")
+                # No se imprime el titular ni el detalle/oponente: son datos
+                # personales de terceros (nombre, CUIT/DNI, fundamento) que no
+                # deben quedar en los logs de Actions (repo público). Sí se
+                # siguen guardando en la base (UPDATE de arriba), sin cambios.
+                print(f"  [{i}/{len(pendientes)}] acta {acta}: CON OPOSICIÓN/VISTA")
             else:
-                print(f"  [{i}/{len(pendientes)}] acta {acta} ({fila['titular']}): sin oposición")
+                print(f"  [{i}/{len(pendientes)}] acta {acta}: sin oposición")
 
             time.sleep(args.delay)
 

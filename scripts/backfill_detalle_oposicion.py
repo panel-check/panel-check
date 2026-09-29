@@ -105,10 +105,14 @@ def main():
                     )
                 conn.commit()
                 completadas += 1
-                print(f"::notice::  [{i}/{len(pendientes)}] acta {acta} ({fila['titular']}): completado — oponente {detalle_rico.get('oponente_nombre')}")
+                # No se imprime el titular ni el oponente: datos personales
+                # de terceros que no deben quedar en los logs (repo
+                # público). Se siguen guardando en la base (UPDATE de
+                # arriba) sin cambios.
+                print(f"::notice::  [{i}/{len(pendientes)}] acta {acta}: completado")
             else:
                 conn.commit()
-                print(f"::notice::  [{i}/{len(pendientes)}] acta {acta} ({fila['titular']}): no se pudo bajar/parsear el Formulario")
+                print(f"::notice::  [{i}/{len(pendientes)}] acta {acta}: no se pudo bajar/parsear el Formulario")
 
             time.sleep(args.delay)
 

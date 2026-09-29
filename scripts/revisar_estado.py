@@ -99,7 +99,7 @@ def main():
 
             if not info["estado_tramite"]:
                 sin_resolucion_aun += 1
-                print(f"  [{i}/{len(pendientes)}] acta {acta} ({fila['titular']}): todavía sin RESOLUCIÓN")
+                print(f"  [{i}/{len(pendientes)}] acta {acta}: todavía sin RESOLUCIÓN")
                 conn.commit()  # ídem: cerrar la transacción aunque no haya cambios
                 time.sleep(args.delay)
                 continue
@@ -125,7 +125,10 @@ def main():
                 concedidas += 1
             elif info["estado_tramite"] == "Denegada":
                 denegadas += 1
-            print(f"  [{i}/{len(pendientes)}] acta {acta} ({fila['titular']}): {info['estado_tramite']}"
+            # No se imprime el titular: dato personal de terceros que no
+            # debe quedar en los logs (repo público). Se sigue guardando en
+            # la base (UPDATE de arriba) sin cambios.
+            print(f"  [{i}/{len(pendientes)}] acta {acta}: {info['estado_tramite']}"
                   f" (concesión {info['fecha_concesion']}, vence {info['fecha_vencimiento_marca']})")
 
             time.sleep(args.delay)

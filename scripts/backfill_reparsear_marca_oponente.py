@@ -45,7 +45,7 @@ def main():
             acta = fila["acta"]
             detalle = parsear_marca_oponente(fila["fundamento_oposicion"], acta_propia=acta)
             if not detalle:
-                print(f"::notice::  [{i}/{len(pendientes)}] acta {acta} ({fila['titular']}): sigue sin match reconocible")
+                print(f"::notice::  [{i}/{len(pendientes)}] acta {acta}: sigue sin match reconocible")
                 conn.commit()  # commit "vacío" — ver revisar_estado.py
                 continue
             detalle = resolver_marca_oponente(s, detalle)
@@ -66,7 +66,11 @@ def main():
                 )
             conn.commit()
             resueltas += 1
-            print(f"::notice::  [{i}/{len(pendientes)}] acta {acta} ({fila['titular']}): {detalle}")
+            # No se imprime el titular (dato personal de terceros); el
+            # detalle de la marca oponente sí se imprime porque es
+            # información de una marca (denominación/número de registro),
+            # no datos personales.
+            print(f"::notice::  [{i}/{len(pendientes)}] acta {acta}: {detalle}")
 
         print(f"::notice::Revisadas: {len(pendientes)}. Con marca oponente reconocida ahora: {resueltas}.")
     finally:

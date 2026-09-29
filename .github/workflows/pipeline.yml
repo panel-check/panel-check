@@ -67,22 +67,25 @@ jobs:
         run: |
           python3 scripts/parse_boletin.py --text-dir data/textos --out-dir data/csv
 
-      - name: Diagnóstico — muestra de texto y filas parseadas
+      - name: Diagnóstico — tamaños de archivos generados (sin contenido)
+        # Antes volcaba a los logs las primeras líneas de cada CSV (titular,
+        # CUIT, email de terceros) y un extracto del texto crudo del PDF del
+        # boletín (que también trae esos mismos datos). Se sacó el
+        # 29/09/2026: en un repo público esos logs quedan visibles para
+        # cualquiera. Para inspeccionar el contenido real sigue estando el
+        # artifact "resultados-boletines" (paso de más abajo), que no es
+        # público — solo lo puede bajar quien tiene acceso al repo.
         if: always()
         run: |
           shopt -s nullglob
           if [ -f data/textos/_debug_apify_response.json ]; then
-            echo "=== respuesta cruda de Apify (resumen) ==="
-            cat data/textos/_debug_apify_response.json
+            echo "=== respuesta cruda de Apify: $(wc -c < data/textos/_debug_apify_response.json) bytes ==="
           fi
           for t in data/textos/*_text.txt; do
             echo "=== $t: $(wc -c < "$t") caracteres ==="
-            head -c 1500 "$t"
-            echo
           done
           for c in data/csv/*.csv; do
             echo "=== $c: $(wc -l < "$c") líneas ==="
-            head -5 "$c"
           done
           echo "diagnóstico completo (no falla el job)"
 

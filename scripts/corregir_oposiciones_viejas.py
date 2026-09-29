@@ -76,12 +76,15 @@ def main():
             fecha_pub = fila["fecha_publicacion"].isoformat() if fila["fecha_publicacion"] else None
             tuvo_oposicion, detalle = detectar_oposicion(archivos, fecha_pub)
 
+            # No se imprime el titular ni el detalle: son datos personales de
+            # terceros que no deben quedar en los logs (repo público). Se
+            # siguen guardando en la base (UPDATE de abajo) sin cambios.
             if tuvo_oposicion:
                 confirmadas += 1
-                print(f"  [{i}/{len(candidatas)}] acta {acta} ({fila['titular']}): sigue siendo oposición real — {detalle}")
+                print(f"  [{i}/{len(candidatas)}] acta {acta}: sigue siendo oposición real")
             else:
                 corregidas += 1
-                print(f"  [{i}/{len(candidatas)}] acta {acta} ({fila['titular']}): era un falso positivo "
+                print(f"  [{i}/{len(candidatas)}] acta {acta}: era un falso positivo "
                       f"(vista/oposición anterior a la publicación vigente) — corregido")
 
             with conn.cursor() as cur:

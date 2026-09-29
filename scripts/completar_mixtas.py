@@ -153,9 +153,10 @@ def main():
     rows, fallidos = completar(rows, workers=args.workers, delay=args.delay)
 
     if fallidos:
-        print(f"Titulares sin respuesta del webservice ({len(fallidos)}):")
-        for t in fallidos[:10]:
-            print("  -", t)
+        # No se imprimen los titulares (dato personal de terceros): sólo la
+        # cantidad. La lista completa igual queda en el CSV de salida, que
+        # no se publica en los logs de Actions.
+        print(f"Titulares sin respuesta del webservice: {len(fallidos)}")
 
     fieldnames = list(rows[0].keys())
     with open(args.out, "w", newline="", encoding="utf-8") as f:
