@@ -1,0 +1,31 @@
+name: Inspeccionar acta (diagnóstico puntual)
+
+on:
+  workflow_dispatch:
+    inputs:
+      acta:
+        description: "Número de acta a inspeccionar"
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  inspeccionar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Instalar dependencias
+        run: pip install -r requirements.txt
+
+      - name: Volcar secciones del expediente
+        run: |
+          cd scripts
+          python3 inspeccionar_acta.py "${{ inputs.acta }}"
+        env:
+          PYTHONUNBUFFERED: "1"
