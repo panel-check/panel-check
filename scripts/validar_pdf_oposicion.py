@@ -62,21 +62,28 @@ def elegir_acta(dsn: str, acta_forzada: str | None) -> tuple[str, str, str]:
     return elegida["acta"], elegida["titular"], elegida["detalle_oposicion"]
 
 
-def main():
-    ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--acta", default=None)
-    args = ap.parse_args()
+def _archivos_relacionados(s, acta: str):
+    """Devuelve (fecha_opo, lista_de_archivos_con_esa_fecha)."""
+    archivos = buscar_archivos_grilla(s, acta)
+    if not archivos:
+        print(f"::error::acta {acta}: no se pudo consultar Grilla Digital (WAF)")
+        sys.exit(1)
+    referencia_opo = next(
+        (a for a in archivos if "OPO" in (a.get("Referencia") or "").upper()), None
+    )
+    if not referencia_opo:
+        print("::error::no encontré ninguna fila con Referencia conteniendo 'Opo' en esta acta")
+        sys.exit(1)
+    fecha_opo = referencia_opo.get("Fecha")
+    relacionados = [a for a in archivos if a.get("Fecha") == fecha_opo]
+    return fecha_opo, relacionados
 
-    dsn = os.environ.get("DATABASE_URL")
-    if not dsn and not args.acta:
-        sys.exit("Falta DATABASE_URL (o pasar --acta a mano)")
 
-    acta, titular, detalle = elegir_acta(dsn, args.acta)
-    print(f"::notice::Usando acta {acta} ({titular}) — detalle guardado en DB: {detalle}")
-
+def modo_seccion(acta: str):
+    """Vuelca la sección OPOSICIONES / VISTAS Y NOTIFICACIONES de la página
+    de resultado del expediente, en chunks para no perder texto por el
+    límite de annotations."""
     s = crear_sesion()
-
-    # 1) Sección OPOSICIONES de la página de resultado del expediente.
     r = _get_con_reintentos(
         lambda: s.post(
             f"{BASE}/MarcasConsultas/Resultado",
@@ -87,49 +94,44 @@ def main():
     )
     if "Web Page Blocked" in r.text or "Attack ID" in r.text:
         print(f"::error::acta {acta} bloqueada por el WAF de INPI al pedir Resultado")
-    else:
-        for nombre in ("OPOSICIONES", "VISTAS Y NOTIFICACIONES"):
-            bloque = _bloque_seccion(r.text, nombre)
-            bloque = re.sub(r"\s+", " ", bloque).strip()[:1500]
-            print(f"::notice::SECCION {nombre}: {bloque}")
+        return
+    for nombre in ("OPOSICIONES", "VISTAS Y NOTIFICACIONES"):
+        bloque = _bloque_seccion(r.text, nombre)
+        bloque = re.sub(r"\s+", " ", bloque).strip()
+        print(f"::notice::SECCION {nombre} ({len(bloque)} caracteres):")
+        paso = 1400
+        for i in range(0, min(len(bloque), 4 * paso), paso):
+            print(f"::notice::  [{i}:{i+paso}] {bloque[i:i+paso]}")
 
-    # 2) Archivos de Grilla Digital: nos quedamos con los que tengan fecha
-    #    de días recientes a la oposición (no el Formulario original de la
-    #    solicitud, que es viejo).
-    archivos = buscar_archivos_grilla(s, acta)
-    if not archivos:
-        print(f"::error::acta {acta}: no se pudo consultar Grilla Digital (WAF)")
-        sys.exit(1)
 
-    print(f"::notice::Total de archivos en Grilla Digital: {len(archivos)}")
-    for a in archivos:
+def modo_archivos(acta: str):
+    """Lista compacta (sin section dump) de los archivos de Grilla Digital
+    que compartan fecha con la fila de oposición."""
+    s = crear_sesion()
+    fecha_opo, relacionados = _archivos_relacionados(s, acta)
+    print(f"::notice::Fecha de la oposición: {fecha_opo}. Archivos con esa misma fecha:")
+    for a in relacionados:
         print(
-            f"::notice::ARCHIVO Indice={a.get('Indice')!r} Referencia={a.get('Referencia')!r} "
-            f"Fecha={a.get('Fecha')!r}"
+            f"::notice::  Indice={a.get('Indice')!r} Referencia={a.get('Referencia')!r} "
+            f"id_Documento_encriptado={a.get('id_Documento_encriptado')!r} ruta={a.get('ruta')!r}"
         )
 
-    # Candidatos: cualquier archivo cuya Referencia mencione "Opo" (el de la
-    # oposición), más el/los "Formulario"/"Recibo de Ingreso" con la MISMA
-    # fecha que ese archivo (mismo trámite, mismo día de ingreso).
-    referencia_opo = next(
-        (a for a in archivos if "OPO" in (a.get("Referencia") or "").upper()), None
-    )
-    if not referencia_opo:
-        print("::error::no encontré ninguna fila con Referencia conteniendo 'Opo' en esta acta")
-        sys.exit(1)
 
-    fecha_opo = referencia_opo.get("Fecha")
-    print(f"::notice::Fila de la oposición: {referencia_opo}")
-
-    relacionados = [a for a in archivos if a.get("Fecha") == fecha_opo]
-    print(f"::notice::Archivos con la misma fecha ({fecha_opo}): {len(relacionados)}")
-
-    for a in relacionados:
-        indice = a.get("Indice")
+def modo_pdf(acta: str, indice: str):
+    """Descarga el PDF cuyo Indice coincide (ej. 'Formulario' o
+    'Recibo de Ingreso') entre los archivos con la misma fecha que la
+    oposición, y vuelca su texto completo en chunks."""
+    s = crear_sesion()
+    _, relacionados = _archivos_relacionados(s, acta)
+    candidatos = [a for a in relacionados if a.get("Indice") == indice]
+    if not candidatos:
+        print(f"::error::no hay ningún archivo con Indice={indice!r} en la fecha de la oposición")
+        return
+    for n, a in enumerate(candidatos, 1):
         id_doc = a.get("id_Documento_encriptado")
         ruta = a.get("ruta") or ""
         if not id_doc or not ruta:
-            print(f"::notice::  {indice}: sin id_Documento_encriptado/ruta, no se puede descargar")
+            print(f"::error::  {indice} #{n}: sin id_Documento_encriptado/ruta")
             continue
         nombre_archivo = ruta.rsplit("/", 1)[-1]
         r_pdf = _get_con_reintentos(
@@ -142,7 +144,7 @@ def main():
         )
         ctype = r_pdf.headers.get("Content-Type", "").lower()
         if ctype != "application/pdf":
-            print(f"::error::  {indice}: no se pudo descargar como PDF (Content-Type={ctype})")
+            print(f"::error::  {indice} #{n}: no se pudo descargar como PDF (Content-Type={ctype})")
             continue
 
         import pdfplumber
@@ -150,11 +152,46 @@ def main():
         with pdfplumber.open(io.BytesIO(r_pdf.content)) as pdf:
             texto = "\n".join(p.extract_text() or "" for p in pdf.pages)
         texto_plano = re.sub(r"\s+", " ", texto).strip()
-        print(f"::notice::PDF {indice} ({len(texto_plano)} caracteres) primeros 1500: {texto_plano[:1500]}")
-        if len(texto_plano) > 1500:
-            print(f"::notice::PDF {indice} resto (1500-3000): {texto_plano[1500:3000]}")
+        print(f"::notice::PDF {indice} #{n} ({len(texto_plano)} caracteres):")
+        paso = 1400
+        for i in range(0, min(len(texto_plano), 4 * paso), paso):
+            print(f"::notice::  [{i}:{i+paso}] {texto_plano[i:i+paso]}")
 
-    print(f"::notice::acta {acta} — validación de PDF de oposición terminada")
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("--acta", default=None)
+    ap.add_argument(
+        "--modo", choices=["elegir", "seccion", "archivos", "pdf"], default="elegir",
+        help="elegir = solo mostrar candidatas (default); seccion = texto de OPOSICIONES/VISTAS; "
+             "archivos = listar archivos de la oposición; pdf = bajar y leer un PDF puntual",
+    )
+    ap.add_argument("--pdf-indice", default=None, help="Indice del archivo a leer con --modo pdf (ej. Formulario)")
+    args = ap.parse_args()
+
+    dsn = os.environ.get("DATABASE_URL")
+    if not dsn and not args.acta:
+        sys.exit("Falta DATABASE_URL (o pasar --acta a mano)")
+
+    if args.modo == "elegir" or not args.acta:
+        acta, titular, detalle = elegir_acta(dsn, args.acta)
+        print(f"::notice::ACTA_ELEGIDA={acta}")
+        print(f"::notice::Usando acta {acta} ({titular}) — detalle guardado en DB: {detalle}")
+        if args.modo == "elegir":
+            return
+    else:
+        acta = args.acta
+
+    if args.modo == "seccion":
+        modo_seccion(acta)
+    elif args.modo == "archivos":
+        modo_archivos(acta)
+    elif args.modo == "pdf":
+        if not args.pdf_indice:
+            sys.exit("--modo pdf necesita --pdf-indice")
+        modo_pdf(acta, args.pdf_indice)
+
+    print(f"::notice::acta {acta} — modo {args.modo} terminado")
 
 
 if __name__ == "__main__":
