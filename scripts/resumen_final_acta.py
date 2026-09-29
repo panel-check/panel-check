@@ -1,9 +1,13 @@
 """
 Paso separado de inspeccionar_acta.py (workflow inspeccionar_acta.yml):
 GitHub Actions solo guarda hasta 10 annotations por step, y el paso de
-diagnóstico ya las agotó. Este paso corre aparte, con su propio cupo, y
-imprime en UNA sola línea todo lo que hace falta para armar el insert
-manual: RESOLUCIÓN parseada + CUIT + nombre del titular.
+diagnóstico ya las agotó. Este paso corre aparte, con su propio cupo.
+
+Ronda 2: ya confirmamos estado_tramite/fecha_vencimiento_marca/cuit. Faltan
+fecha_concesion/numero_disposicion (el regex de DISPOSICION no matcheó) y el
+nombre real del titular (el header de tabla que encontramos no tenía la fila
+de datos al lado). Volcamos HTML crudo (no texto plano) alrededor de esos dos
+puntos para ver la estructura real.
 
 Uso:
     python3 resumen_final_acta.py 4534497
@@ -33,17 +37,27 @@ def main():
         print(f"::error::acta {acta} bloqueada por el WAF de INPI")
         sys.exit(1)
 
-    resolucion = parsear_resolucion(r.text)
+    html = r.text
 
-    m_cuit = RE_CUIT_SPAN.search(r.text)
-    cuit = m_cuit.group(1) if m_cuit else None
+    resolucion = parsear_resolucion(html)
+    m_cuit = RE_CUIT_SPAN.search(html)
+    print(f"::notice::RESUMEN acta {acta} | resolucion={resolucion} | cuit={m_cuit.group(1) if m_cuit else None}")
 
-    texto = re.sub(r"<[^>]+>", " ", r.text)
-    texto = re.sub(r"\s+", " ", texto)
-    m_tabla = re.search(r"TIPO Y NOMBRE DEL TITULAR(.{0,500})", texto.upper())
-    tabla_titular = m_tabla.group(1).strip() if m_tabla else None
+    # HTML crudo alrededor de "DISPOSICION" (para ver el separador real entre
+    # Fecha y Numero — el regex asume "Fecha ... - Numero ...").
+    for m in list(re.finditer("DISPOSICION", html, re.I))[:2]:
+        i = m.start()
+        crudo = html[i:i + 400].replace("\n", " ")
+        crudo = re.sub(r"\s+", " ", crudo)
+        print(f"::notice::HTML DISPOSICION @{i}: {crudo}")
 
-    print(f"::notice::RESUMEN acta {acta} | resolucion={resolucion} | cuit={cuit} | tabla_titular={tabla_titular}")
+    # HTML crudo del primer "TIPO Y NOMBRE DEL TITULAR" (para ver la fila real).
+    m_tit = re.search("TIPO Y NOMBRE DEL TITULAR", html, re.I)
+    if m_tit:
+        i = m_tit.start()
+        crudo = html[i:i + 600].replace("\n", " ")
+        crudo = re.sub(r"\s+", " ", crudo)
+        print(f"::notice::HTML TITULAR @{i}: {crudo}")
 
 
 if __name__ == "__main__":
