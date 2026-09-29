@@ -1,0 +1,45 @@
+name: Reintentar emails faltantes
+
+on:
+  schedule:
+    # Cada 2 horas, corrido con 1 hora de diferencia respecto a
+    # "Reintento de marcas sin verificar" (que corre en las horas pares)
+    # para no pegarle a INPI con las dos cosas al mismo tiempo. Agregado
+    # el 29/09/2026: hasta ahora, un lead que quedaba con
+    # "sin email" (WAF bloqueó puntualmente la Grilla Digital o el PDF del
+    # Formulario) solo se podía reintentar a mano, acta por acta, con el
+    # botón "Reintentar" del panel.
+    - cron: "0 1,3,5,7,9,11,13,15,17,19,21,23 * * *"
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: "Tope de leads a reintentar en esta corrida (dejar vacío = todos)"
+        required: false
+        default: "200"
+
+permissions:
+  contents: read
+
+jobs:
+  reintentar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Instalar dependencias
+        run: pip install -r requirements.txt
+
+      - name: Reintentar email de leads confirmados sin email
+        run: |
+          cd scripts
+          LIMIT="${{ inputs.limit }}"
+          args=""
+          if [ -n "$LIMIT" ]; then args="--limit $LIMIT"; else args="--limit 200"; fi
+          python3 reintentar_sin_email.py $args
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL || secrets.DATABASE_PUBLIC_URL }}
+          PYTHONUNBUFFERED: "1"

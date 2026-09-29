@@ -252,6 +252,19 @@ CRONS_DEFINIDOS = [
         "pendientes_etiqueta": "marcas sin verificar todavía",
     },
     {
+        "nombre": "Reintento de emails faltantes",
+        "descripcion": "Para los leads ya confirmados que quedaron sin email "
+                        "(casi siempre por un bloqueo puntual del WAF de INPI al abrir la "
+                        "Grilla Digital o descargar el Formulario), vuelve a consultar el "
+                        "expediente para conseguirlo sin tener que usar \"Reintentar\" a "
+                        "mano una por una.",
+        "workflow_file": "reintentar_sin_email.yml",
+        "cron": "0 1,3,5,7,9,11,13,15,17,19,21,23 * * *",
+        "pendientes_sql": "SELECT COUNT(*) FROM marcas WHERE es_lead = true "
+                           "AND (email IS NULL OR email = '')",
+        "pendientes_etiqueta": "leads sin email todavía",
+    },
+    {
         "nombre": "Verificación del despliegue",
         "descripcion": "Compara qué commit tiene desplegado el panel contra el último "
                         "commit de main. Si Railway se queda pegado (deploy atascado en cola, "
