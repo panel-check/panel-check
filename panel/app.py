@@ -82,48 +82,68 @@ def migrar_columnas_panel():
     El pipeline las agrega vía schema.sql, pero sólo la próxima vez que corra.
     El panel no puede esperar a eso, así que se asegura de tenerlas ni bien
     arranca (idempotente: no rompe nada si ya existen).
-    """
-    with conexion() as conn:
-        with conn.cursor() as cur:
-            cur.execute(
-                "ALTER TABLE marcas ADD COLUMN IF NOT EXISTS contactado BOOLEAN DEFAULT false"
-            )
-            cur.execute(
-                "ALTER TABLE marcas ADD COLUMN IF NOT EXISTS contactado_en TIMESTAMPTZ"
-            )
-            cur.execute(
-                "CREATE INDEX IF NOT EXISTS idx_marcas_contactado ON marcas(contactado)"
-            )
-            cur.execute(
-                "ALTER TABLE marcas ADD COLUMN IF NOT EXISTS motivo_sin_email TEXT"
-            )
-            cur.execute(
-                "ALTER TABLE marcas ADD COLUMN IF NOT EXISTS fecha_publicacion DATE"
-            )
-            cur.execute(
-                "ALTER TABLE marcas ADD COLUMN IF NOT EXISTS tuvo_oposicion BOOLEAN"
-            )
-            cur.execute(
-                "ALTER TABLE marcas ADD COLUMN IF NOT EXISTS detalle_oposicion TEXT"
-            )
-            cur.execute(
-                "ALTER TABLE marcas ADD COLUMN IF NOT EXISTS revisado_oposicion_en TIMESTAMPTZ"
-            )
-            # Estado del trámite (Concedida/Denegada/etc.) y fechas de la
-            # sección RESOLUCIÓN del expediente — ver revisar_estado.py.
-            cur.execute(
-                "ALTER TABLE marcas ADD COLUMN IF NOT EXISTS estado_tramite TEXT"
-            )
-            cur.execute(
-                "ALTER TABLE marcas ADD COLUMN IF NOT EXISTS fecha_concesion DATE"
-            )
-            cur.execute(
-                "ALTER TABLE marcas ADD COLUMN IF NOT EXISTS numero_disposicion TEXT"
-            )
-            cur.execute(
-                "ALTER TABLE marcas ADD COLUMN IF NOT EXISTS fecha_vencimiento_marca DATE"
-            )
-        conn.commit()
+
+    Bug real (2026-09-29): un ALTER TABLE ADD COLUMN IF NOT EXISTS pide lock
+    ACCESS EXCLUSIVE sobre `marcas` aunque sea un no-op — y ese lock se pone
+    en cola detrás de cualquier transacción que ya esté escribiendo en la
+    tabla (ej. reintentar_sin_verificar.py corriendo con un backlog grande).
+    Si el deploy nuevo arranca justo mientras esa corrida está activa, el
+    ALTER se queda esperando el lock y el startup entero de FastAPI se
+    cuelga indefinidamente ("Waiting for application startup" sin pasar de
+    ahí) — el proceso ni siquiera llega a abrir el puerto, así que Railway
+    devuelve "connection refused" para TODO, no solo para esta consulta.
+    Fix: lock_timeout corto + no fatal — si no consigue el lock rápido, la
+    migración se salta esta vez (las columnas ya existen en producción de
+    sobra) en vez de trabar el arranque del panel entero."""
+    try:
+        with conexion() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SET lock_timeout = '3s'")
+                _correr_alters_panel(cur)
+            conn.commit()
+    except Exception as e:
+        print(f"[startup] migrar_columnas_panel salteada (no bloqueante): {e}")
+
+
+def _correr_alters_panel(cur):
+    cur.execute(
+        "ALTER TABLE marcas ADD COLUMN IF NOT EXISTS contactado BOOLEAN DEFAULT false"
+    )
+    cur.execute(
+        "ALTER TABLE marcas ADD COLUMN IF NOT EXISTS contactado_en TIMESTAMPTZ"
+    )
+    cur.execute(
+        "CREATE INDEX IF NOT EXISTS idx_marcas_contactado ON marcas(contactado)"
+    )
+    cur.execute(
+        "ALTER TABLE marcas ADD COLUMN IF NOT EXISTS motivo_sin_email TEXT"
+    )
+    cur.execute(
+        "ALTER TABLE marcas ADD COLUMN IF NOT EXISTS fecha_publicacion DATE"
+    )
+    cur.execute(
+        "ALTER TABLE marcas ADD COLUMN IF NOT EXISTS tuvo_oposicion BOOLEAN"
+    )
+    cur.execute(
+        "ALTER TABLE marcas ADD COLUMN IF NOT EXISTS detalle_oposicion TEXT"
+    )
+    cur.execute(
+        "ALTER TABLE marcas ADD COLUMN IF NOT EXISTS revisado_oposicion_en TIMESTAMPTZ"
+    )
+    # Estado del trámite (Concedida/Denegada/etc.) y fechas de la sección
+    # RESOLUCIÓN del expediente — ver revisar_estado.py.
+    cur.execute(
+        "ALTER TABLE marcas ADD COLUMN IF NOT EXISTS estado_tramite TEXT"
+    )
+    cur.execute(
+        "ALTER TABLE marcas ADD COLUMN IF NOT EXISTS fecha_concesion DATE"
+    )
+    cur.execute(
+        "ALTER TABLE marcas ADD COLUMN IF NOT EXISTS numero_disposicion TEXT"
+    )
+    cur.execute(
+        "ALTER TABLE marcas ADD COLUMN IF NOT EXISTS fecha_vencimiento_marca DATE"
+    )
 
 COLUMNAS_ORDENABLES = {
     "lead_score", "acta", "boletin", "clase", "titular", "fecha_presentacion",
