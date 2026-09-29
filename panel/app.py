@@ -188,7 +188,7 @@ CRONS_DEFINIDOS = [
                         "del boletín), vuelve a consultar el expediente para resolverlas sin "
                         "tener que usar \"Reintentar\" a mano una por una.",
         "workflow_file": "reintentar_sin_verificar.yml",
-        "cron": "0 13 * * *",
+        "cron": "0,30 * * * *",
         "pendientes_sql": "SELECT COUNT(*) FROM marcas WHERE es_lead IS NULL",
         "pendientes_etiqueta": "marcas sin verificar todavía",
     },
@@ -518,6 +518,7 @@ def listar_crons(_: str = Depends(verificar_login)):
             "nombre": c["nombre"],
             "descripcion": c["descripcion"],
             "cron": c["cron"],
+            "workflow_file": c["workflow_file"],
             "proxima_ejecucion": _proxima_ejecucion(c["cron"]),
             **_ultima_corrida_workflow(c["workflow_file"]),
         }
@@ -536,6 +537,43 @@ def listar_crons(_: str = Depends(verificar_login)):
                 item["pendientes_error"] = str(e)
         resultado.append(item)
     return resultado
+
+
+_WORKFLOWS_DISPARABLES = {c["workflow_file"] for c in CRONS_DEFINIDOS}
+
+
+@app.post("/api/crons/correr")
+def correr_cron(workflow_file: str = Query(...), _: str = Depends(verificar_login)):
+    """Dispara a mano (workflow_dispatch) uno de los workflows que ya
+    aparecen en /crons, en vez de esperar a su próximo horario o tener que
+    ir a GitHub Actions. Solo permite disparar los workflows conocidos de
+    CRONS_DEFINIDOS (nunca un nombre arbitrario que venga del frontend).
+
+    Requiere que GITHUB_TOKEN tenga permiso "Actions: Read AND write" sobre
+    el repo (el resto del panel solo necesita "Read-only") — si falta ese
+    permiso, GitHub devuelve 403/404 acá y se lo mostramos tal cual al
+    usuario en vez de fallar en silencio."""
+    if workflow_file not in _WORKFLOWS_DISPARABLES:
+        raise HTTPException(status_code=400, detail=f"Workflow desconocido: {workflow_file}")
+    if not GITHUB_TOKEN:
+        raise HTTPException(status_code=400, detail="Falta configurar GITHUB_TOKEN en el panel")
+
+    r = requests.post(
+        f"https://api.github.com/repos/{GITHUB_REPO}/actions/workflows/{workflow_file}/dispatches",
+        headers={"Authorization": f"token {GITHUB_TOKEN}", "Accept": "application/vnd.github+json"},
+        json={"ref": "main"},
+        timeout=15,
+    )
+    if r.status_code == 204:
+        return {"ok": True}
+    if r.status_code in (403, 404):
+        raise HTTPException(
+            status_code=502,
+            detail="GitHub rechazó el disparo manual — el GITHUB_TOKEN del panel necesita permiso "
+                   "\"Actions: Read and write\" (hoy alcanza con Read-only para ver el estado, pero "
+                   "no para dispararlos).",
+        )
+    raise HTTPException(status_code=502, detail=f"GitHub devolvió {r.status_code}: {r.text[:200]}")
 
 
 @app.get("/api/version")

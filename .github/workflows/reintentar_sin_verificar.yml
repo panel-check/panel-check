@@ -2,16 +2,21 @@ name: Reintentar marcas sin verificar
 
 on:
   schedule:
-    # Todos los días a las 13:00 UTC (10:00 ART) — corre unas horas después
-    # del pipeline principal (09:00 UTC), para no competir por el mismo
-    # bloqueo del WAF de INPI en el mismo momento.
-    - cron: "0 13 * * *"
+    # Cada 30 minutos, en lotes de 50 (ver "limit" del step de abajo) — antes
+    # corría una sola vez por día procesando TODO el pendiente de una, lo que
+    # además de tardar mucho (864 marcas x 2s = casi 30 min de un saque)
+    # dejaba todo el "reintento" librado a un único intento diario. En lotes
+    # más chicos y frecuentes, una marca bloqueada por el WAF en un lote
+    # tiene más oportunidades de resolverse en el día, y el progreso se ve
+    # bajar de a poco en /crons ("Pendientes ahora") en vez de solo una vez
+    # por día.
+    - cron: "0,30 * * * *"
   workflow_dispatch:
     inputs:
       limit:
         description: "Tope de actas a reintentar en esta corrida (dejar vacío = todas)"
         required: false
-        default: ""
+        default: "50"
 
 permissions:
   contents: read
@@ -32,8 +37,14 @@ jobs:
       - name: Reintentar marcas con es_lead sin verificar
         run: |
           cd scripts
+          # inputs.limit solo existe en corridas manuales (workflow_dispatch);
+          # una corrida por horario (schedule) no tiene ese contexto, así que
+          # cae acá en el default de 50 igual — el lote chico es el
+          # comportamiento normal, "todas de una" queda solo para cuando se
+          # dispara a mano y se borra el campo limit a propósito.
+          LIMIT="${{ inputs.limit }}"
           args=""
-          if [ -n "${{ inputs.limit }}" ]; then args="$args --limit ${{ inputs.limit }}"; fi
+          if [ -n "$LIMIT" ]; then args="--limit $LIMIT"; else args="--limit 50"; fi
           python3 reintentar_sin_verificar.py $args
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL || secrets.DATABASE_PUBLIC_URL }}

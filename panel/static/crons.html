@@ -52,6 +52,22 @@
   .pendientes-error { color: var(--gris); cursor: help; }
   a.ver-run { font-size: 12px; color: var(--azul); text-decoration: none; }
   a.ver-run:hover { text-decoration: underline; }
+  button.correr-ahora {
+    padding: 4px 10px;
+    border-radius: 6px;
+    border: 1px solid var(--azul);
+    background: white;
+    color: var(--azul);
+    font-size: 12px;
+    cursor: pointer;
+  }
+  button.correr-ahora:hover { background: var(--azul-claro); }
+  button.correr-ahora:disabled {
+    border-color: var(--borde);
+    color: var(--gris);
+    cursor: default;
+    background: #fafbfc;
+  }
 </style>
 </head>
 <body>
@@ -100,6 +116,9 @@ function tarjetaCron(cron) {
   const link = cron.url
     ? `<a class="ver-run" href="${cron.url}" target="_blank">Ver en GitHub ↗</a>`
     : "";
+  const corriendoAhora = cron.estado === "in_progress" || cron.estado === "queued";
+  const boton = `<button class="correr-ahora" data-workflow="${cron.workflow_file}"
+      ${corriendoAhora ? "disabled" : ""}>${corriendoAhora ? "Corriendo…" : "▶ Correr ahora"}</button>`;
   // "Progreso" real: cuánto trabajo queda pendiente en la base ahora mismo,
   // no solo si la última corrida salió bien. undefined = este cron no
   // declaró pendientes_sql (ej. el pipeline principal); null = la consulta
@@ -132,6 +151,10 @@ function tarjetaCron(cron) {
           <span class="etiqueta">&nbsp;</span>
           ${link}
         </div>
+        <div class="dato-cron">
+          <span class="etiqueta">&nbsp;</span>
+          ${boton}
+        </div>
       </div>
       ${error}
       ${aviso}
@@ -144,12 +167,36 @@ async function cargar() {
   try {
     const crons = await api("/api/crons");
     contenido.innerHTML = crons.map(tarjetaCron).join("");
+    contenido.querySelectorAll(".correr-ahora").forEach((b) => {
+      b.addEventListener("click", () => correrAhora(b));
+    });
   } catch (e) {
     contenido.innerHTML = `<p style="color:var(--rojo);">No se pudo cargar (${e.message}).</p>`;
   }
 }
 
+async function correrAhora(boton) {
+  const workflow = boton.dataset.workflow;
+  boton.disabled = true;
+  boton.textContent = "Disparando…";
+  try {
+    await api(`/api/crons/correr?workflow_file=${encodeURIComponent(workflow)}`, { method: "POST" });
+    boton.textContent = "Disparado ✓ — actualizando…";
+    // GitHub tarda unos segundos en pasar la corrida a "en curso"; esperamos
+    // un poco antes de refrescar para no mostrar todavía el estado viejo.
+    setTimeout(cargar, 4000);
+  } catch (e) {
+    boton.disabled = false;
+    boton.textContent = "▶ Correr ahora";
+    alert(`No se pudo disparar: ${e.message}`);
+  }
+}
+
 cargar();
+// Refresco automático cada 20s mientras la pestaña está abierta, para ver
+// avanzar "Pendientes ahora" y el estado "corriendo ahora" sin tener que
+// recargar a mano.
+setInterval(cargar, 20000);
 </script>
 
 </body>
