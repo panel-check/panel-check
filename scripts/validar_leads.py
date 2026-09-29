@@ -61,7 +61,10 @@ RE_CARACTER_SPAN = re.compile(r"CARACTER\s*:?\s*<span[^>]*>(.*?)</span>", re.S)
 # guardaba para Mixtas/Figurativas, vía el webservice de completar_mixtas.py).
 # Sirve como clave real para unificar leads del mismo titular en el panel
 # (mejor que comparar texto de titular, que puede variar de tipeo).
-RE_CUIT_SPAN = re.compile(r"CUIT\s*:?\s*<span[^>]*>(.*?)</span>", re.S)
+# El <span> es opcional: personas jurídicas lo traen envuelto en <span>,
+# personas físicas a veces lo traen como texto plano en el mismo <label>
+# ("CUIT: 20302361291" sin span) — sin esto se perdía casi la mitad.
+RE_CUIT_SPAN = re.compile(r"CUIT\s*:?\s*(?:<span[^>]*>)?\s*([\d.\-]{6,})", re.S)
 
 
 def crear_sesion() -> requests.Session:

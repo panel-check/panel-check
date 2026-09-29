@@ -28,7 +28,10 @@ HEADERS = {
 
 RE_GESTION = re.compile(r"GESTION DEL TRAMITE.*?</h4>\s*</div>\s*<div[^>]*>(.*?)</div>\s*</div>\s*</div>", re.S)
 RE_CARACTER_SPAN = re.compile(r"CARACTER\s*:?\s*<span[^>]*>(.*?)</span>", re.S)
-RE_CUIT_SPAN = re.compile(r"CUIT\s*:?\s*<span[^>]*>(.*?)</span>", re.S)
+# El CUIT viene envuelto en <span> en algunas fichas (personas jurídicas) y
+# como texto plano dentro del mismo <label> en otras (personas físicas) —
+# "CUIT: 20302361291" sin span. El <span> es opcional para cubrir ambos casos.
+RE_CUIT_SPAN = re.compile(r"CUIT\s*:?\s*(?:<span[^>]*>)?\s*([\d.\-]{6,})", re.S)
 
 
 def _crear_sesion() -> requests.Session:
