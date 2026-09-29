@@ -80,6 +80,80 @@ header a.ayuda:hover { opacity: 1; text-decoration: underline; }
   color: var(--azul);
   border: 1px solid var(--azul);
 }
+
+/* Fecha Boletín: un solo campo clickeable que abre un popover con "desde"
+   y "hasta" — antes eran dos <input type="date"> sueltos en la barra. */
+.rango-fecha { position: relative; }
+.rango-fecha .campo-rango {
+  padding: 6px 8px;
+  border: 1px solid var(--borde);
+  border-radius: 6px;
+  font-size: 13px;
+  min-width: 170px;
+  background: white;
+  cursor: pointer;
+  text-align: left;
+  color: #1f2430;
+}
+.rango-fecha .campo-rango.vacio { color: var(--gris); }
+.rango-fecha .popover-rango {
+  display: none;
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 20;
+  background: white;
+  border: 1px solid var(--borde);
+  border-radius: 8px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.12);
+  padding: 12px;
+  gap: 8px;
+  min-width: 190px;
+}
+.rango-fecha.abierto .popover-rango { display: flex; flex-direction: column; }
+.popover-rango label {
+  font-size: 11px;
+  color: var(--gris);
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.popover-rango input[type="date"] {
+  padding: 6px 8px;
+  border: 1px solid var(--borde);
+  border-radius: 6px;
+  font-size: 13px;
+}
+.popover-rango .acciones-rango { display: flex; gap: 6px; justify-content: flex-end; margin-top: 4px; }
+.popover-rango .acciones-rango button { padding: 5px 10px; font-size: 12px; border-radius: 6px; cursor: pointer; }
+.popover-rango .acciones-rango button.aplicar { background: var(--azul); color: white; border: none; }
+.popover-rango .acciones-rango button.limpiar { background: white; color: var(--azul); border: 1px solid var(--azul); }
+
+/* Filtros avanzados: colapsados por default, para no saturar la barra
+   principal con filtros que se usan poco (email/titular/estado de marca). */
+.filtros-avanzados-toggle {
+  padding: 0 20px 10px;
+  background: white;
+  border-bottom: 1px solid var(--borde);
+}
+.filtros-avanzados-toggle button {
+  background: none;
+  border: none;
+  color: var(--azul);
+  font-size: 12px;
+  cursor: pointer;
+  padding: 0;
+}
+.filtros-avanzados {
+  display: none;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 0 20px 14px;
+  background: white;
+  border-bottom: 1px solid var(--borde);
+  align-items: end;
+}
+.filtros-avanzados.abierto { display: flex; }
 .resumen {
   padding: 8px 20px;
   font-size: 12px;

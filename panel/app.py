@@ -350,6 +350,9 @@ def listar_marcas(
     tuvo_oposicion: Optional[bool] = None,
     fecha_desde: Optional[str] = None,
     fecha_hasta: Optional[str] = None,
+    tiene_email: Optional[bool] = None,
+    tiene_titular: Optional[bool] = None,
+    estado_marca: Optional[str] = None,  # "pendiente" | "Concedida" | "Denegada"
     q: Optional[str] = None,
     sort: str = "lead_score",
     order: str = "desc",
@@ -389,6 +392,23 @@ def listar_marcas(
         if fecha_hasta:
             condiciones.append("COALESCE(fecha_publicacion, fecha_presentacion) <= %s")
             valores.append(fecha_hasta)
+    if tiene_email is not None:
+        # Filtro "Avanzado": marcas a las que todavía no se les encontró
+        # ningún email (ni del titular ni del apoderado) — útil para ver
+        # a quién le falta ese dato antes de poder contactarlo.
+        condicion_email = "(email IS NOT NULL AND email <> '') OR (email_apoderado IS NOT NULL AND email_apoderado <> '')"
+        condiciones.append(condicion_email if tiene_email else f"NOT ({condicion_email})")
+    if tiene_titular is not None:
+        condicion_titular = "titular IS NOT NULL AND titular <> ''"
+        condiciones.append(condicion_titular if tiene_titular else f"NOT ({condicion_titular})")
+    if estado_marca:
+        # Mismo criterio que ESTADOS_FINALES en scripts/revisar_estado.py:
+        # "pendiente" = todavía sin una resolución firme.
+        if estado_marca == "pendiente":
+            condiciones.append("(estado_tramite IS NULL OR estado_tramite NOT IN ('Concedida', 'Denegada'))")
+        else:
+            condiciones.append("estado_tramite = %s")
+            valores.append(estado_marca)
     if q:
         condiciones.append(
             """(

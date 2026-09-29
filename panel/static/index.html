@@ -43,18 +43,57 @@
       <option value="false">Sin oposición</option>
     </select>
   </label>
-  <label>Fecha Boletín desde
-    <input type="date" id="f-fecha-desde" />
-  </label>
-  <label>hasta
-    <input type="date" id="f-fecha-hasta" />
-  </label>
+  <div class="rango-fecha" id="rango-fecha">
+    <label>Fecha Boletín
+      <button type="button" class="campo-rango vacio" id="campo-rango-fecha" onclick="toggleRangoFecha(event)">Todas las fechas</button>
+    </label>
+    <div class="popover-rango" id="popover-rango-fecha">
+      <label>Desde
+        <input type="date" id="f-fecha-desde" />
+      </label>
+      <label>Hasta
+        <input type="date" id="f-fecha-hasta" />
+      </label>
+      <div class="acciones-rango">
+        <button type="button" class="limpiar" onclick="limpiarRangoFecha()">Limpiar</button>
+        <button type="button" class="aplicar" onclick="aplicarRangoFecha()">Aplicar</button>
+      </div>
+    </div>
+  </div>
   <label>Buscar
     <input type="text" id="f-q" placeholder="titular o marca..." />
   </label>
   <button onclick="cargar(0)">Filtrar</button>
   <button class="secundario" onclick="limpiarFiltros()">Limpiar</button>
-  <button class="secundario" onclick="copiarLink()" title="Copia un link con estos filtros aplicados, para compartir">🔗 Copiar link</button>
+</div>
+
+<div class="filtros-avanzados-toggle">
+  <button type="button" onclick="toggleFiltrosAvanzados()" id="btn-filtros-avanzados">▸ Filtros avanzados</button>
+</div>
+<div class="filtros-avanzados" id="filtros-avanzados">
+  <label>Email
+    <select id="f-tiene-email">
+      <option value="">Todos</option>
+      <option value="false">Sin email todavía</option>
+      <option value="true">Con email</option>
+    </select>
+  </label>
+  <label>Titular
+    <select id="f-tiene-titular">
+      <option value="">Todos</option>
+      <option value="false">Sin nombre de titular</option>
+      <option value="true">Con nombre de titular</option>
+    </select>
+  </label>
+  <label>Estado de la marca
+    <select id="f-estado-marca">
+      <option value="">Todos</option>
+      <option value="pendiente">Pendiente de resolución</option>
+      <option value="Concedida">Concedida</option>
+      <option value="Denegada">Denegada</option>
+    </select>
+  </label>
+  <button onclick="cargar(0)">Filtrar</button>
 </div>
 
 <div class="resumen" id="resumen">Cargando...</div>
@@ -128,6 +167,9 @@ function filtrosActuales() {
     tuvo_oposicion: document.getElementById("f-oposicion").value,
     fecha_desde: document.getElementById("f-fecha-desde").value,
     fecha_hasta: document.getElementById("f-fecha-hasta").value,
+    tiene_email: document.getElementById("f-tiene-email").value,
+    tiene_titular: document.getElementById("f-tiene-titular").value,
+    estado_marca: document.getElementById("f-estado-marca").value,
     q: document.getElementById("f-q").value,
     sort: estado.sort,
     order: estado.order,
@@ -144,8 +186,71 @@ function limpiarFiltros() {
   document.getElementById("f-oposicion").value = "";
   document.getElementById("f-fecha-desde").value = "";
   document.getElementById("f-fecha-hasta").value = "";
+  document.getElementById("f-tiene-email").value = "";
+  document.getElementById("f-tiene-titular").value = "";
+  document.getElementById("f-estado-marca").value = "";
   document.getElementById("f-q").value = "";
+  actualizarEtiquetaRangoFecha();
   cargar(0);
+}
+
+// ── Fecha Boletín: un solo campo que abre un popover con "desde"/"hasta" ──
+// (antes eran dos <input type="date"> sueltos en la barra de filtros).
+function toggleRangoFecha(ev) {
+  if (ev) ev.stopPropagation();
+  document.getElementById("rango-fecha").classList.toggle("abierto");
+}
+
+document.addEventListener("click", (ev) => {
+  const cont = document.getElementById("rango-fecha");
+  if (cont && !cont.contains(ev.target)) cont.classList.remove("abierto");
+});
+
+function formatearFechaCorta(iso) {
+  if (!iso) return "";
+  const [a, m, d] = iso.split("-");
+  return `${d}/${m}/${a}`;
+}
+
+function actualizarEtiquetaRangoFecha() {
+  const desde = document.getElementById("f-fecha-desde").value;
+  const hasta = document.getElementById("f-fecha-hasta").value;
+  const campo = document.getElementById("campo-rango-fecha");
+  if (!desde && !hasta) {
+    campo.textContent = "Todas las fechas";
+    campo.classList.add("vacio");
+  } else if (desde && hasta) {
+    campo.textContent = `${formatearFechaCorta(desde)} – ${formatearFechaCorta(hasta)}`;
+    campo.classList.remove("vacio");
+  } else if (desde) {
+    campo.textContent = `Desde ${formatearFechaCorta(desde)}`;
+    campo.classList.remove("vacio");
+  } else {
+    campo.textContent = `Hasta ${formatearFechaCorta(hasta)}`;
+    campo.classList.remove("vacio");
+  }
+}
+
+function aplicarRangoFecha() {
+  actualizarEtiquetaRangoFecha();
+  document.getElementById("rango-fecha").classList.remove("abierto");
+  cargar(0);
+}
+
+function limpiarRangoFecha() {
+  document.getElementById("f-fecha-desde").value = "";
+  document.getElementById("f-fecha-hasta").value = "";
+  actualizarEtiquetaRangoFecha();
+  document.getElementById("rango-fecha").classList.remove("abierto");
+  cargar(0);
+}
+
+// ── Filtros avanzados: colapsados por default, para no saturar la barra ──
+function toggleFiltrosAvanzados() {
+  const panel = document.getElementById("filtros-avanzados");
+  const abierto = panel.classList.toggle("abierto");
+  document.getElementById("btn-filtros-avanzados").textContent =
+    (abierto ? "▾" : "▸") + " Filtros avanzados";
 }
 
 // La URL refleja siempre los filtros/orden/página actuales (se actualiza
@@ -156,14 +261,6 @@ function actualizarURL() {
   const qsActual = qs(filtrosActuales());
   const nueva = qsActual ? `${location.pathname}?${qsActual}` : location.pathname;
   history.replaceState(null, "", nueva);
-}
-
-function copiarLink() {
-  actualizarURL();
-  navigator.clipboard.writeText(location.href).then(
-    () => alert("Link copiado — incluye los filtros que están aplicados ahora."),
-    () => prompt("Copiá este link:", location.href),
-  );
 }
 
 // Al entrar con un link compartido (?boletin=...&f-lead=... etc.), precarga
@@ -178,10 +275,19 @@ function filtrosDesdeURL() {
   document.getElementById("f-oposicion").value = p.get("tuvo_oposicion") ?? "";
   document.getElementById("f-fecha-desde").value = p.get("fecha_desde") ?? "";
   document.getElementById("f-fecha-hasta").value = p.get("fecha_hasta") ?? "";
+  document.getElementById("f-tiene-email").value = p.get("tiene_email") ?? "";
+  document.getElementById("f-tiene-titular").value = p.get("tiene_titular") ?? "";
+  document.getElementById("f-estado-marca").value = p.get("estado_marca") ?? "";
   document.getElementById("f-q").value = p.get("q") ?? "";
   estado.sort = p.get("sort") || estado.sort;
   estado.order = p.get("order") || estado.order;
   estado.offset = parseInt(p.get("offset") || "0", 10) || 0;
+  actualizarEtiquetaRangoFecha();
+  // Si el link trae algún filtro avanzado aplicado, mostrar el panel
+  // abierto de entrada — si no, el usuario no se entera de que está filtrado.
+  if (p.get("tiene_email") || p.get("tiene_titular") || p.get("estado_marca")) {
+    toggleFiltrosAvanzados();
+  }
   return true;
 }
 
@@ -288,6 +394,7 @@ async function cargar(offset) {
   if (!vinoDeLink) {
     document.getElementById("f-lead").value = "true";
     document.getElementById("f-contactado").value = "false";
+    actualizarEtiquetaRangoFecha();
   }
   await cargar(estado.offset);
 })();
