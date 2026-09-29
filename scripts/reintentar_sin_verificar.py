@@ -70,6 +70,10 @@ def main():
                 siguen_sin_verificar += 1
                 print(f"  [{i}/{len(pendientes)}] acta {acta}: sigue sin poder verificarse "
                       f"({info.get('motivo_sin_email') or 'sin detalle'})")
+                # commit "vacío" para cerrar la transacción del SELECT inicial
+                # aunque no haya cambios — ver revisar_estado.py para el
+                # motivo (incidente del 29/09/2026 en el manual).
+                conn.commit()
                 time.sleep(args.delay)
                 continue
 

@@ -100,6 +100,10 @@ def main():
                 # bloqueo del WAF u otro fallo de red: no marcamos como revisado,
                 # para que la próxima corrida lo vuelva a intentar.
                 print(f"  [{i}/{len(pendientes)}] acta {acta}: no se pudo consultar Grilla Digital, reintento en la próxima corrida")
+                # commit "vacío" para cerrar la transacción del SELECT inicial
+                # aunque no haya cambios — ver revisar_estado.py para el
+                # motivo (incidente del 29/09/2026 en el manual).
+                conn.commit()
                 time.sleep(args.delay)
                 continue
 

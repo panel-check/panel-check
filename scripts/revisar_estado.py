@@ -83,12 +83,24 @@ def main():
             if info["bloqueado"]:
                 bloqueadas += 1
                 print(f"  [{i}/{len(pendientes)}] acta {acta}: bloqueado por el WAF de INPI, se reintenta la próxima corrida")
+                # commit "vacío": no cambió nada, pero cierra la transacción
+                # abierta por el SELECT inicial. Sin esto, una corrida sin
+                # límite (la mayoría de las actas siguen "sin resolución")
+                # puede mantener esa transacción abierta minutos u horas,
+                # y si mientras tanto algo pide un lock exclusivo sobre
+                # marcas (ej. la migración de arranque del panel), se pone
+                # en cola detrás — y con eso, TODAS las consultas nuevas
+                # sobre marcas quedan encoladas también, aunque en teoría
+                # sean compatibles entre sí (Postgres respeta el orden de
+                # pedido de locks). Ver incidente del 29/09/2026 en el manual.
+                conn.commit()
                 time.sleep(args.delay)
                 continue
 
             if not info["estado_tramite"]:
                 sin_resolucion_aun += 1
                 print(f"  [{i}/{len(pendientes)}] acta {acta} ({fila['titular']}): todavía sin RESOLUCIÓN")
+                conn.commit()  # ídem: cerrar la transacción aunque no haya cambios
                 time.sleep(args.delay)
                 continue
 
