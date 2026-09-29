@@ -12,7 +12,7 @@ on:
         default: ""
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   procesar:
@@ -126,13 +126,11 @@ jobs:
           path: data/
           retention-days: 30
           if-no-files-found: ignore
-
-      - name: Subir datos intermedios a una rama de debug (siempre, para poder inspeccionar)
-        if: always()
-        run: |
-          git config user.email "actions@github.com"
-          git config user.name "github-actions"
-          git checkout -b "debug-run-${{ github.run_id }}"
-          git add -f data/ 2>/dev/null || true
-          git commit -m "debug: datos intermedios de la corrida ${{ github.run_id }}" || echo "nada para commitear"
-          git push origin "debug-run-${{ github.run_id }}" || echo "no se pudo pushear la rama de debug"
+          # (antes también subíamos data/ a una rama "debug-run-<id>" nueva en
+          # cada corrida, además del artifact de arriba. Se sacó el 29/09/2026:
+          # esas ramas quedaban para siempre con CSV de titulares/CUIT/emails
+          # de terceros -- un riesgo serio de filtración si el repo se hace
+          # público en algún momento, y redundante con este artifact, que ya
+          # cumple la misma función de "poder inspeccionar" con vencimiento a
+          # los 30 días. Se borraron las ~29 ramas debug-run-*/debug-html-*
+          # que habían quedado acumuladas.
