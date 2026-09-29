@@ -7,21 +7,24 @@
 <link rel="stylesheet" href="/static/comun.css" />
 <style>
   .contenido {
-    max-width: 720px;
-    margin: 24px auto 60px;
+    max-width: 780px;
+    margin: 20px auto 60px;
+    padding: 0 20px;
+  }
+  .caja {
     padding: 24px 28px;
     background: white;
     border-radius: 10px;
     border: 1px solid var(--borde);
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
   }
-  .contenido h2 {
+  .caja h2 {
     font-size: 15px;
     color: var(--azul);
     margin: 28px 0 8px;
   }
-  .contenido h2:first-child { margin-top: 0; }
-  .contenido p, .contenido li { font-size: 13px; line-height: 1.6; color: #374151; }
+  .caja h2:first-child { margin-top: 0; }
+  .caja p, .caja li { font-size: 13px; line-height: 1.6; color: #374151; }
   .tabla-score {
     width: 100%;
     border-collapse: collapse;
@@ -43,6 +46,120 @@
     border-radius: 4px;
     font-size: 12px;
   }
+
+  /* Pestañas */
+  .tabs {
+    display: flex;
+    gap: 4px;
+    margin: 20px 0 0;
+    border-bottom: 1px solid var(--borde);
+  }
+  .tab-btn {
+    appearance: none;
+    border: none;
+    background: none;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--gris);
+    padding: 10px 16px;
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+  }
+  .tab-btn.activo { color: var(--azul); border-bottom-color: var(--azul); }
+  .tab-btn:hover { color: var(--azul); }
+  .tab-panel { display: none; margin-top: 16px; }
+  .tab-panel.activo { display: block; }
+
+  /* Manual: resumen ejecutivo y línea de tiempo */
+  .resumen {
+    font-size: 14px;
+    line-height: 1.7;
+    color: #1f2430;
+    background: var(--azul-claro);
+    border-radius: 8px;
+    padding: 16px 20px;
+    margin-bottom: 24px;
+  }
+  .linea-tiempo { list-style: none; margin: 0; padding: 0; }
+  .paso {
+    display: flex;
+    gap: 16px;
+    padding: 0 0 22px;
+    position: relative;
+  }
+  .paso:not(:last-child)::before {
+    content: "";
+    position: absolute;
+    left: 15px;
+    top: 34px;
+    bottom: 0;
+    width: 2px;
+    background: var(--borde);
+  }
+  .paso .num {
+    flex: none;
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    background: var(--azul);
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+    font-weight: 700;
+    z-index: 1;
+  }
+  .paso .num.gris { background: var(--gris); }
+  .paso .num.verde { background: var(--verde); }
+  .paso .cuerpo h3 { margin: 4px 0 4px; font-size: 14px; color: #1f2430; }
+  .paso .cuerpo p { margin: 0; font-size: 13px; color: #4b5563; }
+  .seccion-manual { margin-top: 30px; }
+  .seccion-manual h2 {
+    font-size: 15px;
+    color: var(--azul);
+    margin: 0 0 12px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--borde);
+  }
+  .tarjetas-panel {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+    margin: 10px 0 0;
+  }
+  .tarjeta-mini {
+    border: 1px solid var(--borde);
+    border-radius: 8px;
+    padding: 14px 16px;
+  }
+  .tarjeta-mini h4 { margin: 0 0 6px; font-size: 13px; color: #1f2430; }
+  .tarjeta-mini p { margin: 0; font-size: 12.5px; color: #4b5563; line-height: 1.5; }
+  @media (max-width: 640px) {
+    .tarjetas-panel { grid-template-columns: 1fr; }
+  }
+  .tabla-glosario { width: 100%; border-collapse: collapse; margin: 8px 0 0; font-size: 12.5px; }
+  .tabla-glosario th, .tabla-glosario td {
+    border: 1px solid var(--borde);
+    padding: 7px 10px;
+    text-align: left;
+    vertical-align: top;
+  }
+  .tabla-glosario th { background: #fafbfc; width: 190px; }
+  .imprimir {
+    display: inline-block;
+    margin-top: 4px;
+    font-size: 12px;
+    color: var(--azul);
+    text-decoration: none;
+    cursor: pointer;
+  }
+  .imprimir:hover { text-decoration: underline; }
+  @media print {
+    header, .tabs, .imprimir { display: none !important; }
+    #tab-manual { display: block !important; }
+  }
 </style>
 </head>
 <body>
@@ -54,53 +171,210 @@
 
 <div class="contenido">
 
-  <h2>¿Cómo se calcula el Score?</h2>
-  <p>Cada marca arranca en 0 y se le suman o restan puntos según lo que se sabe de ella. Cuanto más alto, más prioridad como lead para contactar.</p>
-  <table class="tabla-score">
-    <thead>
-      <tr><th>Condición</th><th>Puntos</th></tr>
-    </thead>
-    <tbody>
-      <tr>
-        <td>La matrícula de agente que trae el boletín está vacía o dice "Part." (presentación particular, sin agente registrado)</td>
-        <td class="puntos pos">+50</td>
-      </tr>
-      <tr>
-        <td>Se verificó contra el expediente de INPI y es lead real (no tiene "Apoderado" ni "Gestor Ratificado" en GESTION DEL TRAMITE)</td>
-        <td class="puntos pos">+50</td>
-      </tr>
-      <tr>
-        <td>Se verificó y <strong>tiene</strong> agente/apoderado (no es lead)</td>
-        <td class="puntos neg">−100</td>
-      </tr>
-      <tr>
-        <td>Se pudo recuperar el email desde el Formulario (Grilla Digital)</td>
-        <td class="puntos pos">+20</td>
-      </tr>
-    </tbody>
-  </table>
-  <p>Ejemplo: una marca sin matrícula, verificada como lead real y con email recuperado llega a <strong>120</strong> (50+50+20). Una marca que resultó tener apoderado queda en <strong>−50</strong> (50−100), bien abajo en la lista.</p>
-  <p>Si todavía no se verificó contra INPI (columna "Lead" en gris, "sin verificar"), no se suma ni resta nada por esa parte — mejor subestimar el score que arriesgar marcar como lead algo que no se confirmó.</p>
+  <div class="tabs">
+    <button class="tab-btn" data-tab="ayuda">Ayuda</button>
+    <button class="tab-btn" data-tab="manual">Manual del sistema</button>
+  </div>
 
-  <h2>La columna "Lead"</h2>
-  <ul>
-    <li><span class="badge lead" style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;background:#fde8e8;color:#c0392b;">LEAD</span> — se confirmó contra el expediente de INPI que se presentó sin agente ni gestor.</li>
-    <li><span class="badge no-lead" style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;background:#e6f4ea;color:#1a8754;">Apoderado / Gestor Ratificado</span> — tiene agente, no es un lead para prospección.</li>
-    <li><span class="badge sin-dato" style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;background:#eef0f2;color:#6b7280;">sin verificar</span> — todavía no se corrió la consulta contra INPI para esta marca (pasa con boletines recién cargados, o si el <code>--limit</code> del pipeline no llegó a cubrirla).</li>
-  </ul>
+  <!-- ==================== TAB: AYUDA (uso del panel) ==================== -->
+  <div id="tab-ayuda" class="tab-panel caja">
 
-  <h2>"Sin email" y el botón Reintentar</h2>
-  <p>Cuando un lead no tiene email, pasando el mouse por "sin email" aparece el motivo exacto: bloqueo del WAF de INPI, el expediente no tiene un Formulario en Grilla Digital, no se pudo descargar el PDF, o el Formulario no tenía el campo EMAIL completo.</p>
-  <p>El botón <strong>Reintentar</strong> vuelve a consultar ese expediente puntual contra INPI en vivo (tarda unos segundos) y actualiza caracter, email, CUIT y score si encuentra algo nuevo.</p>
+    <h2>¿Cómo se calcula el Score?</h2>
+    <p>Cada marca arranca en 0 y se le suman o restan puntos según lo que se sabe de ella. Cuanto más alto, más prioridad como lead para contactar.</p>
+    <table class="tabla-score">
+      <thead>
+        <tr><th>Condición</th><th>Puntos</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>La matrícula de agente que trae el boletín está vacía o dice "Part." (presentación particular, sin agente registrado)</td>
+          <td class="puntos pos">+50</td>
+        </tr>
+        <tr>
+          <td>Se verificó contra el expediente de INPI y es lead real (no tiene "Apoderado" ni "Gestor Ratificado" en GESTION DEL TRAMITE)</td>
+          <td class="puntos pos">+50</td>
+        </tr>
+        <tr>
+          <td>Se verificó y <strong>tiene</strong> agente/apoderado (no es lead)</td>
+          <td class="puntos neg">−100</td>
+        </tr>
+        <tr>
+          <td>Se pudo recuperar el email desde el Formulario (Grilla Digital)</td>
+          <td class="puntos pos">+20</td>
+        </tr>
+      </tbody>
+    </table>
+    <p>Ejemplo: una marca sin matrícula, verificada como lead real y con email recuperado llega a <strong>120</strong> (50+50+20). Una marca que resultó tener apoderado queda en <strong>−50</strong> (50−100), bien abajo en la lista.</p>
+    <p>Si todavía no se verificó contra INPI (columna "Lead" en gris, "sin verificar"), no se suma ni resta nada por esa parte — mejor subestimar el score que arriesgar marcar como lead algo que no se confirmó.</p>
 
-  <h2>Agrupado por titular</h2>
-  <p>Cuando un mismo titular tiene varias marcas, se muestra una sola fila con una flecha (<strong>▸ +N</strong>) para desplegar el resto sin saturar la tabla. El click en el nombre del titular abre su ficha completa (<code>/titular/...</code>), con <strong>todas</strong> sus marcas de cualquier boletín, no solo el que se está mirando.</p>
-  <p>La unificación usa el <strong>CUIT</strong> cuando ya se pudo leer del expediente (es el dato real, no depende de cómo esté tipeado el nombre). Si todavía no se verificó esa marca, se usa el nombre del titular normalizado como respaldo — puede fallar si el mismo titular está tipeado distinto en dos presentaciones distintas.</p>
+    <h2>La columna "Lead"</h2>
+    <ul>
+      <li><span class="badge lead" style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;background:#fde8e8;color:#c0392b;">LEAD</span> — se confirmó contra el expediente de INPI que se presentó sin agente ni gestor.</li>
+      <li><span class="badge no-lead" style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;background:#e6f4ea;color:#1a8754;">Apoderado / Gestor Ratificado</span> — tiene agente, no es un lead para prospección.</li>
+      <li><span class="badge sin-dato" style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;background:#eef0f2;color:#6b7280;">sin verificar</span> — todavía no se corrió la consulta contra INPI para esta marca (pasa con boletines recién cargados, o si el <code>--limit</code> del pipeline no llegó a cubrirla).</li>
+    </ul>
 
-  <h2>Contactado</h2>
-  <p>Es un estado propio del panel — el pipeline que carga los boletines nunca lo toca. Se marca por acta (por ahora no está unificado por titular), y queda con la fecha en que se marcó.</p>
+    <h2>"Sin email" y el botón Reintentar</h2>
+    <p>Cuando un lead no tiene email, pasando el mouse por "sin email" aparece el motivo exacto: bloqueo del WAF de INPI, el expediente no tiene un Formulario en Grilla Digital, no se pudo descargar el PDF, o el Formulario no tenía el campo EMAIL completo.</p>
+    <p>El botón <strong>Reintentar</strong> vuelve a consultar ese expediente puntual contra INPI en vivo (tarda unos segundos) y actualiza caracter, email, CUIT y score si encuentra algo nuevo.</p>
+
+    <h2>Agrupado por titular</h2>
+    <p>Cuando un mismo titular tiene varias marcas, se muestra una sola fila con una flecha (<strong>▸ +N</strong>) para desplegar el resto sin saturar la tabla. El click en el nombre del titular abre su ficha completa (<code>/titular/...</code>), con <strong>todas</strong> sus marcas de cualquier boletín, no solo el que se está mirando.</p>
+    <p>La unificación usa el <strong>CUIT</strong> cuando ya se pudo leer del expediente (es el dato real, no depende de cómo esté tipeado el nombre). Si todavía no se verificó esa marca, se usa el nombre del titular normalizado como respaldo — puede fallar si el mismo titular está tipeado distinto en dos presentaciones distintas.</p>
+
+    <h2>Estado del trámite y fechas</h2>
+    <p>Cuando INPI ya resolvió una marca, aparece el badge <strong>✓ CONCEDIDA</strong> (o DENEGADA) en el detalle por titular, con la fecha de concesión y de vencimiento en el tooltip. La columna "Fecha Boletín" es siempre la fecha de publicación (la que cuenta para el plazo de oposición); "Fecha Concedida" es un dato aparte, que solo se completa una vez que INPI resuelve.</p>
+
+    <h2>Contactado</h2>
+    <p>Es un estado propio del panel — el pipeline que carga los boletines nunca lo toca. Se marca por acta (por ahora no está unificado por titular), y queda con la fecha en que se marcó.</p>
+
+  </div>
+
+  <!-- ==================== TAB: MANUAL (para presentar el proceso completo) ==================== -->
+  <div id="tab-manual" class="tab-panel">
+
+    <div class="caja">
+      <h2 style="margin-top:0;">Manual del sistema</h2>
+      <p style="margin:0 0 14px;color:var(--gris);">
+        Versión simple, pensada para explicar todo el proceso de un vistazo (por ejemplo, para presentarlo).
+        <a class="imprimir" onclick="window.print()">🖨️ Imprimir / guardar como PDF</a>
+      </p>
+
+      <div class="resumen">
+        Cada semana, el sistema revisa los boletines de marcas nuevas que publica el INPI, detecta automáticamente
+        cuáles solicitudes fueron hechas <strong>sin agente ni apoderado</strong> — es decir, potenciales clientes
+        para el estudio — y les asigna un puntaje de prioridad. Después sigue a cada marca a lo largo del tiempo:
+        avisa si le presentan una oposición, si INPI la concede o la deniega, y cuándo vence. Todo queda cargado
+        en un panel visual (este mismo panel) para trabajar sin tocar código ni el sitio de INPI.
+      </div>
+
+      <h3 style="font-size:14px;color:#1f2430;margin:0 0 14px;">El proceso, paso a paso</h3>
+      <ul class="linea-tiempo">
+        <li class="paso">
+          <div class="num">1</div>
+          <div class="cuerpo">
+            <h3>Se busca el boletín nuevo</h3>
+            <p>Automáticamente, 4 veces por semana (lunes, miércoles, viernes y sábado), el sistema revisa si INPI publicó
+              un boletín nuevo de "Marcas Nuevas" y lo descarga.</p>
+          </div>
+        </li>
+        <li class="paso">
+          <div class="num">2</div>
+          <div class="cuerpo">
+            <h3>Se extraen todas las solicitudes</h3>
+            <p>El boletín es un PDF de cientos de páginas. El sistema lo lee y separa cada solicitud en sus datos:
+              acta, clase, tipo de marca, titular, fecha, agente (si tiene).</p>
+          </div>
+        </li>
+        <li class="paso">
+          <div class="num">3</div>
+          <div class="cuerpo">
+            <h3>Se identifican los leads reales</h3>
+            <p>Para cada solicitud sin agente declarado, el sistema entra al expediente digital de INPI y confirma si
+              realmente nadie la está gestionando. Si es así, es un <strong>lead</strong>: alguien que se registró por
+              su cuenta y probablemente va a necesitar ayuda profesional más adelante.</p>
+          </div>
+        </li>
+        <li class="paso">
+          <div class="num">4</div>
+          <div class="cuerpo">
+            <h3>Se recupera el contacto y se prioriza</h3>
+            <p>Cuando es posible, se recupera el email del solicitante desde el formulario original, y se le asigna un
+              puntaje: cuánto más alto, más prioridad para contactarlo primero.</p>
+          </div>
+        </li>
+        <li class="paso">
+          <div class="num">5</div>
+          <div class="cuerpo">
+            <h3>Todo queda en el panel</h3>
+            <p>Cada lead aparece en el panel con sus datos, listo para filtrar, buscar y marcar como "contactado" a
+              medida que se avanza.</p>
+          </div>
+        </li>
+        <li class="paso">
+          <div class="num gris">6</div>
+          <div class="cuerpo">
+            <h3>Seguimiento después de publicada</h3>
+            <p>El sistema no se detiene ahí: sigue revisando cada lead con el tiempo, para avisar si aparece una
+              oposición (alguien se opone a la marca) o una vista de INPI, y sigue el trámite hasta que INPI lo resuelve.</p>
+          </div>
+        </li>
+        <li class="paso">
+          <div class="num verde">7</div>
+          <div class="cuerpo">
+            <h3>Concesión, vencimiento y próximos trámites</h3>
+            <p>Cuando INPI concede la marca, el sistema guarda la fecha de concesión y calcula desde ahí los próximos
+              plazos importantes: la declaración jurada de uso (a los 5 años) y la renovación (a los 10) — la base
+              para poder ofrecer ese seguimiento como servicio.</p>
+          </div>
+        </li>
+      </ul>
+
+      <div class="seccion-manual">
+        <h2>Cómo se usa el panel día a día</h2>
+        <div class="tarjetas-panel">
+          <div class="tarjeta-mini">
+            <h4>Panel principal</h4>
+            <p>Lista de marcas con filtros (lead, oposición, boletín, clase, búsqueda libre) y orden por columna.
+              Agrupa las marcas de un mismo titular en una sola fila.</p>
+          </div>
+          <div class="tarjeta-mini">
+            <h4>Ficha por titular</h4>
+            <p>Todas las marcas de una misma persona o empresa, con el email completo, el estado del trámite, y los
+              botones para marcar "Contactado" o reintentar la consulta a INPI.</p>
+          </div>
+          <div class="tarjeta-mini">
+            <h4>Automatizaciones (<code>/crons</code>)</h4>
+            <p>Muestra qué procesos corren solos, cuándo corrió cada uno por última vez, si salió bien, y cuánto
+              trabajo queda pendiente en este momento — sin tener que revisar nada a mano.</p>
+          </div>
+          <div class="tarjeta-mini">
+            <h4>Estados que se ven en el panel</h4>
+            <p><strong>LEAD</strong> (prioridad), <strong>con agente</strong> (descartado), <strong>sin verificar</strong>
+              (todavía no se confirmó), <strong>⚠ OPOSICIÓN</strong>, <strong>✓ CONCEDIDA / DENEGADA</strong>.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="seccion-manual">
+        <h2>Glosario</h2>
+        <table class="tabla-glosario">
+          <tbody>
+            <tr><th>Acta</th><td>Número único que identifica una solicitud de marca en INPI.</td></tr>
+            <tr><th>Clase</th><td>Categoría de productos/servicios que protege la marca (de la 1 a la 45).</td></tr>
+            <tr><th>Titular</th><td>Persona o empresa dueña de la marca.</td></tr>
+            <tr><th>Agente / Apoderado</th><td>Profesional matriculado que ya gestiona el trámite — si existe, no es un lead.</td></tr>
+            <tr><th>Lead</th><td>Solicitante sin agente ni apoderado: potencial cliente para el estudio.</td></tr>
+            <tr><th>Lead score</th><td>Puntaje que prioriza a qué leads conviene contactar primero.</td></tr>
+            <tr><th>CUIT</th><td>Se usa para agrupar con certeza todas las marcas de un mismo titular.</td></tr>
+            <tr><th>Oposición / vista</th><td>Objeción presentada dentro de los 30 días de publicada la marca (de un tercero, o una observación de INPI).</td></tr>
+            <tr><th>Contactado</th><td>Marca que ya fue gestionada comercialmente — lo maneja el equipo, no el sistema automático.</td></tr>
+            <tr><th>Estado del trámite</th><td>Resultado final del trámite en INPI: Concedida, Denegada, o todavía en curso.</td></tr>
+            <tr><th>Fecha de concesión</th><td>Fecha en que INPI otorgó la marca — desde ahí se cuentan los plazos de declaración jurada y renovación.</td></tr>
+            <tr><th>Declaración jurada de uso</th><td>Trámite obligatorio dentro de los primeros 5 años desde la concesión, declarando que la marca está en uso.</td></tr>
+            <tr><th>Renovación</th><td>Trámite para extender el registro 10 años más, antes de que venza.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+    </div>
+  </div>
 
 </div>
+
+<script>
+function activarTab(nombre) {
+  document.querySelectorAll(".tab-btn").forEach(b => b.classList.toggle("activo", b.dataset.tab === nombre));
+  document.querySelectorAll(".tab-panel").forEach(p => p.classList.toggle("activo", p.id === "tab-" + nombre));
+  history.replaceState(null, "", "#" + nombre);
+}
+
+document.querySelectorAll(".tab-btn").forEach(b => {
+  b.addEventListener("click", () => activarTab(b.dataset.tab));
+});
+
+activarTab(location.hash === "#manual" ? "manual" : "ayuda");
+</script>
 
 </body>
 </html>
