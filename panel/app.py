@@ -342,4 +342,17 @@ def pagina_ayuda(_: str = Depends(verificar_login)):
     return FileResponse(os.path.join(os.path.dirname(__file__), "static", "ayuda.html"))
 
 
-app.mount("/static", StaticFiles(directory=os.path.join(os.path.dirname(__file__), "static")), name="static")
+class ArchivosSinCache(StaticFiles):
+    """Los archivos de /static (comun.js, comun.css) cambian seguido y no
+    tienen versión en el nombre. Sin esto, el navegador puede quedarse con
+    una versión vieja cacheada (ej. un comun.js sin alguna función nueva)
+    aunque el HTML que lo referencia ya sea el nuevo — como pasó con
+    badgeOposicion. Cache-Control: no-cache obliga a revalidar en cada carga."""
+
+    def file_response(self, *args, **kwargs):
+        respuesta = super().file_response(*args, **kwargs)
+        respuesta.headers["Cache-Control"] = "no-cache"
+        return respuesta
+
+
+app.mount("/static", ArchivosSinCache(directory=os.path.join(os.path.dirname(__file__), "static")), name="static")
