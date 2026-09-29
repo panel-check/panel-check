@@ -35,6 +35,11 @@
     border: 1px solid var(--borde);
     padding: 8px 10px;
     text-align: left;
+    /* comun.css define "th, td { white-space: nowrap }" para la tabla
+       compacta del panel principal — sin este reset, el texto largo de esta
+       tabla no puede hacer wrap y la tabla termina más ancha que la tarjeta
+       blanca (se sale por el borde derecho). */
+    white-space: normal;
   }
   .tabla-score th { background: #fafbfc; }
   .puntos { font-weight: 700; }
@@ -145,6 +150,7 @@
     padding: 7px 10px;
     text-align: left;
     vertical-align: top;
+    white-space: normal; /* ver comentario en .tabla-score th, .tabla-score td */
   }
   .tabla-glosario th { background: #fafbfc; width: 190px; }
   .imprimir {

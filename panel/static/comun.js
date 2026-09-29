@@ -207,6 +207,14 @@ function fmtFecha(f) {
   return f.split("T")[0].split(" ")[0];
 }
 
+// Igual que fmtFecha, pero con guion no separable (U+2011) en vez de "-":
+// evita que el navegador corte una fecha tipo "2036-02-03" justo a la mitad
+// al hacer wrap dentro de un globo de tooltip angosto (se ve horrible: "2036-"
+// en una línea y "02-03" en la siguiente).
+function fmtFechaSinCorte(f) {
+  return fmtFecha(f).replace(/-/g, "‑");
+}
+
 // estado_tramite lo completa scripts/revisar_estado.py leyendo la sección
 // RESOLUCIÓN del expediente — null mientras el trámite sigue en curso
 // (examen de forma/fondo, publicación, oposición), no es un error. En el
@@ -218,8 +226,8 @@ function badgeEstadoTramite(row, mostrarSinDato = false) {
     return mostrarSinDato ? '<span class="badge sin-dato">en trámite</span>' : "";
   }
   if (row.estado_tramite === "Concedida") {
-    const detalle = `Concedida el ${fmtFecha(row.fecha_concesion) || "?"}`
-      + (row.fecha_vencimiento_marca ? ` · vence ${fmtFecha(row.fecha_vencimiento_marca)}` : "");
+    const detalle = `Concedida el ${fmtFechaSinCorte(row.fecha_concesion) || "?"}`
+      + (row.fecha_vencimiento_marca ? ` · vence ${fmtFechaSinCorte(row.fecha_vencimiento_marca)}` : "");
     return `<span class="tooltip badge-concedida">✓ CONCEDIDA<span class="globo">${detalle}</span></span>`;
   }
   if (row.estado_tramite === "Denegada") {

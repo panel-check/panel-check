@@ -384,6 +384,19 @@ a.link-titular:hover { text-decoration: underline; }
   pointer-events: none;
 }
 .tooltip:hover .globo { visibility: visible; opacity: 1; }
+/* "Fecha Concedida" es de las últimas columnas de la tabla: un globo de
+   220px anclado a la izquierda del badge se sale por el borde derecho de la
+   pantalla y encima el texto (dos fechas) no entraba en una sola línea, así
+   que el navegador lo cortaba a la mitad de una fecha. Lo anclamos al lado
+   derecho del badge (crece hacia la izquierda, dentro de la tabla) y le
+   damos ancho suficiente para las dos fechas en una sola línea. */
+.badge-concedida .globo {
+  left: auto;
+  right: 0;
+  width: max-content;
+  max-width: 260px;
+  white-space: nowrap;
+}
 button.reintentar {
   padding: 3px 8px;
   border-radius: 6px;
