@@ -49,6 +49,7 @@
     font-size: 12px;
     color: var(--gris);
   }
+  .pendientes-error { color: var(--gris); cursor: help; }
   a.ver-run { font-size: 12px; color: var(--azul); text-decoration: none; }
   a.ver-run:hover { text-decoration: underline; }
 </style>
@@ -99,6 +100,17 @@ function tarjetaCron(cron) {
   const link = cron.url
     ? `<a class="ver-run" href="${cron.url}" target="_blank">Ver en GitHub ↗</a>`
     : "";
+  // "Progreso" real: cuánto trabajo queda pendiente en la base ahora mismo,
+  // no solo si la última corrida salió bien. undefined = este cron no
+  // declaró pendientes_sql (ej. el pipeline principal); null = la consulta
+  // a la base falló (se avisa, no se rompe la tarjeta).
+  const pendientes = cron.pendientes === undefined ? "" : `
+        <div class="dato-cron">
+          <span class="etiqueta">Pendientes ahora</span>
+          ${cron.pendientes === null
+            ? `<span class="pendientes-error" title="${cron.pendientes_error || ''}">no se pudo consultar</span>`
+            : `<strong>${cron.pendientes}</strong> ${cron.pendientes_etiqueta || ''}`}
+        </div>`;
   return `
     <div class="tarjeta-cron">
       <h2>${cron.nombre}</h2>
@@ -115,7 +127,7 @@ function tarjetaCron(cron) {
         <div class="dato-cron">
           <span class="etiqueta">Resultado</span>
           ${badgeEstado(cron)}
-        </div>
+        </div>${pendientes}
         <div class="dato-cron">
           <span class="etiqueta">&nbsp;</span>
           ${link}

@@ -166,6 +166,9 @@ CRONS_DEFINIDOS = [
                         "apareció una oposición de tercero o una vista de INPI.",
         "workflow_file": "revisar_oposiciones.yml",
         "cron": "0 10 * * *",
+        "pendientes_sql": "SELECT COUNT(*) FROM marcas WHERE es_lead = true "
+                           "AND fecha_publicacion IS NOT NULL AND revisado_oposicion_en IS NULL",
+        "pendientes_etiqueta": "leads publicados esperando el plazo de 33 días",
     },
     {
         "nombre": "Revisión de estado del trámite",
@@ -174,6 +177,20 @@ CRONS_DEFINIDOS = [
                         "el estado, la fecha de concesión y el vencimiento apenas INPI resuelve.",
         "workflow_file": "revisar_estado.yml",
         "cron": "0 11 * * 1",
+        "pendientes_sql": "SELECT COUNT(*) FROM marcas WHERE estado_tramite IS NULL "
+                           "OR estado_tramite NOT IN ('Concedida', 'Denegada')",
+        "pendientes_etiqueta": "marcas sin resolución firme todavía",
+    },
+    {
+        "nombre": "Reintento de marcas sin verificar",
+        "descripcion": "Para las marcas donde no se pudo confirmar si tienen agente/apoderado "
+                        "(casi siempre por un bloqueo puntual del WAF de INPI durante la corrida "
+                        "del boletín), vuelve a consultar el expediente para resolverlas sin "
+                        "tener que usar \"Reintentar\" a mano una por una.",
+        "workflow_file": "reintentar_sin_verificar.yml",
+        "cron": "0 13 * * *",
+        "pendientes_sql": "SELECT COUNT(*) FROM marcas WHERE es_lead IS NULL",
+        "pendientes_etiqueta": "marcas sin verificar todavía",
     },
 ]
 
@@ -487,13 +504,27 @@ def reintentar_email(acta: str, _: str = Depends(verificar_login)):
 def listar_crons(_: str = Depends(verificar_login)):
     resultado = []
     for c in CRONS_DEFINIDOS:
-        resultado.append({
+        item = {
             "nombre": c["nombre"],
             "descripcion": c["descripcion"],
             "cron": c["cron"],
             "proxima_ejecucion": _proxima_ejecucion(c["cron"]),
             **_ultima_corrida_workflow(c["workflow_file"]),
-        })
+        }
+        # "Progreso" real del trabajo pendiente (no solo si la última corrida
+        # anduvo bien) — cuántas marcas todavía están esperando este proceso,
+        # calculado en vivo contra la base, no contra el log de la corrida.
+        if c.get("pendientes_sql"):
+            try:
+                with conexion() as conn:
+                    with conn.cursor() as cur:
+                        cur.execute(c["pendientes_sql"])
+                        item["pendientes"] = cur.fetchone()[0]
+                        item["pendientes_etiqueta"] = c.get("pendientes_etiqueta", "pendientes")
+            except Exception as e:
+                item["pendientes"] = None
+                item["pendientes_error"] = str(e)
+        resultado.append(item)
     return resultado
 
 

@@ -1,0 +1,40 @@
+name: Reintentar marcas sin verificar
+
+on:
+  schedule:
+    # Todos los días a las 13:00 UTC (10:00 ART) — corre unas horas después
+    # del pipeline principal (09:00 UTC), para no competir por el mismo
+    # bloqueo del WAF de INPI en el mismo momento.
+    - cron: "0 13 * * *"
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: "Tope de actas a reintentar en esta corrida (dejar vacío = todas)"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  reintentar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Instalar dependencias
+        run: pip install -r requirements.txt
+
+      - name: Reintentar marcas con es_lead sin verificar
+        run: |
+          cd scripts
+          args=""
+          if [ -n "${{ inputs.limit }}" ]; then args="$args --limit ${{ inputs.limit }}"; fi
+          python3 reintentar_sin_verificar.py $args
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL || secrets.DATABASE_PUBLIC_URL }}
+          PYTHONUNBUFFERED: "1"
