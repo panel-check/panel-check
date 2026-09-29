@@ -22,6 +22,7 @@ import argparse
 import os
 import sys
 import time
+import traceback
 
 import psycopg2
 import psycopg2.extras
@@ -110,4 +111,15 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception as e:
+        # Imprimimos como "::error::" (una sola línea) además del traceback
+        # normal a stderr: los comandos ::error:: de GitHub Actions quedan
+        # como "annotation" del check run, que se puede leer por la API de
+        # GitHub (api.github.com) sin necesitar bajar el log completo (que
+        # se sirve desde Azure Blob Storage, bloqueado para este entorno).
+        linea = f"{type(e).__name__}: {e}".replace("\n", " ")
+        print(f"::error::Backfill falló: {linea}")
+        traceback.print_exc()
+        sys.exit(1)
