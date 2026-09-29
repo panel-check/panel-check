@@ -19,7 +19,7 @@ Uso:
 import re
 import sys
 
-from validar_leads import BASE, crear_sesion, _get_con_reintentos
+from validar_leads import BASE, crear_sesion, _get_con_reintentos, parsear_resolucion, RE_CUIT_SPAN
 
 
 def _texto_sin_tags(html: str) -> str:
@@ -85,6 +85,24 @@ def main():
             ctx = re.sub(r"\s+", " ", ctx).strip()
             print(f"::notice::CTX {palabra} @{i}: {ctx}")
             vistos += 1
+
+    # La tabla de titulares tiene encabezado "TIPO Y NOMBRE DEL TITULAR..." —
+    # el nombre real viene en la fila de datos justo después. Volcamos una
+    # ventana más grande a partir de ahí para verla completa.
+    m_tabla = re.search(r"TIPO Y NOMBRE DEL TITULAR", texto_plano.upper())
+    if m_tabla:
+        i = m_tabla.start()
+        ventana = texto_plano[i: i + 700]
+        ventana = re.sub(r"\s+", " ", ventana).strip()
+        print(f"::notice::TABLA TITULARES: {ventana}")
+
+    resolucion = parsear_resolucion(r.text)
+    print(f"::notice::RESOLUCION parseada: {resolucion}")
+
+    m_cuit = RE_CUIT_SPAN.search(r.text)
+    print(f"::notice::CUIT (regex ya usado en validar_leads): {m_cuit.group(1) if m_cuit else '(no encontrado)'}")
+
+    print(f"::notice::acta {acta} inspeccionada OK")
 
 
 if __name__ == "__main__":
