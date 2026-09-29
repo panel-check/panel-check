@@ -1,0 +1,35 @@
+name: Backfill fecha_publicacion (una sola vez / manual)
+
+on:
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: "Tope de actas a revisar en esta corrida (dejar vacío = todas)"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Instalar dependencias
+        run: pip install -r requirements.txt
+
+      - name: Completar fecha_publicacion de leads que ya estaban cargados
+        run: |
+          cd scripts
+          args=""
+          if [ -n "${{ inputs.limit }}" ]; then args="$args --limit ${{ inputs.limit }}"; fi
+          python3 backfill_fecha_publicacion.py $args
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL || secrets.DATABASE_PUBLIC_URL }}
+          PYTHONUNBUFFERED: "1"
