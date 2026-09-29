@@ -328,6 +328,8 @@ def listar_marcas(
     es_lead: Optional[bool] = None,
     contactado: Optional[bool] = None,
     tuvo_oposicion: Optional[bool] = None,
+    fecha_desde: Optional[str] = None,
+    fecha_hasta: Optional[str] = None,
     q: Optional[str] = None,
     sort: str = "lead_score",
     order: str = "desc",
@@ -355,6 +357,18 @@ def listar_marcas(
     if tuvo_oposicion is not None:
         condiciones.append("tuvo_oposicion = %s")
         valores.append(tuvo_oposicion)
+    if fecha_desde or fecha_hasta:
+        # Mismo criterio que muestra el panel como "Fecha Boletín"
+        # (fechaPublicacionOFallback en comun.js): fecha_publicacion cuando
+        # ya se verificó, si no fecha_presentacion — filtrar solo por
+        # fecha_publicacion dejaría afuera filas que el panel sí muestra
+        # como dentro del rango, por el fallback.
+        if fecha_desde:
+            condiciones.append("COALESCE(fecha_publicacion, fecha_presentacion) >= %s")
+            valores.append(fecha_desde)
+        if fecha_hasta:
+            condiciones.append("COALESCE(fecha_publicacion, fecha_presentacion) <= %s")
+            valores.append(fecha_hasta)
     if q:
         condiciones.append(
             """(

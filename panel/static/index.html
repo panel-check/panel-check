@@ -43,11 +43,18 @@
       <option value="false">Sin oposición</option>
     </select>
   </label>
+  <label>Fecha Boletín desde
+    <input type="date" id="f-fecha-desde" />
+  </label>
+  <label>hasta
+    <input type="date" id="f-fecha-hasta" />
+  </label>
   <label>Buscar
     <input type="text" id="f-q" placeholder="titular o marca..." />
   </label>
   <button onclick="cargar(0)">Filtrar</button>
   <button class="secundario" onclick="limpiarFiltros()">Limpiar</button>
+  <button class="secundario" onclick="copiarLink()" title="Copia un link con estos filtros aplicados, para compartir">🔗 Copiar link</button>
 </div>
 
 <div class="resumen" id="resumen">Cargando...</div>
@@ -119,6 +126,8 @@ function filtrosActuales() {
     es_lead: document.getElementById("f-lead").value,
     contactado: document.getElementById("f-contactado").value,
     tuvo_oposicion: document.getElementById("f-oposicion").value,
+    fecha_desde: document.getElementById("f-fecha-desde").value,
+    fecha_hasta: document.getElementById("f-fecha-hasta").value,
     q: document.getElementById("f-q").value,
     sort: estado.sort,
     order: estado.order,
@@ -133,8 +142,47 @@ function limpiarFiltros() {
   document.getElementById("f-lead").value = "true";
   document.getElementById("f-contactado").value = "false";
   document.getElementById("f-oposicion").value = "";
+  document.getElementById("f-fecha-desde").value = "";
+  document.getElementById("f-fecha-hasta").value = "";
   document.getElementById("f-q").value = "";
   cargar(0);
+}
+
+// La URL refleja siempre los filtros/orden/página actuales (se actualiza
+// sola en cada cargar(), con replaceState para no ensuciar el historial de
+// "atrás/adelante" con cada tecla) — así el link de la barra de direcciones
+// ya sirve para compartir exactamente esta búsqueda, sin un paso aparte.
+function actualizarURL() {
+  const qsActual = qs(filtrosActuales());
+  const nueva = qsActual ? `${location.pathname}?${qsActual}` : location.pathname;
+  history.replaceState(null, "", nueva);
+}
+
+function copiarLink() {
+  actualizarURL();
+  navigator.clipboard.writeText(location.href).then(
+    () => alert("Link copiado — incluye los filtros que están aplicados ahora."),
+    () => prompt("Copiá este link:", location.href),
+  );
+}
+
+// Al entrar con un link compartido (?boletin=...&f-lead=... etc.), precarga
+// los filtros desde la URL en vez de arrancar siempre con los de siempre.
+function filtrosDesdeURL() {
+  const p = new URLSearchParams(location.search);
+  if (!p.toString()) return false;
+  if (p.has("boletin")) document.getElementById("f-boletin").value = p.get("boletin");
+  if (p.has("clase")) document.getElementById("f-clase").value = p.get("clase");
+  document.getElementById("f-lead").value = p.get("es_lead") ?? "true";
+  document.getElementById("f-contactado").value = p.get("contactado") ?? "false";
+  document.getElementById("f-oposicion").value = p.get("tuvo_oposicion") ?? "";
+  document.getElementById("f-fecha-desde").value = p.get("fecha_desde") ?? "";
+  document.getElementById("f-fecha-hasta").value = p.get("fecha_hasta") ?? "";
+  document.getElementById("f-q").value = p.get("q") ?? "";
+  estado.sort = p.get("sort") || estado.sort;
+  estado.order = p.get("order") || estado.order;
+  estado.offset = parseInt(p.get("offset") || "0", 10) || 0;
+  return true;
 }
 
 function ordenarPor(col) {
@@ -203,6 +251,7 @@ async function cargar(offset) {
   estado.offset = offset;
   document.getElementById("tbody").innerHTML = '<tr><td colspan="9" class="vacio">Cargando...</td></tr>';
   const params = filtrosActuales();
+  actualizarURL();
   const data = await api(`/api/marcas?${qs(params)}`);
   estado.total = data.total;
 
@@ -235,9 +284,12 @@ async function cargar(offset) {
 
 (async function init() {
   await cargarFiltrosIniciales();
-  document.getElementById("f-lead").value = "true";
-  document.getElementById("f-contactado").value = "false";
-  await cargar(0);
+  const vinoDeLink = filtrosDesdeURL();
+  if (!vinoDeLink) {
+    document.getElementById("f-lead").value = "true";
+    document.getElementById("f-contactado").value = "false";
+  }
+  await cargar(estado.offset);
 })();
 </script>
 
