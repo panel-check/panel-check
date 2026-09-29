@@ -54,7 +54,7 @@ def main():
         if args.limit:
             pendientes = pendientes[: args.limit]
 
-        print(f"Oposiciones ya detectadas sin detalle rico todavía: {len(pendientes)}")
+        print(f"::notice::Oposiciones ya detectadas sin detalle rico todavía: {len(pendientes)}")
 
         s = crear_sesion()
         completadas = 0
@@ -62,7 +62,7 @@ def main():
             acta = fila["acta"]
             archivos = buscar_archivos_grilla(s, acta)
             if not archivos:
-                print(f"  [{i}/{len(pendientes)}] acta {acta}: bloqueado por el WAF, reintento en la próxima corrida")
+                print(f"::notice::  [{i}/{len(pendientes)}] acta {acta}: bloqueado por el WAF, reintento en la próxima corrida")
                 conn.commit()  # commit "vacío" — ver revisar_estado.py
                 time.sleep(args.delay)
                 continue
@@ -73,7 +73,7 @@ def main():
                 # o ya no se encuentra (raro), o es una VISTA de oficio de
                 # INPI (no tiene Formulario de tercero) — no hay nada para
                 # completar, seguimos.
-                print(f"  [{i}/{len(pendientes)}] acta {acta}: no es oposición de tercero con Formulario propio, se saltea")
+                print(f"::notice::  [{i}/{len(pendientes)}] acta {acta}: no es oposición de tercero con Formulario propio, se saltea")
                 conn.commit()
                 time.sleep(args.delay)
                 continue
@@ -100,14 +100,14 @@ def main():
                     )
                 conn.commit()
                 completadas += 1
-                print(f"  [{i}/{len(pendientes)}] acta {acta} ({fila['titular']}): completado — oponente {detalle_rico.get('oponente_nombre')}")
+                print(f"::notice::  [{i}/{len(pendientes)}] acta {acta} ({fila['titular']}): completado — oponente {detalle_rico.get('oponente_nombre')}")
             else:
                 conn.commit()
-                print(f"  [{i}/{len(pendientes)}] acta {acta} ({fila['titular']}): no se pudo bajar/parsear el Formulario")
+                print(f"::notice::  [{i}/{len(pendientes)}] acta {acta} ({fila['titular']}): no se pudo bajar/parsear el Formulario")
 
             time.sleep(args.delay)
 
-        print(f"\nRevisadas: {len(pendientes)}. Completadas con detalle rico: {completadas}.")
+        print(f"::notice::Revisadas: {len(pendientes)}. Completadas con detalle rico: {completadas}.")
     finally:
         conn.close()
 
