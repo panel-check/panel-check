@@ -29,11 +29,20 @@ def _texto_sin_tags(html: str) -> str:
     return texto.strip()
 
 
-def _bloque(texto: str, inicio: str, fin_alternativas: list) -> str:
-    patron_inicio = re.escape(inicio)
-    patron_fin = "|".join(re.escape(f) for f in fin_alternativas)
-    m = re.search(f"{patron_inicio}(.*?)(?:{patron_fin}|$)", texto, re.S)
-    return m.group(1).strip() if m else "(no encontrado)"
+def _bloque_seccion(html: str, nombre: str) -> str:
+    """El nombre de cada sección aparece dos veces en la página: una en la
+    barra de tabs (sin contenido) y otra como título real de la sección,
+    con el contenido en un <div> justo después de su </h4> — mismo patrón
+    ya verificado para GESTION DEL TRAMITE (ver RE_GESTION en
+    validar_leads.py). Devolvemos el ÚLTIMO match, que es el real."""
+    patron = re.compile(
+        re.escape(nombre) + r".*?</h4>\s*</div>\s*<div[^>]*>(.*?)</div>\s*</div>\s*</div>",
+        re.S,
+    )
+    matches = patron.findall(html)
+    if not matches:
+        return "(no encontrado con el patrón de tabs; puede que la sección use otra estructura)"
+    return _texto_sin_tags(matches[-1])
 
 
 def main():
@@ -54,26 +63,14 @@ def main():
         print(f"::error::acta {acta} bloqueada por el WAF de INPI")
         sys.exit(1)
 
-    texto = _texto_sin_tags(r.text)
-
     secciones = ["DATOS GENERALES", "TITULARIDAD", "GESTION DEL TRAMITE",
                  "PUBLICACION", "OPOSICIONES", "VISTAS Y NOTIFICACIONES",
                  "RESOLUCION", "DICTAMENES DE RECURSOS"]
 
-    for i, nombre in enumerate(secciones):
-        # match con o sin tilde (INPI a veces usa Ñ/Ó en mayúscula sin tilde en el texto plano)
-        candidatos = [s2 for s2 in secciones if s2 != nombre]
-        idx = texto.upper().find(nombre)
-        if idx == -1:
-            print(f"::notice::SECCION {nombre}: no encontrada")
-            continue
-        siguientes = [texto.upper().find(c, idx + len(nombre)) for c in candidatos]
-        siguientes = [x for x in siguientes if x != -1]
-        fin = min(siguientes) if siguientes else idx + 1500
-        bloque = texto[idx:fin].strip()
-        bloque = bloque[:900]  # límite prudente por annotation
-        linea = bloque.replace("\n", " | ")
-        print(f"::notice::SECCION {nombre}: {linea}")
+    for nombre in secciones:
+        bloque = _bloque_seccion(r.text, nombre)
+        bloque = re.sub(r"\s+", " ", bloque).strip()[:900]  # límite prudente por annotation
+        print(f"::notice::SECCION {nombre}: {bloque}")
 
     print(f"::notice::acta {acta} inspeccionada OK")
 
