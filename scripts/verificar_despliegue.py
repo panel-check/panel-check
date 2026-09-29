@@ -16,8 +16,7 @@ desincronizados después de ese umbral, algo se atascó — el script imprime
 tarjeta "Verificación del despliegue" en /crons se ponga en rojo sola.
 
 Variables de entorno:
-    PANEL_URL       - base URL pública del panel (sin barra final),
-                       ej. https://panel.registrodemimarca.com.ar
+    PANEL_URL       - base URL pública del panel (sin barra final)
     GITHUB_TOKEN    - para leer el último commit de main (alcanza con el
                        GITHUB_TOKEN automático de Actions, con permiso
                        "contents: read")

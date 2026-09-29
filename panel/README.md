@@ -24,7 +24,7 @@ Abrir http://localhost:8000 (pide usuario/clave).
 
 ## Deploy en Railway
 
-Se deploya como un servicio nuevo dentro del proyecto "Kom-Marcas-Inpi"
+Se deploya como un servicio nuevo dentro del proyecto de Railway ya
 existente, apuntando este mismo repo de GitHub con **root directory =
 `panel`**. Railway detecta el `Procfile` y el `requirements.txt`
 automáticamente (Nixpacks). Variables a configurar en el servicio:

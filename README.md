@@ -1,4 +1,4 @@
-# Kom-Marcas-Inpi
+# Panel Kom
 
 Pipeline para extraer, estructurar y enriquecer las marcas nuevas de los boletines
 del INPI (Argentina), y detectar leads (solicitantes sin agente/apoderado). Basado
