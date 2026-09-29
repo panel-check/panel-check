@@ -63,7 +63,16 @@ def elegir_acta(dsn: str, acta_forzada: str | None) -> tuple[str, str, str]:
 
 
 def _archivos_relacionados(s, acta: str):
-    """Devuelve (fecha_opo, lista_de_archivos_con_esa_fecha)."""
+    """Devuelve (fecha_opo, lista_de_archivos_del_mismo_dia).
+
+    Ojo: comparar el campo Fecha como string exacto es un error — el
+    Formulario y el Recibo de Ingreso de un mismo trámite se cargan con
+    unos segundos/milisegundos de diferencia (confirmado a mano: acta
+    4764327, Recibo a las 13:12:17.833 pero el Formulario con otro
+    timestamp), así que compara por DÍA calendario, no por el string
+    completo de /Date(ms)/."""
+    from validar_leads import _parsear_fecha_grilla
+
     archivos = buscar_archivos_grilla(s, acta)
     if not archivos:
         print(f"::error::acta {acta}: no se pudo consultar Grilla Digital (WAF)")
@@ -75,7 +84,11 @@ def _archivos_relacionados(s, acta: str):
         print("::error::no encontré ninguna fila con Referencia conteniendo 'Opo' en esta acta")
         sys.exit(1)
     fecha_opo = referencia_opo.get("Fecha")
-    relacionados = [a for a in archivos if a.get("Fecha") == fecha_opo]
+    dia_opo = _parsear_fecha_grilla(fecha_opo)
+    if dia_opo:
+        relacionados = [a for a in archivos if _parsear_fecha_grilla(a.get("Fecha") or "") == dia_opo]
+    else:
+        relacionados = [a for a in archivos if a.get("Fecha") == fecha_opo]
     return fecha_opo, relacionados
 
 
