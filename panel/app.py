@@ -17,6 +17,11 @@ Variables de entorno requeridas:
                       "usuario:clave" separados por coma, ej.
                       "pamela:pame20@26,tomasbott:Coderhouse21@"
                       (se suma a PANEL_USER/PANEL_PASSWORD si también están)
+    GITHUB_TOKEN    - opcional, para la sección "Automatizaciones" (/crons):
+                      un Personal Access Token (fine-grained) con permiso
+                      "Actions: Read-only" sobre este repo. Sin esto, esa
+                      sección muestra el horario pero no el estado de la
+                      última corrida.
 
 Correr local:
     DATABASE_URL=... PANEL_USER=admin PANEL_PASSWORD=... uvicorn app:app --reload
@@ -30,6 +35,7 @@ from typing import Optional
 
 import psycopg2
 import psycopg2.extras
+import requests
 from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
@@ -119,6 +125,126 @@ COLUMNAS_MARCA = """
 """
 
 RE_CUIT_VALIDO = re.compile(r"^\d{10,11}$")
+
+# --- Sección "Automatizaciones" (/crons) -----------------------------------
+# GitHub reporta esta org/repo con mayúscula/guiones distintos según la API
+# que se use; funciona igual para leer workflows.
+GITHUB_REPO = os.environ.get("GITHUB_REPO", "marcaskom-lgtm/kom-marcas-inpi")
+GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN")
+
+# Los workflows que corren solos (on: schedule). El de backfill es manual
+# (workflow_dispatch únicamente), no tiene horario fijo, así que no entra
+# acá — si en el futuro se agregan más crons, van en esta lista.
+CRONS_DEFINIDOS = [
+    {
+        "nombre": "Pipeline de boletines",
+        "descripcion": "Busca el último boletín \"MARCAS NUEVAS\" publicado y corre "
+                        "todo el proceso: extraer el PDF, parsear, completar mixtas/figurativas, "
+                        "validar leads contra INPI y cargar todo a la base.",
+        "workflow_file": "pipeline.yml",
+        "cron": "0 9 * * 1,3,5,6",
+    },
+    {
+        "nombre": "Revisión de oposiciones/vistas",
+        "descripcion": "Para los leads reales ya publicados hace 33 días o más, "
+                        "vuelve a mirar la Grilla Digital del expediente buscando si "
+                        "apareció una oposición de tercero o una vista de INPI.",
+        "workflow_file": "revisar_oposiciones.yml",
+        "cron": "0 10 * * *",
+    },
+]
+
+
+def _proxima_ejecucion(expresion_cron: str) -> str:
+    """Próxima vez que corre ese cron (UTC, ISO 8601) a partir de ahora.
+
+    Implementado a mano (sin librería) porque solo necesitamos soportar los
+    crons fijos de este repo: "minuto hora * * dias_semana", con listas
+    separadas por coma o "*". Búsqueda por fuerza bruta, minuto a minuto,
+    hasta 8 días adelante — de sobra para cualquier cron real de este repo.
+    """
+    import datetime as _dt
+
+    minuto_s, hora_s, dia_mes_s, mes_s, dia_semana_s = expresion_cron.split()
+
+    def _set_o_none(valor: str):
+        return None if valor == "*" else {int(x) for x in valor.split(",")}
+
+    minutos = _set_o_none(minuto_s)
+    horas = _set_o_none(hora_s)
+    dias_semana = _set_o_none(dia_semana_s)  # cron: domingo=0 ... sábado=6
+
+    candidato = _dt.datetime.now(_dt.timezone.utc).replace(second=0, microsecond=0) \
+        + _dt.timedelta(minutes=1)
+    limite = candidato + _dt.timedelta(days=8)
+    while candidato < limite:
+        dia_semana_cron = (candidato.weekday() + 1) % 7  # lunes=0 -> domingo=0
+        if (minutos is None or candidato.minute in minutos) \
+                and (horas is None or candidato.hour in horas) \
+                and (dias_semana is None or dia_semana_cron in dias_semana):
+            return candidato.isoformat()
+        candidato += _dt.timedelta(minutes=1)
+    return None  # no debería pasar con los crons de este repo
+
+
+def _ultima_corrida_workflow(workflow_file: str) -> dict:
+    """Consulta la API de GitHub por la corrida más reciente de un workflow.
+    Devuelve algo usable por el frontend aunque falte el token o falle la
+    consulta — nunca tira una excepción hacia afuera."""
+    if not GITHUB_TOKEN:
+        return {"estado": None, "aviso": "Falta configurar GITHUB_TOKEN en el panel"}
+
+    headers = {"Authorization": f"token {GITHUB_TOKEN}", "Accept": "application/vnd.github+json"}
+    try:
+        r = requests.get(
+            f"https://api.github.com/repos/{GITHUB_REPO}/actions/workflows/{workflow_file}/runs",
+            headers=headers, params={"per_page": 1}, timeout=15,
+        )
+        r.raise_for_status()
+        runs = r.json().get("workflow_runs", [])
+        if not runs:
+            return {"estado": None, "aviso": "Todavía no corrió nunca"}
+        run = runs[0]
+    except requests.RequestException as e:
+        return {"estado": None, "aviso": f"No se pudo consultar GitHub: {e}"}
+
+    resultado = {
+        "estado": run.get("status"),
+        "conclusion": run.get("conclusion"),
+        "fecha": run.get("run_started_at") or run.get("created_at"),
+        "url": run.get("html_url"),
+    }
+
+    if run.get("conclusion") == "failure":
+        # Buscamos el motivo puntual: las líneas "::error::" que haya
+        # impreso el script quedan como "annotation" del check run,
+        # legibles por la API normal de GitHub (no hace falta bajar el
+        # log completo, que se sirve desde blob storage).
+        try:
+            head_sha = run["head_sha"]
+            r_checks = requests.get(
+                f"https://api.github.com/repos/{GITHUB_REPO}/commits/{head_sha}/check-runs",
+                headers=headers, timeout=15,
+            )
+            r_checks.raise_for_status()
+            mensajes = []
+            for cr in r_checks.json().get("check_runs", []):
+                if cr.get("conclusion") != "failure":
+                    continue
+                r_ann = requests.get(
+                    f"https://api.github.com/repos/{GITHUB_REPO}/check-runs/{cr['id']}/annotations",
+                    headers=headers, timeout=15,
+                )
+                r_ann.raise_for_status()
+                for a in r_ann.json():
+                    if a.get("annotation_level") == "failure" and a.get("message"):
+                        mensajes.append(a["message"])
+            if mensajes:
+                resultado["error"] = " / ".join(dict.fromkeys(mensajes))  # sin duplicados
+        except requests.RequestException:
+            pass  # nos quedamos sin el detalle, pero ya tenemos "failure"
+
+    return resultado
 
 
 def verificar_login(credenciales: HTTPBasicCredentials = Depends(security)) -> str:
@@ -327,6 +453,20 @@ def reintentar_email(acta: str, _: str = Depends(verificar_login)):
     return {"acta": acta, **info, "lead_score": nuevo_score}
 
 
+@app.get("/api/crons")
+def listar_crons(_: str = Depends(verificar_login)):
+    resultado = []
+    for c in CRONS_DEFINIDOS:
+        resultado.append({
+            "nombre": c["nombre"],
+            "descripcion": c["descripcion"],
+            "cron": c["cron"],
+            "proxima_ejecucion": _proxima_ejecucion(c["cron"]),
+            **_ultima_corrida_workflow(c["workflow_file"]),
+        })
+    return resultado
+
+
 @app.get("/")
 def index(_: str = Depends(verificar_login)):
     return FileResponse(os.path.join(os.path.dirname(__file__), "static", "index.html"))
@@ -340,6 +480,11 @@ def pagina_titular(clave: str, _: str = Depends(verificar_login)):
 @app.get("/ayuda")
 def pagina_ayuda(_: str = Depends(verificar_login)):
     return FileResponse(os.path.join(os.path.dirname(__file__), "static", "ayuda.html"))
+
+
+@app.get("/crons")
+def pagina_crons(_: str = Depends(verificar_login)):
+    return FileResponse(os.path.join(os.path.dirname(__file__), "static", "crons.html"))
 
 
 class ArchivosSinCache(StaticFiles):
