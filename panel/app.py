@@ -192,6 +192,16 @@ CRONS_DEFINIDOS = [
         "pendientes_sql": "SELECT COUNT(*) FROM marcas WHERE es_lead IS NULL",
         "pendientes_etiqueta": "marcas sin verificar todavía",
     },
+    {
+        "nombre": "Verificación del despliegue",
+        "descripcion": "Compara qué commit tiene desplegado el panel contra el último "
+                        "commit de main. Si Railway se queda pegado (deploy atascado en cola, "
+                        "como pasó por un incidente de la plataforma), esta corrida falla y "
+                        "esta misma tarjeta se pone en rojo — no hace falta que te enteres por "
+                        "una captura del panel viejo.",
+        "workflow_file": "verificar_despliegue.yml",
+        "cron": "0,15,30,45 * * * *",
+    },
 ]
 
 
@@ -526,6 +536,19 @@ def listar_crons(_: str = Depends(verificar_login)):
                 item["pendientes_error"] = str(e)
         resultado.append(item)
     return resultado
+
+
+@app.get("/api/version")
+def version():
+    """Qué commit está corriendo este proceso ahora mismo — lo usa el workflow
+    verificar_despliegue.yml para detectar un deploy de Railway atascado
+    (compara esto contra el último commit de main; ver CRONS_DEFINIDOS).
+    Sin login: no expone nada sensible, y así el workflow no necesita
+    guardar la clave del panel como secret aparte."""
+    return {
+        "commit": (os.environ.get("RAILWAY_GIT_COMMIT_SHA") or "")[:7] or None,
+        "rama": os.environ.get("RAILWAY_GIT_BRANCH"),
+    }
 
 
 @app.get("/")

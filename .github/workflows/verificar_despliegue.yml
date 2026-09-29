@@ -1,0 +1,32 @@
+name: Verificar despliegue
+
+on:
+  schedule:
+    # Cada 15 minutos — barato (dos requests HTTP, nada de INPI ni de la
+    # base) y así un deploy atascado en Railway se nota en /crons en minutos,
+    # no cuando alguien lo pesca a mano en una captura.
+    - cron: "0,15,30,45 * * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  verificar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Instalar dependencias
+        run: pip install requests
+
+      - name: Comparar commit desplegado vs. main
+        run: python3 scripts/verificar_despliegue.py
+        env:
+          PANEL_URL: "https://panel.registrodemimarca.com.ar"
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PYTHONUNBUFFERED: "1"
