@@ -29,3 +29,10 @@ jobs:
           python3 inspeccionar_acta.py "${{ inputs.acta }}"
         env:
           PYTHONUNBUFFERED: "1"
+
+      - name: Resumen final (paso separado por el límite de 10 annotations por step)
+        run: |
+          cd scripts
+          python3 resumen_final_acta.py "${{ inputs.acta }}"
+        env:
+          PYTHONUNBUFFERED: "1"
