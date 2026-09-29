@@ -203,7 +203,7 @@ RE_CUIT_VALIDO = re.compile(r"^\d{10,11}$")
 # --- Sección "Automatizaciones" (/crons) -----------------------------------
 # GitHub reporta esta org/repo con mayúscula/guiones distintos según la API
 # que se use; funciona igual para leer workflows.
-GITHUB_REPO = os.environ.get("GITHUB_REPO", "marcaskom-lgtm/panel-kom")
+GITHUB_REPO = os.environ.get("GITHUB_REPO", "panel-check/panel-check")
 GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN")
 
 # Los workflows que corren solos (on: schedule). El de backfill es manual
