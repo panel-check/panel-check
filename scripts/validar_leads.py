@@ -662,42 +662,57 @@ def revisar_acta(s: requests.Session, acta: str, timeout: int = 30) -> dict:
             archivos, resultado["fecha_publicacion"]
         )
 
-        formulario = next((a for a in archivos if a.get("Indice") == "Formulario"), None)
-        if not formulario:
-            resultado["motivo_sin_email"] = "el expediente no tiene un archivo Formulario en Grilla Digital"
-            return resultado
-
-        id_doc = formulario["id_Documento_encriptado"]
-        nombre_archivo = formulario["ruta"].rsplit("/", 1)[-1]
-        r_pdf = _get_con_reintentos(
-            lambda: s.get(
-                f"{BASE}/Home/edmsxidd",
-                params={"id": id_doc, "nombre": nombre_archivo},
-                headers={"Referer": f"{BASE}/Home/GrillaDigital"},
-                timeout=timeout,
-            )
-        )
-        if r_pdf.headers.get("Content-Type", "").lower() != "application/pdf":
-            resultado["motivo_sin_email"] = "no se pudo descargar el PDF del Formulario"
-            return resultado
-
+        # Ver el mismo comentario en panel/inpi_lead.py: un expediente puede
+        # tener MÁS DE UN documento con Indice=="Formulario" (versión inicial
+        # incompleta + una ampliatoria/corregida después). Antes se tomaba
+        # siempre el primero (next(...)) y si ese no tenía el EMAIL completo
+        # se descartaba como "sin email" aunque uno posterior sí lo tuviera.
+        # Ahora se prueban todos, del más reciente al más viejo, y nos
+        # quedamos con el primero que tenga un EMAIL parseable.
         import io
         import pdfplumber
 
-        with pdfplumber.open(io.BytesIO(r_pdf.content)) as pdf:
-            texto = "\n".join(p.extract_text() or "" for p in pdf.pages)
+        formularios = [a for a in archivos if a.get("Indice") == "Formulario"]
+        if not formularios:
+            resultado["motivo_sin_email"] = "el expediente no tiene un archivo Formulario en Grilla Digital"
+            return resultado
 
-        m_email = re.search(r"EMAIL:\s*([\w.+-]+@[\w-]+\.[\w.-]+)", texto)
-        if m_email:
-            resultado["email"] = m_email.group(1)
-        else:
-            resultado["motivo_sin_email"] = "el Formulario no tiene el campo EMAIL completo"
+        motivo_formulario = "el Formulario no tiene el campo EMAIL completo"
+        for formulario in reversed(formularios):
+            id_doc = formulario["id_Documento_encriptado"]
+            nombre_archivo = formulario["ruta"].rsplit("/", 1)[-1]
+            try:
+                r_pdf = _get_con_reintentos(
+                    lambda: s.get(
+                        f"{BASE}/Home/edmsxidd",
+                        params={"id": id_doc, "nombre": nombre_archivo},
+                        headers={"Referer": f"{BASE}/Home/GrillaDigital"},
+                        timeout=timeout,
+                    )
+                )
+            except Exception:
+                continue
+            if r_pdf.headers.get("Content-Type", "").lower() != "application/pdf":
+                motivo_formulario = "no se pudo descargar el PDF del Formulario"
+                continue
 
-        m_email_apoderado = re.search(
-            r"REPRESENTACION.*?EMAIL:\s*([\w.+-]+@[\w-]+\.[\w.-]+)", texto, re.S
-        )
-        if m_email_apoderado:
-            resultado["email_apoderado"] = m_email_apoderado.group(1)
+            with pdfplumber.open(io.BytesIO(r_pdf.content)) as pdf:
+                texto = "\n".join(p.extract_text() or "" for p in pdf.pages)
+
+            # ":" opcional -- igual que en la regex de CUIT, algunos
+            # Formulario lo traen pegado sin dos puntos.
+            m_email = re.search(r"EMAIL\s*:?\s*([\w.+-]+@[\w-]+\.[\w.-]+)", texto)
+            if m_email:
+                resultado["email"] = m_email.group(1)
+                m_email_apoderado = re.search(
+                    r"REPRESENTACION.*?EMAIL\s*:?\s*([\w.+-]+@[\w-]+\.[\w.-]+)", texto, re.S
+                )
+                if m_email_apoderado:
+                    resultado["email_apoderado"] = m_email_apoderado.group(1)
+                break
+
+        if not resultado["email"]:
+            resultado["motivo_sin_email"] = motivo_formulario
 
     except Exception as e:
         print(f"  acta {acta}: error ({e})", file=sys.stderr)

@@ -236,39 +236,57 @@ def revisar_acta(acta: str, timeout: int = 30) -> dict:
             archivos, resultado["fecha_publicacion"]
         )
 
-        formulario = next((a for a in archivos if a.get("Indice") == "Formulario"), None)
-        if not formulario:
+        # Un expediente puede tener MÁS DE UN documento con Indice=="Formulario"
+        # (ej. una versión inicial incompleta y una ampliatoria/corregida
+        # después) -- antes del 29/09/2026 se tomaba siempre el primero
+        # (next(...)), y si ese primero no tenía el EMAIL completo se
+        # descartaba como "sin email" aunque uno posterior sí lo tuviera (caso
+        # real: acta con EL DARU / VELARDE DARÍO SEBASTIAN, EMAIL presente en
+        # el Formulario pero el sistema seguía diciendo que no estaba). Ahora
+        # se prueban TODOS, del más reciente al más viejo (así se prioriza la
+        # versión más probable de ser la definitiva), y nos quedamos con el
+        # primero que efectivamente tenga un EMAIL parseable.
+        formularios = [a for a in archivos if a.get("Indice") == "Formulario"]
+        if not formularios:
             resultado["motivo_sin_email"] = "el expediente no tiene un archivo Formulario en Grilla Digital"
             return resultado
 
-        id_doc = formulario["id_Documento_encriptado"]
-        nombre_archivo = formulario["ruta"].rsplit("/", 1)[-1]
-        r_pdf = _get_con_reintentos(
-            lambda: s.get(
-                f"{BASE}/Home/edmsxidd",
-                params={"id": id_doc, "nombre": nombre_archivo},
-                headers={"Referer": f"{BASE}/Home/GrillaDigital"},
-                timeout=timeout,
-            )
-        )
-        if r_pdf.headers.get("Content-Type", "").lower() != "application/pdf":
-            resultado["motivo_sin_email"] = "no se pudo descargar el PDF del Formulario"
-            return resultado
+        motivo_formulario = "el Formulario no tiene el campo EMAIL completo"
+        for formulario in reversed(formularios):
+            id_doc = formulario["id_Documento_encriptado"]
+            nombre_archivo = formulario["ruta"].rsplit("/", 1)[-1]
+            try:
+                r_pdf = _get_con_reintentos(
+                    lambda: s.get(
+                        f"{BASE}/Home/edmsxidd",
+                        params={"id": id_doc, "nombre": nombre_archivo},
+                        headers={"Referer": f"{BASE}/Home/GrillaDigital"},
+                        timeout=timeout,
+                    )
+                )
+            except Exception:
+                continue
+            if r_pdf.headers.get("Content-Type", "").lower() != "application/pdf":
+                motivo_formulario = "no se pudo descargar el PDF del Formulario"
+                continue
 
-        with pdfplumber.open(io.BytesIO(r_pdf.content)) as pdf:
-            texto = "\n".join(p.extract_text() or "" for p in pdf.pages)
+            with pdfplumber.open(io.BytesIO(r_pdf.content)) as pdf:
+                texto = "\n".join(p.extract_text() or "" for p in pdf.pages)
 
-        m_email = re.search(r"EMAIL:\s*([\w.+-]+@[\w-]+\.[\w.-]+)", texto)
-        if m_email:
-            resultado["email"] = m_email.group(1)
-        else:
-            resultado["motivo_sin_email"] = "el Formulario no tiene el campo EMAIL completo"
+            # ":" opcional -- igual que en RE_CUIT_SPAN, algunos Formulario lo
+            # traen pegado sin dos puntos por cómo INPI arma el PDF.
+            m_email = re.search(r"EMAIL\s*:?\s*([\w.+-]+@[\w-]+\.[\w.-]+)", texto)
+            if m_email:
+                resultado["email"] = m_email.group(1)
+                m_email_apoderado = re.search(
+                    r"REPRESENTACION.*?EMAIL\s*:?\s*([\w.+-]+@[\w-]+\.[\w.-]+)", texto, re.S
+                )
+                if m_email_apoderado:
+                    resultado["email_apoderado"] = m_email_apoderado.group(1)
+                break
 
-        m_email_apoderado = re.search(
-            r"REPRESENTACION.*?EMAIL:\s*([\w.+-]+@[\w-]+\.[\w.-]+)", texto, re.S
-        )
-        if m_email_apoderado:
-            resultado["email_apoderado"] = m_email_apoderado.group(1)
+        if not resultado["email"]:
+            resultado["motivo_sin_email"] = motivo_formulario
 
     except Exception as e:
         resultado["caracter"] = None

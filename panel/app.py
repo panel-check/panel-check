@@ -622,13 +622,30 @@ def buscar_marca(
     clase: str = Query(""),
     _: str = Depends(verificar_login),
 ):
-    """Busca marcas por denominación en INPI — usado por el botón "Ver
-    marca opuesta" del popup de oposición cuando el fundamento solo dio un
-    número de registro (sin ACTA directa para linkear). Devuelve una
-    lista de candidatas (mejor esfuerzo, ver inpi_lead.buscar_marca_por_denominacion),
-    para que la persona elija cuál abrir — no adivinamos un único match."""
+    """Busca marcas por denominación en INPI — usado por el popup de
+    oposición cuando el fundamento solo dio un número de registro (sin ACTA
+    directa para linkear). Devuelve una lista de candidatas (mejor
+    esfuerzo, ver inpi_lead.buscar_marca_por_denominacion), para que la
+    persona elija cuál abrir — no adivinamos un único match.
+
+    Si la búsqueda tal cual no encuentra nada, reintenta sin espacios: la
+    denominación citada en el fundamento legal puede venir separada
+    ("BALI STONE") mientras que en INPI está cargada pegada ("BALISTONE")
+    — el backfill automático (resolver_marca_oponente, en validar_leads.py)
+    ya hacía este mismo reintento, pero este endpoint (el que usa el botón
+    del panel) no lo tenía, así que la persona veía "no se encontró ninguna
+    marca" aunque sí existiera. Caso real detectado el 29/09/2026: acta de
+    BALISTONE citando "BALI STONE"."""
     filas = inpi_lead.buscar_marca_por_denominacion(denominacion, clase)
-    return {"denominacion": denominacion, "clase": clase, "resultados": filas}
+    denominacion_usada = denominacion
+    if not filas:
+        sin_espacios = re.sub(r"\s+", "", denominacion)
+        if sin_espacios and sin_espacios != denominacion:
+            filas_sin_espacios = inpi_lead.buscar_marca_por_denominacion(sin_espacios, clase)
+            if filas_sin_espacios:
+                filas = filas_sin_espacios
+                denominacion_usada = sin_espacios
+    return {"denominacion": denominacion, "denominacion_usada": denominacion_usada, "clase": clase, "resultados": filas}
 
 
 @app.get("/api/crons")

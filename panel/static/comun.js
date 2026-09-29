@@ -170,11 +170,13 @@ async function _buscarMarcaOponente(denominacion, numeroBuscado) {
   try {
     const data = await api(`/api/marcas/buscar-marca?denominacion=${encodeURIComponent(denominacion)}`);
     const filas = data.resultados || [];
+    const usada = data.denominacion_usada || denominacion;
+    const nota = usada !== denominacion ? ` (probado también sin espacios: "${_escapeHtml(usada)}")` : "";
     if (!filas.length) {
-      cont.innerHTML = `No se encontró ninguna marca con "${_escapeHtml(denominacion)}" en INPI (puede que esté cargada con otro espaciado o redacción).`;
+      cont.innerHTML = `No se encontró ninguna marca con "${_escapeHtml(denominacion)}" en INPI, ni sin espacios ("${_escapeHtml(usada)}") — puede que esté cargada con otra redacción.`;
       return;
     }
-    cont.innerHTML = `<div class="mo-titulo">Resultados para "${_escapeHtml(denominacion)}":</div>` +
+    cont.innerHTML = `<div class="mo-titulo">Resultados para "${_escapeHtml(usada)}"${nota}:</div>` +
       filas.map(f => {
         const coincide = numeroBuscado && f.numero_resolucion && f.numero_resolucion.replace(/\D/g, "") === numeroBuscado.replace(/\D/g, "");
         return `<div class="mo-resultado ${coincide ? "mo-coincide" : ""}">
