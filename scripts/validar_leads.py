@@ -184,6 +184,15 @@ def fecha_publicacion_de_archivos(archivos: list[dict]) -> str | None:
 # VENCE ya viene calculado por INPI (concesión + 10 años) — no hace falta
 # calcularlo nosotros. \w en vez de la letra acentuada cubre "RESOLUCIÓN"
 # y "RESOLUCION", "DICTÁMENES" y "DICTAMENES", sin asumir cuál usa INPI.
+#
+# El HTML real de DISPOSICION (confirmado con la misma acta) envuelve la
+# ETIQUETA "Fecha:" en su propio <span>, separado del <span class="text-
+# danger"> que envuelve el valor — por eso el primer regex (que solo
+# preveía UN span opcional antes del valor) nunca matcheaba y
+# fecha_concesion/numero_disposicion quedaban en None pese a que TIPO/VENCE
+# sí funcionaban:
+#   DISPOSICION: <span> Fecha: </span> <span class="text-danger"> 03/02/2026</span>
+#                <span> - Numero: </span> <span class="text-danger"> DI-2026-48-APN-DNM#INPI</span>
 RE_RESOLUCION_BLOQUE = re.compile(r"RESOLUCI\wN.*?(?=DICT\wMENES|$)", re.S)
 # El valor de TIPO ("Concedida", "Denegada") va en minúscula-inicial; la
 # siguiente etiqueta (MOTIVO, NOTIFICACION, etc.) siempre en MAYÚSCULAS
@@ -193,8 +202,8 @@ RE_TIPO_RESOLUCION = re.compile(
     r"TIPO\s*:?\s*(?:<span[^>]*>)?\s*([^<\n]+?)(?=\s+[A-ZÁÉÍÓÚÑ]{2,}\s*:|\s*<|\n|$)"
 )
 RE_DISPOSICION = re.compile(
-    r"DISPOSICION\s*:?\s*(?:<span[^>]*>)?\s*Fecha\s*:?\s*(?:<span[^>]*>)?\s*([\d/]+)"
-    r"\s*-\s*Numero\s*:?\s*(?:<span[^>]*>)?\s*([^\s<]+)",
+    r"DISPOSICION\s*:?\s*(?:<span[^>]*>)?\s*Fecha\s*:?\s*(?:</span>)?\s*(?:<span[^>]*>)?\s*([\d/]+)"
+    r"\s*(?:</span>)?\s*(?:<span[^>]*>)?\s*-\s*Numero\s*:?\s*(?:</span>)?\s*(?:<span[^>]*>)?\s*([^\s<]+)",
     re.S,
 )
 RE_VENCE = re.compile(r"VENCE\s*:?\s*(?:<span[^>]*>)?\s*([\d/]+)")

@@ -35,13 +35,16 @@ RE_CUIT_SPAN = re.compile(r"CUIT\s*:?\s*(?:<span[^>]*>)?\s*([\d.\-]{6,})", re.S)
 
 # Ver el mismo comentario en validar_leads.py: sección RESOLUCIÓN, en la
 # misma página. VENCE ya viene calculado por INPI (concesión + 10 años).
+# DISPOSICION envuelve la ETIQUETA "Fecha:" en su propio <span>, separado
+# del <span class="text-danger"> que envuelve el valor — ver el mismo
+# comentario, con el HTML real confirmado, en validar_leads.py.
 RE_RESOLUCION_BLOQUE = re.compile(r"RESOLUCI\wN.*?(?=DICT\wMENES|$)", re.S)
 RE_TIPO_RESOLUCION = re.compile(
     r"TIPO\s*:?\s*(?:<span[^>]*>)?\s*([^<\n]+?)(?=\s+[A-ZÁÉÍÓÚÑ]{2,}\s*:|\s*<|\n|$)"
 )
 RE_DISPOSICION = re.compile(
-    r"DISPOSICION\s*:?\s*(?:<span[^>]*>)?\s*Fecha\s*:?\s*(?:<span[^>]*>)?\s*([\d/]+)"
-    r"\s*-\s*Numero\s*:?\s*(?:<span[^>]*>)?\s*([^\s<]+)",
+    r"DISPOSICION\s*:?\s*(?:<span[^>]*>)?\s*Fecha\s*:?\s*(?:</span>)?\s*(?:<span[^>]*>)?\s*([\d/]+)"
+    r"\s*(?:</span>)?\s*(?:<span[^>]*>)?\s*-\s*Numero\s*:?\s*(?:</span>)?\s*(?:<span[^>]*>)?\s*([^\s<]+)",
     re.S,
 )
 RE_VENCE = re.compile(r"VENCE\s*:?\s*(?:<span[^>]*>)?\s*([\d/]+)")
