@@ -131,6 +131,17 @@ tr.contactado { opacity: 0.55; }
   border-bottom: none;
   cursor: help;
 }
+.badge-vista {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 600;
+  background: var(--azul-claro);
+  color: var(--azul);
+  border-bottom: none;
+  cursor: help;
+}
 .badge-concedida {
   display: inline-block;
   padding: 2px 8px;

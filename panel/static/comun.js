@@ -31,11 +31,20 @@ function badgeOposicion(row) {
   // tuvo_oposicion se completa recién ~33 días después de la publicación
   // (scripts/revisar_oposiciones.py), y solo para leads reales. Antes de eso
   // queda en null ("todavía no se revisó", no "no tiene").
-  if (row.tuvo_oposicion === true) {
-    const detalle = row.detalle_oposicion || "se detectó una oposición/vista en Grilla Digital";
-    return `<span class="tooltip badge-oposicion">⚠ OPOSICIÓN<span class="globo">${detalle}</span></span>`;
+  if (row.tuvo_oposicion !== true) return "";
+  const detalle = row.detalle_oposicion || "";
+  // detalle_oposicion trae "fecha - Indice - Referencia" tal cual vino de
+  // Grilla Digital (ver validar_leads.detectar_oposicion). "OPO"/"OPOSICION"
+  // es una oposición real de un tercero (alguien se está oponiendo a la
+  // marca) — distinto de una "VISTA" propia de INPI (una observación de
+  // oficio, sin que nadie se oponga). Se muestran con badges distintos para
+  // no confundir urgencia: una oposición de tercero es más urgente que una
+  // vista de INPI.
+  const esOposicionDeTercero = /OPO/i.test(detalle);
+  if (esOposicionDeTercero) {
+    return `<span class="tooltip badge-oposicion">⚠ OPOSICIÓN<span class="globo">${detalle || "oposición de un tercero detectada en Grilla Digital"}</span></span>`;
   }
-  return "";
+  return `<span class="tooltip badge-vista">👁 VISTA DE INPI<span class="globo">${detalle || "observación de oficio de INPI detectada en Grilla Digital"}</span></span>`;
 }
 
 function fmtFecha(f) {
