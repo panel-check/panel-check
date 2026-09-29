@@ -35,7 +35,8 @@ jobs:
           if [ -n "${{ inputs.boletin }}" ]; then
             numero="${{ inputs.boletin }}"
             echo "[{\"numero\": \"$numero\", \"fecha\": null, \"pdf_url\": \"https://portaltramites.inpi.gob.ar/Uploads/Boletines/${numero}_3_.pdf\", \"comentario\": \"forzado manualmente\"}]" > data/boletines.json
-            echo "Boletín forzado manualmente: $numero"
+            echo "Boletín forzado manualmente: $numero (se reprocesa aunque ya esté importado -- es lo que pide un número a mano)"
+            echo "saltar=false" >> "$GITHUB_OUTPUT"
           else
             # listar_boletines.py devuelve TODO el historial de "MARCAS NUEVAS" visible en el
             # listado (no solo el último) — en modo automático nos quedamos solo con el de
@@ -52,18 +53,35 @@ jobs:
               json.dump([ultimo], f, ensure_ascii=False, indent=2)
           print(f"Boletín más reciente detectado: {ultimo['numero']} ({ultimo.get('fecha')}) de {len(todos)} encontrados")
           PYEOF
+            # Chequeo contra la base antes de seguir: si el "más reciente"
+            # detectado ya está cargado (no hay ningún boletín nuevo
+            # publicado todavía), no tiene sentido gastar Apify/Actions
+            # reprocesándolo -- agregado el 29/09/2026 tras encontrar que el
+            # modo automático reprocesó el boletín 11125, ya importado.
+            numero=$(python3 -c "import json; print(json.load(open('data/boletines.json'))[0]['numero'])")
+            estado=$(python3 scripts/estado_boletin.py "$numero")
+            if [ "$estado" = "procesado" ]; then
+              echo "Boletín $numero ya está importado (estado=procesado) -- no hay ninguno nuevo, se salta el resto del pipeline."
+              echo "saltar=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "Boletín $numero todavía no está importado (estado=$estado) -- se procesa."
+              echo "saltar=false" >> "$GITHUB_OUTPUT"
+            fi
           fi
           cat data/boletines.json
         env:
           PYTHONUNBUFFERED: "1"
+          DATABASE_URL: ${{ secrets.DATABASE_URL || secrets.DATABASE_PUBLIC_URL }}
 
       - name: Extraer texto de los PDFs (Apify)
+        if: steps.listar.outputs.saltar != 'true'
         run: |
           python3 scripts/extraer_pdf_apify.py --urls-file data/boletines.json --out-dir data/textos
         env:
           APIFY_TOKEN: ${{ secrets.APIFY_TOKEN }}
 
       - name: Parsear boletines
+        if: steps.listar.outputs.saltar != 'true'
         run: |
           python3 scripts/parse_boletin.py --text-dir data/textos --out-dir data/csv
 
@@ -75,7 +93,7 @@ jobs:
         # cualquiera. Para inspeccionar el contenido real sigue estando el
         # artifact "resultados-boletines" (paso de más abajo), que no es
         # público — solo lo puede bajar quien tiene acceso al repo.
-        if: always()
+        if: always() && steps.listar.outputs.saltar != 'true'
         run: |
           shopt -s nullglob
           if [ -f data/textos/_debug_apify_response.json ]; then
@@ -90,6 +108,7 @@ jobs:
           echo "diagnóstico completo (no falla el job)"
 
       - name: Completar Mixtas/Figurativas
+        if: steps.listar.outputs.saltar != 'true'
         run: |
           shopt -s nullglob
           archivos=(data/csv/*.csv)
@@ -103,11 +122,13 @@ jobs:
           done
 
       - name: Validar leads reales (requests, sin navegador) — todas las candidatas del boletín
+        if: steps.listar.outputs.saltar != 'true'
         run: |
           ultimo=$(ls -t data/csv/*_completo.csv | head -1)
           python3 scripts/validar_leads.py --in "$ultimo" --out "${ultimo%.csv}_leads.csv"
 
       - name: Cargar a la base (Railway)
+        if: steps.listar.outputs.saltar != 'true'
         run: |
           mkdir -p data
           {
