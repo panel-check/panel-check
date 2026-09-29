@@ -1,12 +1,13 @@
 """
-Copia acotada de la lógica de scripts/validar_leads.py, para que el botón
-"Reintentar" del panel pueda volver a consultar un acta puntual contra INPI
-sin depender del resto del repo (Railway deploya este servicio con root
+Copia acotada de la lógica de scripts/validar_leads.py y
+scripts/listar_boletines.py, para que el panel pueda volver a consultar
+INPI directamente (botón "Reintentar", sección /boletines) sin depender
+del resto del repo (Railway deploya este servicio con root
 directory = panel/, así que no tiene acceso a scripts/).
 
 Si INPI cambia el HTML o los endpoints, hay que actualizar este archivo Y
-scripts/validar_leads.py — quedan separados a propósito, no importan uno
-del otro.
+los scripts equivalentes en scripts/ — quedan separados a propósito, no
+importan uno del otro.
 """
 
 import io
@@ -16,6 +17,7 @@ import time
 
 import pdfplumber
 import requests
+from bs4 import BeautifulSoup
 
 BASE = "https://portaltramites.inpi.gob.ar"
 
@@ -374,3 +376,40 @@ def calcular_lead_score(matricula_agente: str, es_lead, tiene_email: bool) -> in
     if tiene_email:
         score += 20
     return score
+
+
+# --- Listado de boletines (para la sección /boletines) ----------------------
+# Copia acotada de scripts/listar_boletines.py (ver docstring del módulo).
+LISTADO_URL = f"{BASE}/Boletines?Tipo_Item=3"
+
+
+def _parse_tabla_boletines(html: str) -> list[dict]:
+    soup = BeautifulSoup(html, "html.parser")
+    boletines = []
+    for row in soup.select("table tr"):
+        celdas = [c.get_text(strip=True) for c in row.find_all("td")]
+        if not celdas:
+            continue
+        fila_txt = " | ".join(celdas)
+        if "Boletines" not in fila_txt:
+            continue
+        if "MARCAS NUEVAS" not in fila_txt.upper():
+            continue
+        m = re.search(r"\b(\d{4,6})\b", fila_txt)
+        if not m:
+            continue
+        numero = m.group(1)
+        fecha_m = re.search(r"\d{1,2}/\d{1,2}/\d{4}", fila_txt)
+        boletines.append({"numero": numero, "fecha": fecha_m.group(0) if fecha_m else None})
+    return boletines
+
+
+def listar_boletines_marcas_nuevas(timeout: int = 30) -> list[dict]:
+    """Lista los boletines "MARCAS NUEVAS" que INPI tiene publicados (la
+    misma página que usa scripts/listar_boletines.py en modo simple, sin
+    rango de fechas). Devuelve [{"numero", "fecha"}], más nuevo primero."""
+    r = requests.get(LISTADO_URL, timeout=timeout)
+    r.raise_for_status()
+    boletines = _parse_tabla_boletines(r.text)
+    boletines.sort(key=lambda b: int(b["numero"]), reverse=True)
+    return boletines

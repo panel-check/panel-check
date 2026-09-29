@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Boletines — Kom Marcas Inpi</title>
+<link rel="stylesheet" href="/static/comun.css" />
+<style>
+  .contenido { max-width: 820px; margin: 24px auto 60px; padding: 0 20px; }
+  .aviso-boletines {
+    margin-bottom: 16px;
+    padding: 8px 12px;
+    background: #eef0f2;
+    border-radius: 6px;
+    font-size: 12px;
+    color: var(--gris);
+  }
+  table.tabla-boletines { width: 100%; border-collapse: collapse; background: white; border: 1px solid var(--borde); border-radius: 10px; overflow: hidden; }
+  table.tabla-boletines th, table.tabla-boletines td { padding: 10px 14px; text-align: left; font-size: 13px; border-bottom: 1px solid var(--borde); }
+  table.tabla-boletines th { background: #fafbfc; color: var(--gris); font-weight: 600; font-size: 11px; text-transform: uppercase; }
+  table.tabla-boletines tr:last-child td { border-bottom: none; }
+  a.link-boletin { color: var(--azul); text-decoration: none; font-weight: 600; }
+  a.link-boletin:hover { text-decoration: underline; }
+  .estado-badge-b { display: inline-block; padding: 2px 9px; border-radius: 10px; font-size: 11px; font-weight: 600; }
+  .estado-badge-b.importado { background: #e6f4ea; color: var(--verde); }
+  .estado-badge-b.no-importado { background: #eef0f2; color: var(--gris); }
+  .estado-badge-b.error { background: #fde8e8; color: var(--rojo); }
+  button.importar-boletin {
+    padding: 4px 10px;
+    border-radius: 6px;
+    border: 1px solid var(--azul);
+    background: white;
+    color: var(--azul);
+    font-size: 12px;
+    cursor: pointer;
+  }
+  button.importar-boletin:hover { background: var(--azul-claro); }
+  button.importar-boletin:disabled { border-color: var(--borde); color: var(--gris); cursor: default; background: #fafbfc; }
+</style>
+</head>
+<body>
+
+<header>
+  <a class="volver" href="/">&larr; Volver al panel</a>
+  <h1>Boletines</h1>
+  <a class="ayuda" href="/ayuda" style="margin-left:auto;">? Ayuda</a>
+</header>
+
+<div class="contenido" id="contenido">
+  <p style="color:var(--gris);font-size:13px;">Cargando...</p>
+</div>
+
+<script src="/static/comun.js"></script>
+<script>
+function formatFecha(f) {
+  if (!f) return "—";
+  // fecha de INPI viene DD/MM/AAAA; fecha de nuestra base viene ISO.
+  if (/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(f)) return f;
+  return (f.split("T")[0] || f);
+}
+
+function filaBoletin(b) {
+  const badge = b.importado
+    ? '<span class="estado-badge-b importado">✓ Importado</span>'
+    : (b.estado === "error"
+        ? '<span class="estado-badge-b error">✗ Error</span>'
+        : '<span class="estado-badge-b no-importado">No importado</span>');
+  const link = b.importado
+    ? `<a class="link-boletin" href="/?boletin=${encodeURIComponent(b.numero)}">${_escapeHtml(b.numero)}</a>`
+    : `<strong>${_escapeHtml(b.numero)}</strong>`;
+  const total = b.total_marcas != null ? b.total_marcas : "—";
+  const accion = b.importado
+    ? ""
+    : `<button type="button" class="importar-boletin" data-numero="${_escapeHtml(b.numero)}">Importar</button>`;
+  return `
+    <tr>
+      <td>${link}</td>
+      <td>${formatFecha(b.fecha)}</td>
+      <td>${badge}</td>
+      <td>${total}</td>
+      <td>${accion}</td>
+    </tr>
+  `;
+}
+
+async function cargar() {
+  const contenido = document.getElementById("contenido");
+  try {
+    const data = await api("/api/boletines/completo");
+    const aviso = data.aviso ? `<div class="aviso-boletines">${_escapeHtml(data.aviso)}</div>` : "";
+    contenido.innerHTML = `
+      ${aviso}
+      <table class="tabla-boletines">
+        <thead>
+          <tr><th>Número</th><th>Fecha</th><th>Estado</th><th>Marcas</th><th></th></tr>
+        </thead>
+        <tbody>${data.boletines.map(filaBoletin).join("")}</tbody>
+      </table>
+    `;
+    contenido.querySelectorAll(".importar-boletin").forEach((b) => {
+      b.addEventListener("click", () => importar(b));
+    });
+  } catch (e) {
+    contenido.innerHTML = `<p style="color:var(--rojo);">No se pudo cargar (${e.message}).</p>`;
+  }
+}
+
+async function importar(boton) {
+  const numero = boton.dataset.numero;
+  boton.disabled = true;
+  boton.textContent = "Disparando…";
+  try {
+    await api(`/api/boletines/${encodeURIComponent(numero)}/importar`, { method: "POST" });
+    boton.textContent = "Disparado ✓";
+    // El pipeline tarda varios minutos en terminar (Apify + parseo + carga) —
+    // no tiene sentido refrescar en unos segundos como en /crons, así que
+    // dejamos el botón en "Disparado" y sugerimos revisar Automatizaciones.
+    boton.insertAdjacentHTML("afterend", ' <a class="ayuda" href="/crons" style="font-size:12px;">ver progreso ↗</a>');
+  } catch (e) {
+    boton.disabled = false;
+    boton.textContent = "Importar";
+    alert(`No se pudo disparar: ${e.message}`);
+  }
+}
+
+cargar();
+</script>
+
+</body>
+</html>

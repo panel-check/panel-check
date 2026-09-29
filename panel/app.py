@@ -518,6 +518,76 @@ def listar_boletines(_: str = Depends(verificar_login)):
             return cur.fetchall()
 
 
+@app.get("/api/boletines/completo")
+def listar_boletines_completo(_: str = Depends(verificar_login)):
+    """Para la sección /boletines: cruza el listado completo de boletines
+    "MARCAS NUEVAS" que tiene INPI publicados (consultado en vivo, ver
+    inpi_lead.listar_boletines_marcas_nuevas) contra lo que ya tenemos
+    importado en nuestra tabla `boletines`, para poder mostrar cuáles
+    faltan y ofrecer importarlos desde acá (útil para el backlog
+    histórico) — antes solo se podía ver esto mirando GitHub Actions a
+    mano o adivinando por tanteo qué número forzar.
+
+    Si INPI no responde (WAF, caído, etc.), devolvemos igual lo que ya
+    tenemos importado en nuestra base, con un aviso, en vez de romper la
+    página entera."""
+    aviso = None
+    try:
+        de_inpi = inpi_lead.listar_boletines_marcas_nuevas()
+    except requests.RequestException as e:
+        de_inpi = []
+        aviso = f"No se pudo consultar el listado de INPI ({e}) — se muestra solo lo ya importado."
+
+    with conexion() as conn:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute("SELECT numero, fecha, total_marcas, estado, procesado_en FROM boletines")
+            importados = {f["numero"]: f for f in cur.fetchall()}
+
+    numeros = {b["numero"] for b in de_inpi} | set(importados.keys())
+    filas = []
+    for numero in numeros:
+        de_inpi_fila = next((b for b in de_inpi if b["numero"] == numero), None)
+        importado_fila = importados.get(numero)
+        filas.append({
+            "numero": numero,
+            "fecha": (importado_fila or {}).get("fecha") or (de_inpi_fila or {}).get("fecha"),
+            "importado": bool(importado_fila) and importado_fila["estado"] == "procesado",
+            "estado": (importado_fila or {}).get("estado"),
+            "total_marcas": (importado_fila or {}).get("total_marcas"),
+            "procesado_en": (importado_fila or {}).get("procesado_en"),
+        })
+    filas.sort(key=lambda f: int(f["numero"]), reverse=True)
+    return {"boletines": filas, "aviso": aviso}
+
+
+@app.post("/api/boletines/{numero}/importar")
+def importar_boletin(numero: str, _: str = Depends(verificar_login)):
+    """Dispara pipeline.yml a mano forzando este número puntual (mismo
+    mecanismo que /api/crons/correr, pero con el input `boletin` seteado)
+    — pensado para importar boletines del backlog histórico desde
+    /boletines, sin tener que ir a GitHub y tipear el número a mano."""
+    if not numero.isdigit():
+        raise HTTPException(status_code=400, detail="Número de boletín inválido")
+    if not GITHUB_TOKEN:
+        raise HTTPException(status_code=400, detail="Falta configurar GITHUB_TOKEN en el panel")
+
+    r = requests.post(
+        f"https://api.github.com/repos/{GITHUB_REPO}/actions/workflows/pipeline.yml/dispatches",
+        headers={"Authorization": f"token {GITHUB_TOKEN}", "Accept": "application/vnd.github+json"},
+        json={"ref": "main", "inputs": {"boletin": numero}},
+        timeout=15,
+    )
+    if r.status_code == 204:
+        return {"ok": True}
+    if r.status_code in (403, 404):
+        raise HTTPException(
+            status_code=502,
+            detail="GitHub rechazó el disparo manual — el GITHUB_TOKEN del panel necesita permiso "
+                   "\"Actions: Read and write\".",
+        )
+    raise HTTPException(status_code=502, detail=f"GitHub devolvió {r.status_code}: {r.text[:200]}")
+
+
 @app.get("/api/clases")
 def listar_clases(_: str = Depends(verificar_login)):
     with conexion() as conn:
@@ -758,6 +828,11 @@ def pagina_ayuda(_: str = Depends(verificar_login)):
 @app.get("/crons")
 def pagina_crons(_: str = Depends(verificar_login)):
     return FileResponse(os.path.join(os.path.dirname(__file__), "static", "crons.html"))
+
+
+@app.get("/boletines")
+def pagina_boletines(_: str = Depends(verificar_login)):
+    return FileResponse(os.path.join(os.path.dirname(__file__), "static", "boletines.html"))
 
 
 class ArchivosSinCache(StaticFiles):
