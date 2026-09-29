@@ -1,0 +1,32 @@
+name: Agregar marca manualmente (fuera del boletín)
+
+on:
+  workflow_dispatch:
+    inputs:
+      acta:
+        description: "Número de acta a agregar/actualizar en la base"
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  agregar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Instalar dependencias
+        run: pip install -r requirements.txt
+
+      - name: Agregar acta a la base
+        run: |
+          cd scripts
+          python3 agregar_marca_manual.py "${{ inputs.acta }}"
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL || secrets.DATABASE_PUBLIC_URL }}
+          PYTHONUNBUFFERED: "1"
