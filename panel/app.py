@@ -165,6 +165,21 @@ def _correr_alters_panel(cur):
     cur.execute(
         "ALTER TABLE marcas ADD COLUMN IF NOT EXISTS fundamento_oposicion TEXT"
     )
+    # Marca propia del oponente citada en el fundamento (ver
+    # parsear_marca_oponente en validar_leads.py): si el fundamento da un
+    # ACTA concreta, actas_marca_oponente permite linkear directo (mismo
+    # abrirActa() que ya usa el panel); si solo da un número de registro,
+    # queda en marca_oponente_denominacion/numero_registro para buscarla
+    # por nombre desde el popup de la oposición.
+    cur.execute(
+        "ALTER TABLE marcas ADD COLUMN IF NOT EXISTS actas_marca_oponente TEXT"
+    )
+    cur.execute(
+        "ALTER TABLE marcas ADD COLUMN IF NOT EXISTS marca_oponente_denominacion TEXT"
+    )
+    cur.execute(
+        "ALTER TABLE marcas ADD COLUMN IF NOT EXISTS marca_oponente_numero_registro TEXT"
+    )
 
 COLUMNAS_ORDENABLES = {
     "lead_score", "acta", "boletin", "clase", "titular", "fecha_presentacion",
@@ -178,7 +193,8 @@ COLUMNAS_MARCA = """
     contactado, contactado_en, motivo_sin_email,
     tuvo_oposicion, detalle_oposicion, revisado_oposicion_en,
     oponente_nombre, oponente_tipo_doc, oponente_numero_doc, oponente_cuit,
-    fundamento_oposicion,
+    fundamento_oposicion, actas_marca_oponente, marca_oponente_denominacion,
+    marca_oponente_numero_registro,
     estado_tramite, fecha_concesion, numero_disposicion, fecha_vencimiento_marca
 """
 
@@ -585,6 +601,21 @@ def reintentar_email(acta: str, _: str = Depends(verificar_login)):
         conn.commit()
 
     return {"acta": acta, **info, "lead_score": nuevo_score}
+
+
+@app.get("/api/marcas/buscar-marca")
+def buscar_marca(
+    denominacion: str = Query(..., min_length=2),
+    clase: str = Query(""),
+    _: str = Depends(verificar_login),
+):
+    """Busca marcas por denominación en INPI — usado por el botón "Ver
+    marca opuesta" del popup de oposición cuando el fundamento solo dio un
+    número de registro (sin ACTA directa para linkear). Devuelve una
+    lista de candidatas (mejor esfuerzo, ver inpi_lead.buscar_marca_por_denominacion),
+    para que la persona elija cuál abrir — no adivinamos un único match."""
+    filas = inpi_lead.buscar_marca_por_denominacion(denominacion, clase)
+    return {"denominacion": denominacion, "clase": clase, "resultados": filas}
 
 
 @app.get("/api/crons")

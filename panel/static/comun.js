@@ -27,6 +27,12 @@ function badgeLead(row) {
   return '<span class="badge sin-dato">sin verificar</span>';
 }
 
+// Cache de filas con oposición de tercero, clave = acta — el popup
+// (abrirModalOposicion) lee de acá en vez de recibir el objeto entero por
+// el onclick (que solo puede llevar strings simples). Se va completando
+// cada vez que se renderiza una fila con badgeOposicion.
+window._filasOposicion = window._filasOposicion || {};
+
 function badgeOposicion(row) {
   // tuvo_oposicion se completa recién ~33 días después de la publicación
   // (scripts/revisar_oposiciones.py), y solo para leads reales. Antes de eso
@@ -42,22 +48,116 @@ function badgeOposicion(row) {
   // vista de INPI.
   const esOposicionDeTercero = /OPO/i.test(detalle);
   if (esOposicionDeTercero) {
-    // Si se pudo bajar y parsear el Formulario real de la oposición (ver
-    // scripts/validar_leads.descargar_formulario_oposicion) mostramos el
-    // detalle rico (quién se opone y por qué); si no, el detalle crudo de
-    // Grilla Digital como respaldo.
-    let globo;
-    if (row.oponente_nombre || row.fundamento_oposicion) {
-      const doc = row.oponente_tipo_doc && row.oponente_numero_doc
-        ? ` (${row.oponente_tipo_doc} ${row.oponente_numero_doc})` : "";
-      globo = `Se opone: ${row.oponente_nombre || "(sin nombre)"}${doc}`
-        + (row.fundamento_oposicion ? ` · Fundamento: ${row.fundamento_oposicion}` : "");
-    } else {
-      globo = detalle || "oposición de un tercero detectada en Grilla Digital";
-    }
-    return `<span class="tooltip badge-oposicion">⚠ OPOSICIÓN<span class="globo">${globo}</span></span>`;
+    // El detalle rico (oponente/fundamento) puede ser largo — no entra
+    // legible en un tooltip de hover (ver corrección del 29/09/2026), así
+    // que ahora es un botón que abre un popup con el texto completo.
+    window._filasOposicion[row.acta] = row;
+    return `<button type="button" class="badge-oposicion" onclick="abrirModalOposicion('${row.acta}')">⚠ Ver oposición</button>`;
   }
   return `<span class="tooltip badge-vista">👁 VISTA DE INPI<span class="globo">${detalle || "observación de oficio de INPI detectada en Grilla Digital"}</span></span>`;
+}
+
+function _escapeHtml(s) {
+  return (s ?? "").toString()
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+function _asegurarModalOposicion() {
+  if (document.getElementById("modal-oposicion")) return;
+  const div = document.createElement("div");
+  div.id = "modal-oposicion";
+  div.className = "modal-fondo";
+  div.innerHTML = `
+    <div class="modal-caja" onclick="event.stopPropagation()">
+      <button type="button" class="modal-cerrar" onclick="cerrarModalOposicion()">&times;</button>
+      <div id="modal-oposicion-contenido"></div>
+    </div>
+  `;
+  div.addEventListener("click", cerrarModalOposicion); // click en el fondo, fuera de la caja
+  document.body.appendChild(div);
+  document.addEventListener("keydown", (ev) => {
+    if (ev.key === "Escape") cerrarModalOposicion();
+  });
+}
+
+function cerrarModalOposicion() {
+  const modal = document.getElementById("modal-oposicion");
+  if (modal) modal.classList.remove("abierto");
+}
+
+function abrirModalOposicion(acta) {
+  const row = window._filasOposicion[acta];
+  if (!row) return;
+  _asegurarModalOposicion();
+
+  const doc = row.oponente_tipo_doc && row.oponente_numero_doc
+    ? `${row.oponente_tipo_doc} ${row.oponente_numero_doc}` : "";
+  const cuit = row.oponente_cuit ? `CUIT ${row.oponente_cuit}` : "";
+  const identificacion = [doc, cuit].filter(Boolean).join(" · ");
+
+  const contenido = document.getElementById("modal-oposicion-contenido");
+  contenido.innerHTML = `
+    <h3>⚠ Oposición — acta ${_escapeHtml(row.acta)}</h3>
+    ${row.oponente_nombre ? `<p class="mo-oponente"><strong>${_escapeHtml(row.oponente_nombre)}</strong>${identificacion ? ` <span class="mo-doc">(${_escapeHtml(identificacion)})</span>` : ""}</p>` : ""}
+    ${row.fundamento_oposicion
+      ? `<p class="mo-fundamento">${_escapeHtml(row.fundamento_oposicion)}</p>`
+      : `<p class="mo-fundamento">${_escapeHtml(row.detalle_oposicion) || "Sin más detalle disponible."}</p>`}
+    <div id="mo-marca-oponente">Buscando la marca del oponente…</div>
+  `;
+  document.getElementById("modal-oposicion").classList.add("abierto");
+  _renderMarcaOponente(row);
+}
+
+function _renderMarcaOponente(row) {
+  const cont = document.getElementById("mo-marca-oponente");
+  if (!cont) return;
+
+  // Caso más confiable: el fundamento citaba una o más ACTA concretas del
+  // oponente — mismo botón "Ver ficha" que ya usa el resto del panel, sin
+  // depender de ninguna búsqueda.
+  if (row.actas_marca_oponente) {
+    const actas = row.actas_marca_oponente.split(",").filter(Boolean);
+    cont.innerHTML = `<div class="mo-titulo">Marca(s) que invoca el oponente:</div>` +
+      actas.map(a => `<a class="link-acta" href="javascript:void(0)" onclick="abrirActa('${a}')">Ver ficha del acta ${a} ↗</a>`).join(" ");
+    return;
+  }
+
+  // Solo tenemos denominación + número de registro citados en el
+  // fundamento (sin ACTA propia) — hay que buscarla. Mejor esfuerzo: no
+  // siempre encuentra el registro exacto (el nombre en el texto legal
+  // puede tener espaciado distinto al cargado en INPI), así que mostramos
+  // la lista completa de resultados y que la persona elija.
+  if (row.marca_oponente_denominacion) {
+    cont.innerHTML = `<button type="button" onclick="_buscarMarcaOponente('${_escapeHtml(row.marca_oponente_denominacion)}', '${_escapeHtml(row.marca_oponente_numero_registro || "")}')">
+      🔍 Buscar "${_escapeHtml(row.marca_oponente_denominacion)}" en INPI
+    </button>`;
+    return;
+  }
+
+  cont.innerHTML = "";
+}
+
+async function _buscarMarcaOponente(denominacion, numeroBuscado) {
+  const cont = document.getElementById("mo-marca-oponente");
+  cont.innerHTML = "Buscando…";
+  try {
+    const data = await api(`/api/marcas/buscar-marca?denominacion=${encodeURIComponent(denominacion)}`);
+    const filas = data.resultados || [];
+    if (!filas.length) {
+      cont.innerHTML = `No se encontró ninguna marca con "${_escapeHtml(denominacion)}" en INPI (puede que esté cargada con otro espaciado o redacción).`;
+      return;
+    }
+    cont.innerHTML = `<div class="mo-titulo">Resultados para "${_escapeHtml(denominacion)}":</div>` +
+      filas.map(f => {
+        const coincide = numeroBuscado && f.numero_resolucion && f.numero_resolucion.replace(/\D/g, "") === numeroBuscado.replace(/\D/g, "");
+        return `<div class="mo-resultado ${coincide ? "mo-coincide" : ""}">
+          ${_escapeHtml(f.denominacion)} — clase ${_escapeHtml(f.clase)}${f.numero_resolucion ? ` · Reg. ${_escapeHtml(f.numero_resolucion)}` : ""}
+          <a class="link-acta" href="javascript:void(0)" onclick="abrirActa('${f.acta}')">Ver ficha ↗</a>
+        </div>`;
+      }).join("");
+  } catch (e) {
+    cont.innerHTML = `No se pudo buscar (${e.message}).`;
+  }
 }
 
 function fmtFecha(f) {

@@ -205,6 +205,84 @@ tr.contactado { opacity: 0.55; }
   border-bottom: none;
   cursor: help;
 }
+.badge-oposicion {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 600;
+  background: #fff3cd;
+  color: #92720d;
+  border: none;
+  cursor: pointer;
+}
+.badge-oposicion:hover { background: #ffe9a8; }
+
+.modal-fondo {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(20, 24, 33, 0.55);
+  z-index: 100;
+  align-items: center;
+  justify-content: center;
+}
+.modal-fondo.abierto { display: flex; }
+.modal-caja {
+  background: white;
+  border-radius: 10px;
+  max-width: 560px;
+  width: calc(100% - 40px);
+  max-height: calc(100vh - 60px);
+  overflow-y: auto;
+  padding: 20px 24px;
+  position: relative;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.25);
+}
+.modal-cerrar {
+  position: absolute;
+  top: 10px;
+  right: 14px;
+  border: none;
+  background: none;
+  font-size: 22px;
+  line-height: 1;
+  color: var(--gris);
+  cursor: pointer;
+}
+.modal-cerrar:hover { color: #1f2430; }
+.modal-caja h3 { margin: 0 0 12px; font-size: 16px; color: #92720d; }
+.modal-caja .mo-oponente { margin: 0 0 10px; font-size: 14px; }
+.modal-caja .mo-doc { color: var(--gris); font-weight: 400; }
+.modal-caja .mo-fundamento {
+  font-size: 13px;
+  line-height: 1.5;
+  color: #374151;
+  white-space: pre-wrap;
+  margin: 0 0 16px;
+}
+.modal-caja .mo-titulo { font-size: 12px; color: var(--gris); margin-bottom: 6px; }
+.modal-caja .mo-resultado {
+  font-size: 13px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--borde);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.modal-caja .mo-resultado.mo-coincide { background: #e6f4ea; }
+#mo-marca-oponente button {
+  padding: 6px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--azul);
+  background: white;
+  color: var(--azul);
+  cursor: pointer;
+  font-size: 13px;
+}
+#mo-marca-oponente button:hover { background: var(--azul-claro); }
+
 .badge-vista {
   display: inline-block;
   padding: 2px 8px;

@@ -277,6 +277,72 @@ def revisar_acta(acta: str, timeout: int = 30) -> dict:
     return resultado
 
 
+def buscar_marca_por_denominacion(denominacion: str, clase: str = "", timeout: int = 30) -> list:
+    """Busca marcas por denominación (contiene) en la API JSON
+    GrillaMarcasAvanzada — usada por el botón "Ver marca opuesta" del
+    popup de oposición, cuando el fundamento solo da el nombre + número de
+    registro de la marca del oponente (no un ACTA directa para linkear).
+
+    Ojo: esta API necesita la sesión/cookies de la página de "búsqueda
+    avanzada" puntual (Cod_Funcion=NQA0ADE) — la de _crear_sesion() (que
+    visita /MarcasConsultas/Grilla) no alcanza, devuelve 0 resultados
+    aunque el status sea 200. Confirmado a mano el 29/09/2026.
+
+    Mejor esfuerzo, no siempre encuentra el registro exacto: la
+    denominación tal como aparece en el texto legal del fundamento puede
+    tener espaciado distinto al que está cargado en INPI (confirmado a
+    mano: "BALI STONE" con espacio no encontró nada, la marca real puede
+    estar cargada distinto). Por eso el panel muestra la lista de
+    resultados para que la persona elija, no un solo "mejor match"
+    automático."""
+    s = _crear_sesion()
+    try:
+        s.get(f"{BASE}/marcasconsultas/busqueda/?Cod_Funcion=NQA0ADE", timeout=timeout)
+    except requests.RequestException as e:
+        print(f"aviso: no se pudo pre-cargar sesión de búsqueda avanzada ({e})", file=sys.stderr)
+
+    payload = {
+        "Tipo_Resolucion": "",
+        "Clase": str(clase or ""),
+        "TipoBusquedaDenominacion": "1",  # CONTIENE
+        "Denominacion": denominacion,
+        "Titular": "",
+        "TipoBusquedaTitular": "0",
+        "Fecha_IngresoDesde": "",
+        "Fecha_IngresoHasta": "",
+        "Fecha_ResolucionDesde": "",
+        "Fecha_ResolucionHasta": "",
+        "vigentes": False,
+        "limit": 20,
+        "offset": 0,
+    }
+    r = _get_con_reintentos(
+        lambda: s.post(
+            f"{BASE}/MarcasConsultas/GrillaMarcasAvanzada",
+            json=payload,
+            headers={
+                "Referer": f"{BASE}/marcasconsultas/busqueda/?Cod_Funcion=NQA0ADE",
+                "X-Requested-With": "XMLHttpRequest",
+            },
+            timeout=timeout,
+        )
+    )
+    try:
+        data = r.json()
+    except ValueError:
+        return []
+    filas = []
+    for row in (data.get("rows") or [])[:20]:
+        filas.append({
+            "acta": str(row.get("Acta", "")).strip(),
+            "denominacion": str(row.get("Denominacion", "")).strip(),
+            "clase": row.get("Clase"),
+            "numero_resolucion": str(row.get("Numero_Resolucion") or "").strip(),
+            "estado": row.get("Estado"),
+        })
+    return filas
+
+
 def calcular_lead_score(matricula_agente: str, es_lead, tiene_email: bool) -> int:
     """Misma fórmula que validar_leads.calcular_lead_score."""
     score = 0

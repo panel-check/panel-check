@@ -78,7 +78,7 @@ def main():
                 time.sleep(args.delay)
                 continue
 
-            detalle_rico = descargar_formulario_oposicion(s, archivos, fila_opo)
+            detalle_rico = descargar_formulario_oposicion(s, archivos, fila_opo, acta_propia=acta)
             if detalle_rico:
                 with conn.cursor() as cur:
                     cur.execute(
@@ -86,7 +86,9 @@ def main():
                         UPDATE marcas
                         SET oponente_nombre = %s, oponente_tipo_doc = %s,
                             oponente_numero_doc = %s, oponente_cuit = %s,
-                            fundamento_oposicion = %s
+                            fundamento_oposicion = %s,
+                            actas_marca_oponente = %s, marca_oponente_denominacion = %s,
+                            marca_oponente_numero_registro = %s
                         WHERE acta = %s
                         """,
                         (
@@ -95,6 +97,9 @@ def main():
                             detalle_rico.get("oponente_numero_doc"),
                             detalle_rico.get("oponente_cuit"),
                             detalle_rico.get("fundamento_oposicion"),
+                            detalle_rico.get("actas_marca_oponente"),
+                            detalle_rico.get("marca_oponente_denominacion"),
+                            detalle_rico.get("marca_oponente_numero_registro"),
                             acta,
                         ),
                     )

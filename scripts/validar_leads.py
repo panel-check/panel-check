@@ -181,13 +181,79 @@ RE_FUNDAMENTO = re.compile(
 )
 
 
-def parsear_formulario_oposicion(texto: str) -> dict:
-    """Extrae oponente (nombre/tipo y número de doc/CUIT) y el fundamento
-    legal del texto ya extraído del PDF Formulario de una oposición de
-    tercero. Devuelve solo las claves que efectivamente matchearon —
-    mejor un campo faltante que uno mal parseado. No falla si el texto no
-    tiene el formato esperado (ej. viene de una VISTA de oficio de INPI en
-    vez de una oposición de tercero, que no tiene este mismo formulario)."""
+# Para encontrar la(s) marca(s) PROPIA(s) del oponente citada(s) en el
+# FUNDAMENTO, y así poder linkear directo al expediente de esa marca en vez
+# de sólo mostrar el texto legal. Confirmado con 5 casos reales (29/09/2026):
+#   - La mayoría cita la marca propia como "ACTA N° X" (a veces varias, ej.
+#     renovaciones o varias clases) — el link más confiable, es la MISMA
+#     acta que ya sabemos abrir con abrirActa() en el panel.
+#   - El fundamento a veces también repite, al principio, el ACTA de la
+#     marca QUE SE ESTÁ OPONIENDO (la nuestra) entre paréntesis — hay que
+#     excluirla, o el botón "Ver marca opuesta" terminaría abriendo la
+#     misma acta que ya estamos mirando.
+#   - Un par de casos no dan ningún ACTA, solo un número de "Registro"
+#     (Nro./Reg. Nr.) — ahí no hay link directo, guardamos denominación +
+#     número para intentar una búsqueda por nombre (mejor esfuerzo: probado
+#     a mano que la búsqueda por denominación en GrillaMarcasAvanzada no
+#     siempre encuentra el registro exacto, por diferencias de espaciado
+#     entre el texto legal y como está cargada la denominación en INPI).
+RE_ACTA_CITADA = re.compile(r"ACTAS?\s+N[°ºo]\.?\s*(\d{5,8})", re.IGNORECASE)
+# Enumeraciones tipo "Actas N° 4094053 (clase 35), 4099176 (clase 14) y
+# 4099178 (clase 8)" — confirmado a mano (acta 4758381/4758371, TAMARA
+# PONS): solo el PRIMER número está pegado a "Actas N°", los siguientes son
+# número + "(clase ...)" sueltos separados por coma/"y". RE_ACTA_CITADA
+# solo agarra ese primero; este regex agarra el grupo entero para poder
+# sacar los demás con RE_NUMERO_EN_GRUPO_ACTAS.
+RE_GRUPO_ACTAS = re.compile(
+    r"ACTAS?\s+N[°ºo]\.?\s*\d{5,8}\s*\(clase[^)]*\)(?:\s*[,y]\s*\d{5,8}\s*\(clase[^)]*\))*",
+    re.IGNORECASE,
+)
+RE_NUMERO_EN_GRUPO_ACTAS = re.compile(r"(\d{5,8})\s*\(clase", re.IGNORECASE)
+RE_MARCA_OPONENTE_COMILLAS = re.compile(r'["“]([^"”]{2,60})["”]\s*Nro\.?\s*([\d.]{4,})')
+RE_MARCA_OPONENTE_REG = re.compile(
+    r"\b([A-ZÁÉÍÓÚÑ][A-ZÁÉÍÓÚÑ0-9]*(?:\s+[A-ZÁÉÍÓÚÑ][A-ZÁÉÍÓÚÑ0-9]*){0,4})\s+Reg\.?\s*Nr\.?\s*([\d.]{4,})"
+)
+
+
+def parsear_marca_oponente(fundamento: str, acta_propia: str | None = None) -> dict:
+    """Busca, dentro del FUNDAMENTO ya extraído, a qué marca propia del
+    oponente hace referencia — ver comentario de los regex arriba. Devuelve
+    como mucho una de estas dos formas (nunca las dos):
+      {"actas_marca_oponente": "4094053,4099176,4099178"}   -> link directo
+      {"marca_oponente_denominacion": "...", "marca_oponente_numero_registro": "..."} -> a buscar por nombre
+    {} si no encontró nada reconocible."""
+    if not fundamento:
+        return {}
+    actas = []
+    for m in RE_ACTA_CITADA.finditer(fundamento):
+        acta = m.group(1)
+        if acta != acta_propia and acta not in actas:
+            actas.append(acta)
+    for grupo in RE_GRUPO_ACTAS.finditer(fundamento):
+        for m in RE_NUMERO_EN_GRUPO_ACTAS.finditer(grupo.group(0)):
+            acta = m.group(1)
+            if acta != acta_propia and acta not in actas:
+                actas.append(acta)
+    if actas:
+        return {"actas_marca_oponente": ",".join(actas)}
+
+    m = RE_MARCA_OPONENTE_COMILLAS.search(fundamento) or RE_MARCA_OPONENTE_REG.search(fundamento)
+    if m:
+        return {
+            "marca_oponente_denominacion": m.group(1).strip(),
+            "marca_oponente_numero_registro": m.group(2).replace(".", ""),
+        }
+    return {}
+
+
+def parsear_formulario_oposicion(texto: str, acta_propia: str | None = None) -> dict:
+    """Extrae oponente (nombre/tipo y número de doc/CUIT), el fundamento
+    legal, y la marca propia del oponente (ver parsear_marca_oponente) del
+    texto ya extraído del PDF Formulario de una oposición de tercero.
+    Devuelve solo las claves que efectivamente matchearon — mejor un campo
+    faltante que uno mal parseado. No falla si el texto no tiene el formato
+    esperado (ej. viene de una VISTA de oficio de INPI en vez de una
+    oposición de tercero, que no tiene este mismo formulario)."""
     resultado: dict = {}
     m = RE_OPONENTE_NOMBRE.search(texto)
     if m:
@@ -199,12 +265,15 @@ def parsear_formulario_oposicion(texto: str) -> dict:
         resultado["oponente_cuit"] = m.group(3)
     m = RE_FUNDAMENTO.search(texto)
     if m:
-        resultado["fundamento_oposicion"] = m.group(1).strip()
+        fundamento = m.group(1).strip()
+        resultado["fundamento_oposicion"] = fundamento
+        resultado.update(parsear_marca_oponente(fundamento, acta_propia))
     return resultado
 
 
 def descargar_formulario_oposicion(
-    s: "requests.Session", archivos: list[dict], fila_opo: dict, timeout: int = 30
+    s: "requests.Session", archivos: list[dict], fila_opo: dict,
+    acta_propia: str | None = None, timeout: int = 30,
 ) -> dict:
     """Baja y parsea el PDF "Formulario" de la oposición de tercero
     representada por fila_opo (la fila devuelta por buscar_fila_oposicion).
@@ -262,7 +331,7 @@ def descargar_formulario_oposicion(
     except Exception:
         return {}
     texto_plano = re.sub(r"\s+", " ", texto).strip()
-    return parsear_formulario_oposicion(texto_plano)
+    return parsear_formulario_oposicion(texto_plano, acta_propia)
 
 
 # A veces el campo Fecha no viene como texto "DD/MM/YYYY" sino en el formato
