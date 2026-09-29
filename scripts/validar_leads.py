@@ -125,6 +125,24 @@ def buscar_archivos_grilla(s: requests.Session, acta: str, timeout: int = 30) ->
 TERMINOS_OPOSICION = ("OPO", "VISTA", "OPOSICION", "OPOSICIÓN")
 
 
+def buscar_fila_oposicion(archivos: list[dict], fecha_publicacion: str | None = None) -> dict | None:
+    """Igual criterio que detectar_oposicion, pero devuelve la fila cruda de
+    Grilla Digital (no un string armado) para poder ubicar después, por la
+    misma fecha, el PDF Formulario de esa oposición/vista — ver
+    descargar_formulario_oposicion."""
+    for a in archivos:
+        indice = (a.get("Indice") or "").upper()
+        referencia = (a.get("Referencia") or "").upper()
+        if not any(t in indice or t in referencia for t in TERMINOS_OPOSICION):
+            continue
+        if fecha_publicacion:
+            fecha_fila = _parsear_fecha_grilla(a.get("Fecha") or "")
+            if not fecha_fila or fecha_fila < fecha_publicacion:
+                continue
+        return a
+    return None
+
+
 def detectar_oposicion(archivos: list[dict], fecha_publicacion: str | None = None) -> tuple[bool, str]:
     """Recorre los archivos de Grilla Digital buscando una fila de oposición
     o vista. Devuelve (tuvo_oposicion, detalle) — detalle queda vacío si no
@@ -144,18 +162,107 @@ def detectar_oposicion(archivos: list[dict], fecha_publicacion: str | None = Non
     Si no se puede parsear la fecha de una fila candidata, se la descarta
     (mejor no marcar una oposición que no se puede confirmar que sea
     posterior a la publicación, que arriesgar un falso positivo)."""
-    for a in archivos:
-        indice = (a.get("Indice") or "").upper()
-        referencia = (a.get("Referencia") or "").upper()
-        if not any(t in indice or t in referencia for t in TERMINOS_OPOSICION):
-            continue
-        if fecha_publicacion:
-            fecha_fila = _parsear_fecha_grilla(a.get("Fecha") or "")
-            if not fecha_fila or fecha_fila < fecha_publicacion:
-                continue
-        detalle = f"{a.get('Fecha', '')} - {a.get('Indice', '')} - {a.get('Referencia', '')}"
-        return True, detalle
-    return False, ""
+    a = buscar_fila_oposicion(archivos, fecha_publicacion)
+    if not a:
+        return False, ""
+    detalle = f"{a.get('Fecha', '')} - {a.get('Indice', '')} - {a.get('Referencia', '')}"
+    return True, detalle
+
+
+# Regexes para parsear el PDF "Formulario" de una SOLICITUD DE OPOSICION
+# (confirmado a mano con un caso real: acta 4764327, oposición de
+# PICAPIETRA LEANDRO contra la marca BALISTONE). El texto ya viene con
+# espacios/saltos de línea colapsados a uno solo (ver
+# descargar_formulario_oposicion) antes de aplicar estos regex.
+RE_OPONENTE_NOMBRE = re.compile(r"OPONENTE NOMBRE:\s*(.+?)\s*G[ÉE]NERO:")
+RE_OPONENTE_DOC = re.compile(r"TIPO DOC:\s*(\S+)\s+NUMERO:\s*(\S+)\s+CUIT:\s*(\d+)")
+RE_FUNDAMENTO = re.compile(
+    r"FUNDAMENTO:\s*(.+?)\s*NOMBRE DE LA MARCA A LA QUE SE OPONE:", re.S
+)
+
+
+def parsear_formulario_oposicion(texto: str) -> dict:
+    """Extrae oponente (nombre/tipo y número de doc/CUIT) y el fundamento
+    legal del texto ya extraído del PDF Formulario de una oposición de
+    tercero. Devuelve solo las claves que efectivamente matchearon —
+    mejor un campo faltante que uno mal parseado. No falla si el texto no
+    tiene el formato esperado (ej. viene de una VISTA de oficio de INPI en
+    vez de una oposición de tercero, que no tiene este mismo formulario)."""
+    resultado: dict = {}
+    m = RE_OPONENTE_NOMBRE.search(texto)
+    if m:
+        resultado["oponente_nombre"] = m.group(1).strip()
+    m = RE_OPONENTE_DOC.search(texto)
+    if m:
+        resultado["oponente_tipo_doc"] = m.group(1)
+        resultado["oponente_numero_doc"] = m.group(2)
+        resultado["oponente_cuit"] = m.group(3)
+    m = RE_FUNDAMENTO.search(texto)
+    if m:
+        resultado["fundamento_oposicion"] = m.group(1).strip()
+    return resultado
+
+
+def descargar_formulario_oposicion(
+    s: "requests.Session", archivos: list[dict], fila_opo: dict, timeout: int = 30
+) -> dict:
+    """Baja y parsea el PDF "Formulario" de la oposición de tercero
+    representada por fila_opo (la fila devuelta por buscar_fila_oposicion).
+
+    Ojo con la fecha: el Formulario y el "Recibo de Ingreso"/"Opo. de
+    Marcas" de un mismo trámite se cargan en Grilla Digital con Fecha
+    ligeramente distinta (algunos segundos de diferencia, mismo timestamp
+    .NET pero no idéntico) aunque sean del mismo día — comparar por string
+    exacto los deja afuera. Confirmado a mano: acta 4764327, Recibo a las
+    13:12:17.833, Formulario con otro milisegundo, mismo 15/09/2026. Por
+    eso acá se compara por DÍA calendario (_parsear_fecha_grilla), no por
+    el campo Fecha completo.
+
+    Solo tiene sentido para oposición de TERCERO (Indice/Referencia con
+    "OPO"): una VISTA de oficio de INPI no tiene este formulario (la inicia
+    el propio organismo, no un tercero que presenta un escrito), así que el
+    caller no debería llamar esto para esas filas. Devuelve {} (no rompe
+    nada) si no se encuentra el Formulario o falla la descarga/parseo —
+    la detección principal de la oposición no depende de esto."""
+    fecha_fila = fila_opo.get("Fecha") or ""
+    dia_opo = _parsear_fecha_grilla(fecha_fila)
+    if not dia_opo:
+        return {}
+    formulario = next(
+        (
+            a for a in archivos
+            if a.get("Indice") == "Formulario"
+            and _parsear_fecha_grilla(a.get("Fecha") or "") == dia_opo
+        ),
+        None,
+    )
+    if not formulario:
+        return {}
+    id_doc = formulario.get("id_Documento_encriptado")
+    ruta = formulario.get("ruta") or ""
+    if not id_doc or not ruta:
+        return {}
+    nombre_archivo = ruta.rsplit("/", 1)[-1]
+    try:
+        r_pdf = _get_con_reintentos(
+            lambda: s.get(
+                f"{BASE}/Home/edmsxidd",
+                params={"id": id_doc, "nombre": nombre_archivo},
+                headers={"Referer": f"{BASE}/Home/GrillaDigital"},
+                timeout=timeout,
+            )
+        )
+        if r_pdf.headers.get("Content-Type", "").lower() != "application/pdf":
+            return {}
+        import io
+        import pdfplumber
+
+        with pdfplumber.open(io.BytesIO(r_pdf.content)) as pdf:
+            texto = "\n".join(p.extract_text() or "" for p in pdf.pages)
+    except Exception:
+        return {}
+    texto_plano = re.sub(r"\s+", " ", texto).strip()
+    return parsear_formulario_oposicion(texto_plano)
 
 
 # A veces el campo Fecha no viene como texto "DD/MM/YYYY" sino en el formato

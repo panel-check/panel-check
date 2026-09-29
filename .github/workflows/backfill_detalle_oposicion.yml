@@ -1,0 +1,35 @@
+name: Backfill de detalle rico de oposiciones (una vez)
+
+on:
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: "Tope de actas a procesar (vacío = todas)"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Instalar dependencias
+        run: pip install -r requirements.txt
+
+      - name: Completar oponente/fundamento de oposiciones ya detectadas
+        run: |
+          cd scripts
+          args=""
+          if [ -n "${{ inputs.limit }}" ]; then args="--limit ${{ inputs.limit }}"; fi
+          python3 backfill_detalle_oposicion.py $args
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL || secrets.DATABASE_PUBLIC_URL }}
+          PYTHONUNBUFFERED: "1"

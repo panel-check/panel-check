@@ -47,7 +47,9 @@ import psycopg2.extras
 
 from validar_leads import (
     buscar_archivos_grilla,
+    buscar_fila_oposicion,
     crear_sesion,
+    descargar_formulario_oposicion,
     detectar_oposicion,
 )
 
@@ -107,24 +109,49 @@ def main():
                 time.sleep(args.delay)
                 continue
 
-            tuvo_oposicion, detalle = detectar_oposicion(
-                archivos, fila["fecha_publicacion"].isoformat()
+            fila_opo = buscar_fila_oposicion(archivos, fila["fecha_publicacion"].isoformat())
+            tuvo_oposicion = fila_opo is not None
+            detalle = (
+                f"{fila_opo.get('Fecha', '')} - {fila_opo.get('Indice', '')} - {fila_opo.get('Referencia', '')}"
+                if fila_opo else ""
             )
+
+            # Si es una oposición de TERCERO (no una vista de oficio de
+            # INPI), bajamos y parseamos el Formulario real para sacar quién
+            # se opone y por qué (ver descargar_formulario_oposicion) —
+            # mejor esfuerzo: si falla o no está, seguimos solo con el
+            # detalle crudo de Grilla Digital, no frena la detección.
+            detalle_rico = {}
+            if fila_opo and "OPO" in (fila_opo.get("Referencia") or "").upper():
+                detalle_rico = descargar_formulario_oposicion(s, archivos, fila_opo)
+
             with conn.cursor() as cur:
                 cur.execute(
                     """
                     UPDATE marcas
                     SET tuvo_oposicion = %s, detalle_oposicion = %s,
-                        revisado_oposicion_en = now()
+                        revisado_oposicion_en = now(),
+                        oponente_nombre = %s, oponente_tipo_doc = %s,
+                        oponente_numero_doc = %s, oponente_cuit = %s,
+                        fundamento_oposicion = %s
                     WHERE acta = %s
                     """,
-                    (tuvo_oposicion, detalle or None, acta),
+                    (
+                        tuvo_oposicion, detalle or None,
+                        detalle_rico.get("oponente_nombre"),
+                        detalle_rico.get("oponente_tipo_doc"),
+                        detalle_rico.get("oponente_numero_doc"),
+                        detalle_rico.get("oponente_cuit"),
+                        detalle_rico.get("fundamento_oposicion"),
+                        acta,
+                    ),
                 )
             conn.commit()
 
             if tuvo_oposicion:
                 con_oposicion += 1
-                print(f"  [{i}/{len(pendientes)}] acta {acta} ({fila['titular']}): CON OPOSICIÓN/VISTA — {detalle}")
+                extra = f" (oponente: {detalle_rico['oponente_nombre']})" if detalle_rico.get("oponente_nombre") else ""
+                print(f"  [{i}/{len(pendientes)}] acta {acta} ({fila['titular']}): CON OPOSICIÓN/VISTA — {detalle}{extra}")
             else:
                 print(f"  [{i}/{len(pendientes)}] acta {acta} ({fila['titular']}): sin oposición")
 

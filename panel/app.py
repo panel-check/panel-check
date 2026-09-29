@@ -144,6 +144,27 @@ def _correr_alters_panel(cur):
     cur.execute(
         "ALTER TABLE marcas ADD COLUMN IF NOT EXISTS fecha_vencimiento_marca DATE"
     )
+    # Detalle real de la oposición de tercero, parseado del PDF "Formulario"
+    # de la SOLICITUD DE OPOSICION (no del "Recibo de Ingreso", que es solo
+    # una constancia administrativa) — ver descargar_formulario_oposicion en
+    # scripts/validar_leads.py. Quedan NULL para vistas de oficio de INPI
+    # (no las presenta un tercero, no tienen este formulario) y para
+    # oposiciones donde no se pudo bajar/parsear el PDF.
+    cur.execute(
+        "ALTER TABLE marcas ADD COLUMN IF NOT EXISTS oponente_nombre TEXT"
+    )
+    cur.execute(
+        "ALTER TABLE marcas ADD COLUMN IF NOT EXISTS oponente_tipo_doc TEXT"
+    )
+    cur.execute(
+        "ALTER TABLE marcas ADD COLUMN IF NOT EXISTS oponente_numero_doc TEXT"
+    )
+    cur.execute(
+        "ALTER TABLE marcas ADD COLUMN IF NOT EXISTS oponente_cuit TEXT"
+    )
+    cur.execute(
+        "ALTER TABLE marcas ADD COLUMN IF NOT EXISTS fundamento_oposicion TEXT"
+    )
 
 COLUMNAS_ORDENABLES = {
     "lead_score", "acta", "boletin", "clase", "titular", "fecha_presentacion",
@@ -156,6 +177,8 @@ COLUMNAS_MARCA = """
     caracter, es_lead, email, email_apoderado, lead_score, link,
     contactado, contactado_en, motivo_sin_email,
     tuvo_oposicion, detalle_oposicion, revisado_oposicion_en,
+    oponente_nombre, oponente_tipo_doc, oponente_numero_doc, oponente_cuit,
+    fundamento_oposicion,
     estado_tramite, fecha_concesion, numero_disposicion, fecha_vencimiento_marca
 """
 

@@ -42,7 +42,20 @@ function badgeOposicion(row) {
   // vista de INPI.
   const esOposicionDeTercero = /OPO/i.test(detalle);
   if (esOposicionDeTercero) {
-    return `<span class="tooltip badge-oposicion">⚠ OPOSICIÓN<span class="globo">${detalle || "oposición de un tercero detectada en Grilla Digital"}</span></span>`;
+    // Si se pudo bajar y parsear el Formulario real de la oposición (ver
+    // scripts/validar_leads.descargar_formulario_oposicion) mostramos el
+    // detalle rico (quién se opone y por qué); si no, el detalle crudo de
+    // Grilla Digital como respaldo.
+    let globo;
+    if (row.oponente_nombre || row.fundamento_oposicion) {
+      const doc = row.oponente_tipo_doc && row.oponente_numero_doc
+        ? ` (${row.oponente_tipo_doc} ${row.oponente_numero_doc})` : "";
+      globo = `Se opone: ${row.oponente_nombre || "(sin nombre)"}${doc}`
+        + (row.fundamento_oposicion ? ` · Fundamento: ${row.fundamento_oposicion}` : "");
+    } else {
+      globo = detalle || "oposición de un tercero detectada en Grilla Digital";
+    }
+    return `<span class="tooltip badge-oposicion">⚠ OPOSICIÓN<span class="globo">${globo}</span></span>`;
   }
   return `<span class="tooltip badge-vista">👁 VISTA DE INPI<span class="globo">${detalle || "observación de oficio de INPI detectada en Grilla Digital"}</span></span>`;
 }
