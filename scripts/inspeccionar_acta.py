@@ -72,7 +72,19 @@ def main():
         bloque = re.sub(r"\s+", " ", bloque).strip()[:900]  # límite prudente por annotation
         print(f"::notice::SECCION {nombre}: {bloque}")
 
-    print(f"::notice::acta {acta} inspeccionada OK")
+    # Búsqueda amplia (no acotada a ninguna sección): contexto alrededor de
+    # palabras clave que todavía no ubicamos bien (TITULAR, PAIS, CUIT).
+    texto_plano = _texto_sin_tags(r.text)
+    for palabra in ["TITULAR", "PAIS", "PAÍS", "CUIT"]:
+        vistos = 0
+        for m in re.finditer(re.escape(palabra), texto_plano.upper()):
+            if vistos >= 6:
+                break
+            i = m.start()
+            ctx = texto_plano[max(0, i - 20): i + 120]
+            ctx = re.sub(r"\s+", " ", ctx).strip()
+            print(f"::notice::CTX {palabra} @{i}: {ctx}")
+            vistos += 1
 
 
 if __name__ == "__main__":
