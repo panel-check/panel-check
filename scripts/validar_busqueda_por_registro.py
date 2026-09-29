@@ -16,6 +16,14 @@ from validar_leads import crear_sesion, BASE, _get_con_reintentos
 
 def buscar(denominacion, clase=""):
     s = crear_sesion()
+    # GrillaMarcasAvanzada parece necesitar la sesión/cookies de esta página
+    # puntual (la búsqueda avanzada), no la de /MarcasConsultas/Grilla que
+    # usa crear_sesion() por default para el resto del pipeline.
+    try:
+        r_pre = s.get(f"{BASE}/marcasconsultas/busqueda/?Cod_Funcion=NQA0ADE", timeout=30)
+        print(f"::notice::pre-carga status={r_pre.status_code}")
+    except Exception as e:
+        print(f"::notice::pre-carga falló: {e}")
     payload = {
         "Tipo_Resolucion": "",
         "Clase": str(clase),
