@@ -28,13 +28,14 @@
       <th>Marca</th>
       <th>Lead</th>
       <th>Email</th>
-      <th>Fecha</th>
+      <th>Fecha Boletín</th>
+      <th>Fecha Concedida</th>
       <th>Estado</th>
       <th></th>
     </tr>
   </thead>
   <tbody id="tbody">
-    <tr><td colspan="11" class="vacio">Cargando...</td></tr>
+    <tr><td colspan="12" class="vacio">Cargando...</td></tr>
   </tbody>
 </table>
 </div>
@@ -62,6 +63,7 @@ function filaHtml(r) {
       <td>${badgeLead(r)} ${badgeOposicion(r)}</td>
       <td>${celdaEmail(r)}</td>
       <td>${fechaPublicacionOFallback(r)}</td>
+      <td>${fmtFecha(r.fecha_concesion) || "—"}</td>
       <td>${badgeEstadoTramite(r, true)}</td>
       <td><button class="contactar ${r.contactado ? "marcado" : ""}" onclick="marcarContactado('${r.acta}', ${!!r.contactado})">
         ${r.contactado ? "✓ Contactado" : "Marcar"}
@@ -73,7 +75,7 @@ function filaHtml(r) {
 async function cargar() {
   const clave = claveDesdeUrl();
   const tbody = document.getElementById("tbody");
-  tbody.innerHTML = '<tr><td colspan="11" class="vacio">Cargando...</td></tr>';
+  tbody.innerHTML = '<tr><td colspan="12" class="vacio">Cargando...</td></tr>';
   try {
     const data = await api(`/api/titular/${encodeURIComponent(clave)}`);
     document.getElementById("titulo-titular").textContent = data.titular || clave;
@@ -87,10 +89,10 @@ async function cargar() {
 
     tbody.innerHTML = data.rows.length
       ? data.rows.map(filaHtml).join("")
-      : '<tr><td colspan="11" class="vacio">Sin marcas para este titular.</td></tr>';
+      : '<tr><td colspan="12" class="vacio">Sin marcas para este titular.</td></tr>';
   } catch (e) {
     document.getElementById("titulo-titular").textContent = "No encontrado";
-    tbody.innerHTML = `<tr><td colspan="11" class="vacio">No se pudo cargar (${e.message}).</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="12" class="vacio">No se pudo cargar (${e.message}).</td></tr>`;
   }
 }
 

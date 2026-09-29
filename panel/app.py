@@ -127,7 +127,7 @@ def migrar_columnas_panel():
 
 COLUMNAS_ORDENABLES = {
     "lead_score", "acta", "boletin", "clase", "titular", "fecha_presentacion",
-    "fecha_publicacion", "creado_en", "actualizado_en",
+    "fecha_publicacion", "fecha_concesion", "creado_en", "actualizado_en",
 }
 
 COLUMNAS_MARCA = """

@@ -62,12 +62,13 @@
       <th data-col="titular" onclick="ordenarPor('titular')">Titular</th>
       <th>Lead</th>
       <th>Email</th>
-      <th data-col="fecha_publicacion" onclick="ordenarPor('fecha_publicacion')" title="Fecha de publicación en el boletín (o de presentación, si todavía no se verificó)">Fecha</th>
+      <th data-col="fecha_publicacion" onclick="ordenarPor('fecha_publicacion')" title="Fecha de publicación en el boletín (o de presentación, si todavía no se verificó)">Fecha Boletín</th>
+      <th data-col="fecha_concesion" onclick="ordenarPor('fecha_concesion')" title="Fecha en que INPI concedió la marca">Fecha Concedida</th>
       <th></th>
     </tr>
   </thead>
   <tbody id="tbody">
-    <tr><td colspan="8" class="vacio">Cargando...</td></tr>
+    <tr><td colspan="9" class="vacio">Cargando...</td></tr>
   </tbody>
 </table>
 </div>
@@ -184,6 +185,7 @@ function filaHtml(r, { flecha = false, oculta = false, idGrupo = null, cantidadR
       <td>${badgeLead(r)} ${badgeOposicion(r)} ${badgeEstadoTramite(r)}</td>
       <td class="celda-email">${celdaEmailIcono(r)}</td>
       <td>${fechaPublicacionOFallback(r)}</td>
+      <td>${fmtFecha(r.fecha_concesion) || "—"}</td>
       <td><a class="abrir" href="${hrefTitular}" target="_blank" title="Ver ficha completa del titular (boletín ${r.boletin}, acta ${r.acta})">Abrir</a></td>
     </tr>
   `;
@@ -199,7 +201,7 @@ function toggleGrupo(idGrupo, boton) {
 
 async function cargar(offset) {
   estado.offset = offset;
-  document.getElementById("tbody").innerHTML = '<tr><td colspan="8" class="vacio">Cargando...</td></tr>';
+  document.getElementById("tbody").innerHTML = '<tr><td colspan="9" class="vacio">Cargando...</td></tr>';
   const params = filtrosActuales();
   const data = await api(`/api/marcas?${qs(params)}`);
   estado.total = data.total;
@@ -210,7 +212,7 @@ async function cargar(offset) {
 
   const tbody = document.getElementById("tbody");
   if (data.rows.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="8" class="vacio">No hay resultados con estos filtros.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="9" class="vacio">No hay resultados con estos filtros.</td></tr>';
   } else {
     tbody.innerHTML = agruparPorTitular(data.rows).map((grupo, i) => {
       const idGrupo = `g${estado.offset}_${i}`;
