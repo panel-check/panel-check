@@ -76,7 +76,7 @@ def main():
             time.sleep(args.delay)
             continue
 
-        tuvo_oposicion, detalle = detectar_oposicion(archivos)
+        tuvo_oposicion, detalle = detectar_oposicion(archivos, fecha_publicacion)
 
         with conn.cursor() as cur:
             if tuvo_oposicion:

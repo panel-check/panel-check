@@ -125,16 +125,36 @@ def buscar_archivos_grilla(s: requests.Session, acta: str, timeout: int = 30) ->
 TERMINOS_OPOSICION = ("OPO", "VISTA", "OPOSICION", "OPOSICIÓN")
 
 
-def detectar_oposicion(archivos: list[dict]) -> tuple[bool, str]:
+def detectar_oposicion(archivos: list[dict], fecha_publicacion: str | None = None) -> tuple[bool, str]:
     """Recorre los archivos de Grilla Digital buscando una fila de oposición
     o vista. Devuelve (tuvo_oposicion, detalle) — detalle queda vacío si no
-    se encontró nada."""
+    se encontró nada.
+
+    fecha_publicacion (ISO YYYY-MM-DD) es la fecha de la publicación que se
+    está evaluando (fila "Hoja Publicacion" más reciente, ver
+    fecha_publicacion_de_archivos). Solo cuenta una oposición/vista fechada
+    en o después de esa publicación: una marca puede tener varias
+    publicaciones a lo largo de su vida (ej. una vista de una presentación
+    anterior, ya resuelta, antes de que se vuelva a publicar), y una
+    vista/oposición VIEJA, anterior a la publicación vigente, ya está
+    resuelta — no es una alerta nueva. Confirmado con un caso real (acta
+    4700141): "Vista de Marcas" del 16/07/2026, pero la "Hoja Publicacion"
+    vigente es del 23/09/2026 — esa vista ya se solucionó, no corresponde
+    marcarla como oposición pendiente.
+    Si no se puede parsear la fecha de una fila candidata, se la descarta
+    (mejor no marcar una oposición que no se puede confirmar que sea
+    posterior a la publicación, que arriesgar un falso positivo)."""
     for a in archivos:
         indice = (a.get("Indice") or "").upper()
         referencia = (a.get("Referencia") or "").upper()
-        if any(t in indice or t in referencia for t in TERMINOS_OPOSICION):
-            detalle = f"{a.get('Fecha', '')} - {a.get('Indice', '')} - {a.get('Referencia', '')}"
-            return True, detalle
+        if not any(t in indice or t in referencia for t in TERMINOS_OPOSICION):
+            continue
+        if fecha_publicacion:
+            fecha_fila = _parsear_fecha_grilla(a.get("Fecha") or "")
+            if not fecha_fila or fecha_fila < fecha_publicacion:
+                continue
+        detalle = f"{a.get('Fecha', '')} - {a.get('Indice', '')} - {a.get('Referencia', '')}"
+        return True, detalle
     return False, ""
 
 
@@ -340,7 +360,9 @@ def revisar_acta(s: requests.Session, acta: str, timeout: int = 30) -> dict:
             return resultado
 
         resultado["fecha_publicacion"] = fecha_publicacion_de_archivos(archivos)
-        resultado["tuvo_oposicion"], resultado["detalle_oposicion"] = detectar_oposicion(archivos)
+        resultado["tuvo_oposicion"], resultado["detalle_oposicion"] = detectar_oposicion(
+            archivos, resultado["fecha_publicacion"]
+        )
 
         formulario = next((a for a in archivos if a.get("Indice") == "Formulario"), None)
         if not formulario:

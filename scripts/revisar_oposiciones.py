@@ -103,7 +103,9 @@ def main():
                 time.sleep(args.delay)
                 continue
 
-            tuvo_oposicion, detalle = detectar_oposicion(archivos)
+            tuvo_oposicion, detalle = detectar_oposicion(
+                archivos, fila["fecha_publicacion"].isoformat()
+            )
             with conn.cursor() as cur:
                 cur.execute(
                     """

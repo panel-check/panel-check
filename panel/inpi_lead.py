@@ -132,13 +132,21 @@ def _buscar_archivos_grilla(s: requests.Session, acta: str, timeout: int = 30) -
 TERMINOS_OPOSICION = ("OPO", "VISTA", "OPOSICION", "OPOSICIÓN")
 
 
-def _detectar_oposicion(archivos: list) -> tuple:
+def _detectar_oposicion(archivos: list, fecha_publicacion=None) -> tuple:
+    """Ver el comentario completo en validar_leads.detectar_oposicion: solo
+    cuenta una oposición/vista fechada en o después de la publicación
+    vigente — una vista vieja de una presentación anterior ya está resuelta."""
     for a in archivos:
         indice = (a.get("Indice") or "").upper()
         referencia = (a.get("Referencia") or "").upper()
-        if any(t in indice or t in referencia for t in TERMINOS_OPOSICION):
-            detalle = f"{a.get('Fecha', '')} - {a.get('Indice', '')} - {a.get('Referencia', '')}"
-            return True, detalle
+        if not any(t in indice or t in referencia for t in TERMINOS_OPOSICION):
+            continue
+        if fecha_publicacion:
+            fecha_fila = _parsear_fecha_grilla(a.get("Fecha") or "")
+            if not fecha_fila or fecha_fila < fecha_publicacion:
+                continue
+        detalle = f"{a.get('Fecha', '')} - {a.get('Indice', '')} - {a.get('Referencia', '')}"
+        return True, detalle
     return False, ""
 
 
@@ -224,7 +232,9 @@ def revisar_acta(acta: str, timeout: int = 30) -> dict:
             return resultado
 
         resultado["fecha_publicacion"] = _fecha_publicacion_de_archivos(archivos)
-        resultado["tuvo_oposicion"], resultado["detalle_oposicion"] = _detectar_oposicion(archivos)
+        resultado["tuvo_oposicion"], resultado["detalle_oposicion"] = _detectar_oposicion(
+            archivos, resultado["fecha_publicacion"]
+        )
 
         formulario = next((a for a in archivos if a.get("Indice") == "Formulario"), None)
         if not formulario:
