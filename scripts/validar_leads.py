@@ -367,13 +367,22 @@ def descargar_formulario_oposicion(
     representada por fila_opo (la fila devuelta por buscar_fila_oposicion).
 
     Ojo con la fecha: el Formulario y el "Recibo de Ingreso"/"Opo. de
-    Marcas" de un mismo trámite se cargan en Grilla Digital con Fecha
-    ligeramente distinta (algunos segundos de diferencia, mismo timestamp
-    .NET pero no idéntico) aunque sean del mismo día — comparar por string
-    exacto los deja afuera. Confirmado a mano: acta 4764327, Recibo a las
-    13:12:17.833, Formulario con otro milisegundo, mismo 15/09/2026. Por
-    eso acá se compara por DÍA calendario (_parsear_fecha_grilla), no por
-    el campo Fecha completo.
+    Marcas" de un mismo trámite NO siempre se cargan en Grilla Digital el
+    mismo día calendario. Dos casos reales confirmados a mano (29/09/2026):
+      - acta 4764327 (BALISTONE): Recibo y Formulario mismo día 15/09/2026,
+        pero con Fecha (timestamp .NET) ligeramente distinta — comparar por
+        string exacto los deja afuera.
+      - acta 4760629 (ARGENTOS FEST): Recibo "Opo. de Marcas" el 21/09/2026,
+        pero el Formulario recién se indexa al día siguiente, 22/09/2026 —
+        ni siquiera coinciden en el día calendario, así que comparar solo
+        por DÍA (como se había arreglado para el caso anterior) también
+        fallaba acá.
+    Por eso acá NO se busca un Formulario con la misma fecha exacta ni el
+    mismo día: se toma, entre TODOS los "Formulario" de la grilla fechados
+    en o después del día del Recibo, el más cercano (el primero
+    cronológicamente) — así se ignoran los Formulario de trámites previos
+    (ej. el de la solicitud original de la marca, semanas/meses antes) sin
+    depender de que ambas filas caigan el mismo día.
 
     Solo tiene sentido para oposición de TERCERO (Indice/Referencia con
     "OPO"): una VISTA de oficio de INPI no tiene este formulario (la inicia
@@ -385,16 +394,16 @@ def descargar_formulario_oposicion(
     dia_opo = _parsear_fecha_grilla(fecha_fila)
     if not dia_opo:
         return {}
-    formulario = next(
-        (
-            a for a in archivos
-            if a.get("Indice") == "Formulario"
-            and _parsear_fecha_grilla(a.get("Fecha") or "") == dia_opo
-        ),
-        None,
-    )
-    if not formulario:
+    candidatos = []
+    for a in archivos:
+        if a.get("Indice") != "Formulario":
+            continue
+        dia_f = _parsear_fecha_grilla(a.get("Fecha") or "")
+        if dia_f and dia_f >= dia_opo:
+            candidatos.append((dia_f, a))
+    if not candidatos:
         return {}
+    formulario = min(candidatos, key=lambda par: par[0])[1]
     id_doc = formulario.get("id_Documento_encriptado")
     ruta = formulario.get("ruta") or ""
     if not id_doc or not ruta:
