@@ -1,0 +1,25 @@
+name: Validar búsqueda de marca por denominación (diagnóstico puntual)
+
+on:
+  workflow_dispatch:
+    inputs:
+      denominacion:
+        required: false
+        default: "BALI STONE"
+      clase:
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  validar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -r requirements.txt
+      - run: cd scripts && python3 validar_busqueda_por_registro.py "${{ inputs.denominacion }}" "${{ inputs.clase }}"
