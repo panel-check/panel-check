@@ -1,13 +1,14 @@
 """
 Paso separado de inspeccionar_acta.py (workflow inspeccionar_acta.yml):
-GitHub Actions solo guarda hasta 10 annotations por step, y el paso de
-diagnóstico ya las agotó. Este paso corre aparte, con su propio cupo.
+GitHub Actions solo guarda hasta 10 annotations por step. Este paso corre
+aparte, con su propio cupo.
 
-Ronda 2: ya confirmamos estado_tramite/fecha_vencimiento_marca/cuit. Faltan
-fecha_concesion/numero_disposicion (el regex de DISPOSICION no matcheó) y el
-nombre real del titular (el header de tabla que encontramos no tenía la fila
-de datos al lado). Volcamos HTML crudo (no texto plano) alrededor de esos dos
-puntos para ver la estructura real.
+Ronda 3: ya tenemos estado_tramite/fecha_concesion/numero_disposicion/
+fecha_vencimiento_marca/cuit. Falta el nombre real del titular — la tabla
+"TIPO Y NOMBRE DEL TITULAR" que encontramos antes era de historial de
+cambios de rubro, no la ficha principal. Volcamos HTML crudo alrededor del
+CUIT (20408863210 en la corrida anterior) y de "RAZON SOCIAL"/"APELLIDO"/
+"NOMBRE", que suelen estar en la misma fila/label que el CUIT real.
 
 Uso:
     python3 resumen_final_acta.py 4534497
@@ -16,7 +17,7 @@ Uso:
 import re
 import sys
 
-from validar_leads import BASE, crear_sesion, _get_con_reintentos, parsear_resolucion, RE_CUIT_SPAN
+from validar_leads import BASE, crear_sesion, _get_con_reintentos, RE_CUIT_SPAN
 
 
 def main():
@@ -39,25 +40,24 @@ def main():
 
     html = r.text
 
-    resolucion = parsear_resolucion(html)
     m_cuit = RE_CUIT_SPAN.search(html)
-    print(f"::notice::RESUMEN acta {acta} | resolucion={resolucion} | cuit={m_cuit.group(1) if m_cuit else None}")
-
-    # HTML crudo alrededor de "DISPOSICION" (para ver el separador real entre
-    # Fecha y Numero — el regex asume "Fecha ... - Numero ...").
-    for m in list(re.finditer("DISPOSICION", html, re.I))[:2]:
-        i = m.start()
-        crudo = html[i:i + 400].replace("\n", " ")
+    if m_cuit:
+        i = m_cuit.start()
+        # bastante antes y bastante después: el nombre puede venir antes
+        # (mismo <label>/fila) o después (siguiente <label>).
+        crudo = html[max(0, i - 700): i + 300].replace("\n", " ")
         crudo = re.sub(r"\s+", " ", crudo)
-        print(f"::notice::HTML DISPOSICION @{i}: {crudo}")
+        print(f"::notice::HTML alrededor del CUIT @{i}: {crudo}")
+    else:
+        print("::notice::CUIT no encontrado en esta corrida")
 
-    # HTML crudo del primer "TIPO Y NOMBRE DEL TITULAR" (para ver la fila real).
-    m_tit = re.search("TIPO Y NOMBRE DEL TITULAR", html, re.I)
-    if m_tit:
-        i = m_tit.start()
-        crudo = html[i:i + 600].replace("\n", " ")
-        crudo = re.sub(r"\s+", " ", crudo)
-        print(f"::notice::HTML TITULAR @{i}: {crudo}")
+    for palabra in ["RAZON SOCIAL", "APELLIDO", "NOMBRE Y APELLIDO", "DENOMINACION DEL TITULAR"]:
+        m = re.search(re.escape(palabra), html, re.I)
+        if m:
+            i = m.start()
+            crudo = html[i: i + 300].replace("\n", " ")
+            crudo = re.sub(r"\s+", " ", crudo)
+            print(f"::notice::HTML {palabra} @{i}: {crudo}")
 
 
 if __name__ == "__main__":
