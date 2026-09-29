@@ -56,9 +56,9 @@ function filaHtml(r) {
       <td><a class="link-acta" href="javascript:void(0)" onclick="abrirActa('${r.acta}')">${r.acta}</a></td>
       <td>${r.clase ?? ""}</td>
       <td class="denominacion" title="${r.denominacion_inpi || r.denominacion || ""}">${r.denominacion_inpi || r.denominacion || "<em>(mixta/fig.)</em>"}</td>
-      <td>${badgeLead(r)}</td>
+      <td>${badgeLead(r)} ${badgeOposicion(r)}</td>
       <td>${celdaEmail(r)}</td>
-      <td>${fmtFecha(r.fecha_presentacion)}</td>
+      <td>${fechaPublicacionOFallback(r)}</td>
       <td><button class="contactar ${r.contactado ? "marcado" : ""}" onclick="marcarContactado('${r.acta}', ${!!r.contactado})">
         ${r.contactado ? "✓ Contactado" : "Marcar"}
       </button></td>

@@ -69,18 +69,31 @@ def migrar_columnas_panel():
             cur.execute(
                 "ALTER TABLE marcas ADD COLUMN IF NOT EXISTS motivo_sin_email TEXT"
             )
+            cur.execute(
+                "ALTER TABLE marcas ADD COLUMN IF NOT EXISTS fecha_publicacion DATE"
+            )
+            cur.execute(
+                "ALTER TABLE marcas ADD COLUMN IF NOT EXISTS tuvo_oposicion BOOLEAN"
+            )
+            cur.execute(
+                "ALTER TABLE marcas ADD COLUMN IF NOT EXISTS detalle_oposicion TEXT"
+            )
+            cur.execute(
+                "ALTER TABLE marcas ADD COLUMN IF NOT EXISTS revisado_oposicion_en TIMESTAMPTZ"
+            )
         conn.commit()
 
 COLUMNAS_ORDENABLES = {
     "lead_score", "acta", "boletin", "clase", "titular", "fecha_presentacion",
-    "creado_en", "actualizado_en",
+    "fecha_publicacion", "creado_en", "actualizado_en",
 }
 
 COLUMNAS_MARCA = """
     acta, boletin, clase, tipo, denominacion, denominacion_inpi,
-    fecha_presentacion, titular, pais, cuit, matricula_agente,
+    fecha_presentacion, fecha_publicacion, titular, pais, cuit, matricula_agente,
     caracter, es_lead, email, email_apoderado, lead_score, link,
-    contactado, contactado_en, motivo_sin_email
+    contactado, contactado_en, motivo_sin_email,
+    tuvo_oposicion, detalle_oposicion, revisado_oposicion_en
 """
 
 RE_CUIT_VALIDO = re.compile(r"^\d{10,11}$")
@@ -114,6 +127,7 @@ def listar_marcas(
     clase: Optional[int] = None,
     es_lead: Optional[bool] = None,
     contactado: Optional[bool] = None,
+    tuvo_oposicion: Optional[bool] = None,
     q: Optional[str] = None,
     sort: str = "lead_score",
     order: str = "desc",
@@ -138,6 +152,9 @@ def listar_marcas(
     if contactado is not None:
         condiciones.append("contactado = %s")
         valores.append(contactado)
+    if tuvo_oposicion is not None:
+        condiciones.append("tuvo_oposicion = %s")
+        valores.append(tuvo_oposicion)
     if q:
         condiciones.append(
             """(
@@ -271,13 +288,14 @@ def reintentar_email(acta: str, _: str = Depends(verificar_login)):
                 SET caracter = %s, es_lead = %s, email = %s, email_apoderado = %s,
                     motivo_sin_email = %s, lead_score = %s,
                     cuit = COALESCE(%s, cuit),
+                    fecha_publicacion = COALESCE(%s, fecha_publicacion),
                     actualizado_en = now()
                 WHERE acta = %s
                 """,
                 (
                     info["caracter"], info["es_lead"], info["email"] or None,
                     info["email_apoderado"] or None, info["motivo_sin_email"] or None,
-                    nuevo_score, info.get("cuit"), acta,
+                    nuevo_score, info.get("cuit"), info.get("fecha_publicacion"), acta,
                 ),
             )
         conn.commit()

@@ -42,7 +42,18 @@ ALTER TABLE marcas ADD COLUMN IF NOT EXISTS contactado_en TIMESTAMPTZ;
 -- desde el panel).
 ALTER TABLE marcas ADD COLUMN IF NOT EXISTS motivo_sin_email TEXT;
 
+-- Agregado para el seguimiento de oposiciones/vistas post-publicación
+-- (ver scripts/revisar_oposiciones.py). fecha_publicacion viene de la fila
+-- "Hoja Publicacion" de Grilla Digital — es la fecha real de publicación
+-- de ESE expediente (más confiable que boletines.fecha, que es una sola
+-- fecha por boletín y puede quedar en null si se forzó el boletín a mano).
+ALTER TABLE marcas ADD COLUMN IF NOT EXISTS fecha_publicacion DATE;
+ALTER TABLE marcas ADD COLUMN IF NOT EXISTS tuvo_oposicion BOOLEAN;
+ALTER TABLE marcas ADD COLUMN IF NOT EXISTS detalle_oposicion TEXT;
+ALTER TABLE marcas ADD COLUMN IF NOT EXISTS revisado_oposicion_en TIMESTAMPTZ;
+
 CREATE INDEX IF NOT EXISTS idx_marcas_boletin ON marcas(boletin);
 CREATE INDEX IF NOT EXISTS idx_marcas_es_lead ON marcas(es_lead);
 CREATE INDEX IF NOT EXISTS idx_marcas_titular ON marcas(titular);
 CREATE INDEX IF NOT EXISTS idx_marcas_contactado ON marcas(contactado);
+CREATE INDEX IF NOT EXISTS idx_marcas_fecha_publicacion ON marcas(fecha_publicacion);

@@ -95,6 +95,7 @@ def main():
                     r.get("email_apoderado") or None,
                     int(r["lead_score"]) if r.get("lead_score") else 0,
                     r.get("motivo_sin_email") or None,
+                    r.get("fecha_publicacion") or None,
                 )
                 for r in rows
             ]
@@ -104,7 +105,8 @@ def main():
                 INSERT INTO marcas (
                     acta, boletin, clase, tipo, denominacion, denominacion_inpi,
                     fecha_presentacion, titular, pais, cuit, matricula_agente, link,
-                    caracter, es_lead, email, email_apoderado, lead_score, motivo_sin_email
+                    caracter, es_lead, email, email_apoderado, lead_score, motivo_sin_email,
+                    fecha_publicacion
                 ) VALUES %s
                 ON CONFLICT (acta) DO UPDATE SET
                     denominacion_inpi = EXCLUDED.denominacion_inpi,
@@ -119,7 +121,14 @@ def main():
                     email_apoderado = EXCLUDED.email_apoderado,
                     lead_score = EXCLUDED.lead_score,
                     motivo_sin_email = EXCLUDED.motivo_sin_email,
+                    -- fecha_publicacion tampoco se pisa con NULL: no cambia con
+                    -- el tiempo, así que si ya la teníamos no hace falta perderla.
+                    fecha_publicacion = COALESCE(EXCLUDED.fecha_publicacion, marcas.fecha_publicacion),
                     actualizado_en = now()
+                    -- tuvo_oposicion / detalle_oposicion / revisado_oposicion_en NO
+                    -- se tocan acá a propósito: los administra únicamente
+                    -- scripts/revisar_oposiciones.py. Si el pipeline reprocesa un
+                    -- boletín viejo no debe pisar un resultado ya detectado.
                 """,
                 valores,
             )

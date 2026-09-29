@@ -14,9 +14,28 @@ function badgeLead(row) {
   return '<span class="badge sin-dato">sin verificar</span>';
 }
 
+function badgeOposicion(row) {
+  // tuvo_oposicion se completa recién ~33 días después de la publicación
+  // (scripts/revisar_oposiciones.py), y solo para leads reales. Antes de eso
+  // queda en null ("todavía no se revisó", no "no tiene").
+  if (row.tuvo_oposicion === true) {
+    const detalle = row.detalle_oposicion || "se detectó una oposición/vista en Grilla Digital";
+    return `<span class="tooltip badge-oposicion">⚠ OPOSICIÓN<span class="globo">${detalle}</span></span>`;
+  }
+  return "";
+}
+
 function fmtFecha(f) {
   if (!f) return "";
   return f.split("T")[0].split(" ")[0];
+}
+
+function fechaPublicacionOFallback(r) {
+  // Preferimos fecha_publicacion (la real, de "Hoja Publicacion" en Grilla
+  // Digital) — solo la tienen los leads ya verificados. Para el resto (sin
+  // verificar, o con agente) no se scrapea Grilla Digital, así que mostramos
+  // fecha_presentacion como respaldo.
+  return fmtFecha(r.fecha_publicacion) || fmtFecha(r.fecha_presentacion);
 }
 
 function normalizarTitular(titular) {

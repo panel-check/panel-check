@@ -120,6 +120,17 @@ tr.contactado { opacity: 0.55; }
 .badge.lead { background: #fde8e8; color: var(--rojo); }
 .badge.no-lead { background: #e6f4ea; color: var(--verde); }
 .badge.sin-dato { background: #eef0f2; color: var(--gris); }
+.badge-oposicion {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 600;
+  background: #fff3cd;
+  color: #92720d;
+  border-bottom: none;
+  cursor: help;
+}
 .score { font-weight: 700; }
 button.contactar {
   padding: 4px 10px;

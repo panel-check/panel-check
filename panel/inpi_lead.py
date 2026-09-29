@@ -55,15 +55,68 @@ def _get_con_reintentos(fn, intentos: int = 3, espera: int = 3):
     raise ultimo_error
 
 
+def _buscar_archivos_grilla(s: requests.Session, acta: str, timeout: int = 30) -> list:
+    """Igual que validar_leads.buscar_archivos_grilla."""
+    r_gd = _get_con_reintentos(
+        lambda: s.post(
+            f"{BASE}/Home/GrillaDigital",
+            headers={"Referer": f"{BASE}/MarcasConsultas/Resultado"},
+            data={"fname": f"1-{acta}"},
+            timeout=timeout,
+        )
+    )
+    if "Web Page Blocked" in r_gd.text or "Attack ID" in r_gd.text:
+        return []
+    r_archivos = _get_con_reintentos(
+        lambda: s.post(
+            f"{BASE}/Home/GrillaDigitales",
+            headers={"Referer": f"{BASE}/Home/GrillaDigital", "X-Requested-With": "XMLHttpRequest"},
+            data={"acta": acta, "limit": 50, "offset": 0, "direccion": 1},
+            timeout=timeout,
+        )
+    )
+    try:
+        return r_archivos.json().get("rows", [])
+    except ValueError:
+        return []
+
+
+# Ver el mismo comentario en validar_leads.py — términos universales que usa
+# INPI para marcar una oposición de tercero o una vista de oficio.
+TERMINOS_OPOSICION = ("OPO", "VISTA", "OPOSICION", "OPOSICIÓN")
+
+
+def _detectar_oposicion(archivos: list) -> tuple:
+    for a in archivos:
+        indice = (a.get("Indice") or "").upper()
+        referencia = (a.get("Referencia") or "").upper()
+        if any(t in indice or t in referencia for t in TERMINOS_OPOSICION):
+            detalle = f"{a.get('Fecha', '')} - {a.get('Indice', '')} - {a.get('Referencia', '')}"
+            return True, detalle
+    return False, ""
+
+
+def _fecha_publicacion_de_archivos(archivos: list):
+    fila = next((a for a in archivos if a.get("Indice") == "Hoja Publicacion"), None)
+    if not fila or not fila.get("Fecha"):
+        return None
+    try:
+        d, m, y = fila["Fecha"].split("/")
+        return f"{y}-{m.zfill(2)}-{d.zfill(2)}"
+    except (ValueError, AttributeError):
+        return None
+
+
 def revisar_acta(acta: str, timeout: int = 30) -> dict:
     """Igual que validar_leads.revisar_acta: devuelve
-    {caracter, es_lead, email, email_apoderado, motivo_sin_email} y, cuando
-    se pudo leer de la sección TITULARIDAD, también "cuit" (clave real para
-    unificar leads del mismo titular, mejor que comparar texto)."""
+    {caracter, es_lead, email, email_apoderado, motivo_sin_email,
+    fecha_publicacion, tuvo_oposicion, detalle_oposicion} y, cuando se pudo
+    leer de la sección TITULARIDAD, también "cuit" (clave real para unificar
+    leads del mismo titular, mejor que comparar texto)."""
     s = _crear_sesion()
     resultado = {
         "caracter": None, "es_lead": None, "email": "", "email_apoderado": "",
-        "motivo_sin_email": "",
+        "motivo_sin_email": "", "fecha_publicacion": None,
     }
     try:
         r = _get_con_reintentos(
@@ -96,30 +149,13 @@ def revisar_acta(acta: str, timeout: int = 30) -> dict:
         if not resultado["es_lead"]:
             return resultado
 
-        r_gd = _get_con_reintentos(
-            lambda: s.post(
-                f"{BASE}/Home/GrillaDigital",
-                headers={"Referer": f"{BASE}/MarcasConsultas/Resultado"},
-                data={"fname": f"1-{acta}"},
-                timeout=timeout,
-            )
-        )
-        if "Web Page Blocked" in r_gd.text or "Attack ID" in r_gd.text:
+        archivos = _buscar_archivos_grilla(s, acta, timeout=timeout)
+        if not archivos:
             resultado["motivo_sin_email"] = "bloqueado por el WAF de INPI al abrir Grilla Digital"
             return resultado
 
-        r_archivos = _get_con_reintentos(
-            lambda: s.post(
-                f"{BASE}/Home/GrillaDigitales",
-                headers={"Referer": f"{BASE}/Home/GrillaDigital", "X-Requested-With": "XMLHttpRequest"},
-                data={"acta": acta, "limit": 50, "offset": 0, "direccion": 1},
-                timeout=timeout,
-            )
-        )
-        try:
-            archivos = r_archivos.json().get("rows", [])
-        except ValueError:
-            archivos = []
+        resultado["fecha_publicacion"] = _fecha_publicacion_de_archivos(archivos)
+        resultado["tuvo_oposicion"], resultado["detalle_oposicion"] = _detectar_oposicion(archivos)
 
         formulario = next((a for a in archivos if a.get("Indice") == "Formulario"), None)
         if not formulario:

@@ -1,0 +1,44 @@
+name: Revisar oposiciones/vistas post-publicación
+
+on:
+  schedule:
+    # Todos los días a las 10:00 UTC (07:00 ART) — no depende de cuándo sale
+    # cada boletín, revisa lo que ya cumplió el plazo sin importar el día.
+    - cron: "0 10 * * *"
+  workflow_dispatch:
+    inputs:
+      dias:
+        description: "Revisar leads con publicación de al menos N días (default 33)"
+        required: false
+        default: ""
+      limit:
+        description: "Tope de actas a revisar en esta corrida (dejar vacío = todas)"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  revisar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Instalar dependencias
+        run: pip install -r requirements.txt
+
+      - name: Revisar Grilla Digital de leads publicados hace >= 33 días
+        run: |
+          cd scripts
+          args=""
+          if [ -n "${{ inputs.dias }}" ]; then args="$args --dias ${{ inputs.dias }}"; fi
+          if [ -n "${{ inputs.limit }}" ]; then args="$args --limit ${{ inputs.limit }}"; fi
+          python3 revisar_oposiciones.py $args
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL || secrets.DATABASE_PUBLIC_URL }}
+          PYTHONUNBUFFERED: "1"

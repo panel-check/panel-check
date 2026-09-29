@@ -35,6 +35,13 @@
       <option value="true">Ya contactados</option>
     </select>
   </label>
+  <label>Oposición
+    <select id="f-oposicion">
+      <option value="" selected>Todos</option>
+      <option value="true">Con oposición/vista</option>
+      <option value="false">Sin oposición</option>
+    </select>
+  </label>
   <label>Buscar
     <input type="text" id="f-q" placeholder="titular o marca..." />
   </label>
@@ -54,7 +61,7 @@
       <th data-col="titular" onclick="ordenarPor('titular')">Titular</th>
       <th>Lead</th>
       <th>Email</th>
-      <th data-col="fecha_presentacion" onclick="ordenarPor('fecha_presentacion')" title="Fecha de presentación de la solicitud ante INPI">Fecha</th>
+      <th data-col="fecha_publicacion" onclick="ordenarPor('fecha_publicacion')" title="Fecha de publicación en el boletín (o de presentación, si todavía no se verificó)">Fecha</th>
       <th></th>
     </tr>
   </thead>
@@ -109,6 +116,7 @@ function filtrosActuales() {
     clase: document.getElementById("f-clase").value,
     es_lead: document.getElementById("f-lead").value,
     contactado: document.getElementById("f-contactado").value,
+    tuvo_oposicion: document.getElementById("f-oposicion").value,
     q: document.getElementById("f-q").value,
     sort: estado.sort,
     order: estado.order,
@@ -122,6 +130,7 @@ function limpiarFiltros() {
   document.getElementById("f-clase").value = "";
   document.getElementById("f-lead").value = "true";
   document.getElementById("f-contactado").value = "false";
+  document.getElementById("f-oposicion").value = "";
   document.getElementById("f-q").value = "";
   cargar(0);
 }
@@ -171,9 +180,9 @@ function filaHtml(r, { flecha = false, oculta = false, idGrupo = null, cantidadR
       <td>${r.clase ?? ""}</td>
       <td class="denominacion" title="${r.denominacion_inpi || r.denominacion || ""}">${r.denominacion_inpi || r.denominacion || "<em>(mixta/fig.)</em>"}</td>
       <td class="titular" title="${r.titular || ""}">${celdaTitular}</td>
-      <td>${badgeLead(r)}</td>
+      <td>${badgeLead(r)} ${badgeOposicion(r)}</td>
       <td class="celda-email">${celdaEmailIcono(r)}</td>
-      <td>${fmtFecha(r.fecha_presentacion)}</td>
+      <td>${fechaPublicacionOFallback(r)}</td>
       <td><a class="abrir" href="${hrefTitular}" target="_blank" title="Ver ficha completa del titular (boletín ${r.boletin}, acta ${r.acta})">Abrir</a></td>
     </tr>
   `;

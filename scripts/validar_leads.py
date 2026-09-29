@@ -88,14 +88,79 @@ def _get_con_reintentos(fn, intentos: int = 3, espera: int = 3):
     raise ultimo_error
 
 
+def buscar_archivos_grilla(s: requests.Session, acta: str, timeout: int = 30) -> list[dict]:
+    """POSTea a Home/GrillaDigital + Home/GrillaDigitales y devuelve la lista
+    de archivos del expediente (Indice/Referencia/Fecha/NombreGde, etc.), la
+    misma tabla que se ve en la Grilla Digital del portal. Devuelve [] si
+    hay bloqueo del WAF o el JSON no viene como se espera."""
+    r_gd = _get_con_reintentos(
+        lambda: s.post(
+            f"{BASE}/Home/GrillaDigital",
+            headers={"Referer": f"{BASE}/MarcasConsultas/Resultado"},
+            data={"fname": f"1-{acta}"},
+            timeout=timeout,
+        )
+    )
+    if "Web Page Blocked" in r_gd.text or "Attack ID" in r_gd.text:
+        return []
+    r_archivos = _get_con_reintentos(
+        lambda: s.post(
+            f"{BASE}/Home/GrillaDigitales",
+            headers={"Referer": f"{BASE}/Home/GrillaDigital", "X-Requested-With": "XMLHttpRequest"},
+            data={"acta": acta, "limit": 50, "offset": 0, "direccion": 1},
+            timeout=timeout,
+        )
+    )
+    try:
+        return r_archivos.json().get("rows", [])
+    except ValueError:
+        return []
+
+
+# Términos "universales" que usa INPI para marcar una oposición de tercero o
+# una vista de oficio en la Grilla Digital (columna Indice o Referencia).
+# Ejemplo real visto: Indice="Recibo de Ingreso", Referencia="Opo. de Marcas".
+# Si aparece un caso real de vista de oficio con otra redacción, agregar el
+# término acá.
+TERMINOS_OPOSICION = ("OPO", "VISTA", "OPOSICION", "OPOSICIÓN")
+
+
+def detectar_oposicion(archivos: list[dict]) -> tuple[bool, str]:
+    """Recorre los archivos de Grilla Digital buscando una fila de oposición
+    o vista. Devuelve (tuvo_oposicion, detalle) — detalle queda vacío si no
+    se encontró nada."""
+    for a in archivos:
+        indice = (a.get("Indice") or "").upper()
+        referencia = (a.get("Referencia") or "").upper()
+        if any(t in indice or t in referencia for t in TERMINOS_OPOSICION):
+            detalle = f"{a.get('Fecha', '')} - {a.get('Indice', '')} - {a.get('Referencia', '')}"
+            return True, detalle
+    return False, ""
+
+
+def fecha_publicacion_de_archivos(archivos: list[dict]) -> str | None:
+    """Busca la fila 'Hoja Publicacion' en Grilla Digital y devuelve su
+    fecha en formato ISO (YYYY-MM-DD) para guardar en la base, o None si no
+    está (todavía no se publicó, o falló la consulta)."""
+    fila = next((a for a in archivos if a.get("Indice") == "Hoja Publicacion"), None)
+    if not fila or not fila.get("Fecha"):
+        return None
+    try:
+        d, m, y = fila["Fecha"].split("/")
+        return f"{y}-{m.zfill(2)}-{d.zfill(2)}"
+    except (ValueError, AttributeError):
+        return None
+
+
 def revisar_acta(s: requests.Session, acta: str, timeout: int = 30) -> dict:
-    """Devuelve {caracter, es_lead, email, email_apoderado, motivo_sin_email}.
-    Si algo falla, devuelve es_lead=None para marcarlo como "no se pudo
-    verificar" (en vez de asumir por defecto que es lead). motivo_sin_email
-    queda vacío cuando sí hay email o cuando no aplica (tiene apoderado)."""
+    """Devuelve {caracter, es_lead, email, email_apoderado, motivo_sin_email,
+    fecha_publicacion, tuvo_oposicion, detalle_oposicion}. Si algo falla,
+    devuelve es_lead=None para marcarlo como "no se pudo verificar" (en vez
+    de asumir por defecto que es lead). motivo_sin_email queda vacío cuando
+    sí hay email o cuando no aplica (tiene apoderado)."""
     resultado = {
         "caracter": None, "es_lead": None, "email": "", "email_apoderado": "",
-        "motivo_sin_email": "",
+        "motivo_sin_email": "", "fecha_publicacion": None,
     }
     try:
         r = _get_con_reintentos(
@@ -135,30 +200,16 @@ def revisar_acta(s: requests.Session, acta: str, timeout: int = 30) -> dict:
             return resultado  # ya tiene apoderado/gestor, no hace falta el email
 
         # GRILLA DIGITAL -> listar archivos -> descargar "Formulario" -> leer EMAIL
-        r_gd = _get_con_reintentos(
-            lambda: s.post(
-                f"{BASE}/Home/GrillaDigital",
-                headers={"Referer": f"{BASE}/MarcasConsultas/Resultado"},
-                data={"fname": f"1-{acta}"},
-                timeout=timeout,
-            )
-        )
-        if "Web Page Blocked" in r_gd.text or "Attack ID" in r_gd.text:
+        # (misma llamada nos sirve para sacar fecha_publicacion y detectar si
+        # ya hay una oposición/vista cargada — normalmente no, a esta altura
+        # recién se está cargando el boletín, pero no cuesta nada revisarlo).
+        archivos = buscar_archivos_grilla(s, acta, timeout=timeout)
+        if not archivos:
             resultado["motivo_sin_email"] = "bloqueado por el WAF de INPI al abrir Grilla Digital"
             return resultado
 
-        r_archivos = _get_con_reintentos(
-            lambda: s.post(
-                f"{BASE}/Home/GrillaDigitales",
-                headers={"Referer": f"{BASE}/Home/GrillaDigital", "X-Requested-With": "XMLHttpRequest"},
-                data={"acta": acta, "limit": 50, "offset": 0, "direccion": 1},
-                timeout=timeout,
-            )
-        )
-        try:
-            archivos = r_archivos.json().get("rows", [])
-        except ValueError:
-            archivos = []
+        resultado["fecha_publicacion"] = fecha_publicacion_de_archivos(archivos)
+        resultado["tuvo_oposicion"], resultado["detalle_oposicion"] = detectar_oposicion(archivos)
 
         formulario = next((a for a in archivos if a.get("Indice") == "Formulario"), None)
         if not formulario:
@@ -259,6 +310,9 @@ def main():
         row.setdefault("email", "")
         row.setdefault("email_apoderado", "")
         row.setdefault("motivo_sin_email", "")
+        row.setdefault("fecha_publicacion", "")
+        row.setdefault("tuvo_oposicion", "")
+        row.setdefault("detalle_oposicion", "")
         row.setdefault("lead_score", row.get("lead_score", 0))
 
     fieldnames = list(rows[0].keys())
