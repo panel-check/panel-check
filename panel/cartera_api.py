@@ -148,6 +148,58 @@ def crear_router(verificar_login, conexion, crm) -> APIRouter:
     def rcur(conn):
         return conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
+    # ── Todas las marcas de la cartera (vista plana) ──────────────────
+    @router.get("/api/cartera/marcas")
+    def listar_marcas_cartera(q: str = "", cliente_id: Optional[int] = None, estado: str = "",
+                              clase: Optional[int] = None, con_oposicion: bool = False, sin_vigilar: bool = False,
+                              alertas: bool = False, vence_dias: Optional[int] = None,
+                              _: str = Depends(verificar_login)):
+        cond, val = ["c.activo"], []
+        if q.strip():
+            like = f"%{q.strip()}%"
+            cond.append("(cm.acta = %s OR cm.denominacion ILIKE %s OR cm.titular ILIKE %s OR c.nombre ILIKE %s OR cm.terminos_vigilancia ILIKE %s)")
+            val += [q.strip(), like, like, like, like]
+        if cliente_id:
+            cond.append("cm.cliente_id = %s"); val.append(cliente_id)
+        if clase:
+            cond.append("cm.clase = %s"); val.append(clase)
+        if estado == "concedida":
+            cond.append("cm.estado_tramite = 'Concedida'")
+        elif estado == "denegada":
+            cond.append("cm.estado_tramite = 'Denegada'")
+        elif estado == "en_tramite":
+            cond.append("cm.consultado_en IS NOT NULL AND COALESCE(cm.estado_tramite,'') NOT IN ('Concedida','Denegada')")
+        elif estado == "pendiente":
+            cond.append("cm.consultado_en IS NULL")
+        if con_oposicion:
+            cond.append("cm.tuvo_oposicion AND COALESCE(cm.estado_tramite,'') NOT IN ('Concedida','Denegada')")
+        if sin_vigilar:
+            cond.append("NOT cm.vigilar")
+        if alertas:
+            cond.append("EXISTS (SELECT 1 FROM vigilancia_alertas a WHERE a.acta_cliente = cm.acta AND a.estado IN ('nueva','monitorear','oponer'))")
+        if vence_dias:
+            cond.append("cm.fecha_vencimiento_marca BETWEEN current_date AND current_date + %s")
+            val.append(int(vence_dias))
+        with nueva_conexion() as conn:
+            with rcur(conn) as cur:
+                cur.execute(
+                    f"""
+                    SELECT cm.acta, cm.cliente_id, c.nombre AS cliente_nombre, cm.denominacion, cm.tipo, cm.clase,
+                           cm.titular, cm.estado_tramite, cm.fecha_presentacion, cm.fecha_concesion,
+                           cm.fecha_vencimiento_marca, cm.tuvo_oposicion, cm.agente, cm.matricula_agente,
+                           cm.vigilar, cm.vigilar_todas_clases, cm.terminos_vigilancia, cm.consultado_en,
+                           cm.ultimo_movimiento, cm.ultimo_movimiento_fecha,
+                           (SELECT COUNT(*) FROM vigilancia_alertas a WHERE a.acta_cliente = cm.acta
+                              AND a.estado IN ('nueva','monitorear','oponer')) AS alertas_abiertas
+                    FROM cartera_marcas cm JOIN clientes c ON c.id = cm.cliente_id
+                    WHERE {' AND '.join(cond)}
+                    ORDER BY lower(COALESCE(cm.denominacion, '')), cm.acta
+                    LIMIT 3000
+                    """,
+                    val,
+                )
+                return {"marcas": cur.fetchall()}
+
     # ── Resumen (chips de arriba) ─────────────────────────────────────
     @router.get("/api/cartera/resumen")
     def resumen(_: str = Depends(verificar_login)):

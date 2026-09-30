@@ -4,7 +4,7 @@
  * pasa por esc() antes de ir al HTML; los datos viajan en atributos data-*. */
 
 const esc = crmEsc;
-const VISTAS = ["clientes", "vigilancia", "vencimientos", "matricula", "ajustes"];
+const VISTAS = ["clientes", "marcas", "vigilancia", "vencimientos", "matricula", "ajustes"];
 const est = {
   vista: "clientes",
   clientes: [], origenes: {},
@@ -44,7 +44,7 @@ function cambiarVista(v, { sinURL = false } = {}) {
 }
 
 function cargarVista() {
-  ({ clientes: pintarClientes, vigilancia: pintarVigilancia, vencimientos: pintarVencimientos,
+  ({ clientes: pintarClientes, marcas: pintarMarcas, vigilancia: pintarVigilancia, vencimientos: pintarVencimientos,
      matricula: pintarMatricula, ajustes: pintarAjustes })[est.vista]();
 }
 
@@ -111,6 +111,62 @@ async function pintarClientes() {
   } catch (e) {
     tabla.innerHTML = `<p class="crm-error">No se pudo cargar (${esc(e.message)}).</p>`;
   }
+}
+
+/* ── Marcas (vista plana de toda la cartera) ────────────────────── */
+async function pintarMarcas() {
+  const cont = vista("marcas");
+  if (!cont.dataset.armado) {
+    cont.dataset.armado = "1";
+    if (!est.clientes.length) { const r = await api("/api/clientes?activos=true"); est.clientes = r.clientes; est.origenes = r.origenes; }
+    cont.innerHTML = `
+      <div class="cl-vista">
+        <div class="cl-barra">
+          <label>Buscar<input type="search" id="mk-q" placeholder="marca, acta, titular o cliente…" style="min-width:240px"></label>
+          <label>Cliente<select id="mk-cliente"><option value="">Todos</option>${est.clientes.map(c => `<option value="${c.id}">${esc(c.nombre)}</option>`).join("")}</select></label>
+          <label>Estado<select id="mk-estado"><option value="">Todos</option><option value="en_tramite">En trámite</option><option value="concedida">Concedida</option><option value="denegada">Denegada</option><option value="pendiente">Pendiente de consultar</option></select></label>
+          <label>Clase<input type="number" id="mk-clase" min="1" max="45" style="width:80px"></label>
+          <label>Vence en<select id="mk-vence"><option value="">—</option><option value="90">90 días</option><option value="180">6 meses</option><option value="365">1 año</option></select></label>
+          <label class="check" style="flex-direction:row;align-items:center;gap:6px"><input type="checkbox" id="mk-opo"> Con oposición</label>
+          <label class="check" style="flex-direction:row;align-items:center;gap:6px"><input type="checkbox" id="mk-alertas"> Con alertas</label>
+          <label class="check" style="flex-direction:row;align-items:center;gap:6px"><input type="checkbox" id="mk-sinvig"> Sin vigilar</label>
+        </div>
+        <div id="mk-tabla"></div>
+      </div>`;
+    let t;
+    $("mk-q").addEventListener("input", () => { clearTimeout(t); t = setTimeout(pintarMarcas, 250); });
+    ["mk-cliente", "mk-estado", "mk-clase", "mk-vence", "mk-opo", "mk-alertas", "mk-sinvig"].forEach(id => $(id).addEventListener("change", pintarMarcas));
+  }
+  const p = new URLSearchParams();
+  if ($("mk-q").value.trim()) p.set("q", $("mk-q").value.trim());
+  if ($("mk-cliente").value) p.set("cliente_id", $("mk-cliente").value);
+  if ($("mk-estado").value) p.set("estado", $("mk-estado").value);
+  if ($("mk-clase").value) p.set("clase", $("mk-clase").value);
+  if ($("mk-vence").value) p.set("vence_dias", $("mk-vence").value);
+  if ($("mk-opo").checked) p.set("con_oposicion", "true");
+  if ($("mk-alertas").checked) p.set("alertas", "true");
+  if ($("mk-sinvig").checked) p.set("sin_vigilar", "true");
+  const tabla = $("mk-tabla");
+  try {
+    const r = await api(`/api/cartera/marcas?${p}`);
+    if (!r.marcas.length) { tabla.innerHTML = '<p class="vacio">No hay marcas con estos filtros.</p>'; return; }
+    tabla.innerHTML = `<div style="overflow-x:auto"><table class="cl-tabla"><thead><tr>
+        <th>Marca</th><th>Clase</th><th>Acta</th><th>Cliente</th><th>Estado</th><th>Vence</th><th>Agente</th><th>Vigilancia</th></tr></thead><tbody>
+      ${r.marcas.map(m => `<tr class="cl-click" data-cliente="${m.cliente_id}">
+        <td><strong>${esc(m.denominacion || (m.tipo === "F" ? "(figurativa, sin texto)" : "(pendiente)"))}</strong>
+          <br><small class="crm-gris">${esc(tipoLegible(m.tipo))}${m.fecha_presentacion ? " · presentada " + crmFecha(m.fecha_presentacion) : ""}</small>
+          ${m.tuvo_oposicion && !["Concedida", "Denegada"].includes(m.estado_tramite) ? '<br><span class="cl-tag aviso">⚖ oposición / vista</span>' : ""}</td>
+        <td>${esc(m.clase ?? "")}</td>
+        <td><a class="link-acta" href="javascript:void(0)" data-abrir="${esc(m.acta)}">${esc(m.acta)} ↗</a></td>
+        <td>${esc(m.cliente_nombre)}</td>
+        <td>${tagEstadoMarca(m)}</td>
+        <td>${m.fecha_vencimiento_marca ? crmFecha(m.fecha_vencimiento_marca) : "—"}</td>
+        <td><small>${esc(m.agente || (m.matricula_agente ? "matrícula " + m.matricula_agente : "—"))}</small></td>
+        <td>${m.vigilar ? '<span class="cl-tag ok">Vigilada</span>' : '<span class="cl-tag">No</span>'}${m.vigilar_todas_clases ? ' <span class="cl-tag azul">todas las clases</span>' : ""}${m.alertas_abiertas ? ` <span class="cl-tag mal">${m.alertas_abiertas} alerta(s)</span>` : ""}</td></tr>`).join("")}
+      </tbody></table></div><p class="cl-pie">${r.marcas.length} marca(s). Un click en la fila abre la ficha del cliente.</p>`;
+    tabla.querySelectorAll("[data-abrir]").forEach(a => a.addEventListener("click", ev => { ev.stopPropagation(); abrirActa(a.dataset.abrir); }));
+    tabla.querySelectorAll("tr[data-cliente]").forEach(tr => tr.addEventListener("click", () => abrirCliente(+tr.dataset.cliente)));
+  } catch (e) { tabla.innerHTML = `<p class="crm-error">No se pudo cargar (${esc(e.message)}).</p>`; }
 }
 
 /* ── Modal ──────────────────────────────────────────────────────── */
