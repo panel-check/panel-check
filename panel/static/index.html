@@ -8,14 +8,17 @@
 </head>
 <body>
 
-<header>
-  <h1>Panel de leads — INPI</h1>
-  <span class="sub">Marcas autopresentadas, listas para prospección</span>
-  <a class="ayuda" href="/crm" style="margin-left:auto;">📋 CRM</a>
-  <a class="ayuda" href="/comentarios" id="link-comentarios" style="margin-left:16px;">💬 Comentarios</a>
-  <a class="ayuda" href="/boletines" style="margin-left:16px;">🗞 Boletines</a>
-  <a class="ayuda" href="/crons" style="margin-left:16px;">⏱ Automatizaciones</a>
-  <a class="ayuda" href="/ayuda" style="margin-left:16px;">? Ayuda</a>
+<header class="app-header">
+  <a class="marca" href="/"><span class="marca-logo">®</span><h1 class="marca-nombre">Panel de leads</h1></a>
+  <span class="marca-sub">Marcas autopresentadas, listas para prospección</span>
+  <nav class="nav">
+    <a href="/" class="activa" aria-current="page" title="Leads"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5h18M3 12h18M3 19h12"/></svg><span class="nav-txt">Leads</span></a>
+    <a href="/crm" title="CRM"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="5" height="16" rx="1.5"/><rect x="10" y="4" width="5" height="11" rx="1.5"/><rect x="17" y="4" width="4" height="7" rx="1.5"/></svg><span class="nav-txt">CRM</span></a>
+    <a href="/comentarios" id="link-comentarios" title="Comentarios"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H8l-5 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg><span class="nav-txt">Comentarios</span><span class="nav-badge"></span></a>
+    <a href="/boletines" title="Boletines"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h13a2 2 0 0 1 2 2v14H6a2 2 0 0 1-2-2z"/><path d="M19 8h1a1 1 0 0 1 1 1v9a2 2 0 0 1-2 2"/><path d="M8 8h7M8 12h7M8 16h4"/></svg><span class="nav-txt">Boletines</span></a>
+    <a href="/crons" title="Automatizaciones"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg><span class="nav-txt">Automatizaciones</span></a>
+    <a href="/ayuda" title="Ayuda"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.6v.6"/><path d="M12 17h.01"/></svg><span class="nav-txt">Ayuda</span></a>
+  </nav>
 </header>
 
 <div class="filtros">
@@ -64,15 +67,18 @@
     </div>
   </div>
   <label>Buscar
-    <input type="text" id="f-q" placeholder="titular o marca..." />
+    <input type="text" id="f-q" class="campo-buscar" placeholder="Titular, marca, CUIT…" />
   </label>
-  <button onclick="cargar(0)">Filtrar</button>
-  <button class="secundario" onclick="limpiarFiltros()">Limpiar</button>
+  <div class="acciones-filtros">
+    <button type="button" class="secundario btn-avanzados" onclick="toggleFiltrosAvanzados()" id="btn-filtros-avanzados" aria-expanded="false" title="Mostrar u ocultar los filtros avanzados">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/></svg>
+      Avanzados <span class="cant-avanzados" id="cant-avanzados"></span>
+    </button>
+    <button type="button" class="secundario btn-limpiar" onclick="limpiarFiltros()" title="Volver a los filtros de siempre">Limpiar</button>
+    <button type="button" onclick="cargar(0)">Filtrar</button>
+  </div>
 </div>
 
-<div class="filtros-avanzados-toggle">
-  <button type="button" onclick="toggleFiltrosAvanzados()" id="btn-filtros-avanzados">▸ Filtros avanzados</button>
-</div>
 <div class="filtros-avanzados" id="filtros-avanzados">
   <label>Email
     <select id="f-tiene-email">
@@ -86,6 +92,13 @@
       <option value="">Todos</option>
       <option value="false">Sin nombre de titular</option>
       <option value="true">Con nombre de titular</option>
+    </select>
+  </label>
+  <label title="Marcas a las que todavía no se les pudo leer el número de clase">Clase asignada
+    <select id="f-tiene-clase">
+      <option value="">Todas</option>
+      <option value="false">Sin clase asignada</option>
+      <option value="true">Con clase asignada</option>
     </select>
   </label>
   <label>Estado de la marca
@@ -119,7 +132,6 @@
       <option value="distinto">Distintos titulares</option>
     </select>
   </label>
-  <button onclick="cargar(0)">Filtrar</button>
 </div>
 
 <div class="resumen" id="resumen">Cargando...</div>
@@ -238,6 +250,7 @@ function filtrosActuales() {
     fecha_hasta: document.getElementById("f-fecha-hasta").value,
     tiene_email: document.getElementById("f-tiene-email").value,
     tiene_titular: document.getElementById("f-tiene-titular").value,
+    tiene_clase: document.getElementById("f-tiene-clase").value,
     estado_marca: document.getElementById("f-estado-marca").value,
     ...filtrosMulticlase(),
     q: document.getElementById("f-q").value,
@@ -258,6 +271,7 @@ function limpiarFiltros() {
   document.getElementById("f-fecha-hasta").value = "";
   document.getElementById("f-tiene-email").value = "";
   document.getElementById("f-tiene-titular").value = "";
+  document.getElementById("f-tiene-clase").value = "";
   document.getElementById("f-estado-marca").value = "";
   document.getElementById("f-multiclase-modo").value = "";
   document.getElementById("f-multiclase-min").value = "2";
@@ -325,8 +339,33 @@ function limpiarRangoFecha() {
 function toggleFiltrosAvanzados() {
   const panel = document.getElementById("filtros-avanzados");
   const abierto = panel.classList.toggle("abierto");
-  document.getElementById("btn-filtros-avanzados").textContent =
-    (abierto ? "▾" : "▸") + " Filtros avanzados";
+  const btn = document.getElementById("btn-filtros-avanzados");
+  btn.classList.toggle("abierto", abierto);
+  btn.setAttribute("aria-expanded", abierto ? "true" : "false");
+}
+
+// Resalta los filtros que están recortando resultados y muestra en el
+// botón "Avanzados" cuántos filtros avanzados hay aplicados (así se nota
+// aunque el panel esté cerrado).
+const IDS_AVANZADOS = ["f-tiene-email", "f-tiene-titular", "f-tiene-clase", "f-estado-marca", "f-multiclase-modo"];
+function marcarFiltrosActivos() {
+  document.querySelectorAll(".filtros select, .filtros input[type=text], .filtros-avanzados select").forEach(el => {
+    el.classList.toggle("con-valor", el.value !== "");
+  });
+  const hayFecha = document.getElementById("f-fecha-desde").value || document.getElementById("f-fecha-hasta").value;
+  document.getElementById("campo-rango-fecha").classList.toggle("con-valor", !!hayFecha);
+  const cant = IDS_AVANZADOS.filter(id => document.getElementById(id).value !== "").length;
+  document.getElementById("cant-avanzados").textContent = cant ? String(cant) : "";
+}
+
+// Los desplegables filtran solos al cambiar; la búsqueda, al apretar Enter.
+function engancharFiltrosAutomaticos() {
+  document.querySelectorAll(".filtros select, .filtros-avanzados select, #f-multiclase-min").forEach(el => {
+    el.addEventListener("change", () => cargar(0));
+  });
+  document.getElementById("f-q").addEventListener("keydown", ev => {
+    if (ev.key === "Enter") cargar(0);
+  });
 }
 
 // La URL refleja siempre los filtros/orden/página actuales (se actualiza
@@ -353,6 +392,7 @@ function filtrosDesdeURL() {
   document.getElementById("f-fecha-hasta").value = p.get("fecha_hasta") ?? "";
   document.getElementById("f-tiene-email").value = p.get("tiene_email") ?? "";
   document.getElementById("f-tiene-titular").value = p.get("tiene_titular") ?? "";
+  document.getElementById("f-tiene-clase").value = p.get("tiene_clase") ?? "";
   document.getElementById("f-estado-marca").value = p.get("estado_marca") ?? "";
   if (p.get("multiclase_min")) {
     document.getElementById("f-multiclase-modo").value = "min";
@@ -371,7 +411,7 @@ function filtrosDesdeURL() {
   actualizarEtiquetaRangoFecha();
   // Si el link trae algún filtro avanzado aplicado, mostrar el panel
   // abierto de entrada — si no, el usuario no se entera de que está filtrado.
-  if (p.get("tiene_email") || p.get("tiene_titular") || p.get("estado_marca")
+  if (p.get("tiene_email") || p.get("tiene_titular") || p.get("tiene_clase") || p.get("estado_marca")
       || p.get("multiclase_min") || p.get("multiclase_a")) {
     toggleFiltrosAvanzados();
   }
@@ -454,6 +494,7 @@ async function cargar(offset) {
   document.getElementById("tbody").innerHTML = '<tr><td colspan="9" class="vacio">Cargando...</td></tr>';
   const params = filtrosActuales();
   actualizarURL();
+  marcarFiltrosActivos();
   const data = await api(`/api/marcas?${qs(params)}`);
   estado.total = data.total;
 
@@ -489,6 +530,7 @@ async function cargar(offset) {
 
 (async function init() {
   await cargarFiltrosIniciales();
+  engancharFiltrosAutomaticos();
   const vinoDeLink = filtrosDesdeURL();
   if (!vinoDeLink) {
     document.getElementById("f-lead").value = "true";

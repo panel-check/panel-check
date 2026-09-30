@@ -601,15 +601,19 @@ async function _cargarModalComentarios(acta, conForm = false) {
   }
 }
 
-// Contador de comentarios nuevos en el link "💬 Comentarios" del encabezado
+// Contador de comentarios nuevos en el link "Comentarios" del encabezado
 // (cualquier elemento con id="link-comentarios").
 async function actualizarContadorComentarios() {
   const link = document.getElementById("link-comentarios");
   if (!link) return;
   try {
     const r = await api("/api/comentarios/resumen");
-    const badge = r.nuevos ? ` <span class="contador-coment" title="${r.nuevos} nuevo(s) desde la última vez que entraste${r.abiertos_para_mi ? ` · ${r.abiertos_para_mi} sin resolver dirigido(s) a vos` : ""}">${r.nuevos}</span>` : "";
-    link.innerHTML = `💬 Comentarios${badge}`;
+    // El link del encabezado trae su propio globito (.nav-badge); se llena
+    // solo con el número, para no pisar el ícono ni el texto del link.
+    const badge = link.querySelector(".nav-badge");
+    if (!badge) return;
+    badge.textContent = r.nuevos ? String(r.nuevos) : "";
+    badge.title = r.nuevos ? `${r.nuevos} nuevo(s) desde la última vez que entraste${r.abiertos_para_mi ? ` · ${r.abiertos_para_mi} sin resolver dirigido(s) a vos` : ""}` : "";
   } catch (_) {}
 }
 document.addEventListener("DOMContentLoaded", actualizarContadorComentarios);

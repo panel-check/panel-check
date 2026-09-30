@@ -721,6 +721,7 @@ def listar_marcas(
     fecha_hasta: Optional[str] = None,
     tiene_email: Optional[bool] = None,
     tiene_titular: Optional[bool] = None,
+    tiene_clase: Optional[bool] = None,
     estado_marca: Optional[str] = None,  # "pendiente" | "Concedida" | "Denegada"
     # Filtro avanzado "Misma marca en varias clases" (ver _cruce_clases_sql):
     # o bien un mínimo de clases (multiclase_min), o bien un par de clases
@@ -781,6 +782,10 @@ def listar_marcas(
     if tiene_titular is not None:
         condicion_titular = "titular IS NOT NULL AND titular <> ''"
         condiciones.append(condicion_titular if tiene_titular else f"NOT ({condicion_titular})")
+    if tiene_clase is not None:
+        # Filtro "Avanzado": marcas a las que todavía no se les pudo leer el
+        # número de clase (ni del boletín ni del expediente).
+        condiciones.append("clase IS NOT NULL" if tiene_clase else "clase IS NULL")
     if estado_marca:
         # Mismo criterio que ESTADOS_FINALES en scripts/revisar_estado.py:
         # "pendiente" = todavía sin una resolución firme.

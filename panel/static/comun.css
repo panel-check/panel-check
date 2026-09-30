@@ -1,157 +1,294 @@
 /* Estilos compartidos entre el dashboard (index.html) y la vista de
    detalle por titular (titular.html). */
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap");
+
 :root {
   --azul: #015197;
+  --azul-oscuro: #013e74;
   --azul-claro: #e8f1fa;
   --verde: #1a8754;
   --gris: #6b7280;
   --borde: #e2e5ea;
+  --borde-control: #d3d8e0;
   --rojo: #c0392b;
+  --texto: #1f2430;
+  --fondo: #f5f6f8;
+  --foco: 0 0 0 3px rgba(1, 81, 151, 0.18);
+  --chevron: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
 }
 * { box-sizing: border-box; }
 body {
   margin: 0;
-  font-family: -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
-  background: #f7f8fa;
-  color: #1f2430;
+  font-family: "Inter", -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+  background: var(--fondo);
+  color: var(--texto);
+  -webkit-font-smoothing: antialiased;
 }
-header {
-  background: var(--azul);
-  color: white;
-  padding: 14px 20px;
+
+/* ── Encabezado común a todas las páginas ──
+   Marca a la izquierda (vuelve al panel), título de la página y la misma
+   navegación en todas las pantallas, con la página actual resaltada. */
+header.app-header {
+  position: sticky;
+  top: 0;
+  z-index: 50;
   display: flex;
-  align-items: baseline;
-  gap: 10px;
-  flex-wrap: wrap;
-}
-header h1 { font-size: 17px; margin: 0; font-weight: 600; }
-header .sub { font-size: 12px; opacity: 0.85; }
-header a.volver {
-  color: white;
-  opacity: 0.85;
-  text-decoration: none;
-  font-size: 13px;
-  margin-right: 6px;
-}
-header a.volver:hover { opacity: 1; text-decoration: underline; }
-header a.ayuda {
-  margin-left: auto;
-  color: white;
-  opacity: 0.85;
-  text-decoration: none;
-  font-size: 13px;
-}
-header a.ayuda:hover { opacity: 1; text-decoration: underline; }
-.filtros {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  padding: 14px 20px;
-  background: white;
+  align-items: center;
+  gap: 12px;
+  height: 56px;
+  padding: 0 20px;
+  background: #fff;
   border-bottom: 1px solid var(--borde);
-  align-items: end;
 }
-.filtros label {
+.app-header .marca {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  text-decoration: none;
+  color: var(--texto);
+  flex-shrink: 0;
+}
+.app-header .marca-logo {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  background: linear-gradient(135deg, var(--azul), var(--azul-oscuro));
+  color: #fff;
+  font-weight: 700;
+  font-size: 16px;
+}
+.app-header .marca-nombre { font-size: 15px; font-weight: 600; margin: 0; letter-spacing: -0.01em; }
+.app-header .marca:hover .marca-nombre { color: var(--azul); }
+.app-header .marca-sep { color: #c3c8d0; font-size: 18px; font-weight: 300; }
+.app-header h1 {
+  font-size: 15px;
+  font-weight: 600;
+  margin: 0;
+  color: var(--texto);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+.app-header .marca-sub {
+  font-size: 12.5px;
+  color: var(--gris);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+.app-header .nav {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+.app-header .nav a {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 34px;
+  padding: 0 11px;
+  border-radius: 8px;
+  color: #4b5563;
+  text-decoration: none;
+  font-size: 13.5px;
+  font-weight: 500;
+  transition: background 0.12s, color 0.12s;
+}
+.app-header .nav a:hover { background: #f1f3f6; color: var(--texto); }
+.app-header .nav a.activa { background: var(--azul-claro); color: var(--azul); }
+.app-header .nav-ico {
+  width: 17px;
+  height: 17px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  flex-shrink: 0;
+}
+.app-header .nav-badge:empty { display: none; }
+.app-header .nav-badge {
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: #f5b400;
+  color: var(--texto);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 18px;
+  text-align: center;
+}
+@media (max-width: 1100px) { .app-header .marca-sub { display: none; } }
+@media (max-width: 860px) {
+  .app-header .nav-txt { display: none; }
+  .app-header .nav a { padding: 0 9px; }
+  .app-header .nav-badge { position: absolute; top: 1px; right: 0; }
+}
+@media (max-width: 520px) {
+  header.app-header { padding: 0 12px; gap: 8px; }
+  .app-header .marca-nombre, .app-header .marca-sep { display: none; }
+  .app-header .nav a { padding: 0 7px; }
+}
+
+/* ── Controles de formulario de las barras de filtros ── */
+.filtros, .filtros-avanzados {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: flex-end;
+}
+.filtros {
+  padding: 14px 20px;
+  background: #fff;
+  border-bottom: 1px solid var(--borde);
+}
+.filtros label, .filtros-avanzados label {
   display: flex;
   flex-direction: column;
-  font-size: 11px;
+  gap: 5px;
+  font-size: 11.5px;
+  font-weight: 500;
   color: var(--gris);
-  gap: 3px;
 }
-.filtros select, .filtros input {
-  padding: 6px 8px;
-  border: 1px solid var(--borde);
-  border-radius: 6px;
-  font-size: 13px;
-  min-width: 120px;
+.filtros select, .filtros input:not([type="checkbox"]),
+.filtros-avanzados select, .filtros-avanzados input,
+.rango-fecha .campo-rango, .popover-rango input[type="date"] {
+  height: 36px;
+  padding: 0 10px;
+  border: 1px solid var(--borde-control);
+  border-radius: 8px;
+  background-color: #fff;
+  color: var(--texto);
+  font: inherit;
+  font-size: 13.5px;
+  font-weight: 400;
+  min-width: 130px;
+  transition: border-color 0.12s, box-shadow 0.12s, background-color 0.12s;
 }
-.filtros input[type="text"] { min-width: 200px; }
-.filtros button {
-  padding: 7px 14px;
-  border: none;
-  border-radius: 6px;
-  background: var(--azul);
-  color: white;
-  font-size: 13px;
+.filtros select, .filtros-avanzados select {
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: 30px;
+  background-image: var(--chevron);
+  background-repeat: no-repeat;
+  background-position: right 10px center;
   cursor: pointer;
 }
-.filtros button.secundario {
-  background: white;
-  color: var(--azul);
+.filtros select:hover, .filtros input:not([type="checkbox"]):hover,
+.filtros-avanzados select:hover, .filtros-avanzados input:hover,
+.rango-fecha .campo-rango:hover { border-color: #aab2bf; }
+.filtros select:focus, .filtros input:focus,
+.filtros-avanzados select:focus, .filtros-avanzados input:focus,
+.rango-fecha .campo-rango:focus, .popover-rango input:focus {
+  outline: none;
+  border-color: var(--azul);
+  box-shadow: var(--foco);
+}
+/* Un filtro que está recortando resultados se ve resaltado, para saber de
+   un vistazo qué está filtrando (ver marcarFiltrosActivos en index.html). */
+.filtros .con-valor, .filtros-avanzados .con-valor {
+  border-color: #9cc0e3;
+  background-color: var(--azul-claro);
+  color: var(--azul-oscuro);
+  font-weight: 500;
+}
+.filtros .campo-buscar { min-width: 240px; }
+.filtros input.campo-buscar {
+  padding-left: 32px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='15' height='15' viewBox='0 0 24 24' fill='none' stroke='%239ca3af' stroke-width='2' stroke-linecap='round'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cpath d='m20 20-3.5-3.5'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: 10px center;
+}
+.filtros input::placeholder { color: #9ca3af; }
+
+/* Botones de las barras */
+.filtros button, .filtros-avanzados button, .btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 36px;
+  padding: 0 16px;
   border: 1px solid var(--azul);
+  border-radius: 8px;
+  background: var(--azul);
+  color: #fff;
+  font: inherit;
+  font-size: 13.5px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+}
+.filtros button:hover, .filtros-avanzados button:hover { background: var(--azul-oscuro); border-color: var(--azul-oscuro); }
+.filtros button:focus-visible, .filtros-avanzados button:focus-visible { outline: none; box-shadow: var(--foco); }
+.filtros button.secundario, .filtros-avanzados button.secundario {
+  background: #fff;
+  color: #374151;
+  border-color: var(--borde-control);
+}
+.filtros button.secundario:hover, .filtros-avanzados button.secundario:hover { background: #f3f4f6; color: var(--texto); border-color: #aab2bf; }
+.filtros .acciones-filtros { display: flex; gap: 8px; margin-left: auto; }
+.filtros .btn-avanzados .nav-ico, .filtros .btn-avanzados svg {
+  width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round;
+}
+.filtros .btn-avanzados.abierto { background: var(--azul-claro); color: var(--azul); border-color: #9cc0e3; }
+.cant-avanzados:empty { display: none; }
+.cant-avanzados {
+  min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px;
+  background: var(--azul); color: #fff; font-size: 11px; font-weight: 700; line-height: 18px;
 }
 
 /* Fecha Boletín: un solo campo clickeable que abre un popover con "desde"
    y "hasta" — antes eran dos <input type="date"> sueltos en la barra. */
 .rango-fecha { position: relative; }
 .rango-fecha .campo-rango {
-  padding: 6px 8px;
-  border: 1px solid var(--borde);
-  border-radius: 6px;
-  font-size: 13px;
-  min-width: 170px;
-  background: white;
-  cursor: pointer;
+  min-width: 180px;
   text-align: left;
-  color: #1f2430;
+  cursor: pointer;
+  padding-right: 30px;
+  background-image: var(--chevron);
+  background-repeat: no-repeat;
+  background-position: right 10px center;
 }
-.rango-fecha .campo-rango.vacio { color: var(--gris); }
+.rango-fecha .campo-rango.vacio { color: #9ca3af; }
+.filtros .rango-fecha .campo-rango, .filtros .rango-fecha .campo-rango:hover { background-color: #fff; color: var(--texto); border-color: var(--borde-control); font-weight: 400; }
+.filtros .rango-fecha .campo-rango.vacio { color: #9ca3af; }
+.filtros .rango-fecha .campo-rango.con-valor { border-color: #9cc0e3; background-color: var(--azul-claro); color: var(--azul-oscuro); font-weight: 500; }
 .rango-fecha .popover-rango {
   display: none;
   position: absolute;
-  top: calc(100% + 4px);
+  top: calc(100% + 6px);
   left: 0;
-  z-index: 20;
-  background: white;
+  z-index: 30;
+  background: #fff;
   border: 1px solid var(--borde);
-  border-radius: 8px;
-  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.12);
-  padding: 12px;
-  gap: 8px;
-  min-width: 190px;
+  border-radius: 12px;
+  box-shadow: 0 10px 30px rgba(16, 24, 40, 0.14);
+  padding: 14px;
+  gap: 10px;
+  min-width: 220px;
 }
 .rango-fecha.abierto .popover-rango { display: flex; flex-direction: column; }
-.popover-rango label {
-  font-size: 11px;
-  color: var(--gris);
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-}
-.popover-rango input[type="date"] {
-  padding: 6px 8px;
-  border: 1px solid var(--borde);
-  border-radius: 6px;
-  font-size: 13px;
-}
-.popover-rango .acciones-rango { display: flex; gap: 6px; justify-content: flex-end; margin-top: 4px; }
-.popover-rango .acciones-rango button { padding: 5px 10px; font-size: 12px; border-radius: 6px; cursor: pointer; }
-.popover-rango .acciones-rango button.aplicar { background: var(--azul); color: white; border: none; }
-.popover-rango .acciones-rango button.limpiar { background: white; color: var(--azul); border: 1px solid var(--azul); }
+.popover-rango label { font-size: 11.5px; font-weight: 500; color: var(--gris); display: flex; flex-direction: column; gap: 5px; }
+.popover-rango .acciones-rango { display: flex; gap: 8px; justify-content: flex-end; margin-top: 4px; }
+.filtros .popover-rango .acciones-rango button { height: 32px; padding: 0 12px; font-size: 12.5px; }
+.filtros .popover-rango .acciones-rango button.limpiar { background: #fff; color: #374151; border-color: var(--borde-control); }
 
-/* Filtros avanzados: colapsados por default, para no saturar la barra
-   principal con filtros que se usan poco (email/titular/estado de marca). */
-.filtros-avanzados-toggle {
-  padding: 0 20px 10px;
-  background: white;
-  border-bottom: 1px solid var(--borde);
-}
-.filtros-avanzados-toggle button {
-  background: none;
-  border: none;
-  color: var(--azul);
-  font-size: 12px;
-  cursor: pointer;
-  padding: 0;
-}
+/* Filtros avanzados: se abren con el botón "Avanzados" de la barra; van en
+   una franja gris debajo para que se note que son un segundo nivel. */
 .filtros-avanzados {
   display: none;
-  flex-wrap: wrap;
-  gap: 10px;
-  padding: 0 20px 14px;
-  background: white;
+  padding: 14px 20px;
+  background: #fafbfc;
   border-bottom: 1px solid var(--borde);
-  align-items: end;
 }
 .filtros-avanzados.abierto { display: flex; }
 .resumen {
@@ -508,6 +645,7 @@ td.celda-acciones { white-space: nowrap; }
 /* Filtro avanzado "Misma marca en varias clases": los campos que no
    corresponden al modo elegido van con [hidden] */
 .filtros-avanzados [hidden] { display: none !important; }
+.filtros-avanzados input[type="number"] { min-width: 0; width: 80px; }
 /* Clases adicionales de la misma marca, al lado del número de clase */
 .otras-clases {
   font-size: 11px;
@@ -547,7 +685,8 @@ td.celda-acciones { white-space: nowrap; }
   background: #f7f8fa; color: var(--gris); font-size: 13px; cursor: pointer;
 }
 .crm-pestanas button.activa { background: white; color: var(--azul); font-weight: 600; border-color: var(--azul); }
-.crm-check > span:last-child { display: flex; align-items: center; gap: 5px; font-size: 13px; color: #1f2430; padding: 6px 0; }
+.crm-check > span:last-child { display: flex; align-items: center; gap: 6px; font-size: 13.5px; font-weight: 400; color: var(--texto); height: 36px; }
+.crm-check input { accent-color: var(--azul); width: 16px; height: 16px; }
 .crm-check input { min-width: 0 !important; }
 .crm-resumen { display: flex; flex-wrap: wrap; gap: 8px; padding: 10px 20px; font-size: 12px; }
 .crm-chip { background: white; border: 1px solid var(--borde); border-radius: 14px; padding: 3px 10px; display: inline-flex; gap: 6px; align-items: center; }
@@ -658,3 +797,25 @@ tr.crm-fila:hover { background: var(--azul-claro); }
   .crm-columna { flex: 0 0 82vw; }
   .crm-box { margin: 10px; padding: 12px; }
 }
+
+/* Ajustes de la barra de filtros: el campo de fecha alinea su texto a la
+   izquierda (es un <button>), la búsqueda ocupa el espacio que sobre y en
+   celular los filtros van de a dos por fila, a todo el ancho. */
+.filtros .rango-fecha .campo-rango { justify-content: flex-start; }
+.filtros select, .filtros-avanzados select { min-width: 110px; }
+.filtros > label:has(.campo-buscar) { flex: 1 1 200px; }
+.filtros .campo-buscar { min-width: 0; width: 100%; }
+@media (max-width: 640px) {
+  .filtros, .filtros-avanzados { padding: 12px; gap: 10px; }
+  .filtros > label, .filtros > .rango-fecha, .filtros-avanzados > label { flex: 1 1 calc(50% - 5px); min-width: 0; }
+  .filtros > label select, .filtros-avanzados > label select, .filtros-avanzados > label input,
+  .filtros .rango-fecha .campo-rango { width: 100%; min-width: 0; }
+  .filtros > label:has(.campo-buscar) { flex-basis: 100%; }
+  .filtros .acciones-filtros { width: 100%; margin-left: 0; }
+  .filtros .acciones-filtros button { flex: 1; padding: 0 10px; }
+}
+.filtros > label:has(.campo-buscar) { flex-basis: 150px; }
+.filtros .acciones-filtros { gap: 6px; }
+.filtros .acciones-filtros button { padding: 0 13px; }
+.filtros .acciones-filtros button.btn-limpiar { border-color: transparent; background: transparent; color: var(--gris); }
+.filtros .acciones-filtros button.btn-limpiar:hover { background: #f3f4f6; color: var(--texto); border-color: transparent; }
