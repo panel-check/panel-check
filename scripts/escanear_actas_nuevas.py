@@ -60,11 +60,22 @@ def _leer_puntero(conn, desde: int | None) -> int:
     with conn.cursor() as cur:
         cur.execute("SELECT ultima_acta_confirmada FROM escaneo_actas WHERE id = 1")
         fila = cur.fetchone()
+        # Red de seguridad: el acta más alta que ya guardó el escaneo. Si una
+        # corrida se cortó (cancelada a mano, timeout) antes de guardar el
+        # puntero, igual se retoma desde ahí y no desde cero (bug real del
+        # 30/09/2026: se canceló en ~4797197 y la siguiente volvió a 4797001).
+        cur.execute(
+            "SELECT COALESCE(MAX(acta::bigint), 0) FROM marcas "
+            "WHERE fuente = 'escaneo_directo' AND acta ~ '^[0-9]+$'"
+        )
+        max_escaneada = cur.fetchone()[0]
         if fila:
             # Ya se sembró antes -- --desde de esta corrida se ignora (solo
             # aplica la primera vez, para no "retroceder" el puntero por
             # error en una corrida manual posterior).
-            return fila[0]
+            return max(fila[0], max_escaneada)
+        if max_escaneada:
+            return max_escaneada
         if desde is not None:
             return desde
         # Sin --desde y primera corrida: no re-escanear todo el historial,
@@ -176,6 +187,9 @@ def main():
             consecutivos_sin_existir = 0
             ultimo_confirmado = numero  # único lugar donde el puntero avanza
             encontradas += 1
+            # Se guarda en cada acta encontrada (no solo al final): si la
+            # corrida se corta a mitad, la próxima sigue desde acá.
+            _guardar_puntero(conn, ultimo_confirmado)
 
             info = revisar_acta(s, acta)
             if info["es_lead"] is True and info.get("email"):

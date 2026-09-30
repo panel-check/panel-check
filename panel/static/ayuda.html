@@ -355,7 +355,8 @@ le asigna un puntaje de prioridad. Después sigue a cada marca a lo largo del ti
           <tbody>
             <tr><td><strong>Escaneo de actas nuevas</strong></td><td>Todos los días, 4, 10 y 16 hs</td>
               <td>Prueba los números de acta siguientes al último encontrado (hasta 300 por corrida; corta cuando
-                varios seguidos todavía no existen). Guarda solo los leads (sin agente), con email si se pudo, como
+                varios seguidos todavía no existen). Siempre retoma desde la última acta encontrada, aunque la corrida
+                anterior se haya cortado a mitad: nunca vuelve a revisar las que ya pasó. Guarda solo los leads (sin agente), con email si se pudo, como
                 <strong>pre-boletín</strong>. Las marcas con abogado se descartan: las carga el boletín después.</td></tr>
             <tr><td><strong>Pipeline de boletines</strong></td><td>Lunes, miércoles, viernes y sábado, 6 hs</td>
               <td>Busca el boletín de "Marcas Nuevas" más reciente que todavía no esté importado, lee el PDF, separa
