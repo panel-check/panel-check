@@ -1,0 +1,52 @@
+name: Completar nombres (mixta/fig.)
+
+on:
+  schedule:
+    # 3 veces por día, a y media -- después de cada escaneo de actas
+    # (7,13,19 UTC) y en minutos en que no corre ningún otro proceso contra INPI.
+    - cron: "30 9,15,21 * * *"
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: "Tope de marcas a revisar en esta corrida (dejar vacío = todas)"
+        required: false
+        default: ""
+      incluir_no_leads:
+        description: "Incluir también marcas con apoderado (true/false)"
+        required: false
+        default: "false"
+
+permissions:
+  contents: read
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    env:
+      # Alarma de bloqueo masivo de INPI (scripts/monitor_bloqueo.py)
+      RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+      RESEND_FROM: ${{ secrets.RESEND_FROM }}
+      NOTIFICAR_A: ${{ secrets.NOTIFICAR_A }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Instalar dependencias
+        run: pip install -r requirements.txt
+
+      - name: Completar el nombre de las marcas que figuran como (mixta/fig.)
+        run: |
+          cd scripts
+          args=""
+          LIMIT="${{ inputs.limit }}"
+          # corrida programada: tope de 150 para no alargarla
+          if [ -z "$LIMIT" ] && [ "${{ github.event_name }}" = "schedule" ]; then LIMIT=150; fi
+          if [ -n "$LIMIT" ]; then args="$args --limit $LIMIT"; fi
+          if [ "${{ inputs.incluir_no_leads }}" = "true" ]; then args="$args --incluir-no-leads"; fi
+          python3 backfill_denominacion.py $args
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL || secrets.DATABASE_PUBLIC_URL }}
+          PYTHONUNBUFFERED: "1"

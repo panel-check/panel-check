@@ -127,7 +127,9 @@ def main():
                     pais = COALESCE(EXCLUDED.pais, marcas.pais),
                     link = COALESCE(EXCLUDED.link, marcas.link),
                     fecha_presentacion = COALESCE(EXCLUDED.fecha_presentacion, marcas.fecha_presentacion),
-                    denominacion_inpi = EXCLUDED.denominacion_inpi,
+                    -- COALESCE: si el webservice falló en esta corrida, no borrar
+                    -- un nombre ya recuperado (por escaneo o backfill_denominacion.py).
+                    denominacion_inpi = COALESCE(EXCLUDED.denominacion_inpi, marcas.denominacion_inpi),
                     -- No pisar un CUIT que ya teníamos con NULL si esta corrida
                     -- no lo pudo encontrar (webservice de INPI es flaky, o esta
                     -- fila no es M/F y nunca intenta buscarlo).

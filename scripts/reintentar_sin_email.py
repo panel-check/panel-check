@@ -87,6 +87,9 @@ def main():
                         UPDATE marcas
                         SET motivo_sin_email = %s,
                             cuit = COALESCE(%s, cuit),
+                            denominacion = COALESCE(NULLIF(denominacion, ''), %s),
+                            tipo = COALESCE(NULLIF(tipo, ''), %s),
+                            fecha_presentacion = COALESCE(fecha_presentacion, %s),
                             fecha_publicacion = COALESCE(%s, fecha_publicacion),
                             estado_tramite = COALESCE(%s, estado_tramite),
                             fecha_concesion = COALESCE(%s, fecha_concesion),
@@ -96,7 +99,7 @@ def main():
                         WHERE acta = %s
                         """,
                         (
-                            info["motivo_sin_email"] or None, info.get("cuit"),
+                            info["motivo_sin_email"] or None, info.get("cuit"), info.get("denominacion_formulario"), info.get("tipo_formulario"), info.get("fecha_presentacion_formulario"),
                             info.get("fecha_publicacion"), info.get("estado_tramite"),
                             info.get("fecha_concesion"), info.get("numero_disposicion"),
                             info.get("fecha_vencimiento_marca"), acta,
@@ -120,6 +123,9 @@ def main():
                     SET email = %s, email_apoderado = %s, motivo_sin_email = %s,
                         lead_score = %s,
                         cuit = COALESCE(%s, cuit),
+                        denominacion = COALESCE(NULLIF(denominacion, ''), %s),
+                        tipo = COALESCE(NULLIF(tipo, ''), %s),
+                        fecha_presentacion = COALESCE(fecha_presentacion, %s),
                         fecha_publicacion = COALESCE(%s, fecha_publicacion),
                         estado_tramite = COALESCE(%s, estado_tramite),
                         fecha_concesion = COALESCE(%s, fecha_concesion),
@@ -130,7 +136,7 @@ def main():
                     """,
                     (
                         info["email"], info["email_apoderado"] or None, None,
-                        nuevo_score, info.get("cuit"), info.get("fecha_publicacion"),
+                        nuevo_score, info.get("cuit"), info.get("denominacion_formulario"), info.get("tipo_formulario"), info.get("fecha_presentacion_formulario"), info.get("fecha_publicacion"),
                         info.get("estado_tramite"), info.get("fecha_concesion"),
                         info.get("numero_disposicion"), info.get("fecha_vencimiento_marca"),
                         acta,

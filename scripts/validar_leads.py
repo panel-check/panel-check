@@ -700,6 +700,96 @@ def existe_expediente(s: requests.Session, acta: str, timeout: int = 30) -> tupl
     return existe, r.text
 
 
+
+# --- Datos generales del expediente (denominación / tipo / fecha) ----------
+# La ficha de /MarcasConsultas/Resultado trae una sección "DATOS GENERALES"
+# con "DENOMINACIÓN: ... TIPO DE MARCA: Mixta ... PRESENTACIÓN: dd/mm/aaaa"
+# (mismo patrón que ya usa agregar_marca_manual.py, confirmado a mano con
+# el acta 4534497). A diferencia del boletín, acá la denominación de las
+# Mixtas SÍ viene como texto -- es la fuente principal para el escaneo
+# directo de actas. El Formulario queda solo de respaldo.
+TIPOS_MARCA_INVERSO = {"DENOMINATIVA": "D", "MIXTA": "M", "FIGURATIVA": "F", "TRIDIMENSIONAL": "T"}
+
+
+def _texto_sin_tags(fragmento: str) -> str:
+    texto = re.sub(r"<[^>]+>", " ", fragmento)
+    texto = html.unescape(texto).replace("\xa0", " ")
+    return re.sub(r"\s+", " ", texto).strip()
+
+
+def _bloque_seccion(pagina: str, nombre: str) -> str:
+    patron = re.compile(
+        re.escape(nombre) + r".*?</h4>\s*</div>\s*<div[^>]*>(.*?)</div>\s*</div>\s*</div>",
+        re.S,
+    )
+    matches = patron.findall(pagina)
+    return _texto_sin_tags(matches[-1]) if matches else ""
+
+
+def _denominacion_valida(valor: str | None) -> str | None:
+    """Descarta valores vacíos o que en realidad son el label siguiente."""
+    if not valor:
+        return None
+    v = re.sub(r"\s+", " ", valor).strip(" -:;,")
+    if not v or re.match(r"^(TIPO DE MARCA|CLASE|FECHA|TITULAR|NOMBRE)\b", v, re.I):
+        return None
+    return v[:300]
+
+
+def datos_generales_de_pagina(pagina: str) -> dict:
+    """{denominacion, tipo, fecha_presentacion} desde la ficha del expediente.
+    Cualquiera puede venir None (p.ej. Figurativa pura sin texto)."""
+    out = {"denominacion": None, "tipo": None, "fecha_presentacion": None}
+    bloque = _bloque_seccion(pagina, "DATOS GENERALES")
+    if not bloque:
+        # fallback: la página entera como texto (por si cambia el HTML)
+        bloque = _texto_sin_tags(pagina)
+    m_denom = re.search(r"DENOMINACI[ÓO]N\s*:\s*(.*?)\s*TIPO DE MARCA\s*:", bloque, re.I)
+    if m_denom:
+        out["denominacion"] = _denominacion_valida(m_denom.group(1))
+    m_tipo = re.search(r"TIPO DE MARCA\s*:\s*(Denominativa|Mixta|Figurativa|Tridimensional)", bloque, re.I)
+    if m_tipo:
+        out["tipo"] = TIPOS_MARCA_INVERSO.get(m_tipo.group(1).upper())
+    m_pres = re.search(r"PRESENTACI[ÓO]N\s*:\s*(\d{1,2}/\d{1,2}/\d{4})", bloque, re.I)
+    if m_pres:
+        out["fecha_presentacion"] = _fecha_ddmmyyyy_a_iso(m_pres.group(1))
+    return out
+
+
+def datos_generales_de_formulario(texto: str) -> dict:
+    """Respaldo: los mismos datos desde el texto del PDF Formulario. Solo
+    lee la MISMA línea del label (antes \\s*(.+) saltaba de renglón si
+    DENOMINACION venía vacía y se quedaba con el label siguiente)."""
+    out = {"denominacion": None, "tipo": None, "fecha_presentacion": None}
+    m_denom = re.search(r"DENOMINACI[ÓO]N[ \t]*:[ \t]*([^\n]*)", texto)
+    if m_denom:
+        out["denominacion"] = _denominacion_valida(m_denom.group(1))
+    m_tipo = re.search(r"TIPO DE MARCA\s*:\s*([A-Z])", texto)
+    if m_tipo:
+        out["tipo"] = m_tipo.group(1)
+    m_fecha = re.search(r"FECHA DE CARGA\s*:\s*(\d{1,2}/\d{1,2}/\d{4})", texto)
+    if m_fecha:
+        out["fecha_presentacion"] = _fecha_ddmmyyyy_a_iso(m_fecha.group(1))
+    return out
+
+
+def denominacion_por_webservice(cuit: str | None, acta: str) -> str | None:
+    """Último recurso: webservice SOAP (ConsultaCuitOTitular) buscando por
+    CUIT -- el mismo que completa las Mixtas del boletín. Para actas
+    recién depositadas puede no tenerlas todavía; en ese caso devuelve None
+    y la próxima pasada de backfill_denominacion.py lo vuelve a probar."""
+    if not cuit:
+        return None
+    try:
+        from completar_mixtas import consultar_cuit
+        for fila in consultar_cuit(cuit, timeout=40, reintentos=1):
+            if str(fila.get("Acta", "")).strip() == str(acta):
+                return _denominacion_valida(fila.get("Denominacion"))
+    except Exception as e:
+        print(f"  acta {acta}: webservice por CUIT falló ({e})", file=sys.stderr)
+    return None
+
+
 def revisar_acta(s: requests.Session, acta: str, timeout: int = 30) -> dict:
     """Devuelve {caracter, es_lead, email, email_apoderado, motivo_sin_email,
     fecha_publicacion, tuvo_oposicion, detalle_oposicion, estado_tramite,
@@ -767,6 +857,16 @@ def revisar_acta(s: requests.Session, acta: str, timeout: int = 30) -> dict:
         # confiable que el texto del PDF). El Formulario queda de respaldo.
         resultado["titular_formulario"] = titular_de_pagina(r.text)
 
+        # Denominación / tipo / fecha de presentación: también de esta
+        # página (DATOS GENERALES), para leads y no-leads, con o sin email.
+        # Antes salían SOLO del Formulario y SOLO si ese Formulario traía
+        # EMAIL -> las marcas del escaneo directo sin email (o con un
+        # Formulario sin DENOMINACION) quedaban como "(mixta/fig.)".
+        dg = datos_generales_de_pagina(r.text)
+        resultado["denominacion_formulario"] = dg["denominacion"]
+        resultado["tipo_formulario"] = dg["tipo"]
+        resultado["fecha_presentacion_formulario"] = dg["fecha_presentacion"]
+
         # RESOLUCIÓN está en esta misma página, para leads y no-leads por
         # igual — se guarda siempre, sin costo de un request extra.
         resultado.update(parsear_resolucion(r.text))
@@ -825,6 +925,16 @@ def revisar_acta(s: requests.Session, acta: str, timeout: int = 30) -> dict:
             with pdfplumber.open(io.BytesIO(r_pdf.content)) as pdf:
                 texto = "\n".join(p.extract_text() or "" for p in pdf.pages)
 
+            # Respaldo de denominación/tipo/fecha desde el Formulario, con
+            # o sin EMAIL (antes solo se leían si había email). Nunca pisa
+            # lo que ya vino de DATOS GENERALES.
+            dg_form = datos_generales_de_formulario(texto)
+            for campo, clave in (("denominacion", "denominacion_formulario"),
+                                 ("tipo", "tipo_formulario"),
+                                 ("fecha_presentacion", "fecha_presentacion_formulario")):
+                if not resultado[clave] and dg_form[campo]:
+                    resultado[clave] = dg_form[campo]
+
             # ":" opcional -- igual que en la regex de CUIT, algunos
             # Formulario lo traen pegado sin dos puntos.
             m_email = re.search(r"EMAIL\s*:?\s*([\w.+-]+@[\w-]+\.[\w.-]+)", texto)
@@ -836,18 +946,6 @@ def revisar_acta(s: requests.Session, acta: str, timeout: int = 30) -> dict:
                 if m_email_apoderado:
                     resultado["email_apoderado"] = m_email_apoderado.group(1)
 
-                # Solo para escanear_actas_nuevas.py -- no se usa cuando la
-                # fila ya viene de un boletín (ya tiene estos 4 datos, más
-                # confiables, del propio PDF del boletín). CLASE no está
-                # acá -- se saca más arriba, de la página de
-                # /MarcasConsultas/Resultado (ver RE_CLASE_SPAN), no del
-                # Formulario.
-                m_denom = re.search(r"DENOMINACION\s*:\s*(.+)", texto)
-                if m_denom:
-                    resultado["denominacion_formulario"] = m_denom.group(1).strip()
-                m_tipo = re.search(r"TIPO DE MARCA\s*:\s*([A-Z])", texto)
-                if m_tipo:
-                    resultado["tipo_formulario"] = m_tipo.group(1)
                 # Antes: r"TITULARIDAD.*?NOMBRE\s*:\s*(.+)" con re.S -> el .+
                 # se comía TODO el resto del PDF (domicilio, DNI, CUIT, clase,
                 # protección...), y si NOMBRE venía vacío saltaba de línea y
@@ -858,13 +956,15 @@ def revisar_acta(s: requests.Session, acta: str, timeout: int = 30) -> dict:
                     m_titular = re.search(r"TITULARIDAD.*?NOMBRE[ \t]*:[ \t]*([^\n]+)", texto, re.S)
                     if m_titular:
                         resultado["titular_formulario"] = limpiar_titular(m_titular.group(1))
-                m_fecha_carga = re.search(r"FECHA DE CARGA\s*:\s*(\d{1,2}/\d{1,2}/\d{4})", texto)
-                if m_fecha_carga:
-                    resultado["fecha_presentacion_formulario"] = _fecha_ddmmyyyy_a_iso(m_fecha_carga.group(1))
                 break
 
         if not resultado["email"]:
             resultado["motivo_sin_email"] = motivo_formulario
+
+        # Último recurso para el nombre (Mixtas sin texto en ficha ni
+        # Formulario): webservice SOAP por CUIT.
+        if not resultado["denominacion_formulario"] and resultado.get("cuit"):
+            resultado["denominacion_formulario"] = denominacion_por_webservice(resultado["cuit"], acta)
 
     except Exception as e:
         print(f"  acta {acta}: error ({e})", file=sys.stderr)

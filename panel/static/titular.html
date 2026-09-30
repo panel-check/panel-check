@@ -69,7 +69,7 @@ function filaHtml(r) {
       <td><a class="link-acta" href="javascript:void(0)" onclick="abrirActa('${r.acta}')">${r.acta}</a></td>
       <td>${r.clase ?? ""}</td>
       <td>${tipoLegible(r.tipo)}</td>
-      <td class="denominacion" title="${r.denominacion_inpi || r.denominacion || ""}">${r.denominacion_inpi || r.denominacion || "<em>(mixta/fig.)</em>"}</td>
+      <td class="denominacion" title="${r.denominacion_inpi || r.denominacion || ""}">${r.denominacion_inpi || r.denominacion || `<em>${sinNombre(r.tipo)}</em>`}</td>
       <td>${badgeLead(r)} ${badgeOposicion(r)}</td>
       <td>${celdaEmail(r)}</td>
       <td>${fechaPublicacionOFallback(r)}</td>

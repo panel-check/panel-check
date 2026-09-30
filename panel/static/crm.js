@@ -171,7 +171,7 @@ function _crmHtmlFicha(d, { enModal = false } = {}) {
     <table class="crm-tabla-marcas"><tbody>
       ${d.marcas.map(m => `<tr>
         <td><a class="link-acta" href="javascript:void(0)" data-acta="${crmEsc(m.acta)}">${crmEsc(m.acta)} ↗</a></td>
-        <td>${crmEsc(m.denominacion_inpi || m.denominacion || "(mixta/fig.)")}</td>
+        <td>${crmEsc(m.denominacion_inpi || m.denominacion || sinNombre(m.tipo))}</td>
         <td>Clase ${crmEsc(m.clase)}</td>
         <td>${crmEsc(tipoLegible(m.tipo))}</td>
         <td>${badgeLead(m)} ${badgeEstadoTramite(m, true)}</td>

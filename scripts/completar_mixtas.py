@@ -27,7 +27,14 @@ SOAP_ACTION = "http://tempuri.org/ConsultaCuitOTitular"
 NS = {"a": "http://tempuri.org/"}
 
 
-def consultar_titular(titular: str, timeout: int = 60, reintentos: int = 2) -> list[dict]:
+def consultar_cuit(cuit: str, timeout: int = 60, reintentos: int = 2) -> list[dict]:
+    """Igual que consultar_titular pero buscando por CUIT (más preciso: no
+    depende de cómo esté escrito el nombre). Lo usa validar_leads.py como
+    último recurso para el nombre de Mixtas del escaneo directo de actas."""
+    return consultar_titular("", timeout=timeout, reintentos=reintentos, cuit=cuit)
+
+
+def consultar_titular(titular: str, timeout: int = 60, reintentos: int = 2, cuit: str = "") -> list[dict]:
     """Llama a ConsultaCuitOTitular y devuelve la lista de GrillaMarcas (dicts).
     El servicio de INPI tiene latencia variable (1s a 60s+), así que reintenta
     antes de darse por vencido.
@@ -41,7 +48,7 @@ def consultar_titular(titular: str, timeout: int = 60, reintentos: int = 2) -> l
 <soap:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
   <soap:Body>
     <ConsultaCuitOTitular xmlns="http://tempuri.org/">
-      <cuit></cuit>
+      <cuit>{xml_escape(cuit)}</cuit>
       <titular>{titular_safe}</titular>
     </ConsultaCuitOTitular>
   </soap:Body>

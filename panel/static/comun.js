@@ -21,6 +21,15 @@ function tipoLegible(tipo) {
   return TIPOS_MARCA[letra] || tipo;
 }
 
+// Texto a mostrar cuando una marca todavía no tiene nombre. Figurativa pura
+// (logo sin texto) no tiene nombre en ningún lado; el resto está pendiente
+// de backfill_denominacion.py (corre solo después de cada escaneo de actas).
+function sinNombre(tipo) {
+  const t = (tipo || "").trim().toUpperCase();
+  if (t === "F") return "(figurativa, sin texto)";
+  return "(nombre pendiente)";
+}
+
 function badgeLead(row) {
   if (row.es_lead === true) return '<span class="badge lead">LEAD</span>';
   if (row.es_lead === false) return `<span class="badge no-lead">${row.caracter || "con agente"}</span>`;

@@ -430,7 +430,7 @@ function filaHtml(r, { flecha = false, oculta = false, idGrupo = null, cantidadR
     <tr class="${r.es_lead ? "lead" : ""} ${r.contactado ? "contactado" : ""} ${claseOculta}" ${atributoGrupo}>
       <td class="score">${r.lead_score ?? ""}</td>
       <td>${r.clase ?? ""}${celdaOtrasClases(r)}</td>
-      <td class="denominacion" title="${r.denominacion_inpi || r.denominacion || ""}">${r.denominacion_inpi || r.denominacion || "<em>(mixta/fig.)</em>"}</td>
+      <td class="denominacion" title="${r.denominacion_inpi || r.denominacion || ""}">${r.denominacion_inpi || r.denominacion || `<em>${sinNombre(r.tipo)}</em>`}</td>
       <td class="titular" title="${r.titular || ""}">${celdaTitular}</td>
       <td>${badgeLead(r)} ${crmSlot(claveTitular(r))} ${badgePreBoletin(r)} ${badgeOposicion(r)} ${badgeEstadoTramite(r)}</td>
       <td class="celda-email">${celdaEmailIcono(r)}</td>

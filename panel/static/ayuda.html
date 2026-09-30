@@ -224,6 +224,13 @@
     <p>Son marcas encontradas por el <strong>escaneo de actas nuevas</strong>: INPI numera cada solicitud el día que se presenta, y el sistema prueba esos números 3 veces por día, semanas antes de que la marca salga en un boletín. Solo se guardan las que no tienen agente (leads). Como todavía no se publicaron, no tienen número de boletín; para verlas juntas, elegí <strong>🆕 Pre-boletín</strong> en el filtro Boletín.</p>
     <p>Cuando la marca sale en su boletín, deja de ser pre-boletín y se completa con los datos del boletín, sin duplicarse. Las oposiciones se empiezan a revisar recién desde esa publicación.</p>
 
+    <h2>"(nombre pendiente)" y "(figurativa, sin texto)"</h2>
+    <p>En el boletín, las marcas <strong>Mixtas</strong> y <strong>Figurativas</strong> no traen el nombre escrito (es un logo), y en el escaneo de actas nuevas el nombre tampoco siempre está en el Formulario. El sistema lo busca primero en la ficha del expediente de INPI (sección DATOS GENERALES) y, si no está, en el webservice de INPI por CUIT.</p>
+    <ul>
+      <li><strong>(nombre pendiente)</strong> — todavía no se pudo recuperar. El proceso <strong>Completar nombres (mixta/fig.)</strong> lo vuelve a intentar solo 3 veces por día (una marca recién presentada a veces tarda en aparecer en el webservice).</li>
+      <li><strong>(figurativa, sin texto)</strong> — la marca es solo un dibujo/logo: no tiene nombre en ningún lado. Para verla, abrí el expediente en INPI.</li>
+    </ul>
+
     <h2>"Sin email" y el botón Reintentar</h2>
     <p>Cuando un lead no tiene email, pasando el mouse por "sin email" aparece el motivo exacto: bloqueo del WAF de INPI, el expediente no tiene un Formulario en Grilla Digital, no se pudo descargar el PDF, o el Formulario no tenía el campo EMAIL completo.</p>
     <p>El botón <strong>Reintentar</strong> vuelve a consultar ese expediente puntual contra INPI en vivo (tarda unos segundos) y actualiza caracter, email, CUIT y score si encuentra algo nuevo. No hace falta usarlo siempre: el proceso <strong>Reintento de emails faltantes</strong> hace lo mismo solo, para todos los leads sin email, cada 2 horas.</p>
@@ -339,8 +346,8 @@ le asigna un puntaje de prioridad. Después sigue a cada marca a lo largo del ti
             <h3>Escaneo de actas nuevas (antes del boletín)</h3>
             <p>INPI le asigna a cada solicitud un número de acta correlativo <strong>el día que se presenta</strong>,
               pero la publica en el boletín recién varias semanas después. Por eso, 3 veces por día, el sistema prueba
-              los números de acta siguientes al último que encontró. De cada acta nueva sin agente guarda clase, marca,
-              titular, CUIT y email, y la muestra en el panel con la etiqueta <strong>🆕 pre-boletín</strong>. Así se
+              los números de acta siguientes al último que encontró. De cada acta nueva sin agente guarda clase, marca (el nombre sale de la ficha del
+              expediente, así que también las Mixtas quedan con nombre), tipo, titular, CUIT y email, y la muestra en el panel con la etiqueta <strong>🆕 pre-boletín</strong>. Así se
               puede contactar al solicitante semanas antes que nadie. Cuando después sale en su boletín, la misma
               marca se completa con los datos del boletín, sin duplicarse.</p>
           </div>
@@ -426,7 +433,15 @@ le asigna un puntaje de prioridad. Después sigue a cada marca a lo largo del ti
               <td>Prueba los números de acta siguientes al último encontrado (hasta 300 por corrida; corta cuando
                 varios seguidos todavía no existen). Siempre retoma desde la última acta encontrada, aunque la corrida
                 anterior se haya cortado a mitad: nunca vuelve a revisar las que ya pasó. Guarda solo los leads (sin agente), con email si se pudo, como
-                <strong>pre-boletín</strong>. Las marcas con abogado se descartan: las carga el boletín después.</td></tr>
+                <strong>pre-boletín</strong>. El nombre de la marca (incluidas las Mixtas) lo lee de la ficha del expediente
+                (DATOS GENERALES); si ahí no está, del Formulario o del webservice de INPI por CUIT. Las marcas con abogado
+                se descartan: las carga el boletín después.</td></tr>
+            <tr><td><strong>Completar nombres (mixta/fig.)</strong></td><td>Todos los días, 6:30, 12:30 y 18:30 hs</td>
+              <td>Para las marcas que figuran como <em>(nombre pendiente)</em> —Mixtas del escaneo de actas o
+                Mixtas/Figurativas de boletín que el webservice no devolvió— vuelve a leer el nombre de la ficha del
+                expediente y, si no está, del webservice por CUIT. De paso completa tipo y fecha de presentación si
+                faltaban. Nunca pisa un nombre que ya estaba. Hasta 150 marcas por corrida; las figurativas puras
+                (sin texto) quedan como <em>(figurativa, sin texto)</em>.</td></tr>
             <tr><td><strong>Pipeline de boletines</strong></td><td>Lunes, miércoles, viernes y sábado, 6 hs</td>
               <td>Busca el boletín de "Marcas Nuevas" más reciente que todavía no esté importado, lee el PDF, separa
                 cada solicitud, completa el nombre de las marcas Mixtas/Figurativas (que en el PDF son solo un logo),
@@ -438,7 +453,8 @@ le asigna un puntaje de prioridad. Después sigue a cada marca a lo largo del ti
                 "sin verificar"), casi siempre por un bloqueo puntual de INPI.</td></tr>
             <tr><td><strong>Reintento de emails faltantes</strong></td><td>Cada 2 horas (horas pares)</td>
               <td>Para los leads ya confirmados que quedaron "sin email", vuelve a abrir la Grilla Digital y el
-                Formulario para conseguirlo. Es lo mismo que el botón <strong>Reintentar</strong>, pero en lote.</td></tr>
+                Formulario para conseguirlo. Es lo mismo que el botón <strong>Reintentar</strong>, pero en lote. Si a la
+                marca le faltaba el nombre, también lo completa.</td></tr>
             <tr><td><strong>Revisión de oposiciones/vistas</strong></td><td>Todos los días, 7 hs</td>
               <td>Para los leads publicados hace 33 días o más (ya cerró el plazo de 30 días para oponerse), revisa
                 una vez la Grilla Digital: si hay una oposición de un tercero o una vista de INPI la marca en el
@@ -479,6 +495,7 @@ le asigna un puntaje de prioridad. Después sigue a cada marca a lo largo del ti
             <tr><th>Comentarios</th><td>Botón 💬 en cada fila o sección <strong>💬 Comentarios</strong>: dejarle un mensaje a otra persona del equipo (o a todos), vinculado o no a un acta, y marcarlo como resuelto cuando se atendió.</td></tr>
             <tr><th>Correr ahora</th><td>En <strong>Automatizaciones</strong>, cualquier proceso automático se puede disparar a mano.</td></tr>
             <tr><th>Agregar marca manualmente</th><td>Carga al panel un acta puntual que no vino por boletín ni por el escaneo (desde GitHub Actions).</td></tr>
+            <tr><th>Completar nombres (mixta/fig.)</th><td>Además de correr solo, se puede disparar desde <strong>Automatizaciones</strong> o GitHub Actions, con tope de marcas y opción de incluir también las que tienen apoderado.</td></tr>
             <tr><th>Inspeccionar acta</th><td>Diagnóstico: muestra qué devuelve INPI para un acta, para revisar un caso raro (desde GitHub Actions).</td></tr>
             <tr><th>Comparar extracción Apify vs local</th><td>Diagnóstico: para un boletín dado, compara las marcas que salen leyendo el PDF con Apify contra leerlo directamente, para verificar que el respaldo de lectura da lo mismo (desde GitHub Actions).</td></tr>
             <tr><th>Probar alarma de bloqueo</th><td>Manda un mail de prueba del aviso de bloqueo, para ver cómo llega (desde GitHub Actions).</td></tr>
@@ -545,6 +562,7 @@ le asigna un puntaje de prioridad. Después sigue a cada marca a lo largo del ti
             <tr><th>Acta</th><td>Número único que identifica una solicitud de marca en INPI.</td></tr>
             <tr><th>Boletín</th><td>Publicación de INPI con las solicitudes de marca nuevas. Salen varios por semana; desde la publicación corren los 30 días para oponerse.</td></tr>
             <tr><th>Pre-boletín</th><td>Marca detectada por el escaneo de actas que todavía no salió publicada en un boletín.</td></tr>
+            <tr><th>Mixta / Figurativa</th><td>Tipos de marca con logo. La Mixta tiene texto dentro del logo (el nombre se recupera de INPI); la Figurativa es solo dibujo y puede no tener nombre.</td></tr>
             <tr><th>Clase</th><td>Categoría de productos/servicios que protege la marca (de la 1 a la 45).</td></tr>
             <tr><th>Multiclase</th><td>Misma marca (mismo nombre) pedida en más de una clase, cada una con su propia acta. Se filtra con <em>Misma marca en varias clases</em> en los filtros avanzados.</td></tr>
             <tr><th>Titular</th><td>Persona o empresa dueña de la marca.</td></tr>

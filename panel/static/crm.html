@@ -162,7 +162,7 @@ function tarjetaHtml(l) {
   return `
     <div class="crm-card ${l.oposicion_sin_apoderado ? "crm-card-opo" : ""}" draggable="true" data-clave="${crmEsc(l.clave)}" data-etapa="${crmEsc(l.etapa)}">
       <div class="crm-card-tit">${crmEsc(l.titular || l.clave)} ${crmIniciales(l.asignado)}</div>
-      <div class="crm-card-marcas" title="${crmEsc(l.marcas || "")}">${crmEsc(l.marcas || "(mixta/figurativa)")}</div>
+      <div class="crm-card-marcas" title="${crmEsc(l.marcas || "")}">${crmEsc(l.marcas || "(nombre pendiente)")}</div>
       <div class="crm-card-meta">${l.cant_marcas} marca${l.cant_marcas == 1 ? "" : "s"}${clases ? ` · clase ${crmEsc(clases)}` : ""}</div>
       <div class="crm-card-badges">
         ${l.oposicion_sin_apoderado ? '<span class="crm-mini crm-mini-opo">⚠ oposición</span>' : ""}
