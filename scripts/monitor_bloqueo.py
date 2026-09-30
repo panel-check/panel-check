@@ -114,6 +114,12 @@ def _enviar_mail(proceso: str, motivo: str) -> None:
         print(f"::warning::No se pudo mandar el mail de alarma de bloqueo: {e}")
 
 
+def enviar_prueba() -> None:
+    """Manda el mismo mail de alarma con datos de ejemplo (no toca INPI)."""
+    _estado.update(ok=0, bloqueadas=7, seguidas=7, max_seguidas=7)
+    _enviar_mail("PRUEBA - Escanear actas nuevas", "PRUEBA: 7 consultas seguidas bloqueadas")
+
+
 def _al_terminar() -> None:
     ok, bl = _estado["ok"], _estado["bloqueadas"]
     if bl:
@@ -126,3 +132,7 @@ def _al_terminar() -> None:
     _enviar_mail(proceso, motivo)
     sys.stdout.flush()
     os._exit(3)  # corrida en rojo aunque el script haya terminado "bien"
+
+
+if __name__ == "__main__" and "--prueba" in sys.argv:
+    enviar_prueba()
