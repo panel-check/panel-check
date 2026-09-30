@@ -337,11 +337,11 @@ function filaHtml(r, { flecha = false, oculta = false, idGrupo = null, cantidadR
       <td>${r.clase ?? ""}</td>
       <td class="denominacion" title="${r.denominacion_inpi || r.denominacion || ""}">${r.denominacion_inpi || r.denominacion || "<em>(mixta/fig.)</em>"}</td>
       <td class="titular" title="${r.titular || ""}">${celdaTitular}</td>
-      <td>${badgeLead(r)} ${badgeOposicion(r)} ${badgeEstadoTramite(r)}</td>
+      <td>${badgeLead(r)} ${badgePreBoletin(r)} ${badgeOposicion(r)} ${badgeEstadoTramite(r)}</td>
       <td class="celda-email">${celdaEmailIcono(r)}</td>
       <td>${fechaPublicacionOFallback(r)}</td>
       <td>${fmtFecha(r.fecha_concesion) || "—"}</td>
-      <td><a class="abrir" href="${hrefTitular}" target="_blank" title="Ver ficha completa del titular (boletín ${r.boletin}, acta ${r.acta})">Abrir</a></td>
+      <td><a class="abrir" href="${hrefTitular}" target="_blank" title="Ver ficha completa del titular (boletín ${r.boletin || "sin boletín todavía"}, acta ${r.acta})">Abrir</a></td>
     </tr>
   `;
 }

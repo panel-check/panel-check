@@ -192,6 +192,24 @@ def _correr_alters_panel(cur):
     cur.execute(
         "ALTER TABLE marcas ADD COLUMN IF NOT EXISTS detalle_representacion_posterior TEXT"
     )
+    # Escaneo directo de números de acta secuenciales (adelanta el contacto
+    # semanas antes del boletín) -- ver scripts/escanear_actas_nuevas.py.
+    cur.execute(
+        "ALTER TABLE marcas ADD COLUMN IF NOT EXISTS fuente TEXT DEFAULT 'boletin'"
+    )
+    cur.execute(
+        "CREATE INDEX IF NOT EXISTS idx_marcas_fuente ON marcas(fuente)"
+    )
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS escaneo_actas (
+            id                      SMALLINT PRIMARY KEY DEFAULT 1,
+            ultima_acta_confirmada  BIGINT NOT NULL,
+            actualizado_en          TIMESTAMPTZ DEFAULT now(),
+            CONSTRAINT escaneo_actas_una_fila CHECK (id = 1)
+        )
+        """
+    )
 
 COLUMNAS_ORDENABLES = {
     "lead_score", "acta", "boletin", "clase", "titular", "fecha_presentacion",
@@ -208,7 +226,8 @@ COLUMNAS_MARCA = """
     fundamento_oposicion, actas_marca_oponente, marca_oponente_denominacion,
     marca_oponente_numero_registro,
     representacion_posterior_oposicion, detalle_representacion_posterior,
-    estado_tramite, fecha_concesion, numero_disposicion, fecha_vencimiento_marca
+    estado_tramite, fecha_concesion, numero_disposicion, fecha_vencimiento_marca,
+    fuente
 """
 
 RE_CUIT_VALIDO = re.compile(r"^\d{10,11}$")
@@ -276,6 +295,19 @@ CRONS_DEFINIDOS = [
         "pendientes_sql": "SELECT COUNT(*) FROM marcas WHERE es_lead = true "
                            "AND (email IS NULL OR email = '')",
         "pendientes_etiqueta": "leads sin email todavía",
+    },
+    {
+        "nombre": "Escaneo de actas nuevas",
+        "descripcion": "El acta se asigna al depositar la solicitud, semanas antes de "
+                        "publicarse en el boletín. Prueba los números de acta siguientes al "
+                        "último confirmado y, si encuentra un lead nuevo (sin agente/apoderado), "
+                        "lo carga con los mismos datos que hoy vienen del boletín -- para poder "
+                        "contactarlo el mismo día que se registra en vez de esperar semanas.",
+        "workflow_file": "escanear_actas.yml",
+        "cron": "0 7,13,19 * * *",
+        "pendientes_sql": "SELECT COUNT(*) FROM marcas WHERE fuente = 'escaneo_directo' "
+                           "AND boletin IS NULL",
+        "pendientes_etiqueta": "leads detectados antes del boletín, esperando que los alcance",
     },
     {
         "nombre": "Verificación del despliegue",

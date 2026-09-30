@@ -621,6 +621,33 @@ def consultar_resolucion(s: requests.Session, acta: str, timeout: int = 30) -> d
     return resultado
 
 
+def existe_expediente(s: requests.Session, acta: str, timeout: int = 30) -> tuple[bool | None, str]:
+    """Para scripts/escanear_actas_nuevas.py: dado un número de acta que
+    puede no existir todavía (se está probando el siguiente número
+    secuencial), dice si INPI ya tiene un expediente cargado con ese
+    número -- SIN asumir por defecto que existe (a diferencia de
+    revisar_acta, que da por hecho que el acta es real y por eso, si la
+    página viene vacía, interpretaría "sin agente" = lead por error).
+
+    Devuelve (existe, texto_pagina): texto_pagina se puede reusar para no
+    tener que volver a pedir la misma página (ver revisar_acta).
+    existe=None si el WAF bloqueó la consulta (no se pudo saber)."""
+    r = _get_con_reintentos(
+        lambda: s.post(
+            f"{BASE}/MarcasConsultas/Resultado",
+            headers={"Referer": f"{BASE}/MarcasConsultas/Grilla"},
+            data={"acta": acta},
+            timeout=timeout,
+        )
+    )
+    if "Web Page Blocked" in r.text or "Attack ID" in r.text:
+        return None, r.text
+    # Un expediente real siempre trae al menos estas dos secciones. Si
+    # ninguna aparece, es que ese número de acta todavía no fue asignado.
+    existe = ("GESTION DEL TRAMITE" in r.text) or ("TITULARIDAD" in r.text)
+    return existe, r.text
+
+
 def revisar_acta(s: requests.Session, acta: str, timeout: int = 30) -> dict:
     """Devuelve {caracter, es_lead, email, email_apoderado, motivo_sin_email,
     fecha_publicacion, tuvo_oposicion, detalle_oposicion, estado_tramite,
@@ -633,6 +660,14 @@ def revisar_acta(s: requests.Session, acta: str, timeout: int = 30) -> dict:
         "motivo_sin_email": "", "fecha_publicacion": None,
         "estado_tramite": None, "fecha_concesion": None,
         "numero_disposicion": None, "fecha_vencimiento_marca": None,
+        # Estos 4 se completan solo si hace falta abrir el Formulario (más
+        # abajo) -- pensados para escanear_actas_nuevas.py, que no tiene
+        # boletín todavía del que sacar denominación/tipo/titular/fecha.
+        # Confirmado con un Formulario real (EL DARU, acta 4770192... ver
+        # historial): "DENOMINACION:", "TIPO DE MARCA:", "TITULARIDAD" +
+        # "NOMBRE:" y "FECHA DE CARGA:" son los labels reales del PDF.
+        "denominacion_formulario": None, "tipo_formulario": None,
+        "titular_formulario": None, "fecha_presentacion_formulario": None,
     }
     try:
         r = _get_con_reintentos(
@@ -736,6 +771,25 @@ def revisar_acta(s: requests.Session, acta: str, timeout: int = 30) -> dict:
                 )
                 if m_email_apoderado:
                     resultado["email_apoderado"] = m_email_apoderado.group(1)
+
+                # Solo para escanear_actas_nuevas.py -- no se usa cuando la
+                # fila ya viene de un boletín (ya tiene estos 4 datos, más
+                # confiables, del propio PDF del boletín). CLASE queda
+                # afuera a propósito: no aparece en la parte del Formulario
+                # que ya confirmamos, y el boletín la va a completar cuando
+                # publique el acta (ver ON CONFLICT en cargar_db.py).
+                m_denom = re.search(r"DENOMINACION\s*:\s*(.+)", texto)
+                if m_denom:
+                    resultado["denominacion_formulario"] = m_denom.group(1).strip()
+                m_tipo = re.search(r"TIPO DE MARCA\s*:\s*([A-Z])", texto)
+                if m_tipo:
+                    resultado["tipo_formulario"] = m_tipo.group(1)
+                m_titular = re.search(r"TITULARIDAD.*?NOMBRE\s*:\s*(.+)", texto, re.S)
+                if m_titular:
+                    resultado["titular_formulario"] = m_titular.group(1).strip()
+                m_fecha_carga = re.search(r"FECHA DE CARGA\s*:\s*(\d{1,2}/\d{1,2}/\d{4})", texto)
+                if m_fecha_carga:
+                    resultado["fecha_presentacion_formulario"] = _fecha_ddmmyyyy_a_iso(m_fecha_carga.group(1))
                 break
 
         if not resultado["email"]:

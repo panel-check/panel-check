@@ -109,6 +109,24 @@ def main():
                     fecha_publicacion
                 ) VALUES %s
                 ON CONFLICT (acta) DO UPDATE SET
+                    -- Agregado el 30/09/2026: boletin/clase/tipo/denominacion/
+                    -- titular/pais/link/fecha_presentacion antes NO estaban en
+                    -- este UPDATE (quedaban "de una sola escritura"). Eso rompía
+                    -- al escaneo directo de actas (escanear_actas_nuevas.py):
+                    -- carga el acta con boletin=NULL apenas se detecta (semanas
+                    -- antes de publicarse), y cuando el boletín real la alcanzaba
+                    -- se perdía la referencia para siempre. Con COALESCE(EXCLUDED, marcas)
+                    -- el boletín "real" (que siempre trae estos datos) los
+                    -- completa/corrige sin perder nada si por algún motivo
+                    -- viniera vacío en esta corrida puntual.
+                    boletin = COALESCE(EXCLUDED.boletin, marcas.boletin),
+                    clase = COALESCE(EXCLUDED.clase, marcas.clase),
+                    tipo = COALESCE(EXCLUDED.tipo, marcas.tipo),
+                    denominacion = COALESCE(EXCLUDED.denominacion, marcas.denominacion),
+                    titular = COALESCE(EXCLUDED.titular, marcas.titular),
+                    pais = COALESCE(EXCLUDED.pais, marcas.pais),
+                    link = COALESCE(EXCLUDED.link, marcas.link),
+                    fecha_presentacion = COALESCE(EXCLUDED.fecha_presentacion, marcas.fecha_presentacion),
                     denominacion_inpi = EXCLUDED.denominacion_inpi,
                     -- No pisar un CUIT que ya teníamos con NULL si esta corrida
                     -- no lo pudo encontrar (webservice de INPI es flaky, o esta
@@ -125,6 +143,10 @@ def main():
                     -- el tiempo, así que si ya la teníamos no hace falta perderla.
                     fecha_publicacion = COALESCE(EXCLUDED.fecha_publicacion, marcas.fecha_publicacion),
                     actualizado_en = now()
+                    -- "fuente" NO se toca acá a propósito: si el acta ya existía
+                    -- por el escaneo directo, queremos que siga diciendo
+                    -- 'escaneo_directo' (para poder medir cuánto adelantamos el
+                    -- contacto) aunque el boletín la vuelva a cargar.
                     -- tuvo_oposicion / detalle_oposicion / revisado_oposicion_en NO
                     -- se tocan acá a propósito: los administra únicamente
                     -- scripts/revisar_oposiciones.py. Si el pipeline reprocesa un

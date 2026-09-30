@@ -1,0 +1,46 @@
+name: Escanear actas nuevas
+
+on:
+  schedule:
+    # 3 veces por día, corrido en horas distintas a los demás crons contra
+    # INPI para no acumular consultas al mismo tiempo (ver comentarios en
+    # reintentar_sin_email.yml y reintentar_sin_verificar.yml).
+    - cron: "0 7,13,19 * * *"
+  workflow_dispatch:
+    inputs:
+      tope:
+        description: "Máximo de números de acta a probar en esta corrida"
+        required: false
+        default: "300"
+      consecutivos_para_frenar:
+        description: "Si esta cantidad de actas seguidas no existe todavía, corta la corrida"
+        required: false
+        default: "8"
+
+permissions:
+  contents: read
+
+jobs:
+  escanear:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Instalar dependencias
+        run: pip install -r requirements.txt
+
+      - name: Probar los siguientes números de acta contra INPI
+        run: |
+          cd scripts
+          TOPE="${{ inputs.tope }}"
+          CONSECUTIVOS="${{ inputs.consecutivos_para_frenar }}"
+          python3 escanear_actas_nuevas.py \
+            --tope "${TOPE:-300}" \
+            --consecutivos-para-frenar "${CONSECUTIVOS:-8}"
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL || secrets.DATABASE_PUBLIC_URL }}
+          PYTHONUNBUFFERED: "1"

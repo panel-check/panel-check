@@ -8,6 +8,12 @@ directory = panel/, así que no tiene acceso a scripts/).
 Si INPI cambia el HTML o los endpoints, hay que actualizar este archivo Y
 los scripts equivalentes en scripts/ — quedan separados a propósito, no
 importan uno del otro.
+
+Excepción a propósito (30/09/2026): scripts/validar_leads.py.revisar_acta
+también parsea denominación/tipo/titular/fecha de depósito del Formulario
+(para scripts/escanear_actas_nuevas.py, que no tiene boletín del que
+sacarlos). Ese script no corre en el panel -- solo el botón "Reintentar",
+que ya tiene esos datos del boletín -- así que no se duplicó acá.
 """
 
 import io

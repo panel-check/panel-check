@@ -27,6 +27,23 @@ function badgeLead(row) {
   return '<span class="badge sin-dato">sin verificar</span>';
 }
 
+// El número de boletín queda NULL mientras el acta se detectó por escaneo
+// directo (scripts/escanear_actas_nuevas.py) y todavía no la publicó el
+// boletín real -- antes esto se mostraba como el string literal "null".
+function badgePreBoletin(row) {
+  if (row.boletin || row.fuente !== "escaneo_directo") return "";
+  return '<span class="tooltip badge-vista">🆕 pre-boletín<span class="globo">'
+    + 'Detectado directamente por número de acta, antes de que INPI lo publique '
+    + 'en un boletín. Todavía no arrancó el plazo de oposición.</span></span>';
+}
+
+// Para la columna "Boletín" de la ficha de titular (titular.html), donde sí
+// se muestra el número -- acá si no hay número, mostramos el mismo badge.
+function badgeBoletin(row) {
+  if (row.boletin) return row.boletin;
+  return badgePreBoletin(row) || "—";
+}
+
 // Cache de filas con oposición de tercero, clave = acta — el popup
 // (abrirModalOposicion) lee de acá en vez de recibir el objeto entero por
 // el onclick (que solo puede llevar strings simples). Se va completando

@@ -71,6 +71,24 @@ ALTER TABLE marcas ADD COLUMN IF NOT EXISTS fecha_vencimiento_marca DATE;
 ALTER TABLE marcas ADD COLUMN IF NOT EXISTS representacion_posterior_oposicion BOOLEAN;
 ALTER TABLE marcas ADD COLUMN IF NOT EXISTS detalle_representacion_posterior TEXT;
 
+-- Agregado el 30/09/2026: escaneo directo de números de acta secuenciales
+-- (scripts/escanear_actas_nuevas.py). El acta se asigna al depositar la
+-- solicitud -- semanas antes de que INPI lo publique en un boletín -- así
+-- que se puede detectar (y contactar) un lead el mismo día que se registra,
+-- sin esperar el boletín. "fuente" distingue de dónde salió el registro
+-- originalmente; "boletin" queda NULL hasta que el boletín real lo alcanza
+-- (en ese momento cargar_db.py lo completa, ver ON CONFLICT más abajo).
+ALTER TABLE marcas ADD COLUMN IF NOT EXISTS fuente TEXT DEFAULT 'boletin'; -- 'boletin' | 'escaneo_directo'
+
+-- Puntero de hasta qué número de acta se escaneó -- una sola fila (id=1).
+CREATE TABLE IF NOT EXISTS escaneo_actas (
+    id                      SMALLINT PRIMARY KEY DEFAULT 1,
+    ultima_acta_confirmada  BIGINT NOT NULL,
+    actualizado_en          TIMESTAMPTZ DEFAULT now(),
+    CONSTRAINT escaneo_actas_una_fila CHECK (id = 1)
+);
+
+CREATE INDEX IF NOT EXISTS idx_marcas_fuente ON marcas(fuente);
 CREATE INDEX IF NOT EXISTS idx_marcas_boletin ON marcas(boletin);
 CREATE INDEX IF NOT EXISTS idx_marcas_es_lead ON marcas(es_lead);
 CREATE INDEX IF NOT EXISTS idx_marcas_titular ON marcas(titular);
