@@ -16,6 +16,10 @@ on:
         description: "Si esta cantidad de actas seguidas no existe todavía, corta la corrida"
         required: false
         default: "8"
+      desde:
+        description: "Punto de partida (solo aplica la primera vez, si todavía no hay estado guardado)"
+        required: false
+        default: "4797000"
 
 permissions:
   contents: read
@@ -38,9 +42,11 @@ jobs:
           cd scripts
           TOPE="${{ inputs.tope }}"
           CONSECUTIVOS="${{ inputs.consecutivos_para_frenar }}"
+          DESDE="${{ inputs.desde }}"
           python3 escanear_actas_nuevas.py \
             --tope "${TOPE:-300}" \
-            --consecutivos-para-frenar "${CONSECUTIVOS:-8}"
+            --consecutivos-para-frenar "${CONSECUTIVOS:-8}" \
+            --desde "${DESDE:-4797000}"
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL || secrets.DATABASE_PUBLIC_URL }}
           PYTHONUNBUFFERED: "1"

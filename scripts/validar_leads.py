@@ -66,6 +66,13 @@ RE_CARACTER_SPAN = re.compile(r"CARACTER\s*:?\s*<span[^>]*>(.*?)</span>", re.S)
 # ("CUIT: 20302361291" sin span) — sin esto se perdía casi la mitad.
 RE_CUIT_SPAN = re.compile(r"CUIT\s*:?\s*(?:<span[^>]*>)?\s*([\d.\-]{6,})", re.S)
 
+# Igual patrón que CUIT -- confirmado por el usuario el 30/09/2026 con una
+# captura de esta misma sección (TITULARIDAD) mostrando "CLASE: 38" en el
+# mismo rojo/negrita que CARACTER y CUIT (o sea, mismo <span class="text-danger">).
+# Si la marca tiene más de una clase, esto se queda solo con la primera --
+# mismo límite que ya tenía la columna marcas.clase (es un solo INTEGER).
+RE_CLASE_SPAN = re.compile(r"CLASE\s*:?\s*(?:<span[^>]*>)?\s*(\d{1,2})", re.S)
+
 
 def crear_sesion() -> requests.Session:
     s = requests.Session()
@@ -668,6 +675,10 @@ def revisar_acta(s: requests.Session, acta: str, timeout: int = 30) -> dict:
         # "NOMBRE:" y "FECHA DE CARGA:" son los labels reales del PDF.
         "denominacion_formulario": None, "tipo_formulario": None,
         "titular_formulario": None, "fecha_presentacion_formulario": None,
+        # A diferencia de los 4 de arriba, "clase" sale de esta misma página
+        # (no del Formulario) -- ver RE_CLASE_SPAN. Se saca siempre, lead o
+        # no, porque no cuesta nada extra (ya tenemos r.text acá abajo).
+        "clase": None,
     }
     try:
         r = _get_con_reintentos(
@@ -702,6 +713,10 @@ def revisar_acta(s: requests.Session, acta: str, timeout: int = 30) -> dict:
                 resultado["cuit"] = cuit_encontrado
         # si no matchea o no parece un CUIT válido, no seteamos la clave: así
         # row.update(info) no pisa un cuit que ya venía de completar_mixtas.py
+
+        m_clase = RE_CLASE_SPAN.search(r.text)
+        if m_clase:
+            resultado["clase"] = int(m_clase.group(1))
 
         # RESOLUCIÓN está en esta misma página, para leads y no-leads por
         # igual — se guarda siempre, sin costo de un request extra.
@@ -774,10 +789,10 @@ def revisar_acta(s: requests.Session, acta: str, timeout: int = 30) -> dict:
 
                 # Solo para escanear_actas_nuevas.py -- no se usa cuando la
                 # fila ya viene de un boletín (ya tiene estos 4 datos, más
-                # confiables, del propio PDF del boletín). CLASE queda
-                # afuera a propósito: no aparece en la parte del Formulario
-                # que ya confirmamos, y el boletín la va a completar cuando
-                # publique el acta (ver ON CONFLICT en cargar_db.py).
+                # confiables, del propio PDF del boletín). CLASE no está
+                # acá -- se saca más arriba, de la página de
+                # /MarcasConsultas/Resultado (ver RE_CLASE_SPAN), no del
+                # Formulario.
                 m_denom = re.search(r"DENOMINACION\s*:\s*(.+)", texto)
                 if m_denom:
                     resultado["denominacion_formulario"] = m_denom.group(1).strip()

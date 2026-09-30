@@ -11,20 +11,21 @@ la misma consulta de expediente que ya usa revisar_acta, y el expediente
 4797916 ya tenía todos los datos -- incluido el Formulario con el email.
 
 Qué hace esta corrida:
-  1. Lee de la tabla escaneo_actas hasta qué número se llegó la última vez
-     (o arranca desde el acta más alta que ya tengamos en `marcas`, si es
-     la primera corrida).
+  1. Lee de la tabla escaneo_actas hasta qué número se llegó la última vez.
+     Si todavía no hay fila (primera corrida), arranca desde --desde (por
+     defecto 4797000 -- CHATTY, la última marca ya conocida a la fecha en
+     que se armó este script -- pedido explícito del usuario como punto
+     de partida) en vez de intentar adivinarlo de la tabla `marcas`.
   2. Prueba, uno por uno, los números siguientes contra INPI
      (existe_expediente, en validar_leads.py). Si varios seguidos no
      existen todavía, corta esta corrida (el resto los prueba la próxima).
   3. Para cada acta que SÍ existe y resulta ser un lead real (sin
-     agente/apoderado en GESTION DEL TRAMITE), guarda denominación, tipo,
-     titular, CUIT, email y fecha de depósito -- todo sacado del mismo
-     Formulario que ya se descarga para el email (ver revisar_acta). La
-     CLASE queda vacía a propósito: no aparece ahí, la completa el boletín
-     real más adelante (ver ON CONFLICT en cargar_db.py).
+     agente/apoderado en GESTION DEL TRAMITE), guarda clase, denominación,
+     tipo, titular, CUIT, email y fecha de depósito -- clase sale de la
+     misma página de INPI que ya se consulta para caracter/CUIT, el resto
+     del Formulario que ya se descarga para el email (ver revisar_acta).
   4. Guarda el acta con boletin=NULL y fuente='escaneo_directo'. Cuando el
-     boletín real la alcance, cargar_db.py va a completar boletin/clase y
+     boletín real la alcance, cargar_db.py va a completar boletin y
      actualizar lo demás sin duplicar la fila (mismo acta = mismo registro).
      A partir de ahí sigue el flujo de siempre (revisar_oposiciones.py
      empieza a mirarla recién cuando fecha_publicacion deja de ser NULL).
@@ -34,12 +35,13 @@ un lead para nosotros y el boletín la va a cargar igual más adelante.
 
 Uso:
     DATABASE_URL=... python3 escanear_actas_nuevas.py
+    DATABASE_URL=... python3 escanear_actas_nuevas.py --desde 4797000
     DATABASE_URL=... python3 escanear_actas_nuevas.py --tope 300 --consecutivos-para-frenar 8
 
-Nota: el heurístico de "no existe todavía" (existe_expediente) y el
-supuesto de que CLASE no está en el Formulario son best-effort -- no se
-pudieron probar en vivo desde este entorno (INPI está bloqueado para este
-sandbox). Revisar el log de las primeras corridas reales.
+Nota: el heurístico de "no existe todavía" (existe_expediente) es
+best-effort -- no se pudo probar en vivo desde este entorno (INPI está
+bloqueado para este sandbox). Revisar el log de las primeras corridas
+reales.
 """
 
 import argparse
@@ -54,14 +56,19 @@ import psycopg2.extras
 from validar_leads import calcular_lead_score, crear_sesion, existe_expediente, revisar_acta
 
 
-def _leer_puntero(conn) -> int:
+def _leer_puntero(conn, desde: int | None) -> int:
     with conn.cursor() as cur:
         cur.execute("SELECT ultima_acta_confirmada FROM escaneo_actas WHERE id = 1")
         fila = cur.fetchone()
         if fila:
+            # Ya se sembró antes -- --desde de esta corrida se ignora (solo
+            # aplica la primera vez, para no "retroceder" el puntero por
+            # error en una corrida manual posterior).
             return fila[0]
-        # Primera corrida: no re-escanear todo el historial, arrancar desde
-        # la acta más alta que ya tengamos cargada (de cualquier fuente).
+        if desde is not None:
+            return desde
+        # Sin --desde y primera corrida: no re-escanear todo el historial,
+        # arrancar desde la acta más alta que ya tengamos cargada.
         cur.execute("SELECT COALESCE(MAX(acta::bigint), 0) FROM marcas WHERE acta ~ '^[0-9]+$'")
         return cur.fetchone()[0]
 
@@ -90,7 +97,7 @@ def _guardar_lead(conn, acta: str, info: dict, score: int):
                 titular, cuit, caracter, es_lead, email, email_apoderado,
                 lead_score, motivo_sin_email, fecha_publicacion, fuente
             ) VALUES (
-                %s, NULL, NULL, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'escaneo_directo'
+                %s, NULL, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'escaneo_directo'
             )
             ON CONFLICT (acta) DO UPDATE SET
                 -- Si por lo que sea ya existía (re-corrida, o el boletín se
@@ -99,7 +106,7 @@ def _guardar_lead(conn, acta: str, info: dict, score: int):
                 actualizado_en = now()
             """,
             (
-                acta, info.get("tipo_formulario"), info.get("denominacion_formulario"),
+                acta, info.get("clase"), info.get("tipo_formulario"), info.get("denominacion_formulario"),
                 info.get("fecha_presentacion_formulario"), info.get("titular_formulario"),
                 info.get("cuit"), info.get("caracter") or None, info.get("es_lead"),
                 info.get("email") or None, info.get("email_apoderado") or None,
@@ -115,6 +122,10 @@ def main():
     ap.add_argument("--consecutivos-para-frenar", type=int, default=8,
                      help="si esta cantidad de actas seguidas no existe todavía, se corta la corrida")
     ap.add_argument("--delay", type=float, default=1.5, help="segundos entre acta y acta")
+    ap.add_argument("--desde", type=int, default=4797000,
+                     help="punto de partida SOLO si es la primera corrida (todavía no hay fila en "
+                          "escaneo_actas) -- default: 4797000 (CHATTY, pedido explícito del usuario "
+                          "el 30/09/2026). Se ignora en cualquier corrida posterior.")
     args = ap.parse_args()
 
     dsn = os.environ.get("DATABASE_URL") or os.environ.get("DATABASE_PUBLIC_URL")
@@ -123,7 +134,7 @@ def main():
 
     conn = psycopg2.connect(dsn)
     try:
-        ultima_confirmada = _leer_puntero(conn)
+        ultima_confirmada = _leer_puntero(conn, args.desde)
         print(f"Último acta confirmada: {ultima_confirmada}. Probando hasta {args.tope} números siguientes...")
 
         s = crear_sesion()

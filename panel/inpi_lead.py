@@ -40,6 +40,7 @@ RE_CARACTER_SPAN = re.compile(r"CARACTER\s*:?\s*<span[^>]*>(.*?)</span>", re.S)
 # como texto plano dentro del mismo <label> en otras (personas físicas) —
 # "CUIT: 20302361291" sin span. El <span> es opcional para cubrir ambos casos.
 RE_CUIT_SPAN = re.compile(r"CUIT\s*:?\s*(?:<span[^>]*>)?\s*([\d.\-]{6,})", re.S)
+RE_CLASE_SPAN = re.compile(r"CLASE\s*:?\s*(?:<span[^>]*>)?\s*(\d{1,2})", re.S)
 
 # Ver el mismo comentario en validar_leads.py: sección RESOLUCIÓN, en la
 # misma página. VENCE ya viene calculado por INPI (concesión + 10 años).
@@ -200,6 +201,7 @@ def revisar_acta(acta: str, timeout: int = 30) -> dict:
         "motivo_sin_email": "", "fecha_publicacion": None,
         "estado_tramite": None, "fecha_concesion": None,
         "numero_disposicion": None, "fecha_vencimiento_marca": None,
+        "clase": None,  # ver RE_CLASE_SPAN -- mismo patrón que CUIT/CARACTER
     }
     try:
         r = _get_con_reintentos(
@@ -228,6 +230,10 @@ def revisar_acta(acta: str, timeout: int = 30) -> dict:
             cuit_encontrado = re.sub(r"[^\d]", "", m_cuit.group(1))
             if len(cuit_encontrado) in (10, 11):
                 resultado["cuit"] = cuit_encontrado
+
+        m_clase = RE_CLASE_SPAN.search(r.text)
+        if m_clase:
+            resultado["clase"] = int(m_clase.group(1))
 
         resultado.update(_parsear_resolucion(r.text))
 
