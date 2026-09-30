@@ -1019,6 +1019,12 @@ def main():
         help="revisar como máximo N actas candidatas (matrícula vacía o 'Part.'); útil para pruebas",
     )
     ap.add_argument("--delay", type=float, default=1.5, help="segundos de espera entre actas (freno de mano)")
+    ap.add_argument(
+        "--max-minutes", type=float, default=None,
+        help="presupuesto de tiempo: al pasarse, las actas que faltan quedan 'sin verificar' (es_lead vacío) "
+             "y las retoma solas reintentar_sin_verificar.py, en vez de arriesgar que GitHub corte la corrida "
+             "(tope de 6 h) y se pierda todo lo hecho",
+    )
     args = ap.parse_args()
 
     with open(args.in_path, encoding="utf-8") as f:
@@ -1030,7 +1036,16 @@ def main():
     print(f"Actas candidatas a revisar (sin matrícula o 'Part.'): {len(candidatas)}")
 
     s = crear_sesion()
+    inicio = time.time()
     for i, row in enumerate(candidatas, 1):
+        if args.max_minutes and (time.time() - inicio) / 60 >= args.max_minutes:
+            pendientes = candidatas[i - 1:]
+            for r in pendientes:
+                r["motivo_sin_email"] = "sin verificar: se agotó el tiempo de la corrida (se reintenta sola)"
+                r["lead_score"] = calcular_lead_score(r)
+            print(f"\nAVISO: se agotó el presupuesto de {args.max_minutes:g} min; quedan {len(pendientes)} "
+                  f"de {len(candidatas)} actas sin verificar (las retoma reintentar_sin_verificar).", flush=True)
+            break
         info = revisar_acta(s, row["acta"])
         # Si INPI no devolvió la clase (bloqueo/error), no pisar la que ya
         # viene del boletín con None.
@@ -1039,7 +1054,7 @@ def main():
         row.update(info)
         row["lead_score"] = calcular_lead_score(row)
         print(f"  [{i}/{len(candidatas)}] acta {row['acta']}: caracter={info['caracter']!r} "
-              f"es_lead={info['es_lead']} email={'sí' if info['email'] else 'no'}")
+              f"es_lead={info['es_lead']} email={'sí' if info['email'] else 'no'}", flush=True)
         time.sleep(args.delay)  # freno de mano, no golpear el portal
 
     # Las que el boletín ya trae con número de matrícula de agente no se

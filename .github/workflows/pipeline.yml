@@ -119,7 +119,7 @@ jobs:
         if: steps.listar.outputs.saltar != 'true'
         run: |
           ultimo=$(ls -t data/csv/*_completo.csv | head -1)
-          python3 scripts/validar_leads.py --in "$ultimo" --out "${ultimo%.csv}_leads.csv"
+          python3 scripts/validar_leads.py --in "$ultimo" --out "${ultimo%.csv}_leads.csv" --max-minutes 240
 
       - name: Cargar a la base (Railway)
         if: steps.listar.outputs.saltar != 'true'
