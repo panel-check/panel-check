@@ -142,6 +142,14 @@ function qs(params) {
 async function cargarFiltrosIniciales() {
   const boletines = await api("/api/boletines");
   const selB = document.getElementById("f-boletin");
+  // Opción fija: marcas del escaneo directo que todavía no salieron en un boletín.
+  const optPre = document.createElement("option");
+  optPre.value = "pre";
+  optPre.textContent = "🆕 Pre-boletín";
+  selB.appendChild(optPre);
+  api("/api/pre-boletin/total")
+    .then(r => { optPre.textContent = `🆕 Pre-boletín (${r.total})`; })
+    .catch(() => {});
   boletines.forEach(b => {
     const opt = document.createElement("option");
     opt.value = b.numero;

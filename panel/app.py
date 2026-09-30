@@ -462,7 +462,11 @@ def listar_marcas(
 
     condiciones = []
     valores = []
-    if boletin:
+    if boletin == "pre":
+        # Marcas detectadas por el escaneo directo de actas que todavía no
+        # salieron en ningún boletín (ver scripts/escanear_actas_nuevas.py).
+        condiciones.append("boletin IS NULL")
+    elif boletin:
         condiciones.append("boletin = %s")
         valores.append(boletin)
     if clase is not None:
@@ -548,6 +552,16 @@ def listar_boletines(_: str = Depends(verificar_login)):
                 "SELECT numero, fecha, total_marcas FROM boletines ORDER BY numero DESC"
             )
             return cur.fetchall()
+
+
+@app.get("/api/pre-boletin/total")
+def total_pre_boletin(_: str = Depends(verificar_login)):
+    """Cantidad de marcas sin boletín todavía (escaneo directo), para la
+    opción "Pre-boletín" del filtro Boletín."""
+    with conexion() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT COUNT(*) FROM marcas WHERE boletin IS NULL")
+            return {"total": cur.fetchone()[0]}
 
 
 @app.get("/api/boletines/completo")
