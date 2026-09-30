@@ -78,6 +78,7 @@ def main():
     s = crear_sesion()
     completadas = 0
     sin_texto = 0
+    sin_texto_por_tipo: dict[str, list[str]] = {}
     bloqueadas = 0
 
     for i, fila in enumerate(pendientes, 1):
@@ -141,6 +142,7 @@ def main():
             print(f"  [{i}/{len(pendientes)}] acta {acta}: nombre recuperado ({origen}, tipo {dg['tipo'] or '?'})")
         else:
             sin_texto += 1
+            sin_texto_por_tipo.setdefault(dg["tipo"] or "?", []).append(acta)
             print(f"  [{i}/{len(pendientes)}] acta {acta}: sin texto en ficha ni webservice (tipo {dg['tipo'] or '?'})")
         time.sleep(args.delay)
 
@@ -148,6 +150,11 @@ def main():
     resumen = (f"Revisadas: {len(pendientes)}. Nombre recuperado: {completadas}. "
                f"Sin texto (figurativa pura o todavía no cargada): {sin_texto}. Bloqueadas/error: {bloqueadas}.")
     print(f"::notice::{resumen}")
+    # Desglose por tipo (los logs de Actions no siempre se pueden leer; las
+    # annotations sí). "?" = la ficha no trajo DATOS GENERALES reconocibles
+    # -> revisar con "Inspeccionar acta" una de las actas listadas.
+    for tipo, actas in sorted(sin_texto_por_tipo.items()):
+        print(f"::notice::Sin nombre, tipo {tipo}: {len(actas)} -- ej.: {', '.join(actas[:8])}")
 
 
 if __name__ == "__main__":
