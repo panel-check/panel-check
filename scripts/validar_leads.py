@@ -916,6 +916,10 @@ def main():
     s = crear_sesion()
     for i, row in enumerate(candidatas, 1):
         info = revisar_acta(s, row["acta"])
+        # Si INPI no devolvió la clase (bloqueo/error), no pisar la que ya
+        # viene del boletín con None.
+        if info.get("clase") is None:
+            info.pop("clase", None)
         row.update(info)
         row["lead_score"] = calcular_lead_score(row)
         print(f"  [{i}/{len(candidatas)}] acta {row['acta']}: caracter={info['caracter']!r} "
@@ -937,9 +941,15 @@ def main():
         row.setdefault("fecha_vencimiento_marca", "")
         row.setdefault("lead_score", row.get("lead_score", 0))
 
-    fieldnames = list(rows[0].keys())
+    # Unión de columnas de TODAS las filas, en orden de aparición. Antes se
+    # tomaban solo las de rows[0]: si la primera fila no era candidata (tenía
+    # matrícula) no traía las claves extra de revisar_acta
+    # (denominacion_formulario, titular_formulario, ...) y DictWriter
+    # explotaba con ValueError al final, tirando todo el trabajo de la
+    # corrida (Pipeline #25, 30/09/2026, ~1 h 50 min perdidos).
+    fieldnames = list(dict.fromkeys(k for row in rows for k in row.keys()))
     with open(args.out, "w", newline="", encoding="utf-8") as f:
-        w = csv.DictWriter(f, fieldnames=fieldnames)
+        w = csv.DictWriter(f, fieldnames=fieldnames, restval="")
         w.writeheader()
         w.writerows(rows)
 
