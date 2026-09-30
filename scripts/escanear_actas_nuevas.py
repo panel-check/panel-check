@@ -229,6 +229,7 @@ def main():
             "actas_probadas": probadas, "actas_nuevas": encontradas,
             "leads_nuevos": leads_nuevos, "leads_con_email": leads_con_email,
             "con_agente": encontradas - leads_nuevos, "bloqueos": bloqueos,
+            "ultima_acta": str(ultimo_confirmado),
         }, conn)
     finally:
         conn.close()

@@ -441,6 +441,11 @@ GRUPOS_AUTOMATIZACIONES = [
                     {"sql": "SELECT COUNT(*) FROM marcas WHERE fuente = 'escaneo_directo' "
                             "AND creado_en >= now() - interval '7 days'",
                      "etiqueta": "en los últimos 7 días"},
+                    # Última acta que INPI ya tenía cargada (lead o no): hasta
+                    # dónde llegó el escaneo. Es el puntero de escaneo_actas.
+                    {"sql": "SELECT replace(to_char(ultima_acta_confirmada, 'FM9,999,999'), ',', '.') "
+                            "FROM escaneo_actas WHERE id = 1",
+                     "etiqueta": "última acta encontrada en INPI"},
                 ],
                 "procesos": [
                     {"workflow_file": "escanear_actas.yml", "cron": "0 7,13,19 * * *"},
@@ -567,12 +572,14 @@ REPORTES_AUTOMATIZACIONES = {
             ("con_agente", "Con abogado (descartadas)", "suma"),
             ("actas_nuevas", "Actas nuevas en INPI", "suma"),
             ("bloqueos", "Bloqueos de INPI", "suma"),
+            ("ultima_acta", "Última acta del día", "ultimo"),
         ],
         "historico_sql": f"""
             SELECT (creado_en AT TIME ZONE '{_TZ}')::date AS dia,
                    jsonb_build_object(
                      'leads_nuevos', COUNT(*),
-                     'leads_con_email', COUNT(*) FILTER (WHERE COALESCE(email, '') <> '')
+                     'leads_con_email', COUNT(*) FILTER (WHERE COALESCE(email, '') <> ''),
+                     'ultima_acta', MAX(acta)
                    )
             FROM marcas WHERE fuente = 'escaneo_directo' AND creado_en >= %(desde)s
             GROUP BY 1""",
