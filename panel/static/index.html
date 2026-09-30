@@ -95,6 +95,29 @@
       <option value="Denegada">Denegada</option>
     </select>
   </label>
+  <label title="Marcas cuyo nombre aparece pedido en más de una clase (en toda la base, no solo en el boletín elegido)">Misma marca en varias clases
+    <select id="f-multiclase-modo" onchange="actualizarCamposMulticlase()">
+      <option value="">No filtrar</option>
+      <option value="min">En N clases o más</option>
+      <option value="par">Cruzar dos clases puntuales</option>
+    </select>
+  </label>
+  <label id="lbl-multiclase-min" hidden>Mínimo de clases
+    <input type="number" id="f-multiclase-min" min="2" max="45" value="2" style="width:5em;" />
+  </label>
+  <label id="lbl-multiclase-a" hidden>Clase
+    <select id="f-multiclase-a"><option value="">—</option></select>
+  </label>
+  <label id="lbl-multiclase-b" hidden>y clase
+    <select id="f-multiclase-b"><option value="">—</option></select>
+  </label>
+  <label id="lbl-multiclase-titular" hidden>Titular
+    <select id="f-multiclase-titular">
+      <option value="">Cualquiera</option>
+      <option value="mismo">Mismo titular</option>
+      <option value="distinto">Distintos titulares</option>
+    </select>
+  </label>
   <button onclick="cargar(0)">Filtrar</button>
 </div>
 
@@ -163,13 +186,43 @@ async function cargarFiltrosIniciales() {
   });
 
   const clases = await api("/api/clases");
-  const selC = document.getElementById("f-clase");
-  clases.forEach(c => {
-    const opt = document.createElement("option");
-    opt.value = c;
-    opt.textContent = c;
-    selC.appendChild(opt);
+  ["f-clase", "f-multiclase-a", "f-multiclase-b"].forEach(id => {
+    const sel = document.getElementById(id);
+    clases.forEach(c => {
+      const opt = document.createElement("option");
+      opt.value = c;
+      opt.textContent = c;
+      sel.appendChild(opt);
+    });
   });
+}
+
+// ── Filtro avanzado "Misma marca en varias clases" ──
+// Muestra solo los campos del modo elegido (mínimo de clases, o par de clases).
+function actualizarCamposMulticlase() {
+  const modo = document.getElementById("f-multiclase-modo").value;
+  document.getElementById("lbl-multiclase-min").hidden = modo !== "min";
+  document.getElementById("lbl-multiclase-a").hidden = modo !== "par";
+  document.getElementById("lbl-multiclase-b").hidden = modo !== "par";
+  document.getElementById("lbl-multiclase-titular").hidden = !modo;
+}
+
+function filtrosMulticlase() {
+  const modo = document.getElementById("f-multiclase-modo").value;
+  const titular = document.getElementById("f-multiclase-titular").value;
+  if (modo === "min") {
+    return {
+      multiclase_min: document.getElementById("f-multiclase-min").value || "2",
+      multiclase_titular: titular,
+    };
+  }
+  if (modo === "par") {
+    const a = document.getElementById("f-multiclase-a").value;
+    const b = document.getElementById("f-multiclase-b").value;
+    if (!a || !b || a === b) return {}; // incompleto: no filtra
+    return { multiclase_a: a, multiclase_b: b, multiclase_titular: titular };
+  }
+  return {};
 }
 
 function filtrosActuales() {
@@ -184,6 +237,7 @@ function filtrosActuales() {
     tiene_email: document.getElementById("f-tiene-email").value,
     tiene_titular: document.getElementById("f-tiene-titular").value,
     estado_marca: document.getElementById("f-estado-marca").value,
+    ...filtrosMulticlase(),
     q: document.getElementById("f-q").value,
     sort: estado.sort,
     order: estado.order,
@@ -203,6 +257,12 @@ function limpiarFiltros() {
   document.getElementById("f-tiene-email").value = "";
   document.getElementById("f-tiene-titular").value = "";
   document.getElementById("f-estado-marca").value = "";
+  document.getElementById("f-multiclase-modo").value = "";
+  document.getElementById("f-multiclase-min").value = "2";
+  document.getElementById("f-multiclase-a").value = "";
+  document.getElementById("f-multiclase-b").value = "";
+  document.getElementById("f-multiclase-titular").value = "";
+  actualizarCamposMulticlase();
   document.getElementById("f-q").value = "";
   actualizarEtiquetaRangoFecha();
   cargar(0);
@@ -292,6 +352,16 @@ function filtrosDesdeURL() {
   document.getElementById("f-tiene-email").value = p.get("tiene_email") ?? "";
   document.getElementById("f-tiene-titular").value = p.get("tiene_titular") ?? "";
   document.getElementById("f-estado-marca").value = p.get("estado_marca") ?? "";
+  if (p.get("multiclase_min")) {
+    document.getElementById("f-multiclase-modo").value = "min";
+    document.getElementById("f-multiclase-min").value = p.get("multiclase_min");
+  } else if (p.get("multiclase_a") && p.get("multiclase_b")) {
+    document.getElementById("f-multiclase-modo").value = "par";
+    document.getElementById("f-multiclase-a").value = p.get("multiclase_a");
+    document.getElementById("f-multiclase-b").value = p.get("multiclase_b");
+  }
+  document.getElementById("f-multiclase-titular").value = p.get("multiclase_titular") ?? "";
+  actualizarCamposMulticlase();
   document.getElementById("f-q").value = p.get("q") ?? "";
   estado.sort = p.get("sort") || estado.sort;
   estado.order = p.get("order") || estado.order;
@@ -299,7 +369,8 @@ function filtrosDesdeURL() {
   actualizarEtiquetaRangoFecha();
   // Si el link trae algún filtro avanzado aplicado, mostrar el panel
   // abierto de entrada — si no, el usuario no se entera de que está filtrado.
-  if (p.get("tiene_email") || p.get("tiene_titular") || p.get("estado_marca")) {
+  if (p.get("tiene_email") || p.get("tiene_titular") || p.get("estado_marca")
+      || p.get("multiclase_min") || p.get("multiclase_a")) {
     toggleFiltrosAvanzados();
   }
   return true;
@@ -335,6 +406,15 @@ function agruparPorTitular(rows) {
   return [...grupos.values()];
 }
 
+// Con el filtro "Misma marca en varias clases" activo, la API manda en
+// clases_misma_marca todas las clases en las que está pedida esa marca.
+function celdaOtrasClases(r) {
+  if (!Array.isArray(r.clases_misma_marca)) return "";
+  const otras = r.clases_misma_marca.filter(c => c !== r.clase);
+  if (!otras.length) return "";
+  return ` <span class="otras-clases" title="Esta marca también está pedida en clase ${otras.join(", ")}">+${otras.join(", ")}</span>`;
+}
+
 function filaHtml(r, { flecha = false, oculta = false, idGrupo = null, cantidadResto = 0 } = {}) {
   const claseOculta = oculta ? "fila-oculta" : "";
   const atributoGrupo = idGrupo ? `data-grupo="${idGrupo}"` : "";
@@ -347,7 +427,7 @@ function filaHtml(r, { flecha = false, oculta = false, idGrupo = null, cantidadR
   return `
     <tr class="${r.es_lead ? "lead" : ""} ${r.contactado ? "contactado" : ""} ${claseOculta}" ${atributoGrupo}>
       <td class="score">${r.lead_score ?? ""}</td>
-      <td>${r.clase ?? ""}</td>
+      <td>${r.clase ?? ""}${celdaOtrasClases(r)}</td>
       <td class="denominacion" title="${r.denominacion_inpi || r.denominacion || ""}">${r.denominacion_inpi || r.denominacion || "<em>(mixta/fig.)</em>"}</td>
       <td class="titular" title="${r.titular || ""}">${celdaTitular}</td>
       <td>${badgeLead(r)} ${badgePreBoletin(r)} ${badgeOposicion(r)} ${badgeEstadoTramite(r)}</td>

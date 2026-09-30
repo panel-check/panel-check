@@ -504,3 +504,16 @@ button.btn-coment.con-abiertos { border-color: #f5b400; background: #fff6d6; fon
 .com-acciones button.com-borrar { color: var(--rojo); }
 .com-vacio { color: var(--gris); font-size: 13px; }
 td.celda-acciones { white-space: nowrap; }
+
+/* Filtro avanzado "Misma marca en varias clases": los campos que no
+   corresponden al modo elegido van con [hidden] */
+.filtros-avanzados [hidden] { display: none !important; }
+/* Clases adicionales de la misma marca, al lado del número de clase */
+.otras-clases {
+  font-size: 11px;
+  color: var(--gris);
+  background: #eef0f2;
+  border-radius: 8px;
+  padding: 1px 6px;
+  white-space: nowrap;
+}

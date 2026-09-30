@@ -505,6 +505,65 @@ def conexion():
         conn.close()
 
 
+# ── Cruce "misma marca en varias clases" ──────────────────────────────────
+# Cada solicitud es un acta con UNA clase, así que una marca pedida en 2
+# clases son 2 filas. Para cruzarlas se compara el nombre normalizado:
+# denominación de INPI (la recuperada para mixtas/figurativas) o, si no hay,
+# la del boletín; en mayúsculas, sin acentos y sin espacios ni signos
+# ("Café Luna" = "CAFE LUNA" = "CAFE-LUNA", "Ñandú" = "NANDU"). Las mixtas/figurativas sin
+# nombre recuperado no se pueden cruzar y quedan afuera.
+# El cruce mira TODA la base (todos los boletines y el pre-boletín), no solo
+# lo que dejan pasar los otros filtros: los otros filtros deciden qué filas
+# se muestran, el cruce decide si la marca está en varias clases.
+NOMBRE_NORMALIZADO_SQL = (
+    "regexp_replace(translate(upper(COALESCE(NULLIF(trim(denominacion_inpi), ''), denominacion)),"
+    " 'ÁÉÍÓÚÜÀÈÌÒÙÂÊÎÔÛÑ', 'AEIOUUAEIOUAEIOUN'), '[^A-Z0-9]', '', 'g')"
+)
+TITULAR_NORMALIZADO_SQL = "upper(regexp_replace(trim(titular), '\\s+', ' ', 'g'))"
+
+
+def _cruce_clases_sql(minimo, clase_a, clase_b, titular):
+    """Devuelve (join_sql, valores_join, condicion_extra) o None si el filtro
+    no está activo. condicion_extra es (sql, valores) o None."""
+    par = clase_a is not None and clase_b is not None and clase_a != clase_b
+    if not par and minimo is None:
+        return None
+
+    mismo_titular = titular == "mismo"
+    agrupar_por = "nom, tit" if mismo_titular else "nom"
+    having = []
+    valores = []
+    if par:
+        having.append("bool_or(clase = %s) AND bool_or(clase = %s)")
+        valores.extend([clase_a, clase_b])
+    else:
+        having.append("COUNT(DISTINCT clase) >= %s")
+        valores.append(minimo)
+    if titular == "distinto":
+        having.append("COUNT(DISTINCT tit) >= 2")
+
+    subconsulta = f"""
+        SELECT {agrupar_por}, array_agg(DISTINCT clase ORDER BY clase) AS clases
+        FROM (
+            SELECT {NOMBRE_NORMALIZADO_SQL} AS nom, {TITULAR_NORMALIZADO_SQL} AS tit, clase
+            FROM marcas
+            WHERE clase IS NOT NULL
+        ) base
+        WHERE nom IS NOT NULL AND nom <> ''
+        GROUP BY {agrupar_por}
+        HAVING {' AND '.join(having)}
+    """
+    on = f"cruce.nom = {NOMBRE_NORMALIZADO_SQL}"
+    if mismo_titular:
+        on += f" AND cruce.tit = {TITULAR_NORMALIZADO_SQL}"
+    join_sql = f"JOIN ({subconsulta}) cruce ON {on}"
+
+    # Con un par de clases puntuales se muestran solo las filas de esas dos
+    # clases (no las otras clases en las que también esté la marca).
+    condicion_extra = ("clase IN (%s, %s)", [clase_a, clase_b]) if par else None
+    return join_sql, valores, condicion_extra
+
+
 @app.get("/api/marcas")
 def listar_marcas(
     _: str = Depends(verificar_login),
@@ -518,6 +577,13 @@ def listar_marcas(
     tiene_email: Optional[bool] = None,
     tiene_titular: Optional[bool] = None,
     estado_marca: Optional[str] = None,  # "pendiente" | "Concedida" | "Denegada"
+    # Filtro avanzado "Misma marca en varias clases" (ver _cruce_clases_sql):
+    # o bien un mínimo de clases (multiclase_min), o bien un par de clases
+    # puntuales (multiclase_a + multiclase_b).
+    multiclase_min: Optional[int] = Query(None, ge=2, le=45),
+    multiclase_a: Optional[int] = Query(None, ge=1, le=45),
+    multiclase_b: Optional[int] = Query(None, ge=1, le=45),
+    multiclase_titular: Optional[str] = None,  # "" (cualquiera) | "mismo" | "distinto"
     q: Optional[str] = None,
     sort: str = "lead_score",
     order: str = "desc",
@@ -589,18 +655,35 @@ def listar_marcas(
         patron = f"%{q}%"
         valores.extend([patron, patron, patron, patron, patron, patron, patron])
 
+    join_sql = ""
+    columnas_extra = ""
+    orden_previo = ""
+    valores_join = []
+    cruce = _cruce_clases_sql(multiclase_min, multiclase_a, multiclase_b, multiclase_titular)
+    if cruce:
+        join_sql, valores_join, condicion_extra = cruce
+        if condicion_extra:
+            condiciones.append(condicion_extra[0])
+            valores.extend(condicion_extra[1])
+        columnas_extra = ", cruce.clases AS clases_misma_marca"
+        # Las filas de una misma marca van juntas (y dentro de cada marca,
+        # el orden que eligió el usuario).
+        orden_previo = "cruce.nom, "
+
     where_sql = f"WHERE {' AND '.join(condiciones)}" if condiciones else ""
 
     sql = f"""
-        SELECT {COLUMNAS_MARCA}
+        SELECT {COLUMNAS_MARCA}{columnas_extra}
         FROM marcas
+        {join_sql}
         {where_sql}
-        ORDER BY {sort} {order_sql} NULLS LAST, acta DESC
+        ORDER BY {orden_previo}{sort} {order_sql} NULLS LAST, acta DESC
         LIMIT %s OFFSET %s
     """
-    valores_paginado = valores + [limit, offset]
+    valores_paginado = valores_join + valores + [limit, offset]
 
-    sql_total = f"SELECT count(*) FROM marcas {where_sql}"
+    sql_total = f"SELECT count(*) FROM marcas {join_sql} {where_sql}"
+    valores = valores_join + valores
 
     with conexion() as conn:
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
