@@ -14,9 +14,9 @@ Para cada una, en orden:
   1. Ficha del expediente (POST /MarcasConsultas/Resultado, sección DATOS
      GENERALES) -> denominación, tipo y fecha de presentación.
   2. Si la ficha no trae texto: webservice SOAP ConsultaCuitOTitular por CUIT.
-Una Figurativa pura (logo sin texto) puede no tener nombre en ningún lado;
-esa queda como está y se vuelve a intentar en la próxima corrida (barato:
-una consulta por acta).
+Una Figurativa pura (logo sin texto) no tiene nombre en ningún lado: una vez
+que quedó guardada con tipo F no se vuelve a consultar (el panel la muestra
+como "(figurativa, sin texto)").
 
 Dónde se guarda: escaneo directo -> `denominacion` (lo que el boletín deja
 vacío en M/F; cargar_db.py no lo pisa con NULL). Boletín -> `denominacion_inpi`
@@ -65,6 +65,8 @@ def main():
             FROM marcas
             WHERE COALESCE(NULLIF(TRIM(denominacion), ''), NULLIF(TRIM(denominacion_inpi), '')) IS NULL
               {filtro_lead}
+              -- Figurativa pura ya confirmada: no tiene texto, no se reintenta.
+              AND COALESCE(tipo, '') <> 'F'
             ORDER BY (fuente = 'escaneo_directo') DESC, acta DESC
             """
         )
