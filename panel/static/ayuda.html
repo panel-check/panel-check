@@ -358,7 +358,9 @@ le asigna un puntaje de prioridad. Después sigue a cada marca a lo largo del ti
           <div class="cuerpo">
             <h3>Se extraen todas las solicitudes</h3>
             <p>El boletín es un PDF de cientos de páginas. El sistema lo lee y separa cada solicitud en sus datos:
-              acta, clase, tipo de marca, titular, fecha, agente (si tiene).</p>
+              acta, clase, tipo de marca, titular, fecha, agente (si tiene). La lectura la hace primero un servicio
+              externo (Apify); si ese servicio no alcanza a leer un boletín muy pesado (tiene un tope fijo de 5 minutos
+              por PDF), el sistema baja el PDF directo de INPI y lo lee por su cuenta, sin intervención.</p>
           </div>
         </li>
         <li class="paso">
@@ -478,6 +480,7 @@ le asigna un puntaje de prioridad. Después sigue a cada marca a lo largo del ti
             <tr><th>Correr ahora</th><td>En <strong>Automatizaciones</strong>, cualquier proceso automático se puede disparar a mano.</td></tr>
             <tr><th>Agregar marca manualmente</th><td>Carga al panel un acta puntual que no vino por boletín ni por el escaneo (desde GitHub Actions).</td></tr>
             <tr><th>Inspeccionar acta</th><td>Diagnóstico: muestra qué devuelve INPI para un acta, para revisar un caso raro (desde GitHub Actions).</td></tr>
+            <tr><th>Comparar extracción Apify vs local</th><td>Diagnóstico: para un boletín dado, compara las marcas que salen leyendo el PDF con Apify contra leerlo directamente, para verificar que el respaldo de lectura da lo mismo (desde GitHub Actions).</td></tr>
             <tr><th>Probar alarma de bloqueo</th><td>Manda un mail de prueba del aviso de bloqueo, para ver cómo llega (desde GitHub Actions).</td></tr>
           </tbody>
         </table>
