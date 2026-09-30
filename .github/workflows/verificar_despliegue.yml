@@ -1,4 +1,4 @@
-name: Verificar despliegue
+name: "Panel actualizado (verificación del despliegue)"
 
 on:
   schedule:

@@ -7,66 +7,91 @@
 <link rel="stylesheet" href="/static/comun.css" />
 <style>
   .contenido { max-width: 900px; margin: 24px auto 60px; padding: 0 20px; }
+
+  /* Franja de estado general */
+  .franja-estado {
+    display: flex; align-items: center; gap: 12px;
+    padding: 14px 18px; border-radius: 10px; margin-bottom: 26px;
+    font-size: 14px; font-weight: 600;
+  }
+  .franja-estado .icono { font-size: 20px; }
+  .franja-estado .detalle { font-weight: 400; font-size: 13px; }
+  .franja-estado a { color: inherit; }
+  .franja-estado.ok { background: #e6f4ea; color: var(--verde); }
+  .franja-estado.atencion { background: #fff3cd; color: #7a5d06; }
+  .franja-estado.error { background: #fde8e8; color: var(--rojo); }
+
+  /* Grupos */
+  .grupo { margin-bottom: 28px; }
+  .grupo > h2, .grupo > summary {
+    font-size: 13px; text-transform: uppercase; letter-spacing: .06em;
+    color: var(--gris); margin: 0 0 2px; font-weight: 700;
+  }
+  .grupo > summary { cursor: pointer; list-style: none; }
+  .grupo > summary::-webkit-details-marker { display: none; }
+  .grupo > summary::before { content: "▸ "; }
+  .grupo[open] > summary::before { content: "▾ "; }
+  .grupo .subtitulo { font-size: 12px; color: var(--gris); margin: 0 0 12px; }
+
+  /* Tarjetas */
   .tarjeta-cron {
-    background: white;
-    border: 1px solid var(--borde);
-    border-radius: 10px;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
-    padding: 18px 22px;
-    margin-bottom: 16px;
+    background: white; border: 1px solid var(--borde); border-radius: 10px;
+    box-shadow: 0 1px 3px rgba(0,0,0,.05); padding: 16px 20px; margin-bottom: 12px;
   }
-  .tarjeta-cron h2 { font-size: 15px; margin: 0 0 4px; color: #1f2430; }
-  .tarjeta-cron .descripcion { font-size: 13px; color: var(--gris); margin: 0 0 14px; line-height: 1.5; }
-  .filas-cron { display: flex; flex-wrap: wrap; gap: 24px; align-items: flex-start; }
-  .dato-cron { font-size: 13px; }
-  .dato-cron .etiqueta { color: var(--gris); font-size: 11px; display: block; margin-bottom: 2px; }
-  .estado-badge {
-    display: inline-block;
-    padding: 2px 9px;
-    border-radius: 10px;
-    font-size: 11px;
-    font-weight: 600;
+  .tarjeta-cron.con-error { border-color: #f1b5b0; }
+  .tarjeta-cron.con-atencion { border-color: #f0d98a; }
+  .cabecera-tarjeta { display: flex; align-items: center; gap: 10px; }
+  .cabecera-tarjeta h3 { font-size: 15px; margin: 0; color: #1f2430; }
+  .cabecera-tarjeta .estado-badge { margin-left: auto; }
+  .tarjeta-cron .descripcion { font-size: 13px; color: var(--gris); margin: 4px 0 12px; line-height: 1.45; }
+
+  .metricas { display: flex; flex-wrap: wrap; gap: 28px; margin-bottom: 12px; }
+  .metrica .valor { font-size: 22px; font-weight: 700; color: #1f2430; line-height: 1.1; }
+  .metrica.secundaria .valor { font-size: 15px; font-weight: 600; color: #3b4150; }
+  .metrica .etiqueta { font-size: 12px; color: var(--gris); }
+
+  .pie-tarjeta {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px;
+    font-size: 12px; color: var(--gris); border-top: 1px solid #f0f2f5; padding-top: 10px;
   }
+  .pie-tarjeta .acciones { margin-left: auto; display: flex; gap: 10px; align-items: center; }
+
+  .subprocesos { width: 100%; border-collapse: collapse; font-size: 13px; margin-bottom: 4px; }
+  .subprocesos td { padding: 7px 6px; border-top: 1px solid #f0f2f5; vertical-align: middle; }
+  .subprocesos td.num { font-weight: 700; font-size: 15px; color: #1f2430; text-align: right; width: 60px; }
+  .subprocesos td.acciones { text-align: right; white-space: nowrap; }
+  .subprocesos .chico { font-size: 11px; color: var(--gris); }
+
+  .estado-badge { display: inline-block; padding: 2px 9px; border-radius: 10px; font-size: 11px; font-weight: 600; white-space: nowrap; }
   .estado-badge.success { background: #e6f4ea; color: var(--verde); }
   .estado-badge.failure { background: #fde8e8; color: var(--rojo); }
+  .estado-badge.atencion { background: #fff3cd; color: #7a5d06; }
   .estado-badge.desconocido { background: #eef0f2; color: var(--gris); }
-  .estado-badge.en-curso { background: #fff3cd; color: #92720d; }
-  .error-cron {
-    margin-top: 10px;
-    padding: 8px 12px;
-    background: #fde8e8;
-    border-radius: 6px;
-    font-size: 12px;
-    color: var(--rojo);
-    line-height: 1.5;
-    white-space: pre-wrap;
+  .estado-badge.en-curso { background: #e8f1fa; color: var(--azul); }
+
+  .error-cron, .aviso-cron {
+    margin-top: 10px; padding: 8px 12px; border-radius: 6px; font-size: 12px; line-height: 1.5; white-space: pre-wrap;
   }
-  .aviso-cron {
-    margin-top: 10px;
-    padding: 8px 12px;
-    background: #eef0f2;
-    border-radius: 6px;
-    font-size: 12px;
-    color: var(--gris);
-  }
-  .pendientes-error { color: var(--gris); cursor: help; }
-  a.ver-run { font-size: 12px; color: var(--azul); text-decoration: none; }
-  a.ver-run:hover { text-decoration: underline; }
+  .error-cron { background: #fde8e8; color: var(--rojo); }
+  .aviso-cron { background: #eef0f2; color: var(--gris); }
+
+  a.ver-run { font-size: 12px; color: var(--gris); text-decoration: none; }
+  a.ver-run:hover { text-decoration: underline; color: var(--azul); }
   button.correr-ahora {
-    padding: 4px 10px;
-    border-radius: 6px;
-    border: 1px solid var(--azul);
-    background: white;
-    color: var(--azul);
-    font-size: 12px;
-    cursor: pointer;
+    padding: 4px 10px; border-radius: 6px; border: 1px solid var(--azul);
+    background: white; color: var(--azul); font-size: 12px; cursor: pointer; white-space: nowrap;
   }
   button.correr-ahora:hover { background: var(--azul-claro); }
-  button.correr-ahora:disabled {
-    border-color: var(--borde);
-    color: var(--gris);
-    cursor: default;
-    background: #fafbfc;
+  button.correr-ahora:disabled { border-color: var(--borde); color: var(--gris); cursor: default; background: #fafbfc; }
+
+  @media (max-width: 600px) {
+    .pie-tarjeta .acciones { margin-left: 0; }
+    .subprocesos td.horario { display: none; }
+    .subprocesos td.acciones .ver-run { display: none; }
+    .subprocesos td { padding: 7px 3px; }
+    .subprocesos td.num { width: 40px; }
+    .subprocesos button.correr-ahora { padding: 4px 7px; }
+    .subprocesos .txt-correr { display: none; }
   }
 </style>
 </head>
@@ -87,89 +112,191 @@
 
 <script src="/static/comun.js"></script>
 <script>
-function formatFechaHora(iso) {
-  if (!iso) return "";
+// ---- Formato de fechas en lenguaje simple ------------------------------
+function haceCuanto(iso) {
+  if (!iso) return "nunca";
+  const min = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
+  if (min < 1) return "recién";
+  if (min < 60) return `hace ${min} min`;
+  const h = Math.round(min / 60);
+  if (h < 24) return `hace ${h} h`;
+  const d = Math.round(h / 24);
+  return d === 1 ? "ayer" : `hace ${d} días`;
+}
+
+function cuando(iso) {
+  if (!iso) return "—";
   const d = new Date(iso);
-  return d.toLocaleString("es-AR", { dateStyle: "medium", timeStyle: "short" });
+  const hoy = new Date();
+  const manana = new Date(); manana.setDate(hoy.getDate() + 1);
+  const hora = d.toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" });
+  if (d.toDateString() === hoy.toDateString()) return `hoy ${hora}`;
+  if (d.toDateString() === manana.toDateString()) return `mañana ${hora}`;
+  return d.toLocaleDateString("es-AR", { weekday: "short", day: "numeric", month: "short" }) + ` ${hora}`;
 }
 
-function badgeEstado(cron) {
-  if (cron.aviso && !cron.conclusion) {
-    return '<span class="estado-badge desconocido">sin datos</span>';
-  }
-  if (cron.estado === "in_progress" || cron.estado === "queued") {
-    return '<span class="estado-badge en-curso">corriendo ahora</span>';
-  }
-  if (cron.conclusion === "success") {
-    return '<span class="estado-badge success">✓ OK</span>';
-  }
-  if (cron.conclusion === "failure") {
-    return '<span class="estado-badge failure">✗ Falló</span>';
-  }
-  return '<span class="estado-badge desconocido">' + (cron.conclusion || "sin datos") + "</span>";
+// ---- Estado de un proceso / de una tarjeta ------------------------------
+// "error" = la última corrida falló. "atencion" = cancelada o sin datos
+// de GitHub. "corriendo" = en curso. "ok" = todo bien.
+function estadoProceso(p) {
+  if (p.estado === "in_progress" || p.estado === "queued") return "corriendo";
+  if (p.conclusion === "failure") return "error";
+  if (p.conclusion === "success") return "ok";
+  if (p.conclusion === "cancelled" || p.conclusion === "timed_out") return "atencion";
+  if (p.aviso) return "atencion";
+  return "ok";
 }
 
-function tarjetaCron(cron) {
-  const error = cron.error
-    ? `<div class="error-cron">${cron.error}</div>`
-    : "";
-  const aviso = cron.aviso
-    ? `<div class="aviso-cron">${cron.aviso}</div>`
-    : "";
-  const link = cron.url
-    ? `<a class="ver-run" href="${cron.url}" target="_blank">Ver en GitHub ↗</a>`
-    : "";
-  const corriendoAhora = cron.estado === "in_progress" || cron.estado === "queued";
-  const boton = `<button class="correr-ahora" data-workflow="${cron.workflow_file}"
-      ${corriendoAhora ? "disabled" : ""}>${corriendoAhora ? "Corriendo…" : "▶ Correr ahora"}</button>`;
-  // "Progreso" real: cuánto trabajo queda pendiente en la base ahora mismo,
-  // no solo si la última corrida salió bien. undefined = este cron no
-  // declaró pendientes_sql (ej. el pipeline principal); null = la consulta
-  // a la base falló (se avisa, no se rompe la tarjeta).
-  const pendientes = cron.pendientes === undefined ? "" : `
-        <div class="dato-cron">
-          <span class="etiqueta">Pendientes ahora</span>
-          ${cron.pendientes === null
-            ? `<span class="pendientes-error" title="${cron.pendientes_error || ''}">no se pudo consultar</span>`
-            : `<strong>${cron.pendientes}</strong> ${cron.pendientes_etiqueta || ''}`}
-        </div>`;
+function estadoTarjeta(t) {
+  const estados = t.procesos.map(estadoProceso);
+  if (estados.includes("error")) return "error";
+  if (estados.includes("atencion")) return "atencion";
+  if (estados.includes("corriendo")) return "corriendo";
+  return "ok";
+}
+
+function badge(estado, p) {
+  if (estado === "corriendo") return '<span class="estado-badge en-curso">⟳ corriendo ahora</span>';
+  if (estado === "error") return '<span class="estado-badge failure">✗ falló</span>';
+  if (estado === "atencion") {
+    const txt = p && p.conclusion === "cancelled" ? "cancelada"
+      : p && p.conclusion === "timed_out" ? "se pasó de tiempo" : "revisar";
+    return `<span class="estado-badge atencion">⚠ ${txt}</span>`;
+  }
+  return '<span class="estado-badge success">✓ OK</span>';
+}
+
+// ---- Piezas de la tarjeta ------------------------------------------------
+function valorMetrica(v) {
+  if (v === null || v === undefined) return "—";
+  if (typeof v === "object" && v.error) return `<span title="${v.error}">?</span>`;
+  return typeof v === "number" ? v.toLocaleString("es-AR") : v;
+}
+
+function botonCorrer(p) {
+  const corriendo = estadoProceso(p) === "corriendo";
+  return `<button class="correr-ahora" data-workflow="${p.workflow_file}" ${corriendo ? "disabled" : ""}>
+    ${corriendo ? "Corriendo…" : '▶<span class="txt-correr"> Correr ahora</span>'}</button>`;
+}
+
+function linkDetalle(p) {
+  return p.url ? `<a class="ver-run" href="${p.url}" target="_blank" title="Ver la última corrida en GitHub">detalle ↗</a>` : "";
+}
+
+function mensajes(p) {
+  let html = "";
+  if (p.error) html += `<div class="error-cron">${p.etiqueta ? p.etiqueta + ": " : ""}${p.error}</div>`;
+  if (p.aviso) html += `<div class="aviso-cron">${p.etiqueta ? p.etiqueta + ": " : ""}${p.aviso}</div>`;
+  return html;
+}
+
+function tarjeta(t, idx) {
+  const est = estadoTarjeta(t);
+  const clase = est === "error" ? "con-error" : est === "atencion" ? "con-atencion" : "";
+  const metricas = t.metricas.length ? `<div class="metricas">${t.metricas.map((m) => `
+      <div class="metrica ${m.destacada ? "" : "secundaria"}">
+        <div class="valor">${valorMetrica(m.valor)}</div>
+        <div class="etiqueta">${m.etiqueta}</div>
+      </div>`).join("")}</div>` : "";
+
+  let cuerpo;
+  if (t.procesos.length === 1) {
+    const p = t.procesos[0];
+    cuerpo = `
+      <div class="pie-tarjeta">
+        <span>🕒 ${t.horario}</span>
+        <span>Última: <strong>${haceCuanto(p.fecha)}</strong></span>
+        <span>Próxima: ${cuando(p.proxima_ejecucion)}</span>
+        <span class="acciones">${linkDetalle(p)} ${botonCorrer(p)}</span>
+      </div>${mensajes(p)}`;
+  } else {
+    // Varios procesos en una tarjeta: una fila por proceso, cada uno con
+    // su propio botón (nunca se disparan juntos).
+    cuerpo = `
+      <table class="subprocesos"><tbody>${t.procesos.map((p) => `
+        <tr>
+          <td class="num">${valorMetrica(p.pendientes)}</td>
+          <td><strong>${p.etiqueta}</strong><br><span class="chico">pendientes</span></td>
+          <td class="horario chico">${p.horario || ""}<br>última ${haceCuanto(p.fecha)}</td>
+          <td>${badge(estadoProceso(p), p)}</td>
+          <td class="acciones">${linkDetalle(p)} ${botonCorrer(p)}</td>
+        </tr>`).join("")}
+      </tbody></table>${t.procesos.map(mensajes).join("")}`;
+  }
+
+  const pUnico = t.procesos.length === 1 ? t.procesos[0] : null;
   return `
-    <div class="tarjeta-cron">
-      <h2>${cron.nombre}</h2>
-      <p class="descripcion">${cron.descripcion}</p>
-      <div class="filas-cron">
-        <div class="dato-cron">
-          <span class="etiqueta">Próxima ejecución</span>
-          ${formatFechaHora(cron.proxima_ejecucion)}
-        </div>
-        <div class="dato-cron">
-          <span class="etiqueta">Última corrida</span>
-          ${cron.fecha ? formatFechaHora(cron.fecha) : "—"}
-        </div>
-        <div class="dato-cron">
-          <span class="etiqueta">Resultado</span>
-          ${badgeEstado(cron)}
-        </div>${pendientes}
-        <div class="dato-cron">
-          <span class="etiqueta">&nbsp;</span>
-          ${link}
-        </div>
-        <div class="dato-cron">
-          <span class="etiqueta">&nbsp;</span>
-          ${boton}
-        </div>
+    <div class="tarjeta-cron ${clase}" id="tarjeta-${idx}">
+      <div class="cabecera-tarjeta">
+        <h3>${t.nombre}</h3>
+        ${badge(est, pUnico)}
       </div>
-      ${error}
-      ${aviso}
-    </div>
-  `;
+      <p class="descripcion">${t.descripcion}</p>
+      ${metricas}
+      ${cuerpo}
+    </div>`;
+}
+
+// ---- Página ---------------------------------------------------------------
+// Recordamos si el usuario abrió/cerró a mano un grupo plegable, para que el
+// refresco automático (cada 20 s) no se lo vuelva a cerrar.
+const gruposAbiertosAMano = {};
+
+function franja(problemas, corriendo) {
+  if (!problemas.length) {
+    const extra = corriendo.length ? ` <span class="detalle">· Corriendo ahora: ${corriendo.join(", ")}</span>` : "";
+    return `<div class="franja-estado ok"><span class="icono">✓</span> Todo funcionando${extra}</div>`;
+  }
+  const hayError = problemas.some((x) => x.estado === "error");
+  const links = problemas.map((x) => `<a href="#${x.id}">${x.nombre}</a>`).join(", ");
+  const texto = problemas.length === 1 ? "1 proceso necesita atención" : `${problemas.length} procesos necesitan atención`;
+  return `<div class="franja-estado ${hayError ? "error" : "atencion"}">
+      <span class="icono">${hayError ? "✗" : "⚠"}</span> ${texto}
+      <span class="detalle">— ${links}</span></div>`;
 }
 
 async function cargar() {
   const contenido = document.getElementById("contenido");
   try {
-    const crons = await api("/api/crons");
-    contenido.innerHTML = crons.map(tarjetaCron).join("");
+    const grupos = await api("/api/crons");
+    let idx = 0;
+    const problemas = [];
+    const corriendo = [];
+    const html = grupos.map((g) => {
+      let grupoConProblema = false;
+      const tarjetas = g.tarjetas.map((t) => {
+        const id = `tarjeta-${idx}`;
+        const est = estadoTarjeta(t);
+        if (est === "error" || est === "atencion") {
+          problemas.push({ id, nombre: t.nombre, estado: est });
+          grupoConProblema = true;
+        }
+        if (est === "corriendo") corriendo.push(t.nombre);
+        return tarjeta(t, idx++);
+      }).join("");
+
+      const encabezado = `<p class="subtitulo">${g.subtitulo}</p>${tarjetas}`;
+      if (!g.plegado) {
+        return `<section class="grupo"><h2>${g.titulo}</h2>${encabezado}</section>`;
+      }
+      const abierto = g.id in gruposAbiertosAMano ? gruposAbiertosAMano[g.id] : grupoConProblema;
+      return `<details class="grupo" data-grupo="${g.id}" ${abierto ? "open" : ""}>
+          <summary>${g.titulo}${grupoConProblema ? " ⚠" : ""}</summary>${encabezado}</details>`;
+    }).join("");
+
+    contenido.innerHTML = franja(problemas, corriendo) + html;
+    contenido.querySelectorAll("details.grupo").forEach((d) => {
+      d.querySelector("summary").addEventListener("click", () => {
+        gruposAbiertosAMano[d.dataset.grupo] = !d.open;
+      });
+    });
+    contenido.querySelectorAll(".franja-estado a").forEach((a) => {
+      a.addEventListener("click", () => {
+        const t = document.querySelector(a.getAttribute("href"));
+        const d = t && t.closest("details");
+        if (d) { d.open = true; gruposAbiertosAMano[d.dataset.grupo] = true; }
+      });
+    });
     contenido.querySelectorAll(".correr-ahora").forEach((b) => {
       b.addEventListener("click", () => correrAhora(b));
     });
@@ -184,21 +311,17 @@ async function correrAhora(boton) {
   boton.textContent = "Disparando…";
   try {
     await api(`/api/crons/correr?workflow_file=${encodeURIComponent(workflow)}`, { method: "POST" });
-    boton.textContent = "Disparado ✓ — actualizando…";
-    // GitHub tarda unos segundos en pasar la corrida a "en curso"; esperamos
-    // un poco antes de refrescar para no mostrar todavía el estado viejo.
+    boton.textContent = "Disparado ✓";
+    // GitHub tarda unos segundos en pasar la corrida a "en curso".
     setTimeout(cargar, 4000);
   } catch (e) {
     boton.disabled = false;
-    boton.textContent = "▶ Correr ahora";
+    boton.innerHTML = '▶<span class="txt-correr"> Correr ahora</span>';
     alert(`No se pudo disparar: ${e.message}`);
   }
 }
 
 cargar();
-// Refresco automático cada 20s mientras la pestaña está abierta, para ver
-// avanzar "Pendientes ahora" y el estado "corriendo ahora" sin tener que
-// recargar a mano.
 setInterval(cargar, 20000);
 </script>
 

@@ -1,4 +1,4 @@
-name: Reintentar emails faltantes
+name: "Completar datos faltantes - Sin email"
 
 on:
   schedule:

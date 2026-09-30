@@ -1,4 +1,4 @@
-name: Revisar oposiciones/vistas post-publicación
+name: "Oposiciones y vistas"
 
 on:
   schedule:

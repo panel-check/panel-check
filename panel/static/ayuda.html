@@ -227,13 +227,13 @@
     <h2>"(nombre pendiente)" y "(figurativa, sin texto)"</h2>
     <p>En el boletín, las marcas <strong>Mixtas</strong> y <strong>Figurativas</strong> no traen el nombre escrito (es un logo), y en el escaneo de actas nuevas el nombre tampoco siempre está en el Formulario. El sistema lo busca primero en la ficha del expediente de INPI (sección DATOS GENERALES) y, si no está, en el webservice de INPI por CUIT.</p>
     <ul>
-      <li><strong>(nombre pendiente)</strong> — todavía no se pudo recuperar. Apenas termina el escaneo de actas o el pipeline de boletines que la cargó, se lanza solo el proceso <strong>Completar nombres (mixta/fig.)</strong> para buscarlo en el momento; si tampoco aparece (una marca recién presentada a veces tarda en figurar en el webservice), se reintenta 3 veces por día hasta encontrarlo.</li>
+      <li><strong>(nombre pendiente)</strong> — todavía no se pudo recuperar. Apenas termina el escaneo de actas o el pipeline de boletines que la cargó, se lanza sola la búsqueda de nombre (<strong>Completar datos faltantes → Sin nombre</strong>, en Automatizaciones) para buscarlo en el momento; si tampoco aparece (una marca recién presentada a veces tarda en figurar en el webservice), se reintenta 3 veces por día hasta encontrarlo.</li>
       <li><strong>(figurativa, sin texto)</strong> — la marca es solo un dibujo/logo: no tiene nombre en ningún lado. Para verla, abrí el expediente en INPI.</li>
     </ul>
 
     <h2>"Sin email" y el botón Reintentar</h2>
     <p>Cuando un lead no tiene email, pasando el mouse por "sin email" aparece el motivo exacto: bloqueo del WAF de INPI, el expediente no tiene un Formulario en Grilla Digital, no se pudo descargar el PDF, o el Formulario no tenía el campo EMAIL completo.</p>
-    <p>El botón <strong>Reintentar</strong> vuelve a consultar ese expediente puntual contra INPI en vivo (tarda unos segundos) y actualiza caracter, email, CUIT y score si encuentra algo nuevo. No hace falta usarlo siempre: el proceso <strong>Reintento de emails faltantes</strong> hace lo mismo solo, para todos los leads sin email, cada 2 horas.</p>
+    <p>El botón <strong>Reintentar</strong> vuelve a consultar ese expediente puntual contra INPI en vivo (tarda unos segundos) y actualiza caracter, email, CUIT y score si encuentra algo nuevo. No hace falta usarlo siempre: el proceso <strong>Completar datos faltantes → Sin email</strong> (en Mantenimiento) hace lo mismo solo, para todos los leads sin email, cada 2 horas.</p>
 
     <h2>¿Qué pasa si INPI bloquea?</h2>
     <p>El sitio de INPI a veces rechaza consultas automáticas. Un bloqueo suelto es normal: esa marca queda "sin verificar" o "sin email" y los reintentos automáticos la resuelven más tarde. Si el bloqueo es <strong>masivo</strong> (muchas consultas seguidas rechazadas), llega un mail de aviso y la corrida queda en rojo en GitHub.</p>
@@ -423,46 +423,58 @@ le asigna un puntaje de prioridad. Después sigue a cada marca a lo largo del ti
 
       <div class="seccion-manual">
         <h2>Procesos automáticos</h2>
-        <p>Corren solos en GitHub Actions, sin que nadie tenga que hacer nada. Horarios en hora de Argentina. En
-          <strong>Automatizaciones</strong> se ve cuándo corrió cada uno por última vez, si salió bien, cuánto trabajo le
-          queda pendiente, y se puede disparar a mano.</p>
+        <p>Corren solos en GitHub Actions, sin que nadie tenga que hacer nada. Horarios en hora de Argentina.</p>
+        <p>La pantalla <strong>Automatizaciones</strong> los muestra agrupados por lo que hacen para el equipo:</p>
+        <ul>
+          <li>Arriba, una <strong>franja de estado</strong>: verde si todo funciona; amarilla o roja si algún proceso
+            falló o quedó cancelado, con el nombre del proceso (clic para ir a su tarjeta).</li>
+          <li><strong>Conseguir leads</strong> y <strong>Seguir a los leads</strong>: siempre visibles, cada tarjeta con
+            el número que importa (leads nuevos hoy, último boletín, oposiciones de la semana, concesiones del mes).</li>
+          <li><strong>Mantenimiento</strong>: plegado; se abre solo si algo ahí falla. "Completar datos faltantes" junta
+            los tres reintentos (sin verificar, sin email, sin nombre) con lo que le queda pendiente a cada uno.</li>
+          <li>Cada proceso tiene su propio botón <strong>▶ Correr ahora</strong> (nunca se disparan juntos) y un link
+            <em>detalle</em> a la última corrida en GitHub.</li>
+        </ul>
         <table class="tabla-score">
           <thead><tr><th>Proceso</th><th>Cuándo corre</th><th>Qué hace</th></tr></thead>
           <tbody>
-            <tr><td><strong>Escaneo de actas nuevas</strong></td><td>Todos los días, 4, 10 y 16 hs</td>
+            <tr><th colspan="3" style="background:#f4f6f9;text-align:left;">Conseguir leads</th></tr>
+            <tr><td><strong>Solicitudes nuevas del día</strong><br><small>(antes "Escaneo de actas nuevas")</small></td><td>Todos los días, 4, 10 y 16 hs</td>
               <td>Prueba los números de acta siguientes al último encontrado (hasta 300 por corrida; corta cuando
                 varios seguidos todavía no existen). Siempre retoma desde la última acta encontrada, aunque la corrida
                 anterior se haya cortado a mitad: nunca vuelve a revisar las que ya pasó. Guarda solo los leads (sin agente), con email si se pudo, como
                 <strong>pre-boletín</strong>. El nombre de la marca (incluidas las Mixtas) lo lee de la ficha del expediente
                 (DATOS GENERALES); si ahí no está, del Formulario o del webservice de INPI por CUIT. Las marcas con abogado
                 se descartan: las carga el boletín después.</td></tr>
-            <tr><td><strong>Completar nombres (mixta/fig.)</strong><br><small>(no aparece en Automatizaciones)</small></td><td>Automáticamente al terminar cada escaneo de actas y cada pipeline de boletines; además, todos los días 6:30, 12:30 y 18:30 hs como red de seguridad</td>
-              <td>Para las marcas que figuran como <em>(nombre pendiente)</em> —Mixtas del escaneo de actas o
-                Mixtas/Figurativas de boletín que el webservice no devolvió— vuelve a leer el nombre de la ficha del
-                expediente y, si no está, del webservice por CUIT. De paso completa tipo y fecha de presentación si
-                faltaban. Nunca pisa un nombre que ya estaba. Hasta 150 marcas por corrida; las figurativas puras
-                (sin texto) quedan como <em>(figurativa, sin texto)</em> y no se vuelven a consultar.</td></tr>
-            <tr><td><strong>Pipeline de boletines</strong></td><td>Lunes, miércoles, viernes y sábado, 6 hs</td>
+            <tr><td><strong>Boletín publicado</strong><br><small>(antes "Pipeline de boletines")</small></td><td>Lunes, miércoles, viernes y sábado, 6 hs</td>
               <td>Busca el boletín de "Marcas Nuevas" más reciente que todavía no esté importado, lee el PDF, separa
                 cada solicitud, completa el nombre de las marcas Mixtas/Figurativas (que en el PDF son solo un logo),
                 verifica en INPI cada una sin matrícula de agente y carga todo al panel. Procesa un boletín por
                 corrida; tarda alrededor de 2 horas porque consulta INPI de a una marca, con pausas, para no ser
                 bloqueado.</td></tr>
-            <tr><td><strong>Reintento de marcas sin verificar</strong></td><td>Cada 2 horas (horas impares)</td>
-              <td>Vuelve a consultar las marcas en las que no se pudo confirmar si tienen agente (columna Lead
-                "sin verificar"), casi siempre por un bloqueo puntual de INPI.</td></tr>
-            <tr><td><strong>Reintento de emails faltantes</strong></td><td>Cada 2 horas (horas pares)</td>
-              <td>Para los leads ya confirmados que quedaron "sin email", vuelve a abrir la Grilla Digital y el
-                Formulario para conseguirlo. Es lo mismo que el botón <strong>Reintentar</strong>, pero en lote. Si a la
-                marca le faltaba el nombre, también lo completa.</td></tr>
-            <tr><td><strong>Revisión de oposiciones/vistas</strong></td><td>Todos los días, 7 hs</td>
+            <tr><th colspan="3" style="background:#f4f6f9;text-align:left;">Seguir a los leads</th></tr>
+            <tr><td><strong>Oposiciones y vistas</strong><br><small>(antes "Revisión de oposiciones/vistas")</small></td><td>Todos los días, 7 hs</td>
               <td>Para los leads publicados hace 33 días o más (ya cerró el plazo de 30 días para oponerse), revisa
                 una vez la Grilla Digital: si hay una oposición de un tercero o una vista de INPI la marca en el
                 panel, y manda el <strong>mail de aviso</strong> con las novedades.</td></tr>
-            <tr><td><strong>Revisión de estado del trámite</strong></td><td>Lunes, 8 hs</td>
+            <tr><td><strong>Concesiones y vencimientos</strong><br><small>(antes "Revisión de estado del trámite")</small></td><td>Lunes, 8 hs</td>
               <td>Para las marcas que todavía no tienen resolución, revisa si INPI la concedió o denegó, y guarda
                 fecha de concesión, número de disposición y vencimiento.</td></tr>
-            <tr><td><strong>Verificación del despliegue</strong></td><td>Cada hora</td>
+            <tr><th colspan="3" style="background:#f4f6f9;text-align:left;">Mantenimiento (tarjeta “Completar datos faltantes” y “Panel actualizado”)</th></tr>
+            <tr><td><strong>Completar datos faltantes → Sin verificar</strong><br><small>(antes "Reintento de marcas sin verificar")</small></td><td>Cada 2 horas (horas impares)</td>
+              <td>Vuelve a consultar las marcas en las que no se pudo confirmar si tienen agente (columna Lead
+                "sin verificar"), casi siempre por un bloqueo puntual de INPI.</td></tr>
+            <tr><td><strong>Completar datos faltantes → Sin email</strong><br><small>(antes "Reintento de emails faltantes")</small></td><td>Cada 2 horas (horas pares)</td>
+              <td>Para los leads ya confirmados que quedaron "sin email", vuelve a abrir la Grilla Digital y el
+                Formulario para conseguirlo. Es lo mismo que el botón <strong>Reintentar</strong>, pero en lote. Si a la
+                marca le faltaba el nombre, también lo completa.</td></tr>
+            <tr><td><strong>Completar datos faltantes → Sin nombre</strong></td><td>Automáticamente al terminar cada escaneo de actas y cada pipeline de boletines; además, todos los días 6:30, 12:30 y 18:30 hs como red de seguridad</td>
+              <td>Para las marcas que figuran como <em>(nombre pendiente)</em> —Mixtas del escaneo de actas o
+                Mixtas/Figurativas de boletín que el webservice no devolvió— vuelve a leer el nombre de la ficha del
+                expediente y, si no está, del webservice por CUIT. De paso completa tipo y fecha de presentación si
+                faltaban. Nunca pisa un nombre que ya estaba. Hasta 150 marcas por corrida; las figurativas puras
+                (sin texto) quedan como <em>(figurativa, sin texto)</em> y no se vuelven a consultar.</td></tr>
+            <tr><td><strong>Panel actualizado</strong><br><small>(antes "Verificación del despliegue")</small></td><td>Cada hora</td>
               <td>Controla que el panel que está en línea tenga la última versión del código.</td></tr>
           </tbody>
         </table>
@@ -493,9 +505,9 @@ le asigna un puntaje de prioridad. Después sigue a cada marca a lo largo del ti
             <tr><th>Importar boletín</th><td>En <strong>Boletines</strong> se ven todos los boletines de marcas nuevas publicados por INPI y cuáles ya están cargados. El botón Importar procesa uno puntual (por ejemplo, del historial) sin esperar al pipeline.</td></tr>
             <tr><th>CRM de leads</th><td>En <strong>📋 CRM</strong>: mover leads de etapa arrastrando tarjetas, asignarlos, registrar gestiones, agendar seguimientos, cargar teléfono (con botón de WhatsApp), servicio y honorarios. La agenda junta seguimientos, oposiciones sin gestionar y plazos próximos.</td></tr>
             <tr><th>Comentarios</th><td>Botón 💬 en cada fila o sección <strong>💬 Comentarios</strong>: dejarle un mensaje a otra persona del equipo (o a todos), vinculado o no a un acta, y marcarlo como resuelto cuando se atendió.</td></tr>
-            <tr><th>Correr ahora</th><td>En <strong>Automatizaciones</strong>, cualquier proceso automático se puede disparar a mano.</td></tr>
+            <tr><th>Correr ahora</th><td>En <strong>Automatizaciones</strong>, cada proceso automático tiene su propio botón para dispararlo a mano (en "Completar datos faltantes", uno por fila).</td></tr>
             <tr><th>Agregar marca manualmente</th><td>Carga al panel un acta puntual que no vino por boletín ni por el escaneo (desde GitHub Actions).</td></tr>
-            <tr><th>Completar nombres (mixta/fig.)</th><td>Corre solo por detrás y no tiene tarjeta en <strong>Automatizaciones</strong> (para no sumar una más). Si alguna vez hiciera falta correrlo a mano, está en GitHub Actions como "Completar nombres (mixta/fig.)", con tope de marcas y opción de incluir también las que tienen apoderado.</td></tr>
+            
             <tr><th>Inspeccionar acta</th><td>Diagnóstico: muestra qué devuelve INPI para un acta, para revisar un caso raro (desde GitHub Actions).</td></tr>
             <tr><th>Comparar extracción Apify vs local</th><td>Diagnóstico: para un boletín dado, compara las marcas que salen leyendo el PDF con Apify contra leerlo directamente, para verificar que el respaldo de lectura da lo mismo (desde GitHub Actions).</td></tr>
             <tr><th>Probar alarma de bloqueo</th><td>Manda un mail de prueba del aviso de bloqueo, para ver cómo llega (desde GitHub Actions).</td></tr>
@@ -530,8 +542,9 @@ le asigna un puntaje de prioridad. Después sigue a cada marca a lo largo del ti
           </div>
           <div class="tarjeta-mini">
             <h4>Automatizaciones (<code>/crons</code>)</h4>
-            <p>Muestra qué procesos corren solos, cuándo corrió cada uno por última vez, si salió bien, y cuánto
-              trabajo queda pendiente en este momento — sin tener que revisar nada a mano.</p>
+            <p>Arriba dice si todo funciona o qué proceso necesita atención. Debajo, los procesos agrupados en
+              Conseguir leads, Seguir a los leads y Mantenimiento (plegado), cada uno con su número útil, cuándo
+              corrió, cuándo vuelve a correr y su botón para correrlo a mano.</p>
           </div>
           <div class="tarjeta-mini">
             <h4>Boletines (<code>/boletines</code>)</h4>

@@ -1,4 +1,4 @@
-name: Completar nombres (mixta/fig.)
+name: "Completar datos faltantes - Sin nombre"
 
 on:
   schedule:

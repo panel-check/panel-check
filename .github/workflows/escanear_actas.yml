@@ -1,4 +1,4 @@
-name: Escanear actas nuevas
+name: "Solicitudes nuevas del día (escaneo de actas)"
 
 on:
   schedule:

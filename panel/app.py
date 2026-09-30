@@ -390,87 +390,146 @@ RE_CUIT_VALIDO = re.compile(r"^\d{10,11}$")
 GITHUB_REPO = os.environ.get("GITHUB_REPO", "panel-check/panel-check")
 GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN")
 
-# Los workflows que corren solos (on: schedule). El de backfill es manual
-# (workflow_dispatch únicamente), no tiene horario fijo, así que no entra
-# acá — si en el futuro se agregan más crons, van en esta lista.
+# Sección "Automatizaciones", organizada por lo que cada proceso le da al
+# equipo (no por cómo está hecho por dentro). Pedido del usuario el
+# 30/09/2026: "hay muchas automatizaciones y me pierdo".
+#
+#   GRUPOS_AUTOMATIZACIONES -> grupos (secciones de la página)
+#     -> tarjetas (lo que ve el usuario; una tarjeta puede juntar varios
+#        workflows, p.ej. los 3 reintentos en "Completar datos faltantes")
+#        -> procesos (un workflow de GitHub Actions cada uno, con su propio
+#           botón "Correr ahora" -- nunca se disparan juntos)
+#
+# "metricas": consultas que devuelven UN valor (número o texto) con el dato
+# útil de la tarjeta ("leads nuevos hoy"), no el detalle técnico.
+# "cron" tiene que coincidir con el schedule del .yml (UTC); "horario" es el
+# mismo horario en hora Argentina, escrito para humanos.
+GRUPOS_AUTOMATIZACIONES = [
+    {
+        "id": "leads",
+        "titulo": "Conseguir leads",
+        "subtitulo": "Lo que trae clientes nuevos al panel.",
+        "plegado": False,
+        "tarjetas": [
+            {
+                "nombre": "Solicitudes nuevas del día",
+                "descripcion": "Busca en INPI las solicitudes presentadas en los últimos días, antes de que "
+                               "salgan en el boletín, para poder contactar al titular semanas antes que nadie.",
+                "horario": "Todos los días, 4, 10 y 16 hs",
+                "metricas": [
+                    {"sql": "SELECT COUNT(*) FROM marcas WHERE fuente = 'escaneo_directo' "
+                            "AND creado_en >= date_trunc('day', now() AT TIME ZONE 'America/Argentina/Buenos_Aires') "
+                            "AT TIME ZONE 'America/Argentina/Buenos_Aires'",
+                     "etiqueta": "leads nuevos hoy", "destacada": True},
+                    {"sql": "SELECT COUNT(*) FROM marcas WHERE fuente = 'escaneo_directo' "
+                            "AND creado_en >= now() - interval '7 days'",
+                     "etiqueta": "en los últimos 7 días"},
+                ],
+                "procesos": [
+                    {"workflow_file": "escanear_actas.yml", "cron": "0 7,13,19 * * *"},
+                ],
+            },
+            {
+                "nombre": "Boletín publicado",
+                "descripcion": "Cuando INPI publica un boletín de Marcas Nuevas, lo importa entero y marca "
+                               "cuáles son leads (sin abogado). Tarda unas 2 horas.",
+                "horario": "Lunes, miércoles, viernes y sábado, 6 hs",
+                "metricas": [
+                    {"sql": "SELECT boletin || ' (' || COUNT(*) FILTER (WHERE es_lead) || ' leads)' "
+                            "FROM marcas WHERE boletin IS NOT NULL "
+                            "GROUP BY boletin ORDER BY MAX(creado_en) DESC LIMIT 1",
+                     "etiqueta": "último boletín importado", "destacada": True},
+                ],
+                "procesos": [
+                    {"workflow_file": "pipeline.yml", "cron": "0 9 * * 1,3,5,6"},
+                ],
+            },
+        ],
+    },
+    {
+        "id": "seguimiento",
+        "titulo": "Seguir a los leads",
+        "subtitulo": "Novedades que dan motivo para contactar.",
+        "plegado": False,
+        "tarjetas": [
+            {
+                "nombre": "Oposiciones y vistas",
+                "descripcion": "Cuando vence el plazo de oposición de un lead, revisa si recibió una oposición "
+                               "de un tercero o una vista de INPI, y avisa por mail.",
+                "horario": "Todos los días, 7 hs",
+                "metricas": [
+                    {"sql": "SELECT COUNT(*) FROM marcas WHERE es_lead = true AND tuvo_oposicion = true "
+                            "AND revisado_oposicion_en >= now() - interval '7 days'",
+                     "etiqueta": "detectadas en los últimos 7 días", "destacada": True},
+                ],
+                "procesos": [
+                    {"workflow_file": "revisar_oposiciones.yml", "cron": "0 10 * * *"},
+                ],
+            },
+            {
+                "nombre": "Concesiones y vencimientos",
+                "descripcion": "Detecta cuándo INPI concede o deniega una marca y guarda la fecha de "
+                               "concesión y el vencimiento (para DDJJ y renovaciones).",
+                "horario": "Lunes, 8 hs",
+                "metricas": [
+                    {"sql": "SELECT COUNT(*) FROM marcas WHERE es_lead = true "
+                            "AND fecha_concesion >= current_date - 30",
+                     "etiqueta": "leads concedidos en los últimos 30 días", "destacada": True},
+                ],
+                "procesos": [
+                    {"workflow_file": "revisar_estado.yml", "cron": "0 11 * * 1"},
+                ],
+            },
+        ],
+    },
+    {
+        "id": "mantenimiento",
+        "titulo": "Mantenimiento",
+        "subtitulo": "Corre solo y casi nunca hace falta mirarlo. Se abre solo si algo falla.",
+        "plegado": True,
+        "tarjetas": [
+            {
+                "nombre": "Completar datos faltantes",
+                "descripcion": "Vuelve a consultar INPI para las marcas que quedaron a medias (casi siempre "
+                               "por un bloqueo puntual): sin verificar, sin email o sin nombre.",
+                "horario": "Varias veces por día, cada uno por separado",
+                "metricas": [],
+                "procesos": [
+                    {"etiqueta": "Sin verificar", "workflow_file": "reintentar_sin_verificar.yml",
+                     "cron": "0 0,2,4,6,8,10,12,14,16,18,20,22 * * *",
+                     "horario": "cada 2 horas (horas impares)",
+                     "pendientes_sql": "SELECT COUNT(*) FROM marcas WHERE es_lead IS NULL"},
+                    {"etiqueta": "Sin email", "workflow_file": "reintentar_sin_email.yml",
+                     "cron": "0 1,3,5,7,9,11,13,15,17,19,21,23 * * *",
+                     "horario": "cada 2 horas (horas pares)",
+                     "pendientes_sql": "SELECT COUNT(*) FROM marcas WHERE es_lead = true "
+                                       "AND (email IS NULL OR email = '')"},
+                    {"etiqueta": "Sin nombre", "workflow_file": "backfill_denominacion.yml",
+                     "cron": "30 9,15,21 * * *",
+                     "horario": "al terminar cada búsqueda de leads, y 6:30, 12:30 y 18:30",
+                     "pendientes_sql": "SELECT COUNT(*) FROM marcas WHERE es_lead IS NOT FALSE "
+                                       "AND COALESCE(NULLIF(TRIM(denominacion), ''), "
+                                       "NULLIF(TRIM(denominacion_inpi), '')) IS NULL "
+                                       "AND COALESCE(tipo, '') <> 'F'"},
+                ],
+            },
+            {
+                "nombre": "Panel actualizado",
+                "descripcion": "Controla que el panel en línea tenga la última versión del sistema. "
+                               "Si falla, la versión nueva quedó trabada en Railway.",
+                "horario": "Cada hora",
+                "metricas": [],
+                "procesos": [
+                    {"workflow_file": "verificar_despliegue.yml", "cron": "0 * * * *"},
+                ],
+            },
+        ],
+    },
+]
+
+# Lista plana de workflows (para validar qué se puede disparar a mano).
 CRONS_DEFINIDOS = [
-    {
-        "nombre": "Pipeline de boletines",
-        "descripcion": "Busca el último boletín \"MARCAS NUEVAS\" publicado y corre "
-                        "todo el proceso: extraer el PDF, parsear, completar mixtas/figurativas, "
-                        "validar leads contra INPI y cargar todo a la base.",
-        "workflow_file": "pipeline.yml",
-        "cron": "0 9 * * 1,3,5,6",
-    },
-    {
-        "nombre": "Revisión de oposiciones/vistas",
-        "descripcion": "Para los leads reales ya publicados hace 33 días o más, "
-                        "vuelve a mirar la Grilla Digital del expediente buscando si "
-                        "apareció una oposición de tercero o una vista de INPI.",
-        "workflow_file": "revisar_oposiciones.yml",
-        "cron": "0 10 * * *",
-        "pendientes_sql": "SELECT COUNT(*) FROM marcas WHERE es_lead = true "
-                           "AND fecha_publicacion IS NOT NULL AND revisado_oposicion_en IS NULL",
-        "pendientes_etiqueta": "leads publicados esperando el plazo de 33 días",
-    },
-    {
-        "nombre": "Revisión de estado del trámite",
-        "descripcion": "Para las marcas que todavía no tienen una resolución firme "
-                        "(ni Concedida ni Denegada), vuelve a mirar el expediente y guarda "
-                        "el estado, la fecha de concesión y el vencimiento apenas INPI resuelve.",
-        "workflow_file": "revisar_estado.yml",
-        "cron": "0 11 * * 1",
-        "pendientes_sql": "SELECT COUNT(*) FROM marcas WHERE estado_tramite IS NULL "
-                           "OR estado_tramite NOT IN ('Concedida', 'Denegada')",
-        "pendientes_etiqueta": "marcas sin resolución firme todavía",
-    },
-    {
-        "nombre": "Reintento de marcas sin verificar",
-        "descripcion": "Para las marcas donde no se pudo confirmar si tienen agente/apoderado "
-                        "(casi siempre por un bloqueo puntual del WAF de INPI durante la corrida "
-                        "del boletín), vuelve a consultar el expediente para resolverlas sin "
-                        "tener que usar \"Reintentar\" a mano una por una.",
-        "workflow_file": "reintentar_sin_verificar.yml",
-        "cron": "0,30 * * * *",
-        "pendientes_sql": "SELECT COUNT(*) FROM marcas WHERE es_lead IS NULL",
-        "pendientes_etiqueta": "marcas sin verificar todavía",
-    },
-    {
-        "nombre": "Reintento de emails faltantes",
-        "descripcion": "Para los leads ya confirmados que quedaron sin email "
-                        "(casi siempre por un bloqueo puntual del WAF de INPI al abrir la "
-                        "Grilla Digital o descargar el Formulario), vuelve a consultar el "
-                        "expediente para conseguirlo sin tener que usar \"Reintentar\" a "
-                        "mano una por una.",
-        "workflow_file": "reintentar_sin_email.yml",
-        "cron": "0 1,3,5,7,9,11,13,15,17,19,21,23 * * *",
-        "pendientes_sql": "SELECT COUNT(*) FROM marcas WHERE es_lead = true "
-                           "AND (email IS NULL OR email = '')",
-        "pendientes_etiqueta": "leads sin email todavía",
-    },
-    {
-        "nombre": "Escaneo de actas nuevas",
-        "descripcion": "El acta se asigna al depositar la solicitud, semanas antes de "
-                        "publicarse en el boletín. Prueba los números de acta siguientes al "
-                        "último confirmado y, si encuentra un lead nuevo (sin agente/apoderado), "
-                        "lo carga con los mismos datos que hoy vienen del boletín -- para poder "
-                        "contactarlo el mismo día que se registra en vez de esperar semanas.",
-        "workflow_file": "escanear_actas.yml",
-        "cron": "0 7,13,19 * * *",
-        "pendientes_sql": "SELECT COUNT(*) FROM marcas WHERE fuente = 'escaneo_directo' "
-                           "AND boletin IS NULL",
-        "pendientes_etiqueta": "leads detectados antes del boletín, esperando que los alcance",
-    },
-    {
-        "nombre": "Verificación del despliegue",
-        "descripcion": "Compara qué commit tiene desplegado el panel contra el último "
-                        "commit de main. Si Railway se queda pegado (deploy atascado en cola, "
-                        "como pasó por un incidente de la plataforma), esta corrida falla y "
-                        "esta misma tarjeta se pone en rojo — no hace falta que te enteres por "
-                        "una captura del panel viejo.",
-        "workflow_file": "verificar_despliegue.yml",
-        "cron": "0,15,30,45 * * * *",
-    },
+    p for g in GRUPOS_AUTOMATIZACIONES for t in g["tarjetas"] for p in t["procesos"]
 ]
 
 
@@ -1079,33 +1138,53 @@ def buscar_marca(
     return {"denominacion": denominacion, "denominacion_usada": denominacion_usada, "clase": clase, "resultados": filas}
 
 
+def _valor_sql(sql: str):
+    """Ejecuta una consulta que devuelve un solo valor. None si no hay filas;
+    {"error": ...} si la consulta falla (la tarjeta no se rompe)."""
+    try:
+        with conexion() as conn:
+            with conn.cursor() as cur:
+                cur.execute(sql)
+                fila = cur.fetchone()
+                return fila[0] if fila else None
+    except Exception as e:
+        return {"error": str(e)}
+
+
 @app.get("/api/crons")
 def listar_crons(_: str = Depends(verificar_login)):
-    resultado = []
-    for c in CRONS_DEFINIDOS:
-        item = {
-            "nombre": c["nombre"],
-            "descripcion": c["descripcion"],
-            "cron": c["cron"],
-            "workflow_file": c["workflow_file"],
-            "proxima_ejecucion": _proxima_ejecucion(c["cron"]),
-            **_ultima_corrida_workflow(c["workflow_file"]),
-        }
-        # "Progreso" real del trabajo pendiente (no solo si la última corrida
-        # anduvo bien) — cuántas marcas todavía están esperando este proceso,
-        # calculado en vivo contra la base, no contra el log de la corrida.
-        if c.get("pendientes_sql"):
-            try:
-                with conexion() as conn:
-                    with conn.cursor() as cur:
-                        cur.execute(c["pendientes_sql"])
-                        item["pendientes"] = cur.fetchone()[0]
-                        item["pendientes_etiqueta"] = c.get("pendientes_etiqueta", "pendientes")
-            except Exception as e:
-                item["pendientes"] = None
-                item["pendientes_error"] = str(e)
-        resultado.append(item)
-    return resultado
+    """Grupos -> tarjetas -> procesos, con el estado de la última corrida de
+    cada workflow y las métricas de cada tarjeta calculadas en vivo."""
+    grupos = []
+    for g in GRUPOS_AUTOMATIZACIONES:
+        tarjetas = []
+        for t in g["tarjetas"]:
+            procesos = []
+            for p in t["procesos"]:
+                item = {
+                    "etiqueta": p.get("etiqueta"),
+                    "workflow_file": p["workflow_file"],
+                    "horario": p.get("horario"),
+                    "proxima_ejecucion": _proxima_ejecucion(p["cron"]),
+                    **_ultima_corrida_workflow(p["workflow_file"]),
+                }
+                if p.get("pendientes_sql"):
+                    item["pendientes"] = _valor_sql(p["pendientes_sql"])
+                procesos.append(item)
+            metricas = [
+                {"etiqueta": m["etiqueta"], "destacada": m.get("destacada", False),
+                 "valor": _valor_sql(m["sql"])}
+                for m in t.get("metricas", [])
+            ]
+            tarjetas.append({
+                "nombre": t["nombre"], "descripcion": t["descripcion"],
+                "horario": t["horario"], "metricas": metricas, "procesos": procesos,
+            })
+        grupos.append({
+            "id": g["id"], "titulo": g["titulo"], "subtitulo": g["subtitulo"],
+            "plegado": g["plegado"], "tarjetas": tarjetas,
+        })
+    return grupos
 
 
 _WORKFLOWS_DISPARABLES = {c["workflow_file"] for c in CRONS_DEFINIDOS}

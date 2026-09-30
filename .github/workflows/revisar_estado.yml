@@ -1,4 +1,4 @@
-name: Revisar estado del trámite (Concedida/Denegada)
+name: "Concesiones y vencimientos"
 
 on:
   schedule:
