@@ -1,0 +1,37 @@
+name: Corregir titular de actas escaneadas
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Solo mostrar los cambios, sin guardar (true/false)"
+        required: false
+        default: "false"
+
+permissions:
+  contents: read
+
+jobs:
+  corregir:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Instalar dependencias
+        run: pip install -r requirements.txt
+
+      - name: Corregir titulares
+        run: |
+          cd scripts
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
+            python3 corregir_titular_escaneo.py --dry-run
+          else
+            python3 corregir_titular_escaneo.py
+          fi
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL || secrets.DATABASE_PUBLIC_URL }}
+          PYTHONUNBUFFERED: "1"

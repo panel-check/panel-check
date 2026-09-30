@@ -73,6 +73,44 @@ RE_CUIT_SPAN = re.compile(r"CUIT\s*:?\s*(?:<span[^>]*>)?\s*([\d.\-]{6,})", re.S)
 # mismo límite que ya tenía la columna marcas.clase (es un solo INTEGER).
 RE_CLASE_SPAN = re.compile(r"CLASE\s*:?\s*(?:<span[^>]*>)?\s*(\d{1,2})", re.S)
 
+# Nombre del titular en la misma página de /MarcasConsultas/Resultado:
+# "NOMBRE: <span class="text-danger"> BOTTERO TOMAS 100.00%</span>" (el % es
+# el porcentaje de titularidad). Mismo patrón que ya usa
+# agregar_marca_manual.py. Exigir el % evita confundirlo con el NOMBRE del
+# agente u otras secciones. Puede haber más de un titular (cotitularidad).
+RE_TITULAR_NOMBRE = re.compile(r"NOMBRE\s*:?\s*(?:<span[^>]*>)?\s*([^<%]+?)\s*[\d.,]+\s*%")
+
+# Labels que en el Formulario vienen DESPUÉS del nombre del titular. Si el
+# texto extraído del PDF los trae en la misma línea, se corta ahí.
+_CORTE_TITULAR = re.compile(
+    r"\s+(?:DOMICILIO|CODIGO POSTAL|C[ÓO]DIGO POSTAL|PAIS|PA[ÍI]S|TIPO DOC|NUMERO|N[ÚU]MERO|GENERO|G[ÉE]NERO|"
+    r"CUIT|EMAIL|PORCENTAJE|ESTADO CIVIL|LOCALIDAD)\b.*$",
+    re.S,
+)
+
+
+def limpiar_titular(valor: str | None) -> str | None:
+    """Deja solo el nombre del titular: corta en el primer label conocido
+    (DOMICILIO LEGAL:, CUIT:, etc.), colapsa espacios y descarta valores
+    que no son un nombre (vacío, o solo un CUIT/números)."""
+    if not valor:
+        return None
+    v = _CORTE_TITULAR.sub("", valor)
+    v = re.sub(r"\s+", " ", v).strip(" -:;,")
+    if not v or re.fullmatch(r"[\d.\- ]+", v):
+        return None
+    return v[:200]
+
+
+def titular_de_pagina(html: str) -> str | None:
+    """Titular(es) desde el HTML de /MarcasConsultas/Resultado."""
+    nombres = []
+    for m in RE_TITULAR_NOMBRE.finditer(html):
+        n = limpiar_titular(m.group(1))
+        if n and n not in nombres:
+            nombres.append(n)
+    return " / ".join(nombres) if nombres else None
+
 
 def crear_sesion() -> requests.Session:
     s = requests.Session()
@@ -718,6 +756,10 @@ def revisar_acta(s: requests.Session, acta: str, timeout: int = 30) -> dict:
         if m_clase:
             resultado["clase"] = int(m_clase.group(1))
 
+        # Titular: primero de esta misma página (dato estructurado, más
+        # confiable que el texto del PDF). El Formulario queda de respaldo.
+        resultado["titular_formulario"] = titular_de_pagina(r.text)
+
         # RESOLUCIÓN está en esta misma página, para leads y no-leads por
         # igual — se guarda siempre, sin costo de un request extra.
         resultado.update(parsear_resolucion(r.text))
@@ -799,9 +841,16 @@ def revisar_acta(s: requests.Session, acta: str, timeout: int = 30) -> dict:
                 m_tipo = re.search(r"TIPO DE MARCA\s*:\s*([A-Z])", texto)
                 if m_tipo:
                     resultado["tipo_formulario"] = m_tipo.group(1)
-                m_titular = re.search(r"TITULARIDAD.*?NOMBRE\s*:\s*(.+)", texto, re.S)
-                if m_titular:
-                    resultado["titular_formulario"] = m_titular.group(1).strip()
+                # Antes: r"TITULARIDAD.*?NOMBRE\s*:\s*(.+)" con re.S -> el .+
+                # se comía TODO el resto del PDF (domicilio, DNI, CUIT, clase,
+                # protección...), y si NOMBRE venía vacío saltaba de línea y
+                # agarraba el CUIT. Ahora: solo la misma línea ([ \t]*, [^\n]+)
+                # y cortando en el próximo label. Solo se usa si la página
+                # de Resultado no trajo el nombre.
+                if not resultado["titular_formulario"]:
+                    m_titular = re.search(r"TITULARIDAD.*?NOMBRE[ \t]*:[ \t]*([^\n]+)", texto, re.S)
+                    if m_titular:
+                        resultado["titular_formulario"] = limpiar_titular(m_titular.group(1))
                 m_fecha_carga = re.search(r"FECHA DE CARGA\s*:\s*(\d{1,2}/\d{1,2}/\d{4})", texto)
                 if m_fecha_carga:
                     resultado["fecha_presentacion_formulario"] = _fecha_ddmmyyyy_a_iso(m_fecha_carga.group(1))
