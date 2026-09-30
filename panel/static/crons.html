@@ -84,6 +84,47 @@
   button.correr-ahora:hover { background: var(--azul-claro); }
   button.correr-ahora:disabled { border-color: var(--borde); color: var(--gris); cursor: default; background: #fafbfc; }
 
+  /* Botón "+" de reporte */
+  button.btn-reporte {
+    width: 20px; height: 20px; border-radius: 50%; border: 1px solid var(--borde);
+    background: #f4f6f9; color: var(--azul); font-size: 14px; font-weight: 700; line-height: 1;
+    cursor: pointer; padding: 0; display: inline-flex; align-items: center; justify-content: center;
+  }
+  button.btn-reporte:hover { background: var(--azul-claro); border-color: var(--azul); }
+
+  /* Ventana del reporte */
+  .modal-fondo {
+    position: fixed; inset: 0; background: rgba(20, 24, 33, .45); z-index: 50;
+    display: flex; align-items: flex-start; justify-content: center; padding: 40px 16px; overflow-y: auto;
+  }
+  .modal {
+    background: white; border-radius: 12px; width: 100%; max-width: 860px;
+    box-shadow: 0 12px 40px rgba(0,0,0,.2); padding: 20px 22px 24px;
+  }
+  .modal-cabecera { display: flex; align-items: center; gap: 12px; margin-bottom: 4px; }
+  .modal-cabecera h2 { font-size: 17px; margin: 0; color: #1f2430; }
+  .modal-cabecera .cerrar { margin-left: auto; border: none; background: none; font-size: 22px; cursor: pointer; color: var(--gris); }
+  .modal .ayuda-modal { font-size: 12px; color: var(--gris); margin: 0 0 14px; }
+  .selector-periodo { display: inline-flex; border: 1px solid var(--borde); border-radius: 8px; overflow: hidden; }
+  .selector-periodo button { border: none; background: white; padding: 5px 12px; font-size: 12px; cursor: pointer; color: #3b4150; }
+  .selector-periodo button.activo { background: var(--azul); color: white; }
+  .bloque-reporte { margin-top: 18px; }
+  .bloque-reporte h3 { font-size: 14px; margin: 0 0 4px; color: #1f2430; display: flex; align-items: center; gap: 10px; }
+  .bloque-reporte h3 .descargar { margin-left: auto; font-size: 12px; font-weight: 400; color: var(--azul); cursor: pointer; background: none; border: none; }
+  .resumen-reporte { font-size: 13px; color: #3b4150; margin: 0 0 8px; }
+  .resumen-reporte strong { font-size: 15px; }
+  .tabla-scroll { overflow-x: auto; }
+  table.reporte { border-collapse: collapse; width: 100%; font-size: 12.5px; }
+  table.reporte th { text-align: right; font-weight: 600; color: var(--gris); font-size: 11px; padding: 6px 8px; border-bottom: 1px solid var(--borde); white-space: nowrap; }
+  table.reporte th:first-child, table.reporte td:first-child { text-align: left; }
+  table.reporte td { text-align: right; padding: 5px 8px; border-bottom: 1px solid #f0f2f5; white-space: nowrap; }
+  table.reporte td.principal { font-weight: 700; color: #1f2430; }
+  table.reporte td .barra { display: inline-block; height: 8px; background: #bcd4ec; border-radius: 2px; margin-right: 6px; vertical-align: middle; }
+  table.reporte tr.cero td { color: #b0b6c0; }
+  table.reporte tr.estimado td { font-style: italic; }
+  table.reporte tr.total td { font-weight: 700; border-top: 2px solid var(--borde); border-bottom: none; color: #1f2430; }
+  .nota-estimado { font-size: 11px; color: var(--gris); margin-top: 6px; }
+
   @media (max-width: 600px) {
     .pie-tarjeta .acciones { margin-left: 0; }
     .subprocesos td.horario { display: none; }
@@ -92,6 +133,12 @@
     .subprocesos td.num { width: 40px; }
     .subprocesos button.correr-ahora { padding: 4px 7px; }
     .subprocesos .txt-correr { display: none; }
+    .modal-fondo { padding: 12px 8px; }
+    .modal { padding: 16px 14px 20px; }
+    .modal-cabecera { flex-wrap: wrap; }
+    .modal-cabecera h2 { flex: 1; font-size: 16px; }
+    .selector-periodo { order: 3; width: 100%; }
+    .selector-periodo button { flex: 1; }
   }
 </style>
 </head>
@@ -230,10 +277,13 @@ function tarjeta(t, idx) {
   }
 
   const pUnico = t.procesos.length === 1 ? t.procesos[0] : null;
+  const conReporte = t.procesos.some((p) => p.tiene_reporte);
+  const botonReporte = conReporte
+    ? `<button class="btn-reporte" data-tarjeta="${idx}" title="Ver qué hizo, día por día">+</button>` : "";
   return `
     <div class="tarjeta-cron ${clase}" id="tarjeta-${idx}">
       <div class="cabecera-tarjeta">
-        <h3>${t.nombre}</h3>
+        <h3>${t.nombre}</h3>${botonReporte}
         ${badge(est, pUnico)}
       </div>
       <p class="descripcion">${t.descripcion}</p>
@@ -246,6 +296,7 @@ function tarjeta(t, idx) {
 // Recordamos si el usuario abrió/cerró a mano un grupo plegable, para que el
 // refresco automático (cada 20 s) no se lo vuelva a cerrar.
 const gruposAbiertosAMano = {};
+let ultimasTarjetas = [];
 
 function franja(problemas, corriendo) {
   if (!problemas.length) {
@@ -289,7 +340,11 @@ async function cargar() {
           <summary>${g.titulo}${grupoConProblema ? " ⚠" : ""}</summary>${encabezado}</details>`;
     }).join("");
 
+    ultimasTarjetas = grupos.flatMap((g) => g.tarjetas);
     contenido.innerHTML = franja(problemas, corriendo) + html;
+    contenido.querySelectorAll(".btn-reporte").forEach((b) => {
+      b.addEventListener("click", () => abrirReporte(ultimasTarjetas[Number(b.dataset.tarjeta)]));
+    });
     contenido.querySelectorAll("details.grupo").forEach((d) => {
       d.querySelector("summary").addEventListener("click", () => {
         gruposAbiertosAMano[d.dataset.grupo] = !d.open;
@@ -324,6 +379,146 @@ async function correrAhora(boton) {
     boton.innerHTML = '▶<span class="txt-correr"> Correr ahora</span>';
     alert(`No se pudo disparar: ${e.message}`);
   }
+}
+
+// ---- Reporte por día (botón "+") ---------------------------------------
+const reporteEstado = { tarjeta: null, dias: 30, datos: {} };
+
+function diaLegible(iso) {
+  const d = new Date(iso + "T12:00:00");
+  const hoy = new Date();
+  const ayer = new Date(); ayer.setDate(hoy.getDate() - 1);
+  if (d.toDateString() === hoy.toDateString()) return "Hoy";
+  if (d.toDateString() === ayer.toDateString()) return "Ayer";
+  return d.toLocaleDateString("es-AR", { weekday: "short", day: "numeric", month: "short" });
+}
+
+function num(v) {
+  if (v === null || v === undefined || v === "") return "—";
+  return typeof v === "number" ? v.toLocaleString("es-AR") : v;
+}
+
+function frasePeriodo(dias) {
+  return dias === 7 ? "la última semana" : `los últimos ${dias} días`;
+}
+
+function tablaReporte(p, r) {
+  const cols = r.columnas;
+  const principal = cols.find((c) => c.modo === "suma");
+  const maximo = Math.max(1, ...r.dias.map((d) => Number(d.valores[principal?.clave]) || 0));
+  const hayEstimados = r.dias.some((d) => d.estimado);
+
+  const filas = r.dias.map((d) => {
+    const vacio = !Object.keys(d.valores).length;
+    const celdas = cols.map((c, i) => {
+      const v = d.valores[c.clave];
+      if (c === principal) {
+        const ancho = Math.round(((Number(v) || 0) / maximo) * 60);
+        return `<td class="principal"><span class="barra" style="width:${ancho}px"></span>${vacio ? 0 : num(v ?? 0)}</td>`;
+      }
+      // En días estimados, una columna que no se puede reconstruir desde la
+      // base va como "—" (no se sabe), no como 0 (no pasó nada).
+      if (d.estimado && v === undefined) return "<td>—</td>";
+      return `<td>${vacio ? (c.modo === "suma" ? 0 : "—") : num(v ?? (c.modo === "suma" ? 0 : null))}</td>`;
+    }).join("");
+    const corridas = d.estimado ? "≈" : (d.corridas ?? 0);
+    const cls = [vacio ? "cero" : "", d.estimado ? "estimado" : ""].join(" ");
+    return `<tr class="${cls}"><td>${diaLegible(d.dia)}</td>${celdas}<td>${corridas}</td></tr>`;
+  }).join("");
+
+  const totales = cols.map((c) => {
+    const v = r.totales[c.clave];
+    if (c.modo === "lista") return `<td>${num(v)} boletín${v === 1 ? "" : "es"}</td>`;
+    if (c.modo === "ultimo") return `<td>${num(v)} <span style="font-weight:400;color:var(--gris)">(hoy)</span></td>`;
+    return `<td>${num(v)}</td>`;
+  }).join("");
+
+  const resumen = principal
+    ? `<p class="resumen-reporte">En ${frasePeriodo(reporteEstado.dias)}: <strong>${num(r.totales[principal.clave])}</strong> ${principal.etiqueta.toLowerCase()}${
+        cols.filter((c) => c.modo === "suma" && c !== principal).slice(0, 2)
+          .map((c) => ` · ${num(r.totales[c.clave])} ${c.etiqueta.toLowerCase()}`).join("")}</p>`
+    : "";
+
+  return `
+    <div class="bloque-reporte">
+      <h3>${p.etiqueta || ""}
+        <button class="descargar" data-workflow="${p.workflow_file}">⬇ Descargar (Excel/CSV)</button></h3>
+      ${resumen}
+      <div class="tabla-scroll"><table class="reporte">
+        <thead><tr><th>Día</th>${cols.map((c) => `<th>${c.etiqueta}</th>`).join("")}<th title="Cuántas veces corrió ese día">Corridas</th></tr></thead>
+        <tbody>${filas || `<tr><td colspan="${cols.length + 2}" style="text-align:center;color:var(--gris)">Todavía no hay datos.</td></tr>`}</tbody>
+        <tfoot><tr class="total"><td>Total</td>${totales}<td>${r.dias.reduce((a, d) => a + (d.corridas || 0), 0)}</td></tr></tfoot>
+      </table></div>
+      ${hayEstimados ? `<p class="nota-estimado">Los días en <em>cursiva</em> (≈) son anteriores al registro de corridas (arrancó el ${r.registro_desde ? diaLegible(r.registro_desde) : "hoy"}) y están reconstruidos desde los datos de la base: pueden no ser exactos.</p>` : ""}
+    </div>`;
+}
+
+function descargarCsv(p, r) {
+  const cols = r.columnas;
+  const esc = (v) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+  const lineas = [["Día", ...cols.map((c) => c.etiqueta), "Corridas", "Estimado"].map(esc).join(";")];
+  r.dias.forEach((d) => {
+    lineas.push([d.dia, ...cols.map((c) => d.valores[c.clave] ?? (c.modo === "suma" ? 0 : "")),
+      d.estimado ? "" : (d.corridas ?? 0), d.estimado ? "sí" : ""].map(esc).join(";"));
+  });
+  const nombre = `${(reporteEstado.tarjeta.nombre + (p.etiqueta ? " - " + p.etiqueta : "")).replace(/[^\wáéíóúñ -]/gi, "")} - ${reporteEstado.dias} dias.csv`;
+  const blob = new Blob(["\ufeff" + lineas.join("\n")], { type: "text/csv;charset=utf-8" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = nombre;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+async function pintarReporte() {
+  const t = reporteEstado.tarjeta;
+  const cuerpo = document.getElementById("modal-cuerpo");
+  document.querySelectorAll(".selector-periodo button").forEach((b) => {
+    b.classList.toggle("activo", Number(b.dataset.dias) === reporteEstado.dias);
+  });
+  cuerpo.innerHTML = '<p style="color:var(--gris);font-size:13px;">Cargando…</p>';
+  const procesos = t.procesos.filter((p) => p.tiene_reporte);
+  try {
+    const resultados = await Promise.all(procesos.map((p) =>
+      api(`/api/crons/reporte?workflow_file=${encodeURIComponent(p.workflow_file)}&dias=${reporteEstado.dias}`)));
+    reporteEstado.datos = {};
+    procesos.forEach((p, i) => { reporteEstado.datos[p.workflow_file] = resultados[i]; });
+    cuerpo.innerHTML = procesos.map((p, i) => tablaReporte(p, resultados[i])).join("");
+    cuerpo.querySelectorAll(".descargar").forEach((b) => {
+      const p = procesos.find((x) => x.workflow_file === b.dataset.workflow);
+      b.addEventListener("click", () => descargarCsv(p, reporteEstado.datos[p.workflow_file]));
+    });
+  } catch (e) {
+    cuerpo.innerHTML = `<p style="color:var(--rojo);">No se pudo cargar el reporte (${e.message}).</p>`;
+  }
+}
+
+function abrirReporte(t) {
+  reporteEstado.tarjeta = t;
+  const fondo = document.createElement("div");
+  fondo.className = "modal-fondo";
+  fondo.innerHTML = `
+    <div class="modal" role="dialog" aria-label="Reporte de ${t.nombre}">
+      <div class="modal-cabecera">
+        <h2>${t.nombre} — día por día</h2>
+        <div class="selector-periodo">
+          <button data-dias="7">7 días</button><button data-dias="30">30 días</button><button data-dias="90">90 días</button>
+        </div>
+        <button class="cerrar" title="Cerrar">×</button>
+      </div>
+      <p class="ayuda-modal">Qué hizo este proceso cada día (hora Argentina). Se puede descargar para abrir en Excel.</p>
+      <div id="modal-cuerpo"></div>
+    </div>`;
+  document.body.appendChild(fondo);
+  const cerrar = () => { fondo.remove(); document.removeEventListener("keydown", porEsc); };
+  const porEsc = (e) => { if (e.key === "Escape") cerrar(); };
+  document.addEventListener("keydown", porEsc);
+  fondo.addEventListener("click", (e) => { if (e.target === fondo) cerrar(); });
+  fondo.querySelector(".cerrar").addEventListener("click", cerrar);
+  fondo.querySelectorAll(".selector-periodo button").forEach((b) => {
+    b.addEventListener("click", () => { reporteEstado.dias = Number(b.dataset.dias); pintarReporte(); });
+  });
+  pintarReporte();
 }
 
 cargar();

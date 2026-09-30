@@ -36,6 +36,8 @@ import time
 import traceback
 
 import psycopg2
+
+from registro import registrar
 import psycopg2.extras
 
 from validar_leads import consultar_resolucion, crear_sesion
@@ -143,6 +145,10 @@ def main():
         # archivo para el motivo: Azure Blob Storage está bloqueado acá).
         print(f"::notice::{resumen}")
         print(f"\n{resumen}")
+        registrar("revisar_estado.yml", {
+            "revisadas": len(pendientes), "concedidas": concedidas, "denegadas": denegadas,
+            "sin_resolucion": sin_resolucion_aun, "bloqueos": bloqueadas,
+        }, conn)
     finally:
         conn.close()
 

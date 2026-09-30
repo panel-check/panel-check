@@ -461,6 +461,11 @@ le asigna un puntaje de prioridad. Después sigue a cada marca a lo largo del ti
             los tres reintentos (sin verificar, sin email, sin nombre) con lo que le queda pendiente a cada uno.</li>
           <li>Cada proceso tiene su propio botón <strong>▶ Correr ahora</strong> (nunca se disparan juntos) y un link
             <em>detalle</em> a la última corrida en GitHub.</li>
+          <li>El botón <strong>+</strong> al lado del nombre abre el <strong>reporte día por día</strong>: qué hizo ese
+            proceso cada día (leads nuevos, cuántos ya teníamos antes del boletín, oposiciones detectadas, emails y
+            nombres conseguidos, etc.), con total del período (7, 30 o 90 días) y botón para descargarlo y abrirlo en
+            Excel. Cada corrida anota lo que hizo al terminar; los días anteriores a que existiera ese registro (antes
+            del 30/09/2026) se reconstruyen desde la base cuando se puede y aparecen en <em>cursiva</em> como estimados.</li>
         </ul>
         <table class="tabla-score">
           <thead><tr><th>Proceso</th><th>Cuándo corre</th><th>Qué hace</th></tr></thead>
@@ -575,7 +580,8 @@ le asigna un puntaje de prioridad. Después sigue a cada marca a lo largo del ti
             <h4>Automatizaciones (<code>/crons</code>)</h4>
             <p>Arriba dice si todo funciona o qué proceso necesita atención. Debajo, los procesos agrupados en
               Conseguir leads, Seguir a los leads y Mantenimiento (plegado), cada uno con su número útil, cuándo
-              corrió, cuándo vuelve a correr y su botón para correrlo a mano.</p>
+              corrió, cuándo vuelve a correr y su botón para correrlo a mano. El <strong>+</strong> de cada tarjeta muestra
+              el reporte día por día de ese proceso (descargable para Excel).</p>
           </div>
           <div class="tarjeta-mini">
             <h4>Boletines (<code>/boletines</code>)</h4>

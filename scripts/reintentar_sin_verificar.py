@@ -26,6 +26,8 @@ import time
 import traceback
 
 import psycopg2
+
+from registro import registrar
 import psycopg2.extras
 
 from validar_leads import calcular_lead_score, crear_sesion, revisar_acta
@@ -82,6 +84,7 @@ def main():
 
         s = crear_sesion()
         resueltas = 0
+        resueltas_lead = 0
         siguen_sin_verificar = 0
 
         for i, fila in enumerate(pendientes, 1):
@@ -138,6 +141,8 @@ def main():
                 )
             conn.commit()
             resueltas += 1
+            if info["es_lead"]:
+                resueltas_lead += 1
             print(f"  [{i}/{len(pendientes)}] acta {acta}: resuelta — es_lead={info['es_lead']} "
                   f"email={'sí' if info['email'] else 'no'}")
 
@@ -152,6 +157,11 @@ def main():
         # el resultado por la API de GitHub sin blob storage.
         print(f"::notice::{resumen}")
         print(f"\n{resumen}")
+        registrar("reintentar_sin_verificar.yml", {
+            "reintentadas": len(pendientes), "resueltas": resueltas,
+            "resultaron_lead": resueltas_lead, "resultaron_con_agente": resueltas - resueltas_lead,
+            "siguen": siguen_sin_verificar,
+        }, conn)
     finally:
         conn.close()
 

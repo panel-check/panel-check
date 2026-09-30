@@ -158,3 +158,15 @@ CREATE TABLE IF NOT EXISTS crm_actividad (
     creado_en  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_crm_actividad_clave ON crm_actividad(clave, creado_en DESC);
+
+-- Registro de corridas de los procesos automáticos (scripts/registro.py):
+-- qué hizo cada corrida, para el reporte por día de Automatizaciones.
+CREATE TABLE IF NOT EXISTS registro_corridas (
+    id          BIGSERIAL PRIMARY KEY,
+    proceso     TEXT NOT NULL,
+    creado_en   TIMESTAMPTZ NOT NULL DEFAULT now(),
+    metricas    JSONB NOT NULL DEFAULT '{}'::jsonb,
+    run_id      TEXT,
+    run_url     TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_registro_corridas_proceso ON registro_corridas(proceso, creado_en DESC);

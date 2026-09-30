@@ -14,6 +14,8 @@ import os
 import sys
 
 import psycopg2
+
+from registro import registrar
 from psycopg2.extras import execute_values
 
 
@@ -74,6 +76,15 @@ def main():
                 """,
                 (args.boletin, args.fecha, args.pdf_url, len(rows)),
             )
+
+            # Para el reporte: cuántos leads de este boletín ya los teníamos
+            # antes por el escaneo directo de actas (contacto adelantado).
+            actas_boletin = [r["acta"] for r in rows]
+            cur.execute(
+                "SELECT COUNT(*) FROM marcas WHERE acta = ANY(%s) AND fuente = 'escaneo_directo'",
+                (actas_boletin,),
+            )
+            ya_por_escaneo = cur.fetchone()[0]
 
             valores = [
                 (
@@ -161,6 +172,14 @@ def main():
             )
         conn.commit()
         print(f"Cargadas/actualizadas {len(rows)} marcas del boletín {args.boletin}.")
+        leads = sum(1 for r in rows if parse_bool(r.get("es_lead")) is True)
+        registrar("pipeline.yml", {
+            "boletines": 1, "marcas_cargadas": len(rows), "leads": leads,
+            "leads_con_email": sum(1 for r in rows if parse_bool(r.get("es_lead")) is True and r.get("email")),
+            "sin_verificar": sum(1 for r in rows if parse_bool(r.get("es_lead")) is None),
+            "ya_detectados_por_escaneo": ya_por_escaneo,
+            "boletin": args.boletin,
+        }, conn)
     finally:
         conn.close()
 

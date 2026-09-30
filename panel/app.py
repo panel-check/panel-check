@@ -230,6 +230,23 @@ def _crear_tablas_comentarios(cur):
     cur.execute("CREATE INDEX IF NOT EXISTS idx_comentarios_creado ON comentarios(creado_en DESC)")
     # Hasta cuándo vio cada usuario la sección de comentarios -> contador de
     # "nuevos" en el encabezado del panel.
+    # Registro de corridas de los procesos automáticos (scripts/registro.py)
+    # -> reporte por día del "+" de cada tarjeta en Automatizaciones.
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS registro_corridas (
+            id          BIGSERIAL PRIMARY KEY,
+            proceso     TEXT NOT NULL,
+            creado_en   TIMESTAMPTZ NOT NULL DEFAULT now(),
+            metricas    JSONB NOT NULL DEFAULT '{}'::jsonb,
+            run_id      TEXT,
+            run_url     TEXT
+        )
+        """
+    )
+    cur.execute(
+        "CREATE INDEX IF NOT EXISTS idx_registro_corridas_proceso ON registro_corridas(proceso, creado_en DESC)"
+    )
     cur.execute(
         """
         CREATE TABLE IF NOT EXISTS comentarios_visto (
@@ -531,6 +548,112 @@ GRUPOS_AUTOMATIZACIONES = [
 CRONS_DEFINIDOS = [
     p for g in GRUPOS_AUTOMATIZACIONES for t in g["tarjetas"] for p in t["procesos"]
 ]
+
+# Reporte por día (botón "+" de cada tarjeta). Por proceso: qué columnas
+# mostrar (las claves son las que anota scripts/registro.py al terminar
+# cada corrida) y cómo juntarlas en el día:
+#   "suma"   -> se suman todas las corridas del día (leads nuevos, emails...)
+#   "ultimo" -> foto al final del día (lo que "sigue" pendiente)
+#   "lista"  -> texto, se juntan (números de boletín)
+# "historico_sql": para los días ANTERIORES a que existiera el registro, lo
+# que se puede reconstruir desde la base (marcado como "estimado" en el
+# reporte). Devuelve (dia, jsonb con las mismas claves). %(desde)s = inicio.
+_TZ = "America/Argentina/Buenos_Aires"
+REPORTES_AUTOMATIZACIONES = {
+    "escanear_actas.yml": {
+        "columnas": [
+            ("leads_nuevos", "Leads nuevos", "suma"),
+            ("leads_con_email", "con email", "suma"),
+            ("con_agente", "Con abogado (descartadas)", "suma"),
+            ("actas_nuevas", "Actas nuevas en INPI", "suma"),
+            ("bloqueos", "Bloqueos de INPI", "suma"),
+        ],
+        "historico_sql": f"""
+            SELECT (creado_en AT TIME ZONE '{_TZ}')::date AS dia,
+                   jsonb_build_object(
+                     'leads_nuevos', COUNT(*),
+                     'leads_con_email', COUNT(*) FILTER (WHERE COALESCE(email, '') <> '')
+                   )
+            FROM marcas WHERE fuente = 'escaneo_directo' AND creado_en >= %(desde)s
+            GROUP BY 1""",
+    },
+    "pipeline.yml": {
+        "columnas": [
+            ("boletin", "Boletín", "lista"),
+            ("leads", "Leads", "suma"),
+            ("leads_con_email", "con email", "suma"),
+            ("ya_detectados_por_escaneo", "Ya los teníamos por el escaneo", "suma"),
+            ("marcas_cargadas", "Marcas del boletín", "suma"),
+            ("sin_verificar", "Sin verificar", "suma"),
+        ],
+        "historico_sql": f"""
+            SELECT dia, jsonb_build_object(
+                     'boletines', COUNT(*), 'boletin', string_agg(numero, ', ' ORDER BY numero),
+                     'marcas_cargadas', SUM(total), 'leads', SUM(leads),
+                     'leads_con_email', SUM(con_email), 'ya_detectados_por_escaneo', SUM(escaneo),
+                     'sin_verificar', SUM(sin_verif))
+            FROM (
+              SELECT (b.procesado_en AT TIME ZONE '{_TZ}')::date AS dia, b.numero,
+                     COUNT(m.acta) AS total,
+                     COUNT(*) FILTER (WHERE m.es_lead) AS leads,
+                     COUNT(*) FILTER (WHERE m.es_lead AND COALESCE(m.email, '') <> '') AS con_email,
+                     COUNT(*) FILTER (WHERE m.fuente = 'escaneo_directo') AS escaneo,
+                     COUNT(*) FILTER (WHERE m.es_lead IS NULL) AS sin_verif
+              FROM boletines b JOIN marcas m ON m.boletin = b.numero
+              WHERE b.procesado_en >= %(desde)s
+              GROUP BY 1, 2
+            ) x GROUP BY dia""",
+    },
+    "revisar_oposiciones.yml": {
+        "columnas": [
+            ("con_oposicion", "Con oposición o vista", "suma"),
+            ("sin_oposicion", "Sin oposición", "suma"),
+            ("revisadas", "Leads revisados", "suma"),
+        ],
+        "historico_sql": f"""
+            SELECT (revisado_oposicion_en AT TIME ZONE '{_TZ}')::date AS dia,
+                   jsonb_build_object(
+                     'revisadas', COUNT(*),
+                     'con_oposicion', COUNT(*) FILTER (WHERE tuvo_oposicion),
+                     'sin_oposicion', COUNT(*) FILTER (WHERE tuvo_oposicion IS NOT TRUE)
+                   )
+            FROM marcas WHERE es_lead = true AND revisado_oposicion_en >= %(desde)s
+            GROUP BY 1""",
+    },
+    "revisar_estado.yml": {
+        "columnas": [
+            ("concedidas", "Concedidas", "suma"),
+            ("denegadas", "Denegadas", "suma"),
+            ("sin_resolucion", "Sin resolución todavía", "suma"),
+            ("revisadas", "Revisadas", "suma"),
+            ("bloqueos", "Bloqueos de INPI", "suma"),
+        ],
+    },
+    "reintentar_sin_verificar.yml": {
+        "columnas": [
+            ("resueltas", "Resueltas", "suma"),
+            ("resultaron_lead", "resultaron lead", "suma"),
+            ("resultaron_con_agente", "tenían abogado", "suma"),
+            ("reintentadas", "Reintentadas", "suma"),
+            ("siguen", "Pendientes al final del día", "ultimo"),
+        ],
+    },
+    "reintentar_sin_email.yml": {
+        "columnas": [
+            ("emails_conseguidos", "Emails conseguidos", "suma"),
+            ("reintentados", "Reintentados", "suma"),
+            ("siguen", "Pendientes al final del día", "ultimo"),
+        ],
+    },
+    "backfill_denominacion.yml": {
+        "columnas": [
+            ("nombres_recuperados", "Nombres recuperados", "suma"),
+            ("figurativas_sin_texto", "Figurativas sin texto", "suma"),
+            ("revisadas", "Revisadas", "suma"),
+            ("siguen", "Pendientes al final del día", "ultimo"),
+        ],
+    },
+}
 
 
 def _proxima_ejecucion(expresion_cron: str) -> str:
@@ -1170,6 +1293,7 @@ def listar_crons(_: str = Depends(verificar_login)):
                     "etiqueta": p.get("etiqueta"),
                     "workflow_file": p["workflow_file"],
                     "horario": p.get("horario"),
+                    "tiene_reporte": p["workflow_file"] in REPORTES_AUTOMATIZACIONES,
                     "proxima_ejecucion": _proxima_ejecucion(p["cron"]),
                     **_ultima_corrida_workflow(p["workflow_file"]),
                 }
@@ -1190,6 +1314,98 @@ def listar_crons(_: str = Depends(verificar_login)):
             "plegado": g["plegado"], "tarjetas": tarjetas,
         })
     return grupos
+
+
+@app.get("/api/crons/reporte")
+def reporte_cron(
+    workflow_file: str = Query(...),
+    dias: int = Query(30, ge=1, le=365),
+    _: str = Depends(verificar_login),
+):
+    """Qué hizo un proceso, día por día (hora Argentina), para los últimos
+    `dias` días. Sale de registro_corridas (lo que anota cada corrida); para
+    los días anteriores a que existiera ese registro usa lo que se puede
+    reconstruir desde la base (marcado "estimado"). Días sin actividad
+    aparecen en 0 para que se vean los huecos."""
+    import datetime as _dt
+
+    conf = REPORTES_AUTOMATIZACIONES.get(workflow_file)
+    if not conf:
+        raise HTTPException(status_code=404, detail="Este proceso no tiene reporte")
+    columnas = conf["columnas"]
+    modo = {k: m for k, _l, m in columnas}
+
+    hoy = _dt.datetime.now(_dt.timezone(_dt.timedelta(hours=-3))).date()
+    desde_dia = hoy - _dt.timedelta(days=dias - 1)
+    desde_ts = _dt.datetime.combine(desde_dia, _dt.time(0), _dt.timezone(_dt.timedelta(hours=-3)))
+
+    por_dia: dict = {}
+    primer_registro = None
+    with conexion() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                f"""SELECT (creado_en AT TIME ZONE '{_TZ}')::date, metricas, run_url
+                    FROM registro_corridas
+                    WHERE proceso = %s AND creado_en >= %s
+                    ORDER BY creado_en""",
+                (workflow_file, desde_ts),
+            )
+            filas = cur.fetchall()
+            cur.execute(
+                f"SELECT MIN((creado_en AT TIME ZONE '{_TZ}')::date) FROM registro_corridas WHERE proceso = %s",
+                (workflow_file,),
+            )
+            primer_registro = cur.fetchone()[0]
+
+            for dia, met, _url in filas:
+                d = por_dia.setdefault(dia, {"corridas": 0, "valores": {}, "estimado": False})
+                d["corridas"] += 1
+                for k, v in (met or {}).items():
+                    m = modo.get(k)
+                    if m == "suma" and isinstance(v, (int, float)):
+                        d["valores"][k] = d["valores"].get(k, 0) + v
+                    elif m == "ultimo":
+                        d["valores"][k] = v
+                    elif m == "lista" and v not in (None, ""):
+                        previos = d["valores"].get(k)
+                        d["valores"][k] = f"{previos}, {v}" if previos else str(v)
+
+            if conf.get("historico_sql"):
+                cur.execute(conf["historico_sql"], {"desde": desde_ts})
+                for dia, met in cur.fetchall():
+                    if dia is None or (primer_registro and dia >= primer_registro):
+                        continue  # ese día ya lo cubre el registro real
+                    por_dia[dia] = {"corridas": None, "valores": dict(met or {}), "estimado": True}
+
+    # Rango a mostrar: desde el primer día con datos (no llenar de ceros
+    # meses en los que el sistema ni existía) hasta hoy.
+    inicio = min(por_dia) if por_dia else hoy
+    inicio = max(inicio, desde_dia)
+    salida = []
+    d = hoy
+    while d >= inicio:
+        fila = por_dia.get(d, {"corridas": 0, "valores": {}, "estimado": False})
+        salida.append({"dia": d.isoformat(), **fila})
+        d -= _dt.timedelta(days=1)
+
+    totales = {}
+    for k, _l, m in columnas:
+        if m == "suma":
+            totales[k] = sum(f["valores"].get(k) or 0 for f in salida
+                             if isinstance(f["valores"].get(k), (int, float)))
+        elif m == "ultimo":
+            ultimo = next((f["valores"][k] for f in salida if k in f["valores"]), None)
+            totales[k] = ultimo
+        elif m == "lista":
+            totales[k] = sum(1 for f in salida for x in str(f["valores"].get(k) or "").split(",") if x.strip())
+
+    return {
+        "workflow_file": workflow_file,
+        "columnas": [{"clave": k, "etiqueta": l, "modo": m} for k, l, m in columnas],
+        "dias": salida,
+        "totales": totales,
+        "registro_desde": primer_registro.isoformat() if primer_registro else None,
+    }
 
 
 _WORKFLOWS_DISPARABLES = {c["workflow_file"] for c in CRONS_DEFINIDOS}

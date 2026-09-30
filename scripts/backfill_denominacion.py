@@ -42,6 +42,8 @@ import traceback
 import psycopg2
 import psycopg2.extras
 
+from registro import registrar
+
 from validar_leads import (
     BASE, RE_CUIT_SPAN, _get_con_reintentos, crear_sesion,
     datos_generales_de_pagina, denominacion_por_webservice,
@@ -82,6 +84,7 @@ def main():
     print(f"Marcas sin nombre a revisar: {len(pendientes)}")
     if not pendientes:
         print("::notice::No hay marcas sin nombre pendientes.")
+        registrar("backfill_denominacion.yml", {"revisadas": 0, "nombres_recuperados": 0}, conn)
         conn.close()
         return
 
@@ -156,6 +159,11 @@ def main():
             print(f"  [{i}/{len(pendientes)}] acta {acta}: sin texto en ficha ni webservice (tipo {dg['tipo'] or '?'})")
         time.sleep(args.delay)
 
+    registrar("backfill_denominacion.yml", {
+        "revisadas": len(pendientes), "nombres_recuperados": completadas,
+        "figurativas_sin_texto": sin_texto_por_tipo.get("F", []).__len__(),
+        "siguen": sin_texto - len(sin_texto_por_tipo.get("F", [])), "bloqueos": bloqueadas,
+    }, conn)
     conn.close()
     resumen = (f"Revisadas: {len(pendientes)}. Nombre recuperado: {completadas}. "
                f"Sin texto (figurativa pura o todavía no cargada): {sin_texto}. Bloqueadas/error: {bloqueadas}.")

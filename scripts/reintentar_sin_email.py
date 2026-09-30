@@ -24,6 +24,8 @@ import time
 import traceback
 
 import psycopg2
+
+from registro import registrar
 import psycopg2.extras
 
 from validar_leads import calcular_lead_score, crear_sesion, revisar_acta
@@ -156,6 +158,10 @@ def main():
         )
         print(f"::notice::{resumen}")
         print(f"\n{resumen}")
+        registrar("reintentar_sin_email.yml", {
+            "reintentados": len(pendientes), "emails_conseguidos": resueltos,
+            "siguen": siguen_sin_email,
+        }, conn)
     finally:
         conn.close()
 

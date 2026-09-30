@@ -43,6 +43,8 @@ import time
 from datetime import date, timedelta
 
 import psycopg2
+
+from registro import registrar
 import psycopg2.extras
 
 from validar_leads import (
@@ -198,6 +200,10 @@ def main():
             time.sleep(args.delay)
 
         print(f"\nRevisadas: {len(pendientes)}. Con oposición/vista detectada: {con_oposicion}.")
+        registrar("revisar_oposiciones.yml", {
+            "revisadas": len(pendientes), "con_oposicion": con_oposicion,
+            "sin_oposicion": len(pendientes) - con_oposicion,
+        }, conn)
     finally:
         conn.close()
 

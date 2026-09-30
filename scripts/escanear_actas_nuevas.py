@@ -53,6 +53,7 @@ import traceback
 import psycopg2
 import psycopg2.extras
 
+from registro import registrar
 from validar_leads import calcular_lead_score, crear_sesion, existe_expediente, revisar_acta
 
 
@@ -152,6 +153,8 @@ def main():
         probadas = 0
         encontradas = 0
         leads_nuevos = 0
+        leads_con_email = 0
+        bloqueos = 0
         consecutivos_sin_existir = 0
         bloqueado_seguido = 0
 
@@ -173,6 +176,7 @@ def main():
                 # esta corrida entera para no seguir "avanzando" el puntero
                 # sobre números que en realidad no se llegaron a revisar.
                 bloqueado_seguido += 1
+                bloqueos += 1
                 print(f"  acta {acta}: bloqueado por el WAF de INPI, frenando esta corrida")
                 break
 
@@ -196,6 +200,7 @@ def main():
                 score = calcular_lead_score({"matricula_agente": "", "es_lead": True, "email": info["email"]})
                 _guardar_lead(conn, acta, info, score)
                 leads_nuevos += 1
+                leads_con_email += 1
                 print(f"  acta {acta}: LEAD nuevo detectado antes del boletín (score {score})")
             elif info["es_lead"] is True:
                 # Lead real pero sin email todavía -- se guarda igual (motivo
@@ -220,6 +225,11 @@ def main():
         )
         print(f"::notice::{resumen}")
         print(f"\n{resumen}")
+        registrar("escanear_actas.yml", {
+            "actas_probadas": probadas, "actas_nuevas": encontradas,
+            "leads_nuevos": leads_nuevos, "leads_con_email": leads_con_email,
+            "con_agente": encontradas - leads_nuevos, "bloqueos": bloqueos,
+        }, conn)
     finally:
         conn.close()
 
