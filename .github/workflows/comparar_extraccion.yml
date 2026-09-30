@@ -1,0 +1,37 @@
+name: Comparar extracción Apify vs local (diagnóstico)
+
+on:
+  workflow_dispatch:
+    inputs:
+      boletin:
+        description: "Número de boletín a comparar"
+        required: true
+        default: "11116"
+
+permissions:
+  contents: read
+
+jobs:
+  comparar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Instalar dependencias
+        run: pip install -r requirements.txt
+
+      - name: Comparar con pdfplumber
+        continue-on-error: true
+        run: cd scripts && python3 comparar_extraccion.py --numero "${{ inputs.boletin }}" --motor pdfplumber
+        env:
+          APIFY_TOKEN: ${{ secrets.APIFY_TOKEN }}
+          PYTHONUNBUFFERED: "1"
+
+      - name: Comparar con pypdf
+        continue-on-error: true
+        run: cd scripts && python3 comparar_extraccion.py --numero "${{ inputs.boletin }}" --motor pypdf
+        env:
+          APIFY_TOKEN: ${{ secrets.APIFY_TOKEN }}
+          PYTHONUNBUFFERED: "1"
