@@ -227,7 +227,7 @@
     <h2>"(nombre pendiente)" y "(figurativa, sin texto)"</h2>
     <p>En el boletín, las marcas <strong>Mixtas</strong> y <strong>Figurativas</strong> no traen el nombre escrito (es un logo), y en el escaneo de actas nuevas el nombre tampoco siempre está en el Formulario. El sistema lo busca primero en la ficha del expediente de INPI (sección DATOS GENERALES) y, si no está, en el webservice de INPI por CUIT.</p>
     <ul>
-      <li><strong>(nombre pendiente)</strong> — todavía no se pudo recuperar. El proceso <strong>Completar nombres (mixta/fig.)</strong> lo vuelve a intentar solo 3 veces por día (una marca recién presentada a veces tarda en aparecer en el webservice).</li>
+      <li><strong>(nombre pendiente)</strong> — todavía no se pudo recuperar. Apenas termina el escaneo de actas o el pipeline de boletines que la cargó, se lanza solo el proceso <strong>Completar nombres (mixta/fig.)</strong> para buscarlo en el momento; si tampoco aparece (una marca recién presentada a veces tarda en figurar en el webservice), se reintenta 3 veces por día hasta encontrarlo.</li>
       <li><strong>(figurativa, sin texto)</strong> — la marca es solo un dibujo/logo: no tiene nombre en ningún lado. Para verla, abrí el expediente en INPI.</li>
     </ul>
 
@@ -436,7 +436,7 @@ le asigna un puntaje de prioridad. Después sigue a cada marca a lo largo del ti
                 <strong>pre-boletín</strong>. El nombre de la marca (incluidas las Mixtas) lo lee de la ficha del expediente
                 (DATOS GENERALES); si ahí no está, del Formulario o del webservice de INPI por CUIT. Las marcas con abogado
                 se descartan: las carga el boletín después.</td></tr>
-            <tr><td><strong>Completar nombres (mixta/fig.)</strong></td><td>Todos los días, 6:30, 12:30 y 18:30 hs</td>
+            <tr><td><strong>Completar nombres (mixta/fig.)</strong></td><td>Automáticamente al terminar cada escaneo de actas y cada pipeline de boletines; además, todos los días 6:30, 12:30 y 18:30 hs como red de seguridad</td>
               <td>Para las marcas que figuran como <em>(nombre pendiente)</em> —Mixtas del escaneo de actas o
                 Mixtas/Figurativas de boletín que el webservice no devolvió— vuelve a leer el nombre de la ficha del
                 expediente y, si no está, del webservice por CUIT. De paso completa tipo y fecha de presentación si

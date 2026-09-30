@@ -136,6 +136,21 @@ jobs:
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL || secrets.DATABASE_PUBLIC_URL }}
 
+      - name: Completar nombres que quedaron pendientes (mixta/fig.)
+        # Si el webservice no devolvió el nombre de alguna Mixta/Figurativa de
+        # este boletín, se busca en el momento en la ficha del expediente
+        # (backfill_denominacion.py). Si no quedó ninguna pendiente, termina
+        # al instante sin consultar INPI. No marca el pipeline en rojo si falla:
+        # el proceso programado "Completar nombres" lo vuelve a intentar.
+        if: steps.listar.outputs.saltar != 'true'
+        continue-on-error: true
+        run: |
+          cd scripts
+          python3 backfill_denominacion.py --limit 150
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL || secrets.DATABASE_PUBLIC_URL }}
+          PYTHONUNBUFFERED: "1"
+
       - name: Subir resultados como artifact
         if: always()
         uses: actions/upload-artifact@v4

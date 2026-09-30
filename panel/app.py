@@ -467,7 +467,9 @@ CRONS_DEFINIDOS = [
                         "(sobre todo Mixtas del escaneo de actas, y las Mixtas/Figurativas de "
                         "boletín que el webservice no devolvió), lee el nombre de la ficha del "
                         "expediente en INPI (DATOS GENERALES) y, si no está ahí, del webservice "
-                        "por CUIT. Las figurativas puras (logo sin texto) no tienen nombre.",
+                        "por CUIT. Se lanza solo al terminar cada escaneo de actas y cada "
+                        "pipeline de boletines; este horario es la red de seguridad. Las "
+                        "figurativas puras (logo sin texto) no tienen nombre ni se reintentan.",
         "workflow_file": "backfill_denominacion.yml",
         "cron": "30 9,15,21 * * *",
         "pendientes_sql": "SELECT COUNT(*) FROM marcas WHERE es_lead IS NOT FALSE "

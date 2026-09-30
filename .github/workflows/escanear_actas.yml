@@ -55,3 +55,18 @@ jobs:
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL || secrets.DATABASE_PUBLIC_URL }}
           PYTHONUNBUFFERED: "1"
+
+      - name: Completar nombres que quedaron pendientes (mixta/fig.)
+        # Si alguna acta nueva quedó guardada sin nombre (ficha y Formulario
+        # sin texto, webservice todavía sin la marca), se reintenta en el
+        # momento. Si no quedó ninguna pendiente, termina al instante sin
+        # consultar INPI. No marca el escaneo en rojo si falla: el proceso
+        # programado "Completar nombres" lo vuelve a intentar.
+        if: always()
+        continue-on-error: true
+        run: |
+          cd scripts
+          python3 backfill_denominacion.py --limit 60
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL || secrets.DATABASE_PUBLIC_URL }}
+          PYTHONUNBUFFERED: "1"

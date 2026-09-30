@@ -22,8 +22,12 @@ Dónde se guarda: escaneo directo -> `denominacion` (lo que el boletín deja
 vacío en M/F; cargar_db.py no lo pisa con NULL). Boletín -> `denominacion_inpi`
 (la columna que ya usa el panel para M/F). Nunca pisa un nombre existente.
 
-Corre solo al final de cada "Escanear actas nuevas" (con tope) y se puede
-correr a mano desde Actions -> "Completar nombres (mixta/fig.)".
+Se dispara solo:
+  - al final de cada "Escanear actas nuevas" y de cada "Pipeline de boletines"
+    (si en esa corrida quedó alguna marca sin nombre, se busca en el momento;
+    si no quedó ninguna, termina al instante sin consultar INPI);
+  - además, como red de seguridad, 3 veces por día por su cuenta
+    (workflow backfill_denominacion.yml), y a mano desde Automatizaciones.
 
 Uso:
     DATABASE_URL=... python3 backfill_denominacion.py [--limit N] [--delay 1.5] [--incluir-no-leads]
@@ -76,6 +80,10 @@ def main():
     if args.limit:
         pendientes = pendientes[: args.limit]
     print(f"Marcas sin nombre a revisar: {len(pendientes)}")
+    if not pendientes:
+        print("::notice::No hay marcas sin nombre pendientes.")
+        conn.close()
+        return
 
     s = crear_sesion()
     completadas = 0
