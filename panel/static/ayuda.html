@@ -436,7 +436,7 @@ le asigna un puntaje de prioridad. Después sigue a cada marca a lo largo del ti
                 <strong>pre-boletín</strong>. El nombre de la marca (incluidas las Mixtas) lo lee de la ficha del expediente
                 (DATOS GENERALES); si ahí no está, del Formulario o del webservice de INPI por CUIT. Las marcas con abogado
                 se descartan: las carga el boletín después.</td></tr>
-            <tr><td><strong>Completar nombres (mixta/fig.)</strong></td><td>Automáticamente al terminar cada escaneo de actas y cada pipeline de boletines; además, todos los días 6:30, 12:30 y 18:30 hs como red de seguridad</td>
+            <tr><td><strong>Completar nombres (mixta/fig.)</strong><br><small>(no aparece en Automatizaciones)</small></td><td>Automáticamente al terminar cada escaneo de actas y cada pipeline de boletines; además, todos los días 6:30, 12:30 y 18:30 hs como red de seguridad</td>
               <td>Para las marcas que figuran como <em>(nombre pendiente)</em> —Mixtas del escaneo de actas o
                 Mixtas/Figurativas de boletín que el webservice no devolvió— vuelve a leer el nombre de la ficha del
                 expediente y, si no está, del webservice por CUIT. De paso completa tipo y fecha de presentación si
@@ -495,7 +495,7 @@ le asigna un puntaje de prioridad. Después sigue a cada marca a lo largo del ti
             <tr><th>Comentarios</th><td>Botón 💬 en cada fila o sección <strong>💬 Comentarios</strong>: dejarle un mensaje a otra persona del equipo (o a todos), vinculado o no a un acta, y marcarlo como resuelto cuando se atendió.</td></tr>
             <tr><th>Correr ahora</th><td>En <strong>Automatizaciones</strong>, cualquier proceso automático se puede disparar a mano.</td></tr>
             <tr><th>Agregar marca manualmente</th><td>Carga al panel un acta puntual que no vino por boletín ni por el escaneo (desde GitHub Actions).</td></tr>
-            <tr><th>Completar nombres (mixta/fig.)</th><td>Además de correr solo, se puede disparar desde <strong>Automatizaciones</strong> o GitHub Actions, con tope de marcas y opción de incluir también las que tienen apoderado.</td></tr>
+            <tr><th>Completar nombres (mixta/fig.)</th><td>Corre solo por detrás y no tiene tarjeta en <strong>Automatizaciones</strong> (para no sumar una más). Si alguna vez hiciera falta correrlo a mano, está en GitHub Actions como "Completar nombres (mixta/fig.)", con tope de marcas y opción de incluir también las que tienen apoderado.</td></tr>
             <tr><th>Inspeccionar acta</th><td>Diagnóstico: muestra qué devuelve INPI para un acta, para revisar un caso raro (desde GitHub Actions).</td></tr>
             <tr><th>Comparar extracción Apify vs local</th><td>Diagnóstico: para un boletín dado, compara las marcas que salen leyendo el PDF con Apify contra leerlo directamente, para verificar que el respaldo de lectura da lo mismo (desde GitHub Actions).</td></tr>
             <tr><th>Probar alarma de bloqueo</th><td>Manda un mail de prueba del aviso de bloqueo, para ver cómo llega (desde GitHub Actions).</td></tr>

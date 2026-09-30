@@ -462,23 +462,6 @@ CRONS_DEFINIDOS = [
         "pendientes_etiqueta": "leads detectados antes del boletín, esperando que los alcance",
     },
     {
-        "nombre": "Completar nombres (mixta/fig.)",
-        "descripcion": "Para las marcas que en el panel figuran como \"(nombre pendiente)\" "
-                        "(sobre todo Mixtas del escaneo de actas, y las Mixtas/Figurativas de "
-                        "boletín que el webservice no devolvió), lee el nombre de la ficha del "
-                        "expediente en INPI (DATOS GENERALES) y, si no está ahí, del webservice "
-                        "por CUIT. Se lanza solo al terminar cada escaneo de actas y cada "
-                        "pipeline de boletines; este horario es la red de seguridad. Las "
-                        "figurativas puras (logo sin texto) no tienen nombre ni se reintentan.",
-        "workflow_file": "backfill_denominacion.yml",
-        "cron": "30 9,15,21 * * *",
-        "pendientes_sql": "SELECT COUNT(*) FROM marcas WHERE es_lead IS NOT FALSE "
-                           "AND COALESCE(NULLIF(TRIM(denominacion), ''), "
-                           "NULLIF(TRIM(denominacion_inpi), '')) IS NULL "
-                           "AND COALESCE(tipo, '') <> 'F'",
-        "pendientes_etiqueta": "marcas (no figurativas) todavía sin nombre",
-    },
-    {
         "nombre": "Verificación del despliegue",
         "descripcion": "Compara qué commit tiene desplegado el panel contra el último "
                         "commit de main. Si Railway se queda pegado (deploy atascado en cola, "
