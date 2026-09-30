@@ -200,6 +200,23 @@ def _correr_alters_panel(cur):
     cur.execute(
         "CREATE INDEX IF NOT EXISTS idx_marcas_fuente ON marcas(fuente)"
     )
+    # Limpieza del bug del titular en el escaneo directo (30/09/2026): la
+    # regex vieja del Formulario guardaba "NOMBRE DOMICILIO LEGAL: ... 3 de 3".
+    # Se corta en " DOMICILIO LEGAL" y, si lo que queda es solo un CUIT/número,
+    # se deja como "a confirmar" (corregir_titular_escaneo.py lo completa
+    # desde INPI). Idempotente: después de la primera vez no matchea nada.
+    cur.execute(
+        r"""
+        UPDATE marcas
+        SET titular = CASE
+                WHEN btrim(regexp_replace(titular, '\s*DOMICILIO LEGAL.*$', '')) ~ '^[0-9.\- ]*$'
+                    THEN '(titular a confirmar manualmente)'
+                ELSE btrim(regexp_replace(titular, '\s*DOMICILIO LEGAL.*$', ''))
+            END,
+            actualizado_en = now()
+        WHERE fuente = 'escaneo_directo' AND titular ~ 'DOMICILIO LEGAL'
+        """
+    )
     cur.execute(
         """
         CREATE TABLE IF NOT EXISTS escaneo_actas (
