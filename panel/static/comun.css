@@ -451,3 +451,56 @@ button.flecha-grupo {
 }
 .ficha-titular .dato { font-size: 13px; color: var(--gris); }
 .ficha-titular .dato strong { color: #1f2430; }
+
+/* ── Comentarios internos ── */
+.contador-coment {
+  display: inline-block; min-width: 18px; padding: 1px 6px; margin-left: 4px;
+  border-radius: 10px; background: #f5b400; color: #1f2430;
+  font-size: 11px; font-weight: 700; text-align: center;
+}
+button.btn-coment {
+  padding: 2px 7px; border-radius: 6px; border: 1px solid var(--borde);
+  background: white; font-size: 12px; cursor: pointer; opacity: 0.55; white-space: nowrap;
+}
+button.btn-coment:hover { opacity: 1; background: var(--azul-claro); }
+button.btn-coment.con-comentarios { opacity: 1; }
+button.btn-coment.con-abiertos { border-color: #f5b400; background: #fff6d6; font-weight: 600; }
+.modal-caja.modal-coment { max-width: 620px; width: 100%; }
+.modal-caja h3.titulo-coment { color: var(--azul); }
+.form-coment { display: flex; flex-direction: column; gap: 8px; margin-bottom: 14px; }
+.form-coment textarea {
+  width: 100%; box-sizing: border-box; padding: 8px 10px; font: inherit; font-size: 13px;
+  border: 1px solid var(--borde); border-radius: 6px; resize: vertical;
+}
+.form-coment-fila { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; }
+.form-coment-fila label { display: flex; flex-direction: column; gap: 3px; font-size: 11px; color: var(--gris); }
+.form-coment-fila select, .form-coment-fila input {
+  padding: 5px 8px; border: 1px solid var(--borde); border-radius: 6px; font-size: 13px; min-width: 140px;
+}
+.form-coment-fila button[type=submit] {
+  margin-left: auto; padding: 7px 16px; border: none; border-radius: 6px;
+  background: var(--azul); color: white; font-size: 13px; cursor: pointer;
+}
+.form-coment-fila button[type=submit]:disabled { opacity: 0.5; cursor: wait; }
+.comentario {
+  border: 1px solid var(--borde); border-radius: 8px; padding: 10px 12px; margin-bottom: 10px;
+  background: white; font-size: 13px;
+}
+.comentario.para-mi { border-left: 4px solid #f5b400; }
+.comentario.resuelto { opacity: 0.6; background: #fafbfc; }
+.com-cabecera { margin-bottom: 4px; }
+.com-fecha, .com-todos { color: var(--gris); font-size: 12px; }
+.com-fecha { margin-left: 6px; }
+.com-acta { font-size: 12px; margin-bottom: 6px; color: #1f2430; }
+.com-texto { line-height: 1.45; white-space: normal; overflow-wrap: anywhere; }
+.com-pie { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 8px; }
+.com-resuelto { font-size: 11px; color: var(--verde); }
+.com-acciones { margin-left: auto; display: flex; gap: 6px; }
+.com-acciones button {
+  padding: 3px 9px; border-radius: 6px; border: 1px solid var(--borde);
+  background: white; color: var(--azul); font-size: 11px; cursor: pointer;
+}
+.com-acciones button:hover { background: var(--azul-claro); }
+.com-acciones button.com-borrar { color: var(--rojo); }
+.com-vacio { color: var(--gris); font-size: 13px; }
+td.celda-acciones { white-space: nowrap; }

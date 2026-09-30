@@ -40,6 +40,7 @@ from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
 
 import inpi_lead
 
@@ -103,6 +104,56 @@ def migrar_columnas_panel():
             conn.commit()
     except Exception as e:
         print(f"[startup] migrar_columnas_panel salteada (no bloqueante): {e}")
+
+    # Tablas de comentarios internos: van en una transacción aparte porque no
+    # tocan `marcas` (no compiten por su lock) — si el bloque de arriba se
+    # saltea por lock_timeout, esto igual tiene que quedar creado.
+    try:
+        with conexion() as conn:
+            with conn.cursor() as cur:
+                _crear_tablas_comentarios(cur)
+            conn.commit()
+    except Exception as e:
+        print(f"[startup] tablas de comentarios salteadas (no bloqueante): {e}")
+
+
+def _crear_tablas_comentarios(cur):
+    """Comentarios internos del equipo (ver sección /comentarios).
+
+    - acta: opcional, vincula el comentario a una marca. No es FK a `marcas`
+      a propósito: se puede comentar un acta que todavía no está cargada
+      (ej. la marca que invoca un oponente).
+    - destinatario: NULL = para todo el equipo; si no, el usuario del panel
+      (mismo nombre que en PANEL_USERS) al que va dirigido.
+    - resuelto: para "cerrar" un pendiente sin borrarlo.
+    """
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS comentarios (
+            id            SERIAL PRIMARY KEY,
+            autor         TEXT NOT NULL,
+            destinatario  TEXT,
+            acta          TEXT,
+            texto         TEXT NOT NULL,
+            creado_en     TIMESTAMPTZ NOT NULL DEFAULT now(),
+            resuelto      BOOLEAN NOT NULL DEFAULT false,
+            resuelto_por  TEXT,
+            resuelto_en   TIMESTAMPTZ
+        )
+        """
+    )
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_comentarios_acta ON comentarios(acta)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_comentarios_creado ON comentarios(creado_en DESC)")
+    # Hasta cuándo vio cada usuario la sección de comentarios -> contador de
+    # "nuevos" en el encabezado del panel.
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS comentarios_visto (
+            usuario      TEXT PRIMARY KEY,
+            visto_hasta  TIMESTAMPTZ NOT NULL DEFAULT now()
+        )
+        """
+    )
 
 
 def _correr_alters_panel(cur):
@@ -860,6 +911,194 @@ def correr_cron(workflow_file: str = Query(...), _: str = Depends(verificar_logi
     raise HTTPException(status_code=502, detail=f"GitHub devolvió {r.status_code}: {r.text[:200]}")
 
 
+# --- Comentarios internos ---------------------------------------------------
+# Notas entre las personas del equipo, opcionalmente vinculadas a un acta y/o
+# dirigidas a una persona puntual. El autor sale siempre del login (nunca del
+# body), así nadie puede escribir "en nombre de" otro.
+
+class ComentarioNuevo(BaseModel):
+    texto: str
+    acta: Optional[str] = None
+    destinatario: Optional[str] = None
+
+
+def _normalizar_acta(acta: Optional[str]) -> Optional[str]:
+    if acta is None:
+        return None
+    acta = re.sub(r"\D", "", acta)  # acepta "4.797.001", " 4797001 ", etc.
+    return acta or None
+
+
+COLUMNAS_COMENTARIO = """
+    c.id, c.autor, c.destinatario, c.acta, c.texto, c.creado_en,
+    c.resuelto, c.resuelto_por, c.resuelto_en,
+    m.denominacion_inpi, m.denominacion, m.titular, m.cuit
+"""
+
+
+@app.get("/api/yo")
+def quien_soy(usuario: str = Depends(verificar_login)):
+    """Usuario logueado + lista de usuarios del panel (para el selector
+    "Para:" de los comentarios). No expone claves."""
+    return {"usuario": usuario, "usuarios": sorted(USUARIOS_PANEL.keys())}
+
+
+@app.get("/api/comentarios")
+def listar_comentarios(
+    usuario: str = Depends(verificar_login),
+    acta: Optional[str] = None,
+    estado: str = "abiertos",  # "abiertos" | "resueltos" | "todos"
+    para_mi: bool = False,
+    limit: int = Query(200, le=500),
+):
+    condiciones, valores = [], []
+    if acta is not None:
+        condiciones.append("c.acta = %s")
+        valores.append(_normalizar_acta(acta))
+    if estado == "abiertos":
+        condiciones.append("NOT c.resuelto")
+    elif estado == "resueltos":
+        condiciones.append("c.resuelto")
+    if para_mi:
+        condiciones.append("(c.destinatario = %s OR c.destinatario IS NULL) AND c.autor <> %s")
+        valores.extend([usuario, usuario])
+    where_sql = f"WHERE {' AND '.join(condiciones)}" if condiciones else ""
+    with conexion() as conn:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                f"""
+                SELECT {COLUMNAS_COMENTARIO}
+                FROM comentarios c
+                LEFT JOIN marcas m ON m.acta = c.acta
+                {where_sql}
+                ORDER BY c.creado_en DESC
+                LIMIT %s
+                """,
+                valores + [limit],
+            )
+            return cur.fetchall()
+
+
+@app.post("/api/comentarios")
+def crear_comentario(body: ComentarioNuevo, usuario: str = Depends(verificar_login)):
+    texto = (body.texto or "").strip()
+    if not texto:
+        raise HTTPException(status_code=400, detail="El comentario está vacío")
+    if len(texto) > 5000:
+        raise HTTPException(status_code=400, detail="El comentario es demasiado largo (máx. 5000 caracteres)")
+    destinatario = (body.destinatario or "").strip() or None
+    if destinatario and destinatario not in USUARIOS_PANEL:
+        raise HTTPException(status_code=400, detail=f"No existe el usuario {destinatario}")
+    acta = _normalizar_acta(body.acta)
+    if body.acta and not acta:
+        raise HTTPException(status_code=400, detail="Número de acta inválido")
+    with conexion() as conn:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                """
+                INSERT INTO comentarios (autor, destinatario, acta, texto)
+                VALUES (%s, %s, %s, %s) RETURNING id
+                """,
+                (usuario, destinatario, acta, texto),
+            )
+            nuevo = cur.fetchone()
+        conn.commit()
+    return {"ok": True, "id": nuevo["id"]}
+
+
+@app.post("/api/comentarios/{comentario_id}/resolver")
+def resolver_comentario(comentario_id: int, valor: bool = True, usuario: str = Depends(verificar_login)):
+    with conexion() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE comentarios
+                SET resuelto = %s,
+                    resuelto_por = CASE WHEN %s THEN %s ELSE NULL END,
+                    resuelto_en  = CASE WHEN %s THEN now() ELSE NULL END
+                WHERE id = %s
+                """,
+                (valor, valor, usuario, valor, comentario_id),
+            )
+            if cur.rowcount == 0:
+                raise HTTPException(status_code=404, detail="No existe ese comentario")
+        conn.commit()
+    return {"ok": True}
+
+
+@app.delete("/api/comentarios/{comentario_id}")
+def borrar_comentario(comentario_id: int, usuario: str = Depends(verificar_login)):
+    """Solo quien lo escribió lo puede borrar (para corregir un error);
+    para dar por cerrado un tema está "Resolver"."""
+    with conexion() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT autor FROM comentarios WHERE id = %s", (comentario_id,))
+            fila = cur.fetchone()
+            if not fila:
+                raise HTTPException(status_code=404, detail="No existe ese comentario")
+            if fila[0] != usuario:
+                raise HTTPException(status_code=403, detail="Solo quien escribió el comentario lo puede borrar")
+            cur.execute("DELETE FROM comentarios WHERE id = %s", (comentario_id,))
+        conn.commit()
+    return {"ok": True}
+
+
+@app.get("/api/comentarios/resumen")
+def resumen_comentarios(usuario: str = Depends(verificar_login)):
+    """Contador para el encabezado: comentarios de otros (para mí o para
+    todos) escritos después de la última vez que abrí /comentarios, y
+    cuántos abiertos van dirigidos a mí."""
+    with conexion() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT
+                  COUNT(*) FILTER (WHERE c.creado_en > COALESCE(v.visto_hasta, '-infinity')),
+                  COUNT(*) FILTER (WHERE NOT c.resuelto AND c.destinatario = %s)
+                FROM comentarios c
+                LEFT JOIN comentarios_visto v ON v.usuario = %s
+                WHERE c.autor <> %s AND (c.destinatario = %s OR c.destinatario IS NULL)
+                """,
+                (usuario, usuario, usuario, usuario),
+            )
+            nuevos, abiertos_para_mi = cur.fetchone()
+    return {"nuevos": nuevos, "abiertos_para_mi": abiertos_para_mi}
+
+
+@app.post("/api/comentarios/visto")
+def marcar_comentarios_vistos(usuario: str = Depends(verificar_login)):
+    with conexion() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO comentarios_visto (usuario, visto_hasta) VALUES (%s, now())
+                ON CONFLICT (usuario) DO UPDATE SET visto_hasta = now()
+                """,
+                (usuario,),
+            )
+        conn.commit()
+    return {"ok": True}
+
+
+@app.get("/api/comentarios/por-acta")
+def comentarios_por_acta(actas: str = Query(""), _: str = Depends(verificar_login)):
+    """Cantidad de comentarios (total y abiertos) por acta, para mostrar el
+    globito 💬 en cada fila de la tabla. `actas` = lista separada por coma."""
+    lista = [a for a in (_normalizar_acta(x) for x in actas.split(",")) if a][:1000]
+    if not lista:
+        return {}
+    with conexion() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT acta, COUNT(*), COUNT(*) FILTER (WHERE NOT resuelto)
+                FROM comentarios WHERE acta = ANY(%s) GROUP BY acta
+                """,
+                (lista,),
+            )
+            return {a: {"total": t, "abiertos": ab} for a, t, ab in cur.fetchall()}
+
+
 @app.get("/api/version")
 def version():
     """Qué commit está corriendo este proceso ahora mismo — lo usa el workflow
@@ -896,6 +1135,11 @@ def pagina_crons(_: str = Depends(verificar_login)):
 @app.get("/boletines")
 def pagina_boletines(_: str = Depends(verificar_login)):
     return FileResponse(os.path.join(os.path.dirname(__file__), "static", "boletines.html"))
+
+
+@app.get("/comentarios")
+def pagina_comentarios(_: str = Depends(verificar_login)):
+    return FileResponse(os.path.join(os.path.dirname(__file__), "static", "comentarios.html"))
 
 
 class ArchivosSinCache(StaticFiles):

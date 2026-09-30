@@ -99,3 +99,28 @@ CREATE INDEX IF NOT EXISTS idx_marcas_titular ON marcas(titular);
 CREATE INDEX IF NOT EXISTS idx_marcas_contactado ON marcas(contactado);
 CREATE INDEX IF NOT EXISTS idx_marcas_fecha_publicacion ON marcas(fecha_publicacion);
 CREATE INDEX IF NOT EXISTS idx_marcas_estado_tramite ON marcas(estado_tramite);
+
+-- Agregado el 30/09/2026: comentarios internos del equipo en el panel
+-- (sección /comentarios y botón 💬 en cada fila). "acta" es opcional y NO es
+-- FK a marcas (se puede comentar un acta que todavía no está cargada);
+-- "destinatario" NULL = para todo el equipo. El panel también crea estas
+-- tablas solo al arrancar (ver _crear_tablas_comentarios en panel/app.py).
+CREATE TABLE IF NOT EXISTS comentarios (
+    id            SERIAL PRIMARY KEY,
+    autor         TEXT NOT NULL,
+    destinatario  TEXT,
+    acta          TEXT,
+    texto         TEXT NOT NULL,
+    creado_en     TIMESTAMPTZ NOT NULL DEFAULT now(),
+    resuelto      BOOLEAN NOT NULL DEFAULT false,
+    resuelto_por  TEXT,
+    resuelto_en   TIMESTAMPTZ
+);
+CREATE INDEX IF NOT EXISTS idx_comentarios_acta ON comentarios(acta);
+CREATE INDEX IF NOT EXISTS idx_comentarios_creado ON comentarios(creado_en DESC);
+
+-- Hasta cuándo vio cada usuario la sección de comentarios (contador de nuevos).
+CREATE TABLE IF NOT EXISTS comentarios_visto (
+    usuario      TEXT PRIMARY KEY,
+    visto_hasta  TIMESTAMPTZ NOT NULL DEFAULT now()
+);

@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Comentarios — Kom Marcas Inpi</title>
+<link rel="stylesheet" href="/static/comun.css" />
+<style>
+  .contenido { max-width: 780px; margin: 24px auto 60px; padding: 0 20px; }
+  .caja-form { background: white; border: 1px solid var(--borde); border-radius: 10px; padding: 14px 16px 2px; margin-bottom: 18px; }
+  .caja-form h2 { font-size: 14px; margin: 0 0 10px; color: #1f2430; }
+  .pestanas-coment { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; align-items: center; }
+  .pestanas-coment button {
+    padding: 5px 12px; border-radius: 16px; border: 1px solid var(--borde);
+    background: white; color: var(--gris); font-size: 12px; cursor: pointer;
+  }
+  .pestanas-coment button.activa { background: var(--azul); border-color: var(--azul); color: white; }
+  .pestanas-coment .filtro-acta { margin-left: auto; display: flex; gap: 6px; align-items: center; font-size: 12px; color: var(--gris); }
+  .pestanas-coment .filtro-acta input { padding: 4px 8px; border: 1px solid var(--borde); border-radius: 6px; font-size: 12px; width: 110px; }
+</style>
+</head>
+<body>
+
+<header>
+  <a class="volver" href="/">&larr; Volver al panel</a>
+  <h1>Comentarios internos</h1>
+  <a class="ayuda" href="/ayuda" style="margin-left:auto;">? Ayuda</a>
+</header>
+
+<div class="contenido">
+  <div class="caja-form">
+    <h2>Nuevo comentario</h2>
+    <div id="form-nuevo">Cargando…</div>
+  </div>
+
+  <div class="pestanas-coment" id="pestanas">
+    <button type="button" data-vista="abiertos" class="activa">Sin resolver</button>
+    <button type="button" data-vista="para_mi">Para mí</button>
+    <button type="button" data-vista="resueltos">Resueltos</button>
+    <button type="button" data-vista="todos">Todos</button>
+    <span class="filtro-acta">Acta
+      <input type="text" id="f-acta" inputmode="numeric" placeholder="filtrar..." />
+    </span>
+  </div>
+
+  <div id="lista">Cargando…</div>
+</div>
+
+<script src="/static/comun.js"></script>
+<script>
+let vista = "abiertos";
+
+function qsVista() {
+  const p = new URLSearchParams();
+  if (vista === "para_mi") { p.set("para_mi", "true"); p.set("estado", "abiertos"); }
+  else p.set("estado", vista);
+  const acta = document.getElementById("f-acta").value.replace(/\D/g, "");
+  if (acta) p.set("acta", acta);
+  return p.toString();
+}
+
+async function cargarLista() {
+  const cont = document.getElementById("lista");
+  try {
+    const lista = await api(`/api/comentarios?${qsVista()}`);
+    cont.innerHTML = lista.length
+      ? lista.map(c => htmlComentario(c)).join("")
+      : '<p class="com-vacio">No hay comentarios en esta vista.</p>';
+  } catch (e) {
+    cont.innerHTML = `<p style="color:var(--rojo);">No se pudo cargar (${e.message}).</p>`;
+  }
+}
+
+window.alCambiarComentarios = cargarLista;
+
+document.querySelectorAll("#pestanas button[data-vista]").forEach(b => {
+  b.addEventListener("click", () => {
+    vista = b.dataset.vista;
+    document.querySelectorAll("#pestanas button[data-vista]").forEach(x => x.classList.toggle("activa", x === b));
+    cargarLista();
+  });
+});
+
+let _timerActa;
+document.getElementById("f-acta").addEventListener("input", () => {
+  clearTimeout(_timerActa);
+  _timerActa = setTimeout(cargarLista, 350);
+});
+
+(async function init() {
+  await quienSoy();
+  // Link con ?acta=... (ej. desde otra pantalla): precarga el acta en el
+  // formulario y filtra la lista por esa acta.
+  const actaUrl = (new URLSearchParams(location.search).get("acta") || "").replace(/\D/g, "");
+  document.getElementById("form-nuevo").innerHTML = htmlFormComentario({ acta: actaUrl, idPrefijo: "fc" });
+  if (actaUrl) {
+    document.getElementById("f-acta").value = actaUrl;
+    vista = "todos";
+    document.querySelectorAll("#pestanas button[data-vista]").forEach(x => x.classList.toggle("activa", x.dataset.vista === "todos"));
+  }
+  await cargarLista();
+  // Al entrar a esta sección, lo que había quedó "visto" (se apaga el contador).
+  try { await apiJson("/api/comentarios/visto", "POST"); } catch (_) {}
+})();
+</script>
+
+</body>
+</html>

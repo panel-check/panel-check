@@ -11,7 +11,8 @@
 <header>
   <h1>Panel de leads — INPI</h1>
   <span class="sub">Marcas autopresentadas, listas para prospección</span>
-  <a class="ayuda" href="/boletines" style="margin-left:auto;">🗞 Boletines</a>
+  <a class="ayuda" href="/comentarios" id="link-comentarios" style="margin-left:auto;">💬 Comentarios</a>
+  <a class="ayuda" href="/boletines" style="margin-left:16px;">🗞 Boletines</a>
   <a class="ayuda" href="/crons" style="margin-left:16px;">⏱ Automatizaciones</a>
   <a class="ayuda" href="/ayuda" style="margin-left:16px;">? Ayuda</a>
 </header>
@@ -131,6 +132,10 @@
 const LIMIT = 100;
 let estado = { offset: 0, total: 0, sort: "lead_score", order: "desc" };
 window.alRecargar = () => cargar(estado.offset);
+// Al agregar/resolver un comentario desde el popup 💬 de una fila, se
+// actualiza solo el contador del encabezado (el globito de la fila ya lo
+// repinta el popup, sin recargar la tabla).
+window.alCambiarComentarios = actualizarContadorComentarios;
 
 function qs(params) {
   return Object.entries(params)
@@ -349,7 +354,7 @@ function filaHtml(r, { flecha = false, oculta = false, idGrupo = null, cantidadR
       <td class="celda-email">${celdaEmailIcono(r)}</td>
       <td>${fechaPublicacionOFallback(r)}</td>
       <td>${fmtFecha(r.fecha_concesion) || "—"}</td>
-      <td><a class="abrir" href="${hrefTitular}" target="_blank" title="Ver ficha completa del titular (boletín ${r.boletin || "sin boletín todavía"}, acta ${r.acta})">Abrir</a></td>
+      <td class="celda-acciones">${botonComentarios(r.acta)} <a class="abrir" href="${hrefTitular}" target="_blank" title="Ver ficha completa del titular (boletín ${r.boletin || "sin boletín todavía"}, acta ${r.acta})">Abrir</a></td>
     </tr>
   `;
 }
@@ -390,6 +395,8 @@ async function cargar(offset) {
       return filaPrincipal + filasResto;
     }).join("");
   }
+
+  cargarContadoresComentarios(data.rows.map(r => r.acta));
 
   const desde = data.total === 0 ? 0 : estado.offset + 1;
   const hasta = Math.min(estado.offset + LIMIT, data.total);

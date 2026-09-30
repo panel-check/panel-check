@@ -11,7 +11,8 @@
 <header>
   <a class="volver" href="/">&larr; Volver al panel</a>
   <h1 id="titulo-titular">Cargando...</h1>
-  <a class="ayuda" href="/ayuda">? Ayuda</a>
+  <a class="ayuda" href="/comentarios" id="link-comentarios" style="margin-left:auto;">💬 Comentarios</a>
+  <a class="ayuda" href="/ayuda" style="margin-left:16px;">? Ayuda</a>
 </header>
 
 <div class="ficha-titular" id="ficha-titular"></div>
@@ -43,6 +44,7 @@
 <script src="/static/comun.js"></script>
 <script>
 window.alRecargar = () => cargar();
+window.alCambiarComentarios = actualizarContadorComentarios;
 
 function claveDesdeUrl() {
   // /titular/<clave> — la clave puede ser un CUIT o un nombre normalizado,
@@ -65,7 +67,7 @@ function filaHtml(r) {
       <td>${fechaPublicacionOFallback(r)}</td>
       <td>${fmtFecha(r.fecha_concesion) || "—"}</td>
       <td>${badgeEstadoTramite(r, true)}</td>
-      <td><button class="contactar ${r.contactado ? "marcado" : ""}" onclick="marcarContactado('${r.acta}', ${!!r.contactado})">
+      <td class="celda-acciones">${botonComentarios(r.acta)} <button class="contactar ${r.contactado ? "marcado" : ""}" onclick="marcarContactado('${r.acta}', ${!!r.contactado})">
         ${r.contactado ? "✓ Contactado" : "Marcar"}
       </button></td>
     </tr>
@@ -90,6 +92,7 @@ async function cargar() {
     tbody.innerHTML = data.rows.length
       ? data.rows.map(filaHtml).join("")
       : '<tr><td colspan="12" class="vacio">Sin marcas para este titular.</td></tr>';
+    cargarContadoresComentarios(data.rows.map(r => r.acta));
   } catch (e) {
     document.getElementById("titulo-titular").textContent = "No encontrado";
     tbody.innerHTML = `<tr><td colspan="12" class="vacio">No se pudo cargar (${e.message}).</td></tr>`;

@@ -245,6 +245,17 @@
     <h2>Contactado</h2>
     <p>Es un estado propio del panel — el pipeline que carga los boletines nunca lo toca. Se marca por acta (por ahora no está unificado por titular), y queda con la fecha en que se marcó.</p>
 
+    <h2>💬 Comentarios internos</h2>
+    <p>Sirven para dejarse mensajes entre las personas del equipo dentro del panel, sin depender del WhatsApp o el mail. Cada comentario queda con quién lo escribió (el usuario con el que entraste al panel) y la fecha.</p>
+    <ul>
+      <li><strong>Sobre una marca:</strong> en cada fila del panel principal y de la ficha por titular hay un botón <strong>💬</strong>. Abre los comentarios de esa acta y permite agregar uno nuevo ya vinculado. Si la marca tiene comentarios, el botón muestra cuántos; si alguno está sin resolver, se pinta en amarillo.</li>
+      <li><strong>Sección Comentarios</strong> (link <strong>💬 Comentarios</strong> arriba a la derecha): todos los comentarios juntos, con pestañas <em>Sin resolver</em>, <em>Para mí</em>, <em>Resueltos</em> y <em>Todos</em>, y filtro por número de acta. Desde acá también se puede escribir un comentario general o poner a mano el número de acta (sirve incluso para un acta que todavía no está cargada en el panel, por ejemplo la marca que invoca un oponente).</li>
+      <li><strong>Para:</strong> se puede dirigir a una persona puntual o a todo el equipo. Los que van dirigidos a vos se ven con una barra amarilla a la izquierda.</li>
+      <li><strong>Contador de nuevos:</strong> el número amarillo al lado de "💬 Comentarios" cuenta los comentarios de otros (para vos o para todos) escritos desde la última vez que entraste a esa sección. Se apaga al entrar.</li>
+      <li><strong>Responder</strong> precarga el formulario dirigido a quien escribió, con la misma acta. <strong>✓ Resolver</strong> da por cerrado el tema sin borrarlo (se puede reabrir). <strong>Borrar</strong> solo aparece en tus propios comentarios.</li>
+    </ul>
+    <p>Por ahora no mandan aviso por mail: se ven al entrar al panel.</p>
+
   </div>
 
   <!-- ==================== TAB: MANUAL (para presentar el proceso completo) ==================== -->
@@ -406,6 +417,7 @@ le asigna un puntaje de prioridad. Después sigue a cada marca a lo largo del ti
           <tbody>
             <tr><th>Reintentar (en la ficha)</th><td>Vuelve a consultar en vivo un expediente puntual y actualiza carácter, email, CUIT y score.</td></tr>
             <tr><th>Importar boletín</th><td>En <strong>Boletines</strong> se ven todos los boletines de marcas nuevas publicados por INPI y cuáles ya están cargados. El botón Importar procesa uno puntual (por ejemplo, del historial) sin esperar al pipeline.</td></tr>
+            <tr><th>Comentarios</th><td>Botón 💬 en cada fila o sección <strong>💬 Comentarios</strong>: dejarle un mensaje a otra persona del equipo (o a todos), vinculado o no a un acta, y marcarlo como resuelto cuando se atendió.</td></tr>
             <tr><th>Correr ahora</th><td>En <strong>Automatizaciones</strong>, cualquier proceso automático se puede disparar a mano.</td></tr>
             <tr><th>Agregar marca manualmente</th><td>Carga al panel un acta puntual que no vino por boletín ni por el escaneo (desde GitHub Actions).</td></tr>
             <tr><th>Inspeccionar acta</th><td>Diagnóstico: muestra qué devuelve INPI para un acta, para revisar un caso raro (desde GitHub Actions).</td></tr>
@@ -440,6 +452,12 @@ le asigna un puntaje de prioridad. Después sigue a cada marca a lo largo del ti
               trajo cada uno, con el botón para importar los que falten.</p>
           </div>
           <div class="tarjeta-mini">
+            <h4>Comentarios (<code>/comentarios</code>)</h4>
+            <p>Mensajes internos entre las personas del equipo, generales o vinculados a un número de acta, dirigidos a
+              alguien puntual o a todos. Se pueden responder y marcar como resueltos. Cada fila del panel tiene un botón
+              💬 para ver o agregar comentarios de esa marca, y el encabezado muestra cuántos comentarios nuevos hay.</p>
+          </div>
+          <div class="tarjeta-mini">
             <h4>Estados que se ven en el panel</h4>
             <p><strong>LEAD</strong> (prioridad), <strong>con agente</strong> (descartado), <strong>sin verificar</strong>
               (todavía no se confirmó), <strong>⚠ OPOSICIÓN</strong> (un tercero se opone), <strong>👁 VISTA DE INPI</strong>
@@ -467,6 +485,7 @@ le asigna un puntaje de prioridad. Después sigue a cada marca a lo largo del ti
             <tr><th>Grilla Digital / Formulario</th><td>Archivos del expediente en INPI. El Formulario es el PDF de la solicitud original, de donde sale el email del titular.</td></tr>
             <tr><th>Bloqueo (WAF)</th><td>Filtro de seguridad del sitio de INPI que a veces rechaza consultas automáticas. Los reintentos lo resuelven solos; si es masivo, llega un mail de aviso.</td></tr>
             <tr><th>Contactado</th><td>Marca que ya fue gestionada comercialmente — lo maneja el equipo, no el sistema automático.</td></tr>
+            <tr><th>Comentario interno</th><td>Nota que deja una persona del equipo para otra (o para todos) dentro del panel, opcionalmente vinculada a un acta. "Resuelto" significa que el tema ya se atendió.</td></tr>
             <tr><th>Estado del trámite</th><td>Resultado final del trámite en INPI: Concedida, Denegada, o todavía en curso.</td></tr>
             <tr><th>Fecha de concesión</th><td>Fecha en que INPI otorgó la marca — desde ahí se cuentan los plazos de declaración jurada y renovación.</td></tr>
             <tr><th>Declaración jurada de uso</th><td>Trámite obligatorio dentro de los primeros 5 años desde la concesión, declarando que la marca está en uso.</td></tr>

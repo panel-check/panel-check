@@ -355,3 +355,252 @@ async function marcarContactado(acta, valorActual) {
   await api(`/api/marcas/${encodeURIComponent(acta)}/contactado?valor=${nuevo}`, { method: "POST" });
   if (typeof window.alRecargar === "function") await window.alRecargar();
 }
+
+/* ── Comentarios internos ──────────────────────────────────────────────
+ * Notas entre las personas del equipo (ver /comentarios). Cada comentario
+ * puede ir vinculado a un acta y/o dirigido a una persona puntual. Acá está
+ * lo compartido: el globito 💬 de cada fila, el popup de comentarios de un
+ * acta y el contador de "nuevos" del encabezado. */
+
+window._comentariosPorActa = window._comentariosPorActa || {};
+let _yo = null; // {usuario, usuarios}
+
+async function quienSoy() {
+  if (!_yo) _yo = await api("/api/yo");
+  return _yo;
+}
+
+async function apiJson(path, metodo, body) {
+  const r = await fetch(path, {
+    method: metodo,
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  if (!r.ok) {
+    let detalle = `${r.status}`;
+    try { detalle = (await r.json()).detail || detalle; } catch (_) {}
+    throw new Error(detalle);
+  }
+  return r.json();
+}
+
+function fmtFechaHora(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return iso;
+  return d.toLocaleString("es-AR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
+}
+
+// Carga los contadores de comentarios de todas las actas visibles y pinta
+// los globitos (los botones ya están en el HTML con data-acta-coment).
+async function cargarContadoresComentarios(actas) {
+  const unicas = [...new Set(actas.filter(Boolean))];
+  if (!unicas.length) return;
+  try {
+    const data = await api(`/api/comentarios/por-acta?actas=${encodeURIComponent(unicas.join(","))}`);
+    Object.assign(window._comentariosPorActa, data);
+  } catch (_) { return; }
+  document.querySelectorAll("[data-acta-coment]").forEach(pintarBotonComentarios);
+}
+
+function pintarBotonComentarios(boton) {
+  const c = window._comentariosPorActa[boton.dataset.actaComent];
+  boton.classList.toggle("con-abiertos", !!(c && c.abiertos));
+  boton.classList.toggle("con-comentarios", !!(c && c.total));
+  boton.innerHTML = c && c.total ? `💬 ${c.abiertos || c.total}` : "💬";
+  boton.title = c && c.total
+    ? `${c.total} comentario(s), ${c.abiertos} sin resolver — clic para ver o agregar`
+    : "Agregar un comentario interno sobre esta marca";
+}
+
+function botonComentarios(acta) {
+  if (!acta) return "";
+  return `<button type="button" class="btn-coment" data-acta-coment="${_escapeHtml(acta)}" onclick="abrirComentariosActa('${_escapeHtml(acta)}')">💬</button>`;
+}
+
+function htmlComentario(c, { mostrarActa = true } = {}) {
+  const yo = _yo ? _yo.usuario : null;
+  const para = c.destinatario ? `→ <strong>${_escapeHtml(c.destinatario)}</strong>` : '→ <span class="com-todos">todo el equipo</span>';
+  const marca = c.denominacion_inpi || c.denominacion;
+  const claveTit = (c.cuit || "").trim() || normalizarTitular(c.titular);
+  const vinculo = mostrarActa && c.acta
+    ? `<div class="com-acta">📎 Acta <a class="link-acta" href="javascript:void(0)" onclick="abrirActa('${_escapeHtml(c.acta)}')" title="Ver expediente en INPI">${_escapeHtml(c.acta)} ↗</a>`
+      + (marca ? ` · ${_escapeHtml(marca)}` : "")
+      + (c.titular && claveTit ? ` · <a class="link-titular" href="/titular/${encodeURIComponent(claveTit)}">${_escapeHtml(c.titular)}</a>` : "")
+      + (!c.titular && !marca ? ' <span class="com-todos">(no está cargada en el panel)</span>' : "")
+      + `</div>`
+    : "";
+  const resuelto = c.resuelto
+    ? `<span class="com-resuelto">✓ Resuelto por ${_escapeHtml(c.resuelto_por || "?")} · ${fmtFechaHora(c.resuelto_en)}</span>`
+    : "";
+  const acciones = `
+    <button type="button" onclick="responderComentario(${c.id})">Responder</button>
+    <button type="button" onclick="resolverComentario(${c.id}, ${!c.resuelto})">${c.resuelto ? "Reabrir" : "✓ Resolver"}</button>
+    ${c.autor === yo ? `<button type="button" class="com-borrar" onclick="borrarComentario(${c.id})">Borrar</button>` : ""}
+  `;
+  window._comentariosCache = window._comentariosCache || {};
+  window._comentariosCache[c.id] = c;
+  return `
+    <div class="comentario ${c.resuelto ? "resuelto" : ""} ${c.destinatario && c.destinatario === yo ? "para-mi" : ""}">
+      <div class="com-cabecera"><strong>${_escapeHtml(c.autor)}</strong> ${para} <span class="com-fecha">${fmtFechaHora(c.creado_en)}</span></div>
+      ${vinculo}
+      <div class="com-texto">${_escapeHtml(c.texto).replace(/\n/g, "<br>")}</div>
+      <div class="com-pie">${resuelto}<span class="com-acciones">${acciones}</span></div>
+    </div>
+  `;
+}
+
+function htmlFormComentario({ acta = "", conActa = true, idPrefijo = "fc" } = {}) {
+  const opciones = (_yo ? _yo.usuarios : [])
+    .filter(u => !_yo || u !== _yo.usuario)
+    .map(u => `<option value="${_escapeHtml(u)}">${_escapeHtml(u)}</option>`).join("");
+  return `
+    <form class="form-coment" onsubmit="enviarComentario(event, '${idPrefijo}')">
+      <textarea id="${idPrefijo}-texto" rows="3" placeholder="Escribí un comentario para el equipo..." required></textarea>
+      <div class="form-coment-fila">
+        <label>Para
+          <select id="${idPrefijo}-para"><option value="">Todo el equipo</option>${opciones}</select>
+        </label>
+        ${conActa
+          ? `<label>Acta (opcional)<input id="${idPrefijo}-acta" type="text" inputmode="numeric" placeholder="ej. 4797001" value="${_escapeHtml(acta)}" /></label>`
+          : `<input id="${idPrefijo}-acta" type="hidden" value="${_escapeHtml(acta)}" />`}
+        <button type="submit">Enviar</button>
+      </div>
+    </form>
+  `;
+}
+
+async function enviarComentario(ev, idPrefijo) {
+  ev.preventDefault();
+  const texto = document.getElementById(`${idPrefijo}-texto`);
+  const boton = ev.target.querySelector("button[type=submit]");
+  boton.disabled = true;
+  try {
+    await apiJson("/api/comentarios", "POST", {
+      texto: texto.value,
+      acta: document.getElementById(`${idPrefijo}-acta`).value || null,
+      destinatario: document.getElementById(`${idPrefijo}-para`).value || null,
+    });
+    texto.value = "";
+    await _refrescarComentarios();
+  } catch (e) {
+    alert(`No se pudo guardar el comentario: ${e.message}`);
+  } finally {
+    boton.disabled = false;
+  }
+}
+
+// Cada página define window.alCambiarComentarios para recargar lo suyo;
+// si el popup de un acta está abierto, también se recarga.
+async function _refrescarComentarios() {
+  const modal = document.getElementById("modal-comentarios");
+  if (modal && modal.classList.contains("abierto") && modal.dataset.acta) {
+    await _cargarModalComentarios(modal.dataset.acta);
+  }
+  if (typeof window.alCambiarComentarios === "function") await window.alCambiarComentarios();
+}
+
+async function resolverComentario(id, valor) {
+  try {
+    await apiJson(`/api/comentarios/${id}/resolver?valor=${valor}`, "POST");
+    await _refrescarComentarios();
+  } catch (e) { alert(`No se pudo actualizar: ${e.message}`); }
+}
+
+async function borrarComentario(id) {
+  if (!confirm("¿Borrar este comentario? No se puede deshacer.")) return;
+  try {
+    await apiJson(`/api/comentarios/${id}`, "DELETE");
+    await _refrescarComentarios();
+  } catch (e) { alert(`No se pudo borrar: ${e.message}`); }
+}
+
+// "Responder": precarga el formulario visible con el autor como destinatario
+// y la misma acta.
+function responderComentario(id) {
+  const c = (window._comentariosCache || {})[id];
+  if (!c) return;
+  const modal = document.getElementById("modal-comentarios");
+  const prefijo = modal && modal.classList.contains("abierto") ? "mc" : "fc";
+  const para = document.getElementById(`${prefijo}-para`);
+  const acta = document.getElementById(`${prefijo}-acta`);
+  const texto = document.getElementById(`${prefijo}-texto`);
+  if (!texto) return;
+  if (para && _yo && c.autor !== _yo.usuario) para.value = c.autor;
+  if (acta && c.acta && acta.type !== "hidden") acta.value = c.acta;
+  texto.focus();
+  texto.scrollIntoView({ behavior: "smooth", block: "center" });
+}
+
+function _asegurarModalComentarios() {
+  if (document.getElementById("modal-comentarios")) return;
+  const div = document.createElement("div");
+  div.id = "modal-comentarios";
+  div.className = "modal-fondo";
+  div.innerHTML = `
+    <div class="modal-caja modal-coment" onclick="event.stopPropagation()">
+      <button type="button" class="modal-cerrar" onclick="cerrarModalComentarios()">&times;</button>
+      <div id="modal-comentarios-contenido"></div>
+    </div>
+  `;
+  div.addEventListener("click", cerrarModalComentarios);
+  document.body.appendChild(div);
+  document.addEventListener("keydown", (ev) => { if (ev.key === "Escape") cerrarModalComentarios(); });
+}
+
+function cerrarModalComentarios() {
+  const modal = document.getElementById("modal-comentarios");
+  if (modal) modal.classList.remove("abierto");
+}
+
+async function abrirComentariosActa(acta) {
+  _asegurarModalComentarios();
+  const modal = document.getElementById("modal-comentarios");
+  modal.dataset.acta = acta;
+  document.getElementById("modal-comentarios-contenido").innerHTML = "Cargando…";
+  modal.classList.add("abierto");
+  await quienSoy();
+  await _cargarModalComentarios(acta, true);
+}
+
+async function _cargarModalComentarios(acta, conForm = false) {
+  const cont = document.getElementById("modal-comentarios-contenido");
+  let lista;
+  try {
+    lista = await api(`/api/comentarios?acta=${encodeURIComponent(acta)}&estado=todos`);
+  } catch (e) {
+    cont.innerHTML = `No se pudieron cargar los comentarios (${e.message}).`;
+    return;
+  }
+  // Actualiza el globito de la fila sin recargar la tabla entera.
+  window._comentariosPorActa[acta] = { total: lista.length, abiertos: lista.filter(c => !c.resuelto).length };
+  document.querySelectorAll(`[data-acta-coment="${acta}"]`).forEach(pintarBotonComentarios);
+
+  const htmlLista = lista.length
+    ? lista.map(c => htmlComentario(c, { mostrarActa: false })).join("")
+    : '<p class="com-vacio">Todavía no hay comentarios sobre esta marca.</p>';
+  if (conForm || !document.getElementById("mc-lista")) {
+    const marca = lista.find(c => c.denominacion_inpi || c.denominacion);
+    cont.innerHTML = `
+      <h3 class="titulo-coment">💬 Comentarios — acta ${_escapeHtml(acta)}${marca ? ` · ${_escapeHtml(marca.denominacion_inpi || marca.denominacion)}` : ""}</h3>
+      ${htmlFormComentario({ acta, conActa: false, idPrefijo: "mc" })}
+      <div id="mc-lista">${htmlLista}</div>
+    `;
+  } else {
+    document.getElementById("mc-lista").innerHTML = htmlLista;
+  }
+}
+
+// Contador de comentarios nuevos en el link "💬 Comentarios" del encabezado
+// (cualquier elemento con id="link-comentarios").
+async function actualizarContadorComentarios() {
+  const link = document.getElementById("link-comentarios");
+  if (!link) return;
+  try {
+    const r = await api("/api/comentarios/resumen");
+    const badge = r.nuevos ? ` <span class="contador-coment" title="${r.nuevos} nuevo(s) desde la última vez que entraste${r.abiertos_para_mi ? ` · ${r.abiertos_para_mi} sin resolver dirigido(s) a vos` : ""}">${r.nuevos}</span>` : "";
+    link.innerHTML = `💬 Comentarios${badge}`;
+  } catch (_) {}
+}
+document.addEventListener("DOMContentLoaded", actualizarContadorComentarios);
