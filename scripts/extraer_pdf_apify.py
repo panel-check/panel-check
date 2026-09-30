@@ -21,6 +21,9 @@ import time
 
 import requests
 
+from extraer_pdf_local import MOTOR_DEFAULT
+from extraer_pdf_local import extraer as extraer_local
+
 ACTOR = "automation-lab~pdf-text-extractor"
 APIFY_BASE = "https://api.apify.com/v2"
 
@@ -76,12 +79,19 @@ def main():
     url_a_numero = {b["pdf_url"]: b["numero"] for b in boletines}
     urls = list(url_a_numero.keys())
 
+    fallidos: list[str] = []
     debug_path = os.path.join(args.out_dir or ".", "_debug_apify_response.json")
 
     for i in range(0, len(urls), args.batch_size):
         lote = urls[i : i + args.batch_size]
         print(f"Procesando lote {i // args.batch_size + 1} ({len(lote)} PDFs)...", file=sys.stderr)
-        items = correr_actor(lote, token)
+        try:
+            items = correr_actor(lote, token)
+        except Exception as e:
+            # Error de la API de Apify (HTTP, timeout de la llamada, etc.):
+            # no cortamos, todos los PDFs del lote van al respaldo local.
+            print(f"  ADVERTENCIA: Apify falló para el lote ({e}); se usa la extracción local", file=sys.stderr)
+            items = []
 
         # Volcado de diagnóstico: qué devolvió realmente Apify (claves y un resumen),
         # para poder detectar si el esquema de salida del actor cambió.
@@ -97,18 +107,34 @@ def main():
         print(f"  DEBUG: {len(items)} items devueltos. Claves del primero: "
               f"{list(items[0].keys()) if items else 'N/A'}", file=sys.stderr)
 
-        for item in items:
-            numero = url_a_numero.get(item.get("url"), "desconocido")
-            texto = item.get("fullText", "")
+        texto_por_url = {it.get("url"): it.get("fullText") or "" for it in items}
+        for url in lote:
+            numero = url_a_numero[url]
+            texto = texto_por_url.get(url, "")
+            origen = "Apify"
             if not texto:
-                print(f"  ADVERTENCIA: boletín {numero} sin texto extraído (claves: {list(item.keys())})", file=sys.stderr)
-                continue
+                # Respaldo: Apify tiene un tope FIJO de 300 s por PDF y los
+                # boletines grandes (34-40 MB) lo superan -- devuelve el item
+                # sin fullText (Pipeline #27, 30/09/2026). Se baja el PDF y se
+                # extrae acá mismo (ver extraer_pdf_local.py).
+                print(f"  ADVERTENCIA: Apify no devolvió texto del boletín {numero}; "
+                      f"extrayendo localmente ({MOTOR_DEFAULT})", file=sys.stderr)
+                try:
+                    texto = extraer_local(url)
+                    origen = f"local/{MOTOR_DEFAULT}"
+                except Exception as e:
+                    print(f"  ERROR: tampoco se pudo extraer localmente el boletín {numero}: {e}", file=sys.stderr)
+                    fallidos.append(numero)
+                    continue
             out_path = os.path.join(args.out_dir or ".", f"{numero}_text.txt")
             with open(out_path, "w", encoding="utf-8") as f:
                 f.write(texto)
-            print(f"  boletín {numero}: {len(texto)} caracteres -> {out_path}", file=sys.stderr)
+            print(f"  boletín {numero}: {len(texto)} caracteres ({origen}) -> {out_path}", file=sys.stderr)
         if i + args.batch_size < len(urls):
             time.sleep(2)
+
+    if fallidos:
+        sys.exit(f"No se pudo extraer texto de: {', '.join(fallidos)}")
 
 
 if __name__ == "__main__":
