@@ -234,6 +234,7 @@
     <h2>Agrupado por titular</h2>
     <p>Cuando un mismo titular tiene varias marcas, se muestra una sola fila con una flecha (<strong>▸ +N</strong>) para desplegar el resto sin saturar la tabla. El click en el nombre del titular abre su ficha completa (<code>/titular/...</code>), con <strong>todas</strong> sus marcas de cualquier boletín, no solo el que se está mirando.</p>
     <p>La unificación usa el <strong>CUIT</strong> cuando ya se pudo leer del expediente (es el dato real, no depende de cómo esté tipeado el nombre). Si todavía no se verificó esa marca, se usa el nombre del titular normalizado como respaldo — puede fallar si el mismo titular está tipeado distinto en dos presentaciones distintas.</p>
+    <p>En la ficha del titular y en el CRM, si una marca todavía no tiene CUIT pero el mismo nombre ya aparece con un CUIT (uno solo) en otra de sus marcas, se toma ese CUIT: así la marca "sin verificar" no queda como un titular aparte.</p>
 
     <h2>Misma marca en varias clases (filtro avanzado)</h2>
     <p>En <strong>▸ Filtros avanzados</strong>, el filtro <strong>Misma marca en varias clases</strong> muestra las marcas cuyo nombre está pedido en más de una clase. Cada solicitud es un acta con una sola clase, así que una marca pedida en 2 clases son 2 actas: el filtro las cruza por nombre. Tiene dos modos:</p>
@@ -258,7 +259,45 @@
     <p>Cuando INPI ya resolvió una marca, aparece el badge <strong>✓ CONCEDIDA</strong> (o DENEGADA) en el detalle por titular, con la fecha de concesión y de vencimiento en el tooltip. La columna "Fecha Boletín" es siempre la fecha de publicación (la que cuenta para el plazo de oposición); "Fecha Concedida" es un dato aparte, que solo se completa una vez que INPI resuelve.</p>
 
     <h2>Contactado</h2>
-    <p>Es un estado propio del panel — el pipeline que carga los boletines nunca lo toca. Se marca por acta (por ahora no está unificado por titular), y queda con la fecha en que se marcó.</p>
+    <p>Es un estado propio del panel — el pipeline que carga los boletines nunca lo toca. Queda con la fecha en que se marcó. Ahora va de la mano con el <strong>CRM</strong>:</p>
+    <ul>
+      <li>Si en el CRM un titular sale de <em>Nuevo</em> (a cualquier etapa, incluso <em>Descartado</em>), todas sus marcas quedan como contactadas y dejan de aparecer en el filtro "Sin contactar".</li>
+      <li>Si vuelve a <em>Nuevo</em>, sus marcas vuelven a "sin contactar".</li>
+      <li>Al revés: el botón <strong>Marcar</strong> de la ficha del titular pasa al titular de <em>Nuevo</em> a <em>Contactado</em> en el CRM. Si se desmarca la última marca contactada y estaba en <em>Contactado</em>, vuelve a <em>Nuevo</em>. Las otras etapas no se tocan.</li>
+    </ul>
+
+    <h2 id="crm">📋 CRM de leads</h2>
+    <p>Link <strong>📋 CRM</strong> arriba a la derecha. Sirve para seguir cada lead desde que aparece hasta que se convierte en cliente (o se descarta). Se trabaja <strong>por titular</strong>, no por acta: una persona que pidió su marca en 3 clases es un solo lead.</p>
+    <p><strong>Etapas:</strong></p>
+    <ul>
+      <li><span class="crm-etapa crm-etapa-nuevo">Nuevo</span> — lead detectado, todavía nadie lo contactó. Todos los leads arrancan acá.</li>
+      <li><span class="crm-etapa crm-etapa-contactado">Contactado</span> — se le escribió o llamó, sin respuesta todavía.</li>
+      <li><span class="crm-etapa crm-etapa-respondio">Respondió</span> — contestó (le interesa, pidió info, preguntó precio...).</li>
+      <li><span class="crm-etapa crm-etapa-reunion">Reunión / propuesta</span> — hay una reunión o se le mandó un presupuesto.</li>
+      <li><span class="crm-etapa crm-etapa-cliente">Cliente</span> — contrató. Se carga el servicio y los honorarios.</li>
+      <li><span class="crm-etapa crm-etapa-descartado">Descartado</span> — no avanzó (se puede anotar el motivo).</li>
+    </ul>
+    <p><strong>Tres vistas</strong> (pestañas arriba):</p>
+    <ul>
+      <li><strong>🗂 Tablero:</strong> una columna por etapa. Para mover un lead, <strong>arrastrá la tarjeta</strong> a otra columna (en el celular, abrí la tarjeta y cambiá la etapa en la ficha). Al soltarla en <em>Descartado</em> pide el motivo (opcional). Las columnas <em>Nuevo</em> y <em>Descartado</em> pueden tener miles de leads: muestran los primeros 60 y el botón <em>ver más</em>. En <em>Nuevo</em> salen primero los que tienen una oposición sin apoderado, después los que tienen email y después los más recientes. Cada tarjeta muestra marcas y clases, ⚠ si tiene oposición, 🆕 si es pre-boletín, si tiene email (✉) y teléfono (☎), la fecha del próximo seguimiento (en rojo si ya pasó) y las iniciales de quién lo tiene asignado.</li>
+      <li><strong>☰ Lista:</strong> los mismos leads en tabla, con filtro por etapa y orden por columna (titular, etapa, asignado, cantidad de marcas, próximo seguimiento, última gestión, fecha en que se detectó).</li>
+      <li><strong>📅 Agenda:</strong> lo que hay que hacer. <em>Seguimientos agendados</em> (vencidos en rojo, hoy/próximos), <em>leads nuevos con oposición todavía sin gestionar</em> (los más urgentes para contactar) y <em>plazos de los próximos 60 días</em> de los leads en Contactado, Respondió, Reunión o Cliente.</li>
+    </ul>
+    <p><strong>Filtros:</strong> asignado (todos, míos, sin asignar o una persona), búsqueda (titular, marca, CUIT, número de acta, email o teléfono, sin importar acentos), solo con email, con oposición sin apoderado y con marcas pre-boletín. El link de la barra de direcciones guarda la vista y los filtros, así que se puede compartir.</p>
+    <p><strong>Ficha del lead</strong> (click en una tarjeta o fila; también aparece arriba en la ficha de cada titular):</p>
+    <ul>
+      <li><strong>Etapa, asignado a</strong> (una persona del equipo) y <strong>próximo seguimiento</strong> (fecha en la que hay que volver a contactarlo; aparece en la Agenda).</li>
+      <li><strong>Teléfono</strong>: se carga a mano (INPI no lo da). Con el teléfono cargado aparece el botón <strong>WhatsApp</strong>, que abre el chat directo. Si el número no tiene código de país se asume Argentina (quita el 0 y el 15); conviene confirmar que abrió el chat correcto la primera vez.</li>
+      <li><strong>Email</strong>: el que se recuperó del Formulario de INPI, con link para escribirle.</li>
+      <li>En <em>Descartado</em> aparece <strong>Motivo del descarte</strong>; en <em>Cliente</em>, <strong>Servicio contratado</strong> y <strong>Honorarios</strong> (ARS o USD). La suma de honorarios de los clientes (con los filtros aplicados) se ve arriba del tablero.</li>
+      <li>Los cambios se guardan con <strong>Guardar cambios</strong>.</li>
+      <li><strong>Plazos y fechas</strong>: próximo seguimiento; cierre del plazo de oposición de terceros de cada marca (30 días corridos desde la publicación); oposición o vista recibida; ventana de la declaración jurada de uso de medio término (el año siguiente al 5.º aniversario de la concesión); y vencimiento del registro. Son <strong>orientativos</strong>: el sistema los calcula con los datos que tiene, la fecha exacta se confirma en el expediente.</li>
+      <li><strong>Registrar una gestión</strong>: nota, llamada, mail, WhatsApp o reunión, con un texto y, si querés, la fecha del próximo seguimiento. Registrar una llamada, mail, WhatsApp o reunión en un lead que estaba en <em>Nuevo</em> lo pasa solo a <em>Contactado</em>.</li>
+      <li><strong>Historial</strong>: todas las gestiones, con quién y cuándo, más los registros automáticos (⚙️ cambios de etapa y de asignación) y los 💬 comentarios internos de sus marcas. Cada uno puede borrar sus propias gestiones con la ✕; los registros automáticos no se borran.</li>
+      <li>Avisos arriba de la ficha: si tiene una oposición sin apoderado (momento ideal para ofrecer ayuda), si el titular tiene <strong>otras marcas presentadas con agente</strong> (puede que ya trabaje con alguien) o si tiene marcas pre-boletín.</li>
+    </ul>
+    <p><strong>En el panel principal</strong>, al lado de LEAD aparece la etapa del CRM de ese titular (salvo <em>Nuevo</em>, que es la de casi todos). Pasando el mouse se ve a quién está asignado y el próximo seguimiento.</p>
+    <p>Si un lead se cargó al CRM cuando todavía no tenía CUIT y después el sistema lo consigue, su etapa y su historial se pasan solos al CUIT (a los pocos minutos): no se pierde nada. Un titular sin CUIT ni nombre usable (por ejemplo, "(titular a confirmar manualmente)") aparece como un lead por cada acta.</p>
 
     <h2>💬 Comentarios internos</h2>
     <p>Sirven para dejarse mensajes entre las personas del equipo dentro del panel, sin depender del WhatsApp o el mail. Cada comentario queda con quién lo escribió (el usuario con el que entraste al panel) y la fecha.</p>
@@ -345,8 +384,10 @@ le asigna un puntaje de prioridad. Después sigue a cada marca a lo largo del ti
           <div class="num">5</div>
           <div class="cuerpo">
             <h3>Todo queda en el panel</h3>
-            <p>Cada lead aparece en el panel con sus datos, listo para filtrar, buscar y marcar como "contactado" a
-              medida que se avanza.</p>
+            <p>Cada lead aparece en el panel con sus datos, listo para filtrar y buscar. El seguimiento comercial se
+              hace en el <strong>CRM</strong>: cada titular pasa por etapas (Nuevo → Contactado → Respondió → Reunión →
+              Cliente, o Descartado), se asigna a una persona del equipo, se registra cada llamada, mail o WhatsApp,
+              se agenda el próximo contacto y se ven los plazos importantes de sus marcas.</p>
           </div>
         </li>
         <li class="paso">
@@ -432,6 +473,7 @@ le asigna un puntaje de prioridad. Después sigue a cada marca a lo largo del ti
           <tbody>
             <tr><th>Reintentar (en la ficha)</th><td>Vuelve a consultar en vivo un expediente puntual y actualiza carácter, email, CUIT y score.</td></tr>
             <tr><th>Importar boletín</th><td>En <strong>Boletines</strong> se ven todos los boletines de marcas nuevas publicados por INPI y cuáles ya están cargados. El botón Importar procesa uno puntual (por ejemplo, del historial) sin esperar al pipeline.</td></tr>
+            <tr><th>CRM de leads</th><td>En <strong>📋 CRM</strong>: mover leads de etapa arrastrando tarjetas, asignarlos, registrar gestiones, agendar seguimientos, cargar teléfono (con botón de WhatsApp), servicio y honorarios. La agenda junta seguimientos, oposiciones sin gestionar y plazos próximos.</td></tr>
             <tr><th>Comentarios</th><td>Botón 💬 en cada fila o sección <strong>💬 Comentarios</strong>: dejarle un mensaje a otra persona del equipo (o a todos), vinculado o no a un acta, y marcarlo como resuelto cuando se atendió.</td></tr>
             <tr><th>Correr ahora</th><td>En <strong>Automatizaciones</strong>, cualquier proceso automático se puede disparar a mano.</td></tr>
             <tr><th>Agregar marca manualmente</th><td>Carga al panel un acta puntual que no vino por boletín ni por el escaneo (desde GitHub Actions).</td></tr>
@@ -456,7 +498,15 @@ le asigna un puntaje de prioridad. Después sigue a cada marca a lo largo del ti
           <div class="tarjeta-mini">
             <h4>Ficha por titular</h4>
             <p>Todas las marcas de una misma persona o empresa, con el email completo, el estado del trámite, y los
-              botones para marcar "Contactado" o reintentar la consulta a INPI.</p>
+              botones para marcar "Contactado" o reintentar la consulta a INPI. Arriba tiene el bloque del
+              <strong>CRM</strong> de ese titular (etapa, asignado, gestiones, plazos).</p>
+          </div>
+          <div class="tarjeta-mini">
+            <h4>CRM de leads (<code>/crm</code>)</h4>
+            <p>Seguimiento comercial por titular, en tres vistas: <strong>tablero</strong> por etapas (arrastrar para
+              mover), <strong>lista</strong> con filtros y orden, y <strong>agenda</strong> con seguimientos, oposiciones
+              sin gestionar y plazos de los próximos 60 días. Cada lead tiene su ficha con historial de gestiones,
+              teléfono/WhatsApp, próximo seguimiento y, si se cerró, servicio y honorarios.</p>
           </div>
           <div class="tarjeta-mini">
             <h4>Automatizaciones (<code>/crons</code>)</h4>
@@ -479,7 +529,8 @@ le asigna un puntaje de prioridad. Después sigue a cada marca a lo largo del ti
             <p><strong>LEAD</strong> (prioridad), <strong>con agente</strong> (descartado), <strong>sin verificar</strong>
               (todavía no se confirmó), <strong>⚠ OPOSICIÓN</strong> (un tercero se opone), <strong>👁 VISTA DE INPI</strong>
               (observación de oficio, no de un tercero), <strong>✓ CONCEDIDA / DENEGADA</strong>, <strong>🆕 pre-boletín</strong>
-              (detectada por el escaneo, todavía sin publicar).</p>
+              (detectada por el escaneo, todavía sin publicar). Además, la etapa del <strong>CRM</strong> del titular
+              (Contactado, Respondió, Reunión / propuesta, Cliente o Descartado).</p>
           </div>
         </div>
       </div>
@@ -502,11 +553,15 @@ le asigna un puntaje de prioridad. Después sigue a cada marca a lo largo del ti
             <tr><th>Vista de INPI</th><td>Observación de oficio del propio INPI, no de un tercero — igual de visible en el panel, pero con badge distinto.</td></tr>
             <tr><th>Grilla Digital / Formulario</th><td>Archivos del expediente en INPI. El Formulario es el PDF de la solicitud original, de donde sale el email del titular.</td></tr>
             <tr><th>Bloqueo (WAF)</th><td>Filtro de seguridad del sitio de INPI que a veces rechaza consultas automáticas. Los reintentos lo resuelven solos; si es masivo, llega un mail de aviso.</td></tr>
-            <tr><th>Contactado</th><td>Marca que ya fue gestionada comercialmente — lo maneja el equipo, no el sistema automático.</td></tr>
+            <tr><th>Contactado</th><td>Marca que ya fue gestionada comercialmente — lo maneja el equipo, no el sistema automático. Va de la mano con la etapa del CRM (todo lo que no está en "Nuevo" cuenta como contactado).</td></tr>
+            <tr><th>CRM / etapa</th><td>Seguimiento comercial de cada titular: Nuevo, Contactado, Respondió, Reunión / propuesta, Cliente o Descartado.</td></tr>
+            <tr><th>Gestión</th><td>Cada contacto o nota registrada en la ficha del lead (llamada, mail, WhatsApp, reunión, nota), con quién la hizo y cuándo.</td></tr>
+            <tr><th>Próximo seguimiento</th><td>Fecha en la que hay que volver a contactar a un lead. Aparece en la Agenda del CRM y en la tarjeta (en rojo si ya pasó).</td></tr>
+            <tr><th>Asignado</th><td>Persona del equipo que se ocupa de ese lead. Se filtra con "Míos" en el CRM.</td></tr>
             <tr><th>Comentario interno</th><td>Nota que deja una persona del equipo para otra (o para todos) dentro del panel, opcionalmente vinculada a un acta. "Resuelto" significa que el tema ya se atendió.</td></tr>
             <tr><th>Estado del trámite</th><td>Resultado final del trámite en INPI: Concedida, Denegada, o todavía en curso.</td></tr>
             <tr><th>Fecha de concesión</th><td>Fecha en que INPI otorgó la marca — desde ahí se cuentan los plazos de declaración jurada y renovación.</td></tr>
-            <tr><th>Declaración jurada de uso</th><td>Trámite obligatorio dentro de los primeros 5 años desde la concesión, declarando que la marca está en uso.</td></tr>
+            <tr><th>Declaración jurada de uso</th><td>Declaración de uso de medio término: se presenta dentro del año siguiente al 5.º aniversario de la concesión, declarando que la marca está en uso. El CRM la muestra como plazo orientativo.</td></tr>
             <tr><th>Renovación</th><td>Trámite para extender el registro 10 años más, antes de que venza.</td></tr>
           </tbody>
         </table>
@@ -528,7 +583,13 @@ document.querySelectorAll(".tab-btn").forEach(b => {
   b.addEventListener("click", () => activarTab(b.dataset.tab));
 });
 
-activarTab(location.hash === "#manual" ? "manual" : "ayuda");
+const hashInicial = location.hash;
+activarTab(hashInicial === "#manual" ? "manual" : "ayuda");
+// Links a una sección puntual de la ayuda (ej. /ayuda#crm desde el CRM).
+if (hashInicial && !["#manual", "#ayuda"].includes(hashInicial)) {
+  const destino = document.getElementById(hashInicial.slice(1));
+  if (destino) destino.scrollIntoView();
+}
 </script>
 
 </body>

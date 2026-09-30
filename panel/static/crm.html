@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>CRM de leads — Kom Marcas Inpi</title>
+<link rel="stylesheet" href="/static/comun.css" />
+</head>
+<body>
+
+<header>
+  <a class="volver" href="/">&larr; Volver al panel</a>
+  <h1>CRM de leads</h1>
+  <span class="sub">Seguimiento comercial por titular</span>
+  <a class="ayuda" href="/comentarios" id="link-comentarios" style="margin-left:auto;">💬 Comentarios</a>
+  <a class="ayuda" href="/ayuda#crm" style="margin-left:16px;">? Ayuda</a>
+</header>
+
+<div class="crm-pestanas" id="pestanas">
+  <button type="button" data-vista="tablero" class="activa">🗂 Tablero</button>
+  <button type="button" data-vista="lista">☰ Lista</button>
+  <button type="button" data-vista="agenda">📅 Agenda</button>
+</div>
+
+<div class="filtros">
+  <label>Asignado
+    <select id="f-asignado">
+      <option value="">Todos</option>
+      <option value="yo">Míos</option>
+      <option value="sin">Sin asignar</option>
+    </select>
+  </label>
+  <label class="solo-lista" hidden>Etapa
+    <select id="f-etapa"><option value="">Todas</option></select>
+  </label>
+  <label class="no-agenda">Buscar
+    <input type="text" id="f-q" placeholder="titular, marca, CUIT, acta, email..." />
+  </label>
+  <label class="crm-check no-agenda"><span>&nbsp;</span><span><input type="checkbox" id="f-email" /> Solo con email</span></label>
+  <label class="crm-check no-agenda"><span>&nbsp;</span><span><input type="checkbox" id="f-oposicion" /> Con oposición sin apoderado</span></label>
+  <label class="crm-check no-agenda"><span>&nbsp;</span><span><input type="checkbox" id="f-pre" /> Con marcas pre-boletín</span></label>
+  <button type="button" id="btn-filtrar">Filtrar</button>
+</div>
+
+<div class="crm-resumen" id="resumen"></div>
+
+<div id="vista-tablero" class="crm-vista">
+  <div class="crm-tablero" id="tablero"><p class="crm-cargando">Cargando…</p></div>
+</div>
+
+<div id="vista-lista" class="crm-vista" hidden>
+  <div class="contenedor-tabla">
+    <table>
+      <thead>
+        <tr>
+          <th data-col="titular">Titular</th>
+          <th data-col="etapa">Etapa</th>
+          <th data-col="asignado">Asignado</th>
+          <th data-col="cant_marcas">Marcas</th>
+          <th>Contacto</th>
+          <th data-col="proximo_seguimiento">Próx. seguimiento</th>
+          <th data-col="ultima_actividad">Última gestión</th>
+          <th data-col="detectado_en">Detectado</th>
+        </tr>
+      </thead>
+      <tbody id="tbody-lista"><tr><td colspan="8" class="vacio">Cargando…</td></tr></tbody>
+    </table>
+  </div>
+  <div class="paginado">
+    <button type="button" id="pag-ant">&larr; Anterior</button>
+    <span id="pag-info"></span>
+    <button type="button" id="pag-sig">Siguiente &rarr;</button>
+  </div>
+</div>
+
+<div id="vista-agenda" class="crm-vista crm-agenda" hidden></div>
+
+<script src="/static/comun.js"></script>
+<script src="/static/crm.js"></script>
+<script>
+const estado = {
+  vista: "tablero",
+  limite: 60,
+  lista: { sort: "ultima_actividad", order: "desc", offset: 0, total: 0 },
+};
+const LIMIT_LISTA = 100;
+window.alCambiarComentarios = actualizarContadorComentarios;
+
+function filtros() {
+  return {
+    asignado: document.getElementById("f-asignado").value,
+    q: document.getElementById("f-q").value.trim(),
+    con_email: document.getElementById("f-email").checked ? "true" : "",
+    con_oposicion: document.getElementById("f-oposicion").checked ? "true" : "",
+    pre_boletin: document.getElementById("f-pre").checked ? "true" : "",
+  };
+}
+
+function qs(obj) {
+  return Object.entries(obj).filter(([, v]) => v !== "" && v !== null && v !== undefined)
+    .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`).join("&");
+}
+
+// La URL refleja vista y filtros, para poder compartir/guardar el link.
+function actualizarURL() {
+  const extra = estado.vista === "lista" ? { etapa: document.getElementById("f-etapa").value } : {};
+  const q = qs({ vista: estado.vista === "tablero" ? "" : estado.vista, ...filtros(), ...extra });
+  history.replaceState(null, "", q ? `/crm?${q}` : "/crm");
+}
+
+function filtrosDesdeURL() {
+  const p = new URLSearchParams(location.search);
+  if (p.get("vista")) estado.vista = p.get("vista");
+  document.getElementById("f-asignado").value = p.get("asignado") || "";
+  document.getElementById("f-q").value = p.get("q") || "";
+  document.getElementById("f-email").checked = p.get("con_email") === "true";
+  document.getElementById("f-oposicion").checked = p.get("con_oposicion") === "true";
+  document.getElementById("f-pre").checked = p.get("pre_boletin") === "true";
+  if (p.get("etapa")) document.getElementById("f-etapa").value = p.get("etapa");
+}
+
+function cambiarVista(v) {
+  estado.vista = v;
+  document.querySelectorAll("#pestanas button").forEach(b => b.classList.toggle("activa", b.dataset.vista === v));
+  document.querySelectorAll(".crm-vista").forEach(el => { el.hidden = el.id !== `vista-${v}`; });
+  document.querySelectorAll(".solo-lista").forEach(el => { el.hidden = v !== "lista"; });
+  document.querySelectorAll(".no-agenda").forEach(el => { el.hidden = v === "agenda"; });
+  recargar();
+}
+
+async function recargar() {
+  actualizarURL();
+  if (estado.vista === "tablero") return cargarTablero();
+  if (estado.vista === "lista") return cargarLista();
+  return cargarAgenda();
+}
+
+function abrirFicha(clave) {
+  crmAbrirFichaModal(clave, recargar);
+}
+
+// ── Resumen (conteo por etapa + honorarios de clientes) ──
+function pintarResumen(etapas, honorarios) {
+  const chips = etapas.map(e => `<span class="crm-chip">${crmBadgeEtapa(e.id)} <strong>${e.total}</strong></span>`).join("");
+  const plata = Object.entries(honorarios || {})
+    .map(([m, v]) => `${m} ${Number(v).toLocaleString("es-AR", { maximumFractionDigits: 2 })}`).join(" · ");
+  document.getElementById("resumen").innerHTML = chips
+    + (plata ? `<span class="crm-chip crm-chip-plata" title="Suma de honorarios cargados en los leads en etapa Cliente (con los filtros actuales)">💰 Honorarios de clientes: <strong>${crmEsc(plata)}</strong></span>` : "");
+}
+
+// ── Tablero (kanban) ──
+function tarjetaHtml(l) {
+  const venc = l.proximo_seguimiento
+    ? (() => {
+        const hoy = new Date().toISOString().slice(0, 10);
+        const f = l.proximo_seguimiento.slice(0, 10);
+        const cls = f < hoy ? "crm-venc" : (f === hoy ? "crm-hoy" : "");
+        return `<span class="crm-seg ${cls}" title="Próximo seguimiento">📅 ${crmFecha(f)}</span>`;
+      })()
+    : "";
+  const clases = (l.clases || []).slice().sort((a, b) => a - b).join(", ");
+  return `
+    <div class="crm-card ${l.oposicion_sin_apoderado ? "crm-card-opo" : ""}" draggable="true" data-clave="${crmEsc(l.clave)}" data-etapa="${crmEsc(l.etapa)}">
+      <div class="crm-card-tit">${crmEsc(l.titular || l.clave)} ${crmIniciales(l.asignado)}</div>
+      <div class="crm-card-marcas" title="${crmEsc(l.marcas || "")}">${crmEsc(l.marcas || "(mixta/figurativa)")}</div>
+      <div class="crm-card-meta">${l.cant_marcas} marca${l.cant_marcas == 1 ? "" : "s"}${clases ? ` · clase ${crmEsc(clases)}` : ""}</div>
+      <div class="crm-card-badges">
+        ${l.oposicion_sin_apoderado ? '<span class="crm-mini crm-mini-opo">⚠ oposición</span>' : ""}
+        ${l.pre_boletin ? '<span class="crm-mini">🆕 pre-boletín</span>' : ""}
+        ${l.email ? '<span class="crm-mini crm-mini-ok" title="Tiene email">✉</span>' : '<span class="crm-mini crm-mini-no" title="Sin email todavía">sin email</span>'}
+        ${l.telefono ? '<span class="crm-mini crm-mini-ok" title="Tiene teléfono cargado">☎</span>' : ""}
+        ${venc}
+      </div>
+    </div>`;
+}
+
+async function cargarTablero() {
+  const cont = document.getElementById("tablero");
+  let d;
+  try {
+    d = await api(`/api/crm/tablero?${qs({ ...filtros(), limite: estado.limite })}`);
+  } catch (e) {
+    cont.innerHTML = `<p class="crm-error">No se pudo cargar el tablero (${crmEsc(e.message)}).</p>`;
+    return;
+  }
+  pintarResumen(d.etapas, d.honorarios_clientes);
+  const porEtapa = {};
+  d.leads.forEach(l => (porEtapa[l.etapa] = porEtapa[l.etapa] || []).push(l));
+  cont.innerHTML = d.etapas.map(e => {
+    const items = porEtapa[e.id] || [];
+    const faltan = e.total - items.length;
+    return `
+      <div class="crm-columna" data-etapa="${e.id}">
+        <div class="crm-columna-cab">${crmBadgeEtapa(e.id)} <span class="crm-cant">${e.total}</span></div>
+        <div class="crm-columna-cuerpo">
+          ${items.map(tarjetaHtml).join("") || '<div class="crm-vacia">—</div>'}
+          ${faltan > 0 ? `<button type="button" class="crm-ver-mas" data-ver-mas>Mostrando ${items.length} de ${e.total} · ver más</button>` : ""}
+        </div>
+      </div>`;
+  }).join("");
+}
+
+// Click en tarjeta → ficha. Arrastrar y soltar → cambio de etapa.
+document.addEventListener("click", (ev) => {
+  const card = ev.target.closest(".crm-card, [data-abrir-clave]");
+  if (card) { abrirFicha(card.dataset.clave || card.dataset.abrirClave); return; }
+  if (ev.target.closest("[data-ver-mas]")) { estado.limite += 100; cargarTablero(); }
+});
+
+let _arrastrando = null;
+document.addEventListener("dragstart", (ev) => {
+  const card = ev.target.closest && ev.target.closest(".crm-card");
+  if (!card) return;
+  _arrastrando = card;
+  card.classList.add("crm-arrastrando");
+  ev.dataTransfer.effectAllowed = "move";
+  ev.dataTransfer.setData("text/plain", card.dataset.clave);
+});
+document.addEventListener("dragend", () => {
+  if (_arrastrando) _arrastrando.classList.remove("crm-arrastrando");
+  document.querySelectorAll(".crm-columna").forEach(c => c.classList.remove("crm-sobre"));
+});
+document.addEventListener("dragover", (ev) => {
+  const col = ev.target.closest && ev.target.closest(".crm-columna");
+  if (!col || !_arrastrando) return;
+  ev.preventDefault();
+  document.querySelectorAll(".crm-columna").forEach(c => c.classList.toggle("crm-sobre", c === col));
+});
+document.addEventListener("drop", async (ev) => {
+  const col = ev.target.closest && ev.target.closest(".crm-columna");
+  if (!col || !_arrastrando) return;
+  ev.preventDefault();
+  const card = _arrastrando;
+  _arrastrando = null;
+  const etapa = col.dataset.etapa;
+  if (etapa === card.dataset.etapa) return;
+  const cambios = { etapa };
+  if (etapa === "descartado") {
+    const motivo = prompt("Motivo del descarte (opcional):", "");
+    if (motivo === null) { cargarTablero(); return; } // canceló
+    if (motivo.trim()) cambios.motivo_descarte = motivo.trim();
+  }
+  col.querySelector(".crm-columna-cuerpo").prepend(card); // se ve al instante; después se recarga
+  try {
+    await apiJson(`/api/crm/lead?clave=${encodeURIComponent(card.dataset.clave)}`, "POST", cambios);
+  } catch (e) {
+    alert(`No se pudo mover: ${e.message}`);
+  }
+  cargarTablero();
+});
+
+// ── Lista ──
+async function cargarLista() {
+  const tbody = document.getElementById("tbody-lista");
+  const L = estado.lista;
+  let d;
+  try {
+    d = await api(`/api/crm/lista?${qs({ ...filtros(), etapa: document.getElementById("f-etapa").value,
+      sort: L.sort, order: L.order, limit: LIMIT_LISTA, offset: L.offset })}`);
+  } catch (e) {
+    tbody.innerHTML = `<tr><td colspan="8" class="vacio">No se pudo cargar (${crmEsc(e.message)}).</td></tr>`;
+    return;
+  }
+  L.total = d.total;
+  document.querySelectorAll("#vista-lista th[data-col]").forEach(th => th.classList.toggle("activo", th.dataset.col === L.sort));
+  tbody.innerHTML = d.rows.length ? d.rows.map(l => `
+    <tr class="crm-fila" data-abrir-clave="${crmEsc(l.clave)}">
+      <td class="titular" title="${crmEsc(l.titular || "")}"><strong>${crmEsc(l.titular || l.clave)}</strong>
+        ${l.oposicion_sin_apoderado ? ' <span class="crm-mini crm-mini-opo">⚠ oposición</span>' : ""}
+        <div class="crm-gris crm-celda-marcas">${crmEsc(l.marcas || "")}</div></td>
+      <td>${crmBadgeEtapa(l.etapa)}${l.etapa === "descartado" && l.motivo_descarte ? `<div class="crm-gris">${crmEsc(l.motivo_descarte)}</div>` : ""}</td>
+      <td>${crmEsc(l.asignado || "—")}</td>
+      <td>${l.cant_marcas}</td>
+      <td>${l.email ? "✉" : '<span class="crm-gris">sin email</span>'} ${l.telefono ? "☎" : ""}</td>
+      <td>${l.proximo_seguimiento ? crmFecha(l.proximo_seguimiento) : "—"}</td>
+      <td>${l.ultima_actividad ? fmtFechaHora(l.ultima_actividad) : "—"}</td>
+      <td>${l.detectado_en ? crmFecha(l.detectado_en) : "—"}</td>
+    </tr>`).join("") : '<tr><td colspan="8" class="vacio">No hay leads con estos filtros.</td></tr>';
+  const desde = d.total ? L.offset + 1 : 0;
+  document.getElementById("pag-info").textContent = `${desde}–${Math.min(L.offset + LIMIT_LISTA, d.total)} de ${d.total}`;
+  document.getElementById("resumen").innerHTML = `<span class="crm-chip">${d.total} leads con estos filtros</span>`;
+}
+
+document.querySelectorAll("#vista-lista th[data-col]").forEach(th => th.addEventListener("click", () => {
+  const L = estado.lista;
+  if (L.sort === th.dataset.col) L.order = L.order === "desc" ? "asc" : "desc";
+  else { L.sort = th.dataset.col; L.order = th.dataset.col === "titular" ? "asc" : "desc"; }
+  L.offset = 0;
+  cargarLista();
+}));
+document.getElementById("pag-ant").addEventListener("click", () => {
+  if (estado.lista.offset === 0) return;
+  estado.lista.offset = Math.max(0, estado.lista.offset - LIMIT_LISTA); cargarLista();
+});
+document.getElementById("pag-sig").addEventListener("click", () => {
+  if (estado.lista.offset + LIMIT_LISTA >= estado.lista.total) return;
+  estado.lista.offset += LIMIT_LISTA; cargarLista();
+});
+
+// ── Agenda ──
+async function cargarAgenda() {
+  const cont = document.getElementById("vista-agenda");
+  cont.innerHTML = '<p class="crm-cargando">Cargando…</p>';
+  let d;
+  try {
+    d = await api(`/api/crm/agenda?${qs({ asignado: document.getElementById("f-asignado").value })}`);
+  } catch (e) {
+    cont.innerHTML = `<p class="crm-error">No se pudo cargar la agenda (${crmEsc(e.message)}).</p>`;
+    return;
+  }
+  document.getElementById("resumen").innerHTML = "";
+  const filaLead = (clave, izquierda, titulo, detalle, urgencia = "") => `
+    <div class="crm-agenda-item crm-urg-${urgencia}" data-abrir-clave="${crmEsc(clave)}">
+      <div class="crm-agenda-fecha">${izquierda}</div>
+      <div><strong>${titulo}</strong><div class="crm-gris">${detalle}</div></div>
+    </div>`;
+
+  const seguimientos = d.seguimientos.map(s => filaLead(
+    s.clave, `${crmFecha(s.proximo_seguimiento)}<small>${crmUrgencia(s)}</small>`,
+    `${crmEsc(s.titular || s.clave)} ${crmBadgeEtapa(s.etapa)} ${crmIniciales(s.asignado)}`,
+    crmEsc(s.marcas || ""), s.urgencia)).join("");
+  const oposiciones = d.oposiciones_sin_gestionar.map(o => filaLead(
+    o.clave, o.oposicion_detectada_en ? `${crmFecha(o.oposicion_detectada_en)}<small>detectada</small>` : "—",
+    `${crmEsc(o.titular || o.clave)} ${crmIniciales(o.asignado)}`,
+    `${crmEsc(o.marcas || "")}${o.email ? "" : " · sin email todavía"}`, "urgente")).join("");
+  const plazos = d.plazos.map(p => filaLead(
+    p.clave, `${crmFecha(p.fecha)}<small>${crmUrgencia(p)}</small>`,
+    `${crmEsc(p.titulo)} — ${crmEsc(p.titular || p.clave)} ${crmBadgeEtapa(p.etapa)} ${crmIniciales(p.asignado)}`,
+    `${crmEsc(p.marca)} (acta ${crmEsc(p.acta)}, clase ${crmEsc(p.clase)})${p.detalle ? ` · ${crmEsc(p.detalle)}` : ""}`,
+    p.urgencia)).join("");
+
+  cont.innerHTML = `
+    <section><h2>📅 Seguimientos agendados <span class="crm-cant">${d.seguimientos.length}</span></h2>
+      ${seguimientos || '<p class="crm-gris">No hay seguimientos agendados. Se cargan en la ficha de cada lead.</p>'}</section>
+    <section><h2>⚠ Leads nuevos con oposición, sin gestionar <span class="crm-cant">${d.oposiciones_sin_gestionar.length}</span></h2>
+      ${oposiciones || '<p class="crm-gris">Ninguno: todos los leads con oposición ya se están trabajando.</p>'}</section>
+    <section><h2>⏳ Plazos de los próximos 60 días <span class="crm-cant">${d.plazos.length}</span></h2>
+      <p class="crm-nota">Solo de leads en Contactado, Respondió, Reunión o Cliente. Fechas orientativas: confirmar en el expediente.</p>
+      ${plazos || '<p class="crm-gris">Sin plazos en los próximos 60 días.</p>'}</section>`;
+}
+
+// ── Filtros y arranque ──
+document.getElementById("btn-filtrar").addEventListener("click", () => { estado.lista.offset = 0; recargar(); });
+document.getElementById("f-q").addEventListener("keydown", ev => { if (ev.key === "Enter") { estado.lista.offset = 0; recargar(); } });
+["f-asignado", "f-etapa", "f-email", "f-oposicion", "f-pre"].forEach(id =>
+  document.getElementById(id).addEventListener("change", () => { estado.lista.offset = 0; recargar(); }));
+document.querySelectorAll("#pestanas button").forEach(b => b.addEventListener("click", () => cambiarVista(b.dataset.vista)));
+
+(async function init() {
+  const yo = await quienSoy();
+  const selAsig = document.getElementById("f-asignado");
+  yo.usuarios.forEach(u => {
+    const opt = document.createElement("option");
+    opt.value = u;
+    opt.textContent = u;
+    selAsig.appendChild(opt);
+  });
+  const selEtapa = document.getElementById("f-etapa");
+  CRM_ETAPAS.forEach(e => {
+    const opt = document.createElement("option");
+    opt.value = e.id;
+    opt.textContent = e.nombre;
+    selEtapa.appendChild(opt);
+  });
+  filtrosDesdeURL();
+  cambiarVista(estado.vista);
+  // Link directo a un lead: /crm?lead=<clave>
+  const lead = new URLSearchParams(location.search).get("lead");
+  if (lead) abrirFicha(lead);
+})();
+</script>
+
+</body>
+</html>

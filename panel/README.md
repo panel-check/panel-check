@@ -1,7 +1,9 @@
 # Panel de leads
 
-App chiquita (FastAPI + una página HTML) para ver, filtrar y marcar como
-"contactados" los leads que carga el pipeline en Postgres. Pensada para
+App chiquita (FastAPI + páginas HTML) para ver, filtrar y marcar como
+"contactados" los leads que carga el pipeline en Postgres, y hacerles el
+seguimiento comercial en el CRM (`/crm`: tablero por etapas, lista, agenda y
+ficha de cada lead con historial de gestiones). Pensada para
 correr como otro servicio dentro del mismo proyecto de Railway, al lado de
 la base y de NocoDB.
 

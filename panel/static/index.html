@@ -11,7 +11,8 @@
 <header>
   <h1>Panel de leads — INPI</h1>
   <span class="sub">Marcas autopresentadas, listas para prospección</span>
-  <a class="ayuda" href="/comentarios" id="link-comentarios" style="margin-left:auto;">💬 Comentarios</a>
+  <a class="ayuda" href="/crm" style="margin-left:auto;">📋 CRM</a>
+  <a class="ayuda" href="/comentarios" id="link-comentarios" style="margin-left:16px;">💬 Comentarios</a>
   <a class="ayuda" href="/boletines" style="margin-left:16px;">🗞 Boletines</a>
   <a class="ayuda" href="/crons" style="margin-left:16px;">⏱ Automatizaciones</a>
   <a class="ayuda" href="/ayuda" style="margin-left:16px;">? Ayuda</a>
@@ -151,6 +152,7 @@
 </div>
 
 <script src="/static/comun.js"></script>
+<script src="/static/crm.js"></script>
 <script>
 const LIMIT = 100;
 let estado = { offset: 0, total: 0, sort: "lead_score", order: "desc" };
@@ -430,7 +432,7 @@ function filaHtml(r, { flecha = false, oculta = false, idGrupo = null, cantidadR
       <td>${r.clase ?? ""}${celdaOtrasClases(r)}</td>
       <td class="denominacion" title="${r.denominacion_inpi || r.denominacion || ""}">${r.denominacion_inpi || r.denominacion || "<em>(mixta/fig.)</em>"}</td>
       <td class="titular" title="${r.titular || ""}">${celdaTitular}</td>
-      <td>${badgeLead(r)} ${badgePreBoletin(r)} ${badgeOposicion(r)} ${badgeEstadoTramite(r)}</td>
+      <td>${badgeLead(r)} ${crmSlot(claveTitular(r))} ${badgePreBoletin(r)} ${badgeOposicion(r)} ${badgeEstadoTramite(r)}</td>
       <td class="celda-email">${celdaEmailIcono(r)}</td>
       <td>${fechaPublicacionOFallback(r)}</td>
       <td>${fmtFecha(r.fecha_concesion) || "—"}</td>
@@ -477,6 +479,7 @@ async function cargar(offset) {
   }
 
   cargarContadoresComentarios(data.rows.map(r => r.acta));
+  crmPintarEtapas();
 
   const desde = data.total === 0 ? 0 : estado.offset + 1;
   const hasta = Math.min(estado.offset + LIMIT, data.total);

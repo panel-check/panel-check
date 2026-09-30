@@ -11,11 +11,17 @@
 <header>
   <a class="volver" href="/">&larr; Volver al panel</a>
   <h1 id="titulo-titular">Cargando...</h1>
-  <a class="ayuda" href="/comentarios" id="link-comentarios" style="margin-left:auto;">💬 Comentarios</a>
+  <a class="ayuda" href="/crm" style="margin-left:auto;">📋 CRM</a>
+  <a class="ayuda" href="/comentarios" id="link-comentarios" style="margin-left:16px;">💬 Comentarios</a>
   <a class="ayuda" href="/ayuda" style="margin-left:16px;">? Ayuda</a>
 </header>
 
 <div class="ficha-titular" id="ficha-titular"></div>
+
+<div class="crm-box" id="crm-box" hidden>
+  <div class="crm-box-titulo">📋 Seguimiento comercial (CRM)</div>
+  <div id="crm-ficha"></div>
+</div>
 
 <div class="contenedor-tabla">
 <table>
@@ -42,8 +48,10 @@
 </div>
 
 <script src="/static/comun.js"></script>
+<script src="/static/crm.js"></script>
 <script>
-window.alRecargar = () => cargar();
+// "Marcar contactado" también mueve la etapa del CRM: se recargan tabla y ficha.
+window.alRecargar = () => cargar({ conCRM: true });
 window.alCambiarComentarios = actualizarContadorComentarios;
 
 function claveDesdeUrl() {
@@ -74,7 +82,7 @@ function filaHtml(r) {
   `;
 }
 
-async function cargar() {
+async function cargar({ conCRM = true } = {}) {
   const clave = claveDesdeUrl();
   const tbody = document.getElementById("tbody");
   tbody.innerHTML = '<tr><td colspan="12" class="vacio">Cargando...</td></tr>';
@@ -93,6 +101,20 @@ async function cargar() {
       ? data.rows.map(filaHtml).join("")
       : '<tr><td colspan="12" class="vacio">Sin marcas para este titular.</td></tr>';
     cargarContadoresComentarios(data.rows.map(r => r.acta));
+
+    // Bloque del CRM: la ficha del lead (etapa, asignado, gestiones, plazos).
+    // Si el titular todavía no tiene una clave estable (sin CUIT ni nombre
+    // usable), no se puede seguir en el CRM.
+    const box = document.getElementById("crm-box");
+    if (conCRM) {
+      box.hidden = false;
+      const cont = document.getElementById("crm-ficha");
+      if (data.clave_crm) {
+        crmRenderFicha(cont, data.clave_crm, { enModal: false, alCambiar: () => cargar({ conCRM: false }) });
+      } else {
+        cont.innerHTML = '<p class="crm-gris">Este titular todavía no tiene CUIT ni un nombre identificable, así que no se puede seguir en el CRM desde esta ficha. Cada una de sus marcas aparece por separado en el <a href="/crm">CRM</a>.</p>';
+      }
+    }
   } catch (e) {
     document.getElementById("titulo-titular").textContent = "No encontrado";
     tbody.innerHTML = `<tr><td colspan="12" class="vacio">No se pudo cargar (${e.message}).</td></tr>`;

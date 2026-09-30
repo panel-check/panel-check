@@ -1,0 +1,323 @@
+/* CRM de leads — piezas compartidas entre /crm (tablero, lista, agenda),
+ * la ficha de titular (/titular/...) y el panel principal (badge de etapa
+ * en cada fila). Depende de comun.js (api, apiJson, abrirActa, fmtFechaHora,
+ * badgeLead, badgeOposicion, badgeEstadoTramite, tipoLegible).
+ *
+ * Todo texto que viene de la base pasa por crmEsc() antes de ir al HTML
+ * (los nombres de titular pueden traer comillas, apóstrofes, barras...), y
+ * las claves de titular viajan en atributos data-* — nunca dentro de un
+ * onclick armado a mano. */
+
+const CRM_ETAPAS = [
+  { id: "nuevo", nombre: "Nuevo" },
+  { id: "contactado", nombre: "Contactado" },
+  { id: "respondio", nombre: "Respondió" },
+  { id: "reunion", nombre: "Reunión / propuesta" },
+  { id: "cliente", nombre: "Cliente" },
+  { id: "descartado", nombre: "Descartado" },
+];
+const CRM_ETAPA_NOMBRE = Object.fromEntries(CRM_ETAPAS.map(e => [e.id, e.nombre]));
+const CRM_TIPO_ICONO = { nota: "📝", llamada: "📞", email: "✉️", whatsapp: "🟢", reunion: "🤝", sistema: "⚙️", comentario: "💬" };
+const CRM_TIPO_NOMBRE = { nota: "Nota", llamada: "Llamada", email: "Mail", whatsapp: "WhatsApp", reunion: "Reunión", sistema: "Automático", comentario: "Comentario interno" };
+
+function crmEsc(s) {
+  return (s ?? "").toString()
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+}
+
+function crmFecha(iso) {
+  if (!iso) return "";
+  const [a, m, d] = iso.toString().slice(0, 10).split("-");
+  return `${d}/${m}/${a}`;
+}
+
+function crmBadgeEtapa(etapa, extra = "") {
+  const e = etapa || "nuevo";
+  return `<span class="crm-etapa crm-etapa-${crmEsc(e)}" ${extra}>${crmEsc(CRM_ETAPA_NOMBRE[e] || e)}</span>`;
+}
+
+function crmIniciales(usuario) {
+  if (!usuario) return "";
+  return `<span class="crm-asignado" title="Asignado a ${crmEsc(usuario)}">${crmEsc(usuario.slice(0, 2).toUpperCase())}</span>`;
+}
+
+// Link de WhatsApp a partir de un teléfono argentino escrito como venga
+// ("011 15 4444-5555", "+54 9 351 555-1234", "3515551234"...). Si no tiene
+// código de país se asume Argentina (54 9 + área + número, sin el 0 ni el 15).
+// Es de mejor esfuerzo: conviene revisar que abra el chat correcto.
+function crmLinkWhatsApp(tel) {
+  let d = (tel || "").replace(/\D/g, "");
+  if (d.length < 8) return null;
+  if (d.startsWith("00")) d = d.slice(2);
+  if (d.startsWith("54")) {
+    if (!d.startsWith("549") && d.length === 12) d = "549" + d.slice(2);
+  } else {
+    if (d.startsWith("0")) d = d.slice(1);
+    if (d.length === 12) d = d.replace(/^(\d{2,4})15(\d{6,8})$/, "$1$2");
+    d = "549" + d;
+  }
+  return `https://wa.me/${d}`;
+}
+
+function crmUrgencia(p) {
+  const dias = p.dias;
+  if (dias === undefined || dias === null) return "";
+  if (dias < 0) return `hace ${-dias} día${dias === -1 ? "" : "s"}`;
+  if (dias === 0) return "hoy";
+  if (dias === 1) return "mañana";
+  return `en ${dias} días`;
+}
+
+/* ── Badge de etapa en las filas del panel principal ──────────────────
+ * filaHtml pone <span class="crm-slot" data-clave-crm="..."></span>; esto
+ * pide las etapas de todas las claves visibles de una vez y las pinta.
+ * "Nuevo" no se muestra (es el estado de casi todas las filas). */
+function crmSlot(clave) {
+  if (!clave) return "";
+  return `<span class="crm-slot" data-clave-crm="${crmEsc(clave)}"></span>`;
+}
+
+async function crmPintarEtapas() {
+  const slots = [...document.querySelectorAll("[data-clave-crm]")];
+  const claves = [...new Set(slots.map(s => s.dataset.claveCrm).filter(Boolean))];
+  if (!claves.length) return;
+  let data;
+  try {
+    data = await apiJson("/api/crm/etapas", "POST", { claves });
+  } catch (_) { return; }
+  slots.forEach(s => {
+    const info = data[s.dataset.claveCrm];
+    if (!info || info.etapa === "nuevo") { s.innerHTML = ""; return; }
+    const titulo = `CRM: ${info.nombre}${info.asignado ? ` · asignado a ${info.asignado}` : ""}`
+      + (info.proximo_seguimiento ? ` · seguimiento ${crmFecha(info.proximo_seguimiento)}` : "");
+    s.innerHTML = crmBadgeEtapa(info.etapa, `title="${crmEsc(titulo)}"`);
+  });
+}
+
+/* ── Ficha del lead ───────────────────────────────────────────────────
+ * crmRenderFicha(contenedor, clave, {enModal, alCambiar}) arma la ficha
+ * completa dentro de `contenedor`. alCambiar() se llama después de cada
+ * guardado, para que la página recargue lo suyo (tablero, tabla...). */
+
+async function crmRenderFicha(cont, clave, opciones = {}) {
+  cont.innerHTML = '<p class="crm-cargando">Cargando…</p>';
+  let d;
+  try {
+    d = await api(`/api/crm/lead?clave=${encodeURIComponent(clave)}`);
+  } catch (e) {
+    cont.innerHTML = `<p class="crm-error">No se pudo cargar la ficha del lead (${crmEsc(e.message)}).</p>`;
+    return;
+  }
+  cont._crm = { datos: d, opciones };
+  cont.innerHTML = _crmHtmlFicha(d, opciones);
+  _crmConectarFicha(cont);
+}
+
+function _crmHtmlFicha(d, { enModal = false } = {}) {
+  const l = d.lead || {};
+  const etapa = l.etapa || "nuevo";
+  const titulo = l.titular || d.clave;
+  const clases = (l.clases || []).slice().sort((a, b) => a - b).join(", ");
+  const linkTit = d.clave && !d.clave.startsWith("ACTA ")
+    ? `<a class="link-titular" href="/titular/${encodeURIComponent(d.clave)}" target="${enModal ? "_blank" : "_self"}">Ver todas sus marcas ↗</a>` : "";
+
+  const alertas = [];
+  if (l.oposicion_sin_apoderado) alertas.push('<div class="crm-alerta crm-alerta-opo">⚠ Tiene una marca con <strong>oposición o vista</strong> y todavía nadie se presentó como apoderado: es el momento de ofrecer ayuda.</div>');
+  else if (l.con_oposicion) alertas.push('<div class="crm-alerta">⚖ Tuvo una oposición, pero ya se sumó un apoderado/gestor.</div>');
+  if (l.tiene_marcas_con_agente) alertas.push('<div class="crm-alerta">ℹ Este titular tiene <strong>otras marcas presentadas con agente/apoderado</strong>: puede que ya trabaje con alguien.</div>');
+  if (l.pre_boletin) alertas.push('<div class="crm-alerta crm-alerta-info">🆕 Tiene marcas detectadas antes del boletín (todavía no publicadas).</div>');
+
+  const opcionesEtapa = d.etapas.map(e => `<option value="${e.id}" ${e.id === etapa ? "selected" : ""}>${crmEsc(e.nombre)}</option>`).join("");
+  const opcionesAsig = `<option value="">Sin asignar</option>` + d.usuarios.map(u =>
+    `<option value="${crmEsc(u)}" ${u === l.asignado ? "selected" : ""}>${crmEsc(u)}${u === d.usuario ? " (yo)" : ""}</option>`).join("");
+  const wa = crmLinkWhatsApp(l.telefono);
+  const email = l.email
+    ? `<a href="mailto:${crmEsc(l.email)}">${crmEsc(l.email)}</a>`
+    : '<span class="crm-gris">sin email todavía</span>';
+
+  const plazos = d.plazos.length
+    ? `<ul class="crm-plazos">${d.plazos.map(p => `
+        <li class="crm-plazo crm-urg-${p.urgencia}">
+          <span class="crm-plazo-fecha">${crmFecha(p.fecha)}<small>${crmUrgencia(p)}</small></span>
+          <span class="crm-plazo-texto"><strong>${crmEsc(p.titulo)}</strong>
+            ${p.acta ? ` · <a class="link-acta" href="javascript:void(0)" data-acta="${crmEsc(p.acta)}">${crmEsc(p.marca)} (acta ${crmEsc(p.acta)}, clase ${crmEsc(p.clase)})</a>` : ""}
+            ${p.detalle ? `<br><small class="crm-gris">${crmEsc(p.detalle)}</small>` : ""}</span>
+        </li>`).join("")}</ul>
+       <p class="crm-nota">Fechas orientativas calculadas por el sistema: confirmar siempre en el expediente.</p>`
+    : '<p class="crm-gris">Sin plazos a la vista.</p>';
+
+  const opcionesTipo = d.tipos_actividad.map(t => `<option value="${t.id}">${crmEsc(t.nombre)}</option>`).join("");
+
+  const items = [
+    ...d.actividad.map(a => ({ ...a, _clase: "actividad" })),
+    ...d.comentarios.map(c => ({ ...c, tipo: "comentario", _clase: "comentario" })),
+  ].sort((a, b) => (a.creado_en < b.creado_en ? 1 : -1));
+  const historial = items.length
+    ? items.map(i => `
+        <div class="crm-hito crm-hito-${crmEsc(i.tipo)}">
+          <div class="crm-hito-cab">${CRM_TIPO_ICONO[i.tipo] || "•"} <strong>${crmEsc(CRM_TIPO_NOMBRE[i.tipo] || i.tipo)}</strong>
+            · ${crmEsc(i.autor)} <span class="crm-gris">${fmtFechaHora(i.creado_en)}</span>
+            ${i._clase === "comentario" && i.acta ? `<span class="crm-gris">· acta ${crmEsc(i.acta)}${i.destinatario ? ` · para ${crmEsc(i.destinatario)}` : ""}</span>` : ""}
+            ${i._clase === "actividad" && i.tipo !== "sistema" && i.autor === d.usuario
+              ? `<button type="button" class="crm-borrar" data-borrar-actividad="${i.id}" title="Borrar esta gestión">✕</button>` : ""}
+          </div>
+          <div class="crm-hito-texto">${crmEsc(i.texto).replace(/\n/g, "<br>")}</div>
+        </div>`).join("")
+    : '<p class="crm-gris">Todavía no hay gestiones registradas.</p>';
+
+  const marcas = enModal ? `
+    <h4>Marcas (${d.marcas.length})</h4>
+    <table class="crm-tabla-marcas"><tbody>
+      ${d.marcas.map(m => `<tr>
+        <td><a class="link-acta" href="javascript:void(0)" data-acta="${crmEsc(m.acta)}">${crmEsc(m.acta)} ↗</a></td>
+        <td>${crmEsc(m.denominacion_inpi || m.denominacion || "(mixta/fig.)")}</td>
+        <td>Clase ${crmEsc(m.clase)}</td>
+        <td>${crmEsc(tipoLegible(m.tipo))}</td>
+        <td>${badgeLead(m)} ${badgeEstadoTramite(m, true)}</td>
+      </tr>`).join("")}
+    </tbody></table>` : "";
+
+  return `
+    <div class="crm-ficha">
+      <div class="crm-ficha-cab">
+        <h3>${crmEsc(titulo)} ${crmBadgeEtapa(etapa)}</h3>
+        <div class="crm-gris">${l.cuit ? `CUIT ${crmEsc(l.cuit)} · ` : ""}${l.cant_marcas || d.marcas.length} marca(s)${clases ? ` · clase ${crmEsc(clases)}` : ""}
+          ${l.modificado_por ? ` · últ. cambio: ${crmEsc(l.modificado_por)} ${fmtFechaHora(l.modificado_en)}` : ""} ${linkTit}</div>
+      </div>
+      ${alertas.join("")}
+      <div class="crm-grid">
+        <label>Etapa<select name="etapa">${opcionesEtapa}</select></label>
+        <label>Asignado a<select name="asignado">${opcionesAsig}</select></label>
+        <label>Próximo seguimiento<input type="date" name="proximo_seguimiento" value="${crmEsc((l.proximo_seguimiento || "").slice(0, 10))}"></label>
+        <label>Teléfono<span class="crm-fila-campo"><input type="text" name="telefono" value="${crmEsc(l.telefono || "")}" placeholder="ej. 11 5555-1234">
+          ${wa ? `<a class="crm-btn-wa" href="${wa}" target="_blank" rel="noopener" title="Abrir chat de WhatsApp">WhatsApp</a>` : ""}</span></label>
+        <label>Email<span class="crm-email">${email}</span></label>
+        <label class="crm-solo-descartado">Motivo del descarte<input type="text" name="motivo_descarte" value="${crmEsc(l.motivo_descarte || "")}" placeholder="ej. ya tiene abogado, no le interesa..."></label>
+        <label class="crm-solo-cliente">Servicio contratado<input type="text" name="servicio" value="${crmEsc(l.servicio || "")}" placeholder="ej. respuesta a oposición"></label>
+        <label class="crm-solo-cliente">Honorarios<span class="crm-fila-campo"><input type="number" min="0" step="0.01" name="monto" value="${l.monto ?? ""}">
+          <select name="moneda"><option value="ARS" ${l.moneda !== "USD" ? "selected" : ""}>ARS</option><option value="USD" ${l.moneda === "USD" ? "selected" : ""}>USD</option></select></span></label>
+      </div>
+      <div class="crm-guardar"><button type="button" class="crm-btn-primario" data-accion="guardar">Guardar cambios</button> <span class="crm-estado"></span></div>
+
+      <h4>Plazos y fechas</h4>
+      ${plazos}
+
+      <h4>Registrar una gestión</h4>
+      <form class="crm-form-actividad">
+        <div class="crm-fila-campo">
+          <select name="tipo">${opcionesTipo}</select>
+          <label class="crm-inline">Próximo seguimiento <input type="date" name="seguimiento_actividad"></label>
+        </div>
+        <textarea name="texto" rows="2" placeholder="Qué se hizo o se habló (ej. le mandé el mail de presentación, pidió presupuesto...)" required></textarea>
+        <div><button type="submit" class="crm-btn-primario">Registrar</button>
+          <span class="crm-gris crm-ayuda-form">Registrar una llamada, mail, WhatsApp o reunión pasa al lead de "Nuevo" a "Contactado" solo.</span></div>
+      </form>
+
+      <h4>Historial</h4>
+      <div class="crm-historial">${historial}</div>
+      ${marcas}
+    </div>`;
+}
+
+function _crmActualizarCamposPorEtapa(cont) {
+  const etapa = cont.querySelector('select[name="etapa"]').value;
+  cont.querySelectorAll(".crm-solo-descartado").forEach(el => { el.hidden = etapa !== "descartado"; });
+  cont.querySelectorAll(".crm-solo-cliente").forEach(el => { el.hidden = etapa !== "cliente"; });
+}
+
+function _crmConectarFicha(cont) {
+  const { datos, opciones } = cont._crm;
+  const l = datos.lead || {};
+  _crmActualizarCamposPorEtapa(cont);
+  cont.querySelector('select[name="etapa"]').addEventListener("change", () => _crmActualizarCamposPorEtapa(cont));
+
+  cont.querySelectorAll("[data-acta]").forEach(a => a.addEventListener("click", () => abrirActa(a.dataset.acta)));
+
+  const recargar = async () => {
+    await crmRenderFicha(cont, datos.clave, opciones);
+    if (typeof opciones.alCambiar === "function") await opciones.alCambiar();
+  };
+
+  cont.querySelector('[data-accion="guardar"]').addEventListener("click", async (ev) => {
+    const boton = ev.currentTarget;
+    const estado = cont.querySelector(".crm-estado");
+    const campo = n => cont.querySelector(`[name="${n}"]`);
+    const valores = {
+      etapa: campo("etapa").value,
+      asignado: campo("asignado").value || null,
+      proximo_seguimiento: campo("proximo_seguimiento").value || null,
+      telefono: campo("telefono").value.trim() || null,
+      motivo_descarte: campo("motivo_descarte").value.trim() || null,
+      servicio: campo("servicio").value.trim() || null,
+      monto: campo("monto").value === "" ? null : Number(campo("monto").value),
+      moneda: campo("moneda").value,
+    };
+    const originales = {
+      etapa: l.etapa || "nuevo", asignado: l.asignado || null,
+      proximo_seguimiento: (l.proximo_seguimiento || "").slice(0, 10) || null,
+      telefono: l.telefono || null, motivo_descarte: l.motivo_descarte || null,
+      servicio: l.servicio || null, monto: l.monto === null || l.monto === undefined ? null : Number(l.monto),
+      moneda: l.moneda || "ARS",
+    };
+    const cambios = {};
+    Object.keys(valores).forEach(k => { if (valores[k] !== originales[k]) cambios[k] = valores[k]; });
+    if (!Object.keys(cambios).length) { estado.textContent = "No hay cambios."; return; }
+    boton.disabled = true;
+    estado.textContent = "Guardando…";
+    try {
+      await apiJson(`/api/crm/lead?clave=${encodeURIComponent(datos.clave)}`, "POST", cambios);
+      await recargar();
+    } catch (e) {
+      boton.disabled = false;
+      estado.textContent = `No se pudo guardar: ${e.message}`;
+    }
+  });
+
+  cont.querySelector(".crm-form-actividad").addEventListener("submit", async (ev) => {
+    ev.preventDefault();
+    const form = ev.currentTarget;
+    const boton = form.querySelector("button[type=submit]");
+    boton.disabled = true;
+    try {
+      await apiJson(`/api/crm/actividad?clave=${encodeURIComponent(datos.clave)}`, "POST", {
+        tipo: form.tipo.value,
+        texto: form.texto.value,
+        proximo_seguimiento: form.seguimiento_actividad.value || null,
+      });
+      await recargar();
+    } catch (e) {
+      boton.disabled = false;
+      alert(`No se pudo registrar: ${e.message}`);
+    }
+  });
+
+  cont.querySelectorAll("[data-borrar-actividad]").forEach(b => b.addEventListener("click", async () => {
+    if (!confirm("¿Borrar esta gestión del historial?")) return;
+    try {
+      await apiJson(`/api/crm/actividad/${b.dataset.borrarActividad}`, "DELETE");
+      await recargar();
+    } catch (e) { alert(`No se pudo borrar: ${e.message}`); }
+  }));
+}
+
+/* Ficha en un popup (tablero, lista y agenda de /crm). */
+function crmAbrirFichaModal(clave, alCambiar) {
+  let modal = document.getElementById("modal-crm");
+  if (!modal) {
+    modal = document.createElement("div");
+    modal.id = "modal-crm";
+    modal.className = "modal-fondo";
+    modal.innerHTML = `
+      <div class="modal-caja modal-crm" onclick="event.stopPropagation()">
+        <button type="button" class="modal-cerrar" title="Cerrar">&times;</button>
+        <div id="modal-crm-contenido"></div>
+      </div>`;
+    modal.addEventListener("click", () => modal.classList.remove("abierto"));
+    modal.querySelector(".modal-cerrar").addEventListener("click", () => modal.classList.remove("abierto"));
+    document.addEventListener("keydown", ev => { if (ev.key === "Escape") modal.classList.remove("abierto"); });
+    document.body.appendChild(modal);
+  }
+  modal.classList.add("abierto");
+  crmRenderFicha(document.getElementById("modal-crm-contenido"), clave, { enModal: true, alCambiar });
+}

@@ -124,3 +124,37 @@ CREATE TABLE IF NOT EXISTS comentarios_visto (
     usuario      TEXT PRIMARY KEY,
     visto_hasta  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- Agregado el 30/09/2026: CRM de leads (sección /crm del panel). Seguimiento
+-- comercial por TITULAR (clave = CUIT, o el nombre normalizado si todavía no
+-- hay CUIT; ver _cte_marcas_con_clave en panel/app.py). Un titular sin fila
+-- en crm_leads está en la etapa "nuevo". El panel también crea estas tablas
+-- solo al arrancar (ver _crear_tablas_crm en panel/app.py).
+CREATE TABLE IF NOT EXISTS crm_leads (
+    clave                TEXT PRIMARY KEY,
+    etapa                TEXT NOT NULL DEFAULT 'nuevo', -- nuevo | contactado | respondio | reunion | cliente | descartado
+    asignado             TEXT,                          -- usuario del panel (PANEL_USERS)
+    telefono             TEXT,
+    proximo_seguimiento  DATE,
+    motivo_descarte      TEXT,
+    servicio             TEXT,                          -- si es cliente: qué contrató
+    monto                NUMERIC(14, 2),                -- si es cliente: honorarios
+    moneda               TEXT DEFAULT 'ARS',            -- ARS | USD
+    etapa_cambiada_en    TIMESTAMPTZ,
+    alta_en              TIMESTAMPTZ NOT NULL DEFAULT now(),
+    modificado_en        TIMESTAMPTZ NOT NULL DEFAULT now(),
+    modificado_por       TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_crm_leads_etapa ON crm_leads(etapa);
+
+-- Historial de gestiones de cada lead (nota | llamada | email | whatsapp |
+-- reunion) + registros automáticos ("sistema") de cambios de etapa/asignación.
+CREATE TABLE IF NOT EXISTS crm_actividad (
+    id         SERIAL PRIMARY KEY,
+    clave      TEXT NOT NULL,
+    autor      TEXT NOT NULL,
+    tipo       TEXT NOT NULL,
+    texto      TEXT NOT NULL,
+    creado_en  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_crm_actividad_clave ON crm_actividad(clave, creado_en DESC);
