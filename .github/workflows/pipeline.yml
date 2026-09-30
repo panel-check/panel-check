@@ -39,32 +39,21 @@ jobs:
             echo "saltar=false" >> "$GITHUB_OUTPUT"
           else
             # listar_boletines.py devuelve TODO el historial de "MARCAS NUEVAS" visible en el
-            # listado (no solo el último) — en modo automático nos quedamos solo con el de
-            # número más alto, para no mandarle a Apify decenas de PDFs de una.
+            # listado, no solo el último.
             python3 scripts/listar_boletines.py --out data/boletines_todos.json
-            python3 - << 'PYEOF'
-          import json
-          with open("data/boletines_todos.json", encoding="utf-8") as f:
-              todos = json.load(f)
-          if not todos:
-              raise SystemExit("listar_boletines.py no devolvió ningún boletín")
-          ultimo = max(todos, key=lambda b: int(b["numero"]))
-          with open("data/boletines.json", "w", encoding="utf-8") as f:
-              json.dump([ultimo], f, ensure_ascii=False, indent=2)
-          print(f"Boletín más reciente detectado: {ultimo['numero']} ({ultimo.get('fecha')}) de {len(todos)} encontrados")
-          PYEOF
-            # Chequeo contra la base antes de seguir: si el "más reciente"
-            # detectado ya está cargado (no hay ningún boletín nuevo
-            # publicado todavía), no tiene sentido gastar Apify/Actions
-            # reprocesándolo -- agregado el 29/09/2026 tras encontrar que el
-            # modo automático reprocesó el boletín 11125, ya importado.
-            numero=$(python3 -c "import json; print(json.load(open('data/boletines.json'))[0]['numero'])")
-            estado=$(python3 scripts/estado_boletin.py "$numero")
-            if [ "$estado" = "procesado" ]; then
-              echo "Boletín $numero ya está importado (estado=procesado) -- no hay ninguno nuevo, se salta el resto del pipeline."
+            # Elegimos el de número más alto que TODAVÍA no esté importado --
+            # no directamente "el más alto", porque si ese ya está cargado no
+            # hay que quedarse de brazos cruzados: puede haber uno anterior
+            # que se haya salteado (falla puntual, corrida vieja, etc.) y
+            # conviene detectarlo igual. Agregado el 30/09/2026 a pedido del
+            # usuario -- antes, si el más nuevo ya estaba importado, el
+            # pipeline no buscaba ningún otro.
+            elegido=$(python3 scripts/elegir_boletin_pendiente.py data/boletines_todos.json)
+            if [ "$elegido" = "NINGUNO" ]; then
+              echo "Todos los boletines de la lista ya están importados -- no hay ninguno nuevo, se salta el resto del pipeline."
               echo "saltar=true" >> "$GITHUB_OUTPUT"
             else
-              echo "Boletín $numero todavía no está importado (estado=$estado) -- se procesa."
+              echo "$elegido" | python3 -c "import json,sys; json.dump([json.loads(sys.stdin.read())], open('data/boletines.json','w'), ensure_ascii=False, indent=2)"
               echo "saltar=false" >> "$GITHUB_OUTPUT"
             fi
           fi
