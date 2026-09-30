@@ -35,6 +35,7 @@ abajo (quedan comentados los puntos exactos revisados el 2026-09-25).
 
 import argparse
 import csv
+import html
 import re
 import sys
 import time
@@ -95,7 +96,10 @@ def limpiar_titular(valor: str | None) -> str | None:
     que no son un nombre (vacío, o solo un CUIT/números)."""
     if not valor:
         return None
-    v = _CORTE_TITULAR.sub("", valor)
+    # La página de INPI trae los acentos como entidades HTML
+    # ("MART&#205;N", "MU&Ntilde;OZ") -- se pasan a letras normales.
+    v = html.unescape(valor).replace("\xa0", " ")
+    v = _CORTE_TITULAR.sub("", v)
     v = re.sub(r"\s+", " ", v).strip(" -:;,")
     if not v or re.fullmatch(r"[\d.\- ]+", v):
         return None
