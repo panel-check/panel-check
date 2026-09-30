@@ -43,6 +43,8 @@ from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+import cartera
+import cartera_api
 import inpi_lead
 
 DATABASE_URL = os.environ.get("DATABASE_URL")
@@ -125,6 +127,17 @@ def migrar_columnas_panel():
             conn.commit()
     except Exception as e:
         print(f"[startup] tablas del CRM salteadas (no bloqueante): {e}")
+
+    # Tablas de Clientes / vigilancia marcaria (sección /clientes): tampoco
+    # tocan `marcas`.
+    try:
+        with conexion() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SET lock_timeout = '3s'")
+                cartera.crear_tablas(cur)
+            conn.commit()
+    except Exception as e:
+        print(f"[startup] tablas de clientes/vigilancia salteadas (no bloqueante): {e}")
 
 
 def _crear_tablas_crm(cur):
@@ -505,6 +518,49 @@ GRUPOS_AUTOMATIZACIONES = [
         ],
     },
     {
+        "id": "clientes",
+        "titulo": "Clientes y vigilancia",
+        "subtitulo": "Cuida las marcas de la cartera de clientes.",
+        "plegado": False,
+        "tarjetas": [
+            {
+                "nombre": "Vigilancia marcaria",
+                "descripcion": "Compara las solicitudes nuevas (boletines y escaneo de actas) con las marcas de los "
+                               "clientes, crea alertas por parecidos y por clientes que presentan con otro agente, "
+                               "suma por matrícula y manda el mail con alertas, plazos y novedades.",
+                "horario": "Todos los días, 5:20, 11:20 y 17:20 hs",
+                "metricas": [
+                    {"sql": "SELECT COUNT(*) FROM vigilancia_alertas WHERE estado IN ('nueva','monitorear','oponer')",
+                     "etiqueta": "alertas abiertas", "destacada": True},
+                    {"sql": "SELECT COUNT(*) FROM vigilancia_alertas WHERE creada_en >= now() - interval '7 days'",
+                     "etiqueta": "alertas nuevas en los últimos 7 días"},
+                    {"sql": "SELECT COUNT(*) FROM cartera_marcas cm JOIN clientes c ON c.id = cm.cliente_id "
+                            "WHERE cm.vigilar AND c.activo",
+                     "etiqueta": "marcas vigiladas"},
+                ],
+                "procesos": [
+                    {"workflow_file": "vigilancia.yml", "cron": "20 8,14,20 * * *"},
+                ],
+            },
+            {
+                "nombre": "Seguimiento de la cartera",
+                "descripcion": "Vuelve a leer en INPI los expedientes de las marcas de los clientes (estado, "
+                               "concesión, vencimiento, oposiciones, movimientos nuevos) y guarda las novedades.",
+                "horario": "Todos los días, 7:45 hs",
+                "metricas": [
+                    {"sql": "SELECT COUNT(*) FROM cartera_novedades WHERE detectado_en >= now() - interval '7 days'",
+                     "etiqueta": "novedades en los últimos 7 días", "destacada": True},
+                    {"sql": "SELECT COUNT(*) FROM cartera_marcas WHERE consultado_en IS NULL",
+                     "etiqueta": "marcas pendientes de consultar"},
+                ],
+                "procesos": [
+                    {"workflow_file": "revisar_cartera.yml", "cron": "45 10 * * *",
+                     "pendientes_sql": "SELECT COUNT(*) FROM cartera_marcas WHERE consultado_en IS NULL"},
+                ],
+            },
+        ],
+    },
+    {
         "id": "mantenimiento",
         "titulo": "Mantenimiento",
         "subtitulo": "Corre solo y casi nunca hace falta mirarlo. Se abre solo si algo falla.",
@@ -626,6 +682,25 @@ REPORTES_AUTOMATIZACIONES = {
                    )
             FROM marcas WHERE es_lead = true AND revisado_oposicion_en >= %(desde)s
             GROUP BY 1""",
+    },
+    "vigilancia.yml": {
+        "columnas": [
+            ("alertas_parecido", "Alertas por parecido", "suma"),
+            ("alertas_otro_agente", "Clientes con otro agente", "suma"),
+            ("solicitudes_comparadas", "Solicitudes comparadas", "suma"),
+            ("sumadas_por_matricula", "Sumadas por matrícula", "suma"),
+            ("mails_enviados", "Mails enviados", "suma"),
+            ("marcas_vigiladas", "Marcas vigiladas", "ultimo"),
+        ],
+    },
+    "revisar_cartera.yml": {
+        "columnas": [
+            ("novedades", "Novedades", "suma"),
+            ("actualizadas", "Marcas actualizadas", "suma"),
+            ("revisadas", "Revisadas", "suma"),
+            ("bloqueos", "Bloqueos de INPI", "suma"),
+            ("pendientes_restantes", "Pendientes al final del día", "ultimo"),
+        ],
     },
     "revisar_estado.yml": {
         "columnas": [
@@ -2359,6 +2434,11 @@ def crm_ficha(clave: str = Query(...), usuario: str = Depends(verificar_login)):
                 ([m["acta"] for m in marcas],),
             )
             comentarios = cur.fetchall()
+            try:
+                cliente = cartera_api.cliente_por_clave(cur, real)
+            except psycopg2.Error:
+                conn.rollback()
+                cliente = None
 
     plazos = _plazos_de_marcas(marcas)
     if lead and lead.get("proximo_seguimiento"):
@@ -2375,6 +2455,7 @@ def crm_ficha(clave: str = Query(...), usuario: str = Depends(verificar_login)):
         "plazos": plazos,
         "actividad": actividad,
         "comentarios": comentarios,
+        "cliente": cliente,
         "etapas": [{"id": e, "nombre": ETAPAS_CRM_NOMBRE[e]} for e in ETAPAS_CRM],
         "tipos_actividad": [{"id": k, "nombre": v} for k, v in TIPOS_ACTIVIDAD.items()],
         "usuarios": sorted(USUARIOS_PANEL.keys()),
@@ -2566,9 +2647,27 @@ def pagina_comentarios(_: str = Depends(verificar_login)):
     return FileResponse(os.path.join(os.path.dirname(__file__), "static", "comentarios.html"))
 
 
+@app.get("/clientes")
+def pagina_clientes(_: str = Depends(verificar_login)):
+    return FileResponse(os.path.join(os.path.dirname(__file__), "static", "clientes.html"))
+
+
 @app.get("/crm")
 def pagina_crm(_: str = Depends(verificar_login)):
     return FileResponse(os.path.join(os.path.dirname(__file__), "static", "crm.html"))
+
+
+# Sección Clientes (cartera + vigilancia): el router recibe el login, la
+# conexión y los helpers del CRM que necesita (para no importar app.py).
+from types import SimpleNamespace  # noqa: E402
+
+app.include_router(cartera_api.crear_router(
+    verificar_login, conexion,
+    SimpleNamespace(
+        asegurar_claves=_asegurar_claves, clave_existente=_clave_existente, actas_de_clave=_actas_de_clave,
+        aplicar_cambios_crm=_aplicar_cambios_crm, usuarios=USUARIOS_PANEL,
+    ),
+))
 
 
 class ArchivosSinCache(StaticFiles):

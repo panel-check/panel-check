@@ -1,0 +1,53 @@
+name: "Vigilancia marcaria"
+
+on:
+  schedule:
+    # 3 veces por día, 1 h 20 después de cada escaneo de actas (07, 13 y 19 UTC):
+    # así compara enseguida las solicitudes recién encontradas. 08:20, 14:20 y
+    # 20:20 UTC = 05:20, 11:20 y 17:20 ART. El boletín del pipeline (09:00 UTC,
+    # lun/mié/vie/sáb, tarda ~2 h) entra en la corrida de las 14:20 UTC.
+    - cron: "20 8,14,20 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# No se pisan dos corridas (la comparación escribe alertas; el mail marca avisos).
+concurrency:
+  group: vigilancia
+  cancel-in-progress: false
+
+jobs:
+  vigilar:
+    runs-on: ubuntu-latest
+    env:
+      RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+      RESEND_FROM: ${{ secrets.RESEND_FROM }}
+      NOTIFICAR_A: ${{ secrets.NOTIFICAR_A }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Instalar dependencias
+        run: pip install -r requirements.txt
+
+      - name: Comparar solicitudes nuevas con la cartera
+        run: |
+          cd scripts
+          python3 vigilancia.py
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL || secrets.DATABASE_PUBLIC_URL }}
+          PYTHONUNBUFFERED: "1"
+
+      - name: Avisar por mail (alertas, plazos y novedades)
+        if: success() || failure()
+        run: |
+          cd scripts
+          python3 notificar_cartera.py
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL || secrets.DATABASE_PUBLIC_URL }}
+          PANEL_URL: ${{ secrets.PANEL_URL }}
+          PYTHONUNBUFFERED: "1"

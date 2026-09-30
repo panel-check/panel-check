@@ -1,0 +1,53 @@
+name: "Seguimiento de la cartera"
+
+on:
+  schedule:
+    # Una vez por día, 10:45 UTC (07:45 ART), lejos de los demás crons contra INPI
+    # (revisar_oposiciones corre a las 10:00 UTC).
+    - cron: "45 10 * * *"
+  workflow_dispatch:
+    inputs:
+      max_minutes:
+        description: "Corta la corrida pasado este tiempo (minutos)"
+        required: false
+        default: "25"
+      todas:
+        description: "Revisar TODA la cartera, sin mirar cuándo se consultó cada marca (true/false)"
+        required: false
+        default: "false"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: revisar-cartera
+  cancel-in-progress: false
+
+jobs:
+  revisar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      # Alarma de bloqueo masivo de INPI (scripts/monitor_bloqueo.py)
+      RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+      RESEND_FROM: ${{ secrets.RESEND_FROM }}
+      NOTIFICAR_A: ${{ secrets.NOTIFICAR_A }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Instalar dependencias
+        run: pip install -r requirements.txt
+
+      - name: Revisar en INPI los expedientes de la cartera
+        run: |
+          cd scripts
+          args="--max-minutes ${{ inputs.max_minutes || '25' }}"
+          if [ "${{ inputs.todas }}" = "true" ]; then args="$args --todas"; fi
+          python3 revisar_cartera.py $args
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL || secrets.DATABASE_PUBLIC_URL }}
+          PYTHONUNBUFFERED: "1"

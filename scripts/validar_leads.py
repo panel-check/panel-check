@@ -790,6 +790,27 @@ def denominacion_por_webservice(cuit: str | None, acta: str) -> str | None:
     return None
 
 
+def _agente_de_bloque(bloque_gestion: str) -> dict:
+    """AGENTE / matrícula desde GESTION DEL TRAMITE (copia de la de
+    panel/inpi_lead.py: este módulo no importa de panel/). El texto exacto del
+    campo AGENTE no está confirmado para todos los casos (los particulares
+    dicen "0 PARTICULAR"): se guarda tal cual y, si empieza con un número
+    mayor a 0, ese número es la matrícula."""
+    texto = _texto_sin_tags(bloque_gestion)
+    m = re.search(r"AGENTE\s*:?\s*(.*?)(?=\s+CARACTER\b|\s+[A-ZÁÉÍÓÚÑ]{3,}\s*:|$)", texto)
+    agente = re.sub(r"\s+", " ", m.group(1)).strip() if m else ""
+    matricula = ""
+    m_mat = re.match(r"^(\d+)\b", agente)
+    if m_mat and int(m_mat.group(1)) > 0:
+        matricula = m_mat.group(1)
+    if not matricula:
+        # variantes posibles del texto (no confirmadas): "GOMEZ JUAN (Mat. 1234)", "MATRICULA 1234"
+        m_alt = re.search(r"MAT(?:R[IÍ]CULA)?\.?\s*(?:N[°ºo]\.?)?\s*:?\s*(\d{2,7})", agente, re.I)
+        if m_alt:
+            matricula = m_alt.group(1)
+    return {"agente": agente, "matricula_agente": matricula}
+
+
 def revisar_acta(s: requests.Session, acta: str, timeout: int = 30) -> dict:
     """Devuelve {caracter, es_lead, email, email_apoderado, motivo_sin_email,
     fecha_publicacion, tuvo_oposicion, detalle_oposicion, estado_tramite,
@@ -814,6 +835,7 @@ def revisar_acta(s: requests.Session, acta: str, timeout: int = 30) -> dict:
         # (no del Formulario) -- ver RE_CLASE_SPAN. Se saca siempre, lead o
         # no, porque no cuesta nada extra (ya tenemos r.text acá abajo).
         "clase": None,
+        "agente_inpi": "", "matricula_agente_inpi": "",
     }
     try:
         r = _get_con_reintentos(
@@ -840,6 +862,13 @@ def revisar_acta(s: requests.Session, acta: str, timeout: int = 30) -> dict:
 
         resultado["caracter"] = caracter
         resultado["es_lead"] = caracter == ""
+        # Agente/matrícula: no cambia nada de lo de arriba; lo usa la
+        # vigilancia (escanear_actas_nuevas guarda las solicitudes con agente
+        # en solicitudes_escaneadas) para saber quién presentó la marca.
+        _ag = _agente_de_bloque(bloque_gestion)
+        # claves aparte (no "matricula_agente"): los que hacen row.update(info)
+        # no deben pisar la matrícula que ya venía del boletín
+        resultado["agente_inpi"], resultado["matricula_agente_inpi"] = _ag["agente"], _ag["matricula_agente"]
 
         m_cuit = RE_CUIT_SPAN.search(r.text)
         if m_cuit:

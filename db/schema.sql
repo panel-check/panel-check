@@ -170,3 +170,169 @@ CREATE TABLE IF NOT EXISTS registro_corridas (
     run_url     TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_registro_corridas_proceso ON registro_corridas(proceso, creado_en DESC);
+
+-- ── Clientes y vigilancia marcaria (sección /clientes) ─────────────────
+-- Las crea también cartera.crear_tablas() (panel/cartera.py) al arrancar el panel y
+-- en cada script: esta copia es solo documentación/bootstrap. Los datos iniciales
+-- (clases relacionadas y palabras genéricas) los carga esa función, una sola vez.
+
+CREATE TABLE IF NOT EXISTS clientes (
+    id                     SERIAL PRIMARY KEY,
+    nombre                 TEXT NOT NULL,
+    cuit                   TEXT,
+    email                  TEXT,
+    telefono               TEXT,
+    contacto               TEXT,
+    notas                  TEXT,
+    origen                 TEXT NOT NULL DEFAULT 'cartera',
+    clave_crm              TEXT,
+    convertido_en          TIMESTAMPTZ,
+    vigilancia_contratada  BOOLEAN NOT NULL DEFAULT false,
+    vigilancia_desde       DATE,
+    activo                 BOOLEAN NOT NULL DEFAULT true,
+    alta_en                TIMESTAMPTZ NOT NULL DEFAULT now(),
+    alta_por               TEXT,
+    modificado_en          TIMESTAMPTZ NOT NULL DEFAULT now(),
+    modificado_por         TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_clientes_cuit ON clientes(cuit);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_clientes_clave_crm ON clientes(clave_crm) WHERE clave_crm IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS cartera_marcas (
+    acta                     TEXT PRIMARY KEY,
+    cliente_id               INTEGER NOT NULL REFERENCES clientes(id) ON DELETE CASCADE,
+    denominacion             TEXT,
+    tipo                     TEXT,
+    clase                    INTEGER,
+    titular                  TEXT,
+    cuit                     TEXT,
+    fecha_presentacion       DATE,
+    fecha_publicacion        DATE,
+    agente                   TEXT,
+    matricula_agente         TEXT,
+    caracter                 TEXT,
+    estado_tramite           TEXT,
+    fecha_concesion          DATE,
+    numero_disposicion       TEXT,
+    fecha_vencimiento_marca  DATE,
+    tuvo_oposicion           BOOLEAN,
+    detalle_oposicion        TEXT,
+    movimientos              INTEGER,
+    grilla_claves            JSONB,
+    ultimo_movimiento        TEXT,
+    ultimo_movimiento_fecha  DATE,
+    vigilar                  BOOLEAN NOT NULL DEFAULT true,
+    vigilar_todas_clases     BOOLEAN NOT NULL DEFAULT false,
+    terminos_vigilancia      TEXT,
+    vigilancia_firma         TEXT,
+    notas                    TEXT,
+    origen_carga             TEXT,
+    consultado_en            TIMESTAMPTZ,
+    error_consulta           TEXT,
+    alta_en                  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    alta_por                 TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_cartera_marcas_cliente ON cartera_marcas(cliente_id);
+
+CREATE TABLE IF NOT EXISTS cartera_novedades (
+    id             BIGSERIAL PRIMARY KEY,
+    acta           TEXT NOT NULL,
+    cliente_id     INTEGER,
+    tipo           TEXT NOT NULL,
+    texto          TEXT NOT NULL,
+    detectado_en   TIMESTAMPTZ NOT NULL DEFAULT now(),
+    notificado_en  TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS idx_cartera_novedades_acta ON cartera_novedades(acta, detectado_en DESC);
+
+CREATE INDEX IF NOT EXISTS idx_cartera_novedades_cliente ON cartera_novedades(cliente_id, detectado_en DESC);
+
+CREATE TABLE IF NOT EXISTS cartera_matriculas (
+    matricula  TEXT PRIMARY KEY,
+    nombre     TEXT,
+    alta_en    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS cartera_descartes (
+    acta            TEXT PRIMARY KEY,
+    descartado_por  TEXT,
+    descartado_en   TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS cartera_avisos_plazo (
+    acta        TEXT NOT NULL,
+    tipo        TEXT NOT NULL,
+    fecha       DATE NOT NULL,
+    umbral      INTEGER NOT NULL,
+    avisado_en  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (acta, tipo, fecha, umbral)
+);
+
+CREATE TABLE IF NOT EXISTS solicitudes_escaneadas (
+    acta                TEXT PRIMARY KEY,
+    denominacion        TEXT,
+    tipo                TEXT,
+    clase               INTEGER,
+    titular             TEXT,
+    cuit                TEXT,
+    fecha_presentacion  DATE,
+    agente              TEXT,
+    matricula_agente    TEXT,
+    caracter            TEXT,
+    es_lead             BOOLEAN,
+    creado_en           TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_solicitudes_escaneadas_cuit ON solicitudes_escaneadas(cuit);
+
+CREATE TABLE IF NOT EXISTS vigilancia_alertas (
+    id                        BIGSERIAL PRIMARY KEY,
+    tipo                      TEXT NOT NULL DEFAULT 'similitud',
+    acta_cliente              TEXT,
+    cliente_id                INTEGER,
+    acta_nueva                TEXT NOT NULL,
+    denominacion_nueva        TEXT,
+    clase_nueva               INTEGER,
+    tipo_nuevo                TEXT,
+    titular_nuevo             TEXT,
+    cuit_nuevo                TEXT,
+    agente_nuevo              TEXT,
+    fecha_presentacion_nueva  DATE,
+    fuente_nueva              TEXT,
+    puntaje                   INTEGER,
+    nivel                     TEXT,
+    motivos                   TEXT,
+    estado                    TEXT NOT NULL DEFAULT 'nueva',
+    nota                      TEXT,
+    decidido_por              TEXT,
+    decidido_en               TIMESTAMPTZ,
+    creada_en                 TIMESTAMPTZ NOT NULL DEFAULT now(),
+    notificada_en             TIMESTAMPTZ
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_vigilancia_alertas_unica ON vigilancia_alertas(tipo, COALESCE(acta_cliente, ''), acta_nueva);
+
+CREATE INDEX IF NOT EXISTS idx_vigilancia_alertas_estado ON vigilancia_alertas(estado, creada_en DESC);
+
+CREATE INDEX IF NOT EXISTS idx_vigilancia_alertas_cliente ON vigilancia_alertas(cliente_id);
+
+CREATE TABLE IF NOT EXISTS vigilancia_comparadas (
+    acta          TEXT PRIMARY KEY,
+    firma         TEXT,
+    comparada_en  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS vigilancia_clases_relacionadas (
+    clase_a  INTEGER NOT NULL,
+    clase_b  INTEGER NOT NULL,
+    PRIMARY KEY (clase_a, clase_b),
+    CONSTRAINT vigilancia_clases_orden CHECK (clase_a < clase_b)
+);
+
+CREATE TABLE IF NOT EXISTS vigilancia_palabras_genericas (palabra TEXT PRIMARY KEY);
+
+CREATE TABLE IF NOT EXISTS vigilancia_config (clave TEXT PRIMARY KEY, valor TEXT);

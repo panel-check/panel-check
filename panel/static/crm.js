@@ -178,6 +178,10 @@ function _crmHtmlFicha(d, { enModal = false } = {}) {
       </tr>`).join("")}
     </tbody></table>` : "";
 
+  const cli = d.cliente
+    ? `<div class="crm-alerta crm-alerta-info">✅ Ya es cliente: <a href="/clientes?cliente=${d.cliente.id}" target="_blank"><strong>${crmEsc(d.cliente.nombre)}</strong> ↗</a>${d.cliente.vigilancia_contratada ? " · vigilancia contratada" : ""}</div>`
+    : (d.lead ? '<div class="crm-alerta crm-alerta-info">¿Se convirtió en cliente? <button type="button" class="crm-btn-primario" data-accion="convertir">Convertir en cliente</button> <span class="crm-gris">Pasa sus marcas a la cartera (con vigilancia) y marca el lead como «Cliente».</span></div>' : "");
+
   return `
     <div class="crm-ficha">
       <div class="crm-ficha-cab">
@@ -185,7 +189,7 @@ function _crmHtmlFicha(d, { enModal = false } = {}) {
         <div class="crm-gris">${l.cuit ? `CUIT ${crmEsc(l.cuit)} · ` : ""}${l.cant_marcas || d.marcas.length} marca(s)${clases ? ` · clase ${crmEsc(clases)}` : ""}
           ${l.modificado_por ? ` · últ. cambio: ${crmEsc(l.modificado_por)} ${fmtFechaHora(l.modificado_en)}` : ""} ${linkTit}</div>
       </div>
-      ${alertas.join("")}
+      ${alertas.join("")}${cli}
       <div class="crm-grid">
         <label>Etapa<select name="etapa">${opcionesEtapa}</select></label>
         <label>Asignado a<select name="asignado">${opcionesAsig}</select></label>
@@ -238,6 +242,17 @@ function _crmConectarFicha(cont) {
     await crmRenderFicha(cont, datos.clave, opciones);
     if (typeof opciones.alCambiar === "function") await opciones.alCambiar();
   };
+
+  const btnConvertir = cont.querySelector('[data-accion="convertir"]');
+  if (btnConvertir) btnConvertir.addEventListener("click", async () => {
+    if (!confirm("¿Convertir este lead en cliente? Sus marcas pasan a la cartera y se empiezan a vigilar.")) return;
+    btnConvertir.disabled = true;
+    try {
+      const r = await apiJson(`/api/clientes/desde-lead?clave=${encodeURIComponent(datos.clave)}`, "POST");
+      await recargar();
+      if (r.cliente && confirm(`Listo: ${r.marcas_sumadas} marca(s) en la cartera. ¿Abrir la ficha del cliente?`)) window.open(`/clientes?cliente=${r.cliente.id}`, "_blank");
+    } catch (e) { btnConvertir.disabled = false; alert(`No se pudo convertir: ${e.message}`); }
+  });
 
   cont.querySelector('[data-accion="guardar"]').addEventListener("click", async (ev) => {
     const boton = ev.currentTarget;

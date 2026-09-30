@@ -16,10 +16,13 @@ sacarlos). Ese script no corre en el panel -- solo el botón "Reintentar",
 que ya tiene esos datos del boletín -- así que no se duplicó acá.
 """
 
+import html as _html
 import io
 import re
 import sys
 import time
+import xml.etree.ElementTree as ET
+from html import escape as _xml_escape
 
 import pdfplumber
 import requests
@@ -425,3 +428,200 @@ def listar_boletines_marcas_nuevas(timeout: int = 30) -> list[dict]:
     boletines = _parse_tabla_boletines(r.text)
     boletines.sort(key=lambda b: int(b["numero"]), reverse=True)
     return boletines
+
+
+# --- Ficha completa de un expediente (cartera de clientes) ------------------
+# Para la pestaña Clientes: dada un acta, trae TODO lo que INPI muestra sin
+# depender de que la marca haya pasado por un boletín nuestro. Lo usan el
+# panel (alta por acta / por CUIT, botón "Actualizar") y los scripts de
+# seguimiento (scripts/revisar_cartera.py, scripts/vigilancia.py), pasando su
+# propia sesión (con el monitor de bloqueos instalado).
+
+TIPOS_MARCA_INVERSO = {"DENOMINATIVA": "D", "MIXTA": "M", "FIGURATIVA": "F", "TRIDIMENSIONAL": "T"}
+
+
+def _texto_sin_tags(fragmento: str) -> str:
+    texto = re.sub(r"<[^>]+>", " ", fragmento)
+    texto = _html.unescape(texto).replace("\xa0", " ")
+    return re.sub(r"\s+", " ", texto).strip()
+
+
+def _bloque_seccion(pagina: str, nombre: str) -> str:
+    patron = re.compile(
+        re.escape(nombre) + r".*?</h4>\s*</div>\s*<div[^>]*>(.*?)</div>\s*</div>\s*</div>", re.S
+    )
+    matches = patron.findall(pagina)
+    return _texto_sin_tags(matches[-1]) if matches else ""
+
+
+RE_TITULAR_NOMBRE = re.compile(r"NOMBRE\s*:?\s*(?:<span[^>]*>)?\s*([^<%]+?)\s*[\d.,]+\s*%")
+_CORTE_TITULAR = re.compile(
+    r"\s+(?:DOMICILIO|CODIGO POSTAL|C[ÓO]DIGO POSTAL|PAIS|PA[ÍI]S|TIPO DOC|NUMERO|N[ÚU]MERO|GENERO|G[ÉE]NERO|"
+    r"CUIT|EMAIL|PORCENTAJE|ESTADO CIVIL|LOCALIDAD)\b.*$",
+    re.S,
+)
+
+
+def _limpiar_titular(valor):
+    if not valor:
+        return None
+    v = _html.unescape(valor).replace("\xa0", " ")
+    v = _CORTE_TITULAR.sub("", v)
+    v = re.sub(r"\s+", " ", v).strip(" -:;,")
+    if not v or re.fullmatch(r"[\d.\- ]+", v):
+        return None
+    return v[:200]
+
+
+def _titulares_de_pagina(pagina: str):
+    nombres = []
+    for m in RE_TITULAR_NOMBRE.finditer(pagina):
+        n = _limpiar_titular(m.group(1))
+        if n and n not in nombres:
+            nombres.append(n)
+    return " / ".join(nombres) if nombres else None
+
+
+def _datos_generales(pagina: str) -> dict:
+    out = {"denominacion": None, "tipo": None, "fecha_presentacion": None}
+    bloque = _bloque_seccion(pagina, "DATOS GENERALES") or _texto_sin_tags(pagina)
+    m = re.search(r"DENOMINACI[ÓO]N\s*:\s*(.*?)\s*TIPO DE MARCA\s*:", bloque, re.I)
+    if m:
+        v = re.sub(r"\s+", " ", m.group(1)).strip(" -:;,")
+        if v and not re.match(r"^(TIPO DE MARCA|CLASE|FECHA|TITULAR|NOMBRE)\b", v, re.I):
+            out["denominacion"] = v[:300]
+    m = re.search(r"TIPO DE MARCA\s*:\s*(Denominativa|Mixta|Figurativa|Tridimensional)", bloque, re.I)
+    if m:
+        out["tipo"] = TIPOS_MARCA_INVERSO.get(m.group(1).upper())
+    m = re.search(r"PRESENTACI[ÓO]N\s*:\s*(\d{1,2}/\d{1,2}/\d{4})", bloque, re.I)
+    if m:
+        out["fecha_presentacion"] = _fecha_ddmmyyyy_a_iso(m.group(1))
+    return out
+
+
+def _agente_de_bloque(bloque_gestion: str) -> dict:
+    """AGENTE / matrícula desde GESTION DEL TRAMITE. El texto exacto del campo
+    AGENTE no está confirmado para todos los casos (los particulares dicen
+    "0 PARTICULAR"); se guarda el texto tal cual y, si empieza con un número
+    mayor a 0, ese número como matrícula."""
+    texto = _texto_sin_tags(bloque_gestion)
+    m = re.search(r"AGENTE\s*:?\s*(.*?)(?=\s+CARACTER\b|\s+[A-ZÁÉÍÓÚÑ]{3,}\s*:|$)", texto)
+    agente = re.sub(r"\s+", " ", m.group(1)).strip() if m else ""
+    matricula = ""
+    m_mat = re.match(r"^(\d+)\b", agente)
+    if m_mat and int(m_mat.group(1)) > 0:
+        matricula = m_mat.group(1)
+    if not matricula:
+        # variantes posibles del texto (no confirmadas): "GOMEZ JUAN (Mat. 1234)", "MATRICULA 1234"
+        m_alt = re.search(r"MAT(?:R[IÍ]CULA)?\.?\s*(?:N[°ºo]\.?)?\s*:?\s*(\d{2,7})", agente, re.I)
+        if m_alt:
+            matricula = m_alt.group(1)
+    particular = bool(re.search(r"PARTICULAR", agente, re.I)) or agente in ("", "0")
+    return {"agente": agente, "matricula_agente": matricula, "particular": particular}
+
+
+def _firma_grilla(a: dict) -> str:
+    return f"{_parsear_fecha_grilla(a.get('Fecha') or '') or ''}|{(a.get('Indice') or '').strip()}|{(a.get('Referencia') or '').strip()}"
+
+
+def consultar_expediente(acta: str, s=None, timeout: int = 30, con_grilla: bool = True) -> dict:
+    """Ficha completa de un expediente. Devuelve siempre un dict:
+      estado_consulta: "ok" | "no_existe" | "bloqueado" | "error"
+      y, si "ok": denominacion, tipo, clase, titular, cuit, fecha_presentacion,
+      fecha_publicacion, agente, matricula_agente, caracter, particular,
+      estado_tramite, fecha_concesion, numero_disposicion,
+      fecha_vencimiento_marca, tuvo_oposicion, detalle_oposicion,
+      grilla_claves (lista de "fecha|indice|referencia"), movimientos,
+      ultimo_movimiento, ultimo_movimiento_fecha.
+    La grilla falla por separado (WAF): en ese caso grilla_claves queda None
+    y el resto de los datos igual se devuelve."""
+    s = s or _crear_sesion()
+    out = {"acta": str(acta), "estado_consulta": "error", "error": ""}
+    try:
+        r = _get_con_reintentos(
+            lambda: s.post(
+                f"{BASE}/MarcasConsultas/Resultado",
+                headers={"Referer": f"{BASE}/MarcasConsultas/Grilla"},
+                data={"acta": str(acta)},
+                timeout=timeout,
+            )
+        )
+    except requests.RequestException as e:
+        out["error"] = f"error de conexión al consultar INPI: {e}"
+        return out
+    if "Web Page Blocked" in r.text or "Attack ID" in r.text:
+        out["estado_consulta"] = "bloqueado"
+        out["error"] = "bloqueado por el WAF de INPI"
+        return out
+    if "GESTION DEL TRAMITE" not in r.text and "TITULARIDAD" not in r.text:
+        out["estado_consulta"] = "no_existe"
+        out["error"] = "INPI no tiene un expediente con ese número de acta"
+        return out
+
+    texto = r.text
+    out["estado_consulta"] = "ok"
+    m_gestion = RE_GESTION.search(texto)
+    bloque_gestion = m_gestion.group(1) if m_gestion else ""
+    m_car = RE_CARACTER_SPAN.search(bloque_gestion or texto)
+    out["caracter"] = re.sub(r"\s+", " ", m_car.group(1)).strip() if m_car else ""
+    out.update(_agente_de_bloque(bloque_gestion))
+
+    m_cuit = RE_CUIT_SPAN.search(texto)
+    cuit = re.sub(r"[^\d]", "", m_cuit.group(1)) if m_cuit else ""
+    out["cuit"] = cuit if len(cuit) in (10, 11) else None
+    m_clase = RE_CLASE_SPAN.search(texto)
+    out["clase"] = int(m_clase.group(1)) if m_clase else None
+    out["titular"] = _titulares_de_pagina(texto)
+    out.update(_datos_generales(texto))
+    out.update(_parsear_resolucion(texto))
+
+    out.update({"fecha_publicacion": None, "tuvo_oposicion": None, "detalle_oposicion": "",
+                "grilla_claves": None, "movimientos": None,
+                "ultimo_movimiento": None, "ultimo_movimiento_fecha": None})
+    if con_grilla:
+        archivos = _buscar_archivos_grilla(s, str(acta), timeout=timeout)
+        if archivos:
+            out["fecha_publicacion"] = _fecha_publicacion_de_archivos(archivos)
+            out["tuvo_oposicion"], out["detalle_oposicion"] = _detectar_oposicion(archivos, out["fecha_publicacion"])
+            out["grilla_claves"] = [_firma_grilla(a) for a in archivos]
+            out["movimientos"] = len(archivos)
+            con_fecha = [(_parsear_fecha_grilla(a.get("Fecha") or ""), a) for a in archivos]
+            con_fecha = [(f, a) for f, a in con_fecha if f]
+            if con_fecha:
+                f, a = max(con_fecha, key=lambda x: x[0])
+                out["ultimo_movimiento"] = f"{(a.get('Indice') or '').strip()} {(a.get('Referencia') or '').strip()}".strip()
+                out["ultimo_movimiento_fecha"] = f
+    return out
+
+
+# Webservice SOAP público (ver references/inpi-webservice.md): marcas de un
+# titular por CUIT o por nombre. No trae agente ni estado.
+WS_URL = "https://ws.inpi.gob.ar/wsinpi.asmx"
+
+
+def consultar_titular_ws(cuit: str = "", titular: str = "", timeout: int = 60, reintentos: int = 2) -> list:
+    """[{Acta, Titulares, Fecha_Ingreso, Clase, Denominacion, Tipo_Marca}, ...].
+    Lista vacía si no hay resultados o el servicio no respondió."""
+    cuerpo = (
+        '<?xml version="1.0" encoding="utf-8"?>'
+        '<soap:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" '
+        'xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">'
+        '<soap:Body><ConsultaCuitOTitular xmlns="http://tempuri.org/">'
+        f"<cuit>{_xml_escape(cuit)}</cuit><titular>{_xml_escape(titular)}</titular>"
+        "</ConsultaCuitOTitular></soap:Body></soap:Envelope>"
+    )
+    for _ in range(reintentos + 1):
+        try:
+            r = requests.post(
+                WS_URL, data=cuerpo.encode("utf-8"), timeout=timeout,
+                headers={"Content-Type": "text/xml; charset=utf-8",
+                         "SOAPAction": '"http://tempuri.org/ConsultaCuitOTitular"'},
+            )
+            root = ET.fromstring(r.text)
+        except (requests.RequestException, ET.ParseError):
+            continue
+        filas = []
+        for g in root.iter("{http://tempuri.org/}GrillaMarcas"):
+            filas.append({c.tag.split("}")[-1]: (c.text or "") for c in g})
+        return filas
+    return []

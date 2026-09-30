@@ -30,8 +30,12 @@ Qué hace esta corrida:
      A partir de ahí sigue el flujo de siempre (revisar_oposiciones.py
      empieza a mirarla recién cuando fecha_publicacion deja de ser NULL).
 
-Una marca CON agente/apoderado detectada en el escaneo no se guarda: no es
-un lead para nosotros y el boletín la va a cargar igual más adelante.
+Una marca CON agente/apoderado detectada en el escaneo no se guarda en
+`marcas` (no es un lead para nosotros y el boletín la va a cargar igual más
+adelante), pero sí en `solicitudes_escaneadas` junto con todas las demás: la
+vigilancia marcaria (scripts/vigilancia.py) necesita ver TODAS las solicitudes
+nuevas para compararlas con las marcas de los clientes, semanas antes de que
+salgan en un boletín.
 
 Uso:
     DATABASE_URL=... python3 escanear_actas_nuevas.py
@@ -52,6 +56,9 @@ import traceback
 
 import psycopg2
 import psycopg2.extras
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "panel"))
+import cartera  # noqa: E402  (tablas de la cartera/vigilancia, viven en panel/)
 
 from registro import registrar
 from validar_leads import calcular_lead_score, crear_sesion, existe_expediente, revisar_acta
@@ -128,6 +135,43 @@ def _guardar_lead(conn, acta: str, info: dict, score: int):
     conn.commit()
 
 
+def _guardar_solicitud_escaneada(conn, acta: str, info: dict):
+    """Toda acta encontrada por el escaneo (lead o no) queda en
+    solicitudes_escaneadas, para la vigilancia. No es fatal: si falla, el
+    escaneo sigue (la tabla la crea cartera.crear_tablas al arrancar)."""
+    if info.get("caracter") is None:  # no se pudo verificar (WAF/error): no guardar a medias
+        return
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO solicitudes_escaneadas (acta, denominacion, tipo, clase, titular, cuit,
+                    fecha_presentacion, agente, matricula_agente, caracter, es_lead)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (acta) DO UPDATE SET
+                    denominacion = COALESCE(EXCLUDED.denominacion, solicitudes_escaneadas.denominacion),
+                    tipo = COALESCE(EXCLUDED.tipo, solicitudes_escaneadas.tipo),
+                    clase = COALESCE(EXCLUDED.clase, solicitudes_escaneadas.clase),
+                    titular = COALESCE(EXCLUDED.titular, solicitudes_escaneadas.titular),
+                    cuit = COALESCE(EXCLUDED.cuit, solicitudes_escaneadas.cuit),
+                    agente = COALESCE(EXCLUDED.agente, solicitudes_escaneadas.agente),
+                    matricula_agente = COALESCE(EXCLUDED.matricula_agente, solicitudes_escaneadas.matricula_agente),
+                    caracter = EXCLUDED.caracter, es_lead = EXCLUDED.es_lead
+                """,
+                (
+                    acta, info.get("denominacion_formulario") or None, info.get("tipo_formulario") or None,
+                    info.get("clase"), info.get("titular_formulario") or None, info.get("cuit") or None,
+                    info.get("fecha_presentacion_formulario") or None,
+                    info.get("agente_inpi") or None, info.get("matricula_agente_inpi") or None,
+                    info.get("caracter") or None, info.get("es_lead"),
+                ),
+            )
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        print(f"  acta {acta}: no se pudo guardar en solicitudes_escaneadas ({type(e).__name__})")
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--tope", type=int, default=300, help="máximo de números de acta a probar en esta corrida")
@@ -146,6 +190,13 @@ def main():
 
     conn = psycopg2.connect(dsn)
     try:
+        try:
+            with conn.cursor() as cur:
+                cartera.crear_tablas(cur)
+            conn.commit()
+        except Exception as e:
+            conn.rollback()
+            print(f"aviso: no se pudieron crear las tablas de la cartera ({type(e).__name__})")
         ultima_confirmada = _leer_puntero(conn, args.desde)
         print(f"Último acta confirmada: {ultima_confirmada}. Probando hasta {args.tope} números siguientes...")
 
@@ -196,6 +247,7 @@ def main():
             _guardar_puntero(conn, ultimo_confirmado)
 
             info = revisar_acta(s, acta)
+            _guardar_solicitud_escaneada(conn, acta, info)
             if info["es_lead"] is True and info.get("email"):
                 score = calcular_lead_score({"matricula_agente": "", "es_lead": True, "email": info["email"]})
                 _guardar_lead(conn, acta, info, score)

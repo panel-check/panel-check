@@ -177,6 +177,7 @@
   <nav class="nav">
     <a href="/" title="Leads"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5h18M3 12h18M3 19h12"/></svg><span class="nav-txt">Leads</span></a>
     <a href="/crm" title="CRM"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="5" height="16" rx="1.5"/><rect x="10" y="4" width="5" height="11" rx="1.5"/><rect x="17" y="4" width="4" height="7" rx="1.5"/></svg><span class="nav-txt">CRM</span></a>
+    <a href="/clientes" title="Clientes"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M16 20v-1.5a3.5 3.5 0 0 0-3.5-3.5h-5A3.5 3.5 0 0 0 4 18.5V20"/><circle cx="10" cy="8" r="3.5"/><path d="M20 20v-1.5a3.5 3.5 0 0 0-2.5-3.35M15 4.6a3.5 3.5 0 0 1 0 6.8"/></svg><span class="nav-txt">Clientes</span></a>
     <a href="/comentarios" id="link-comentarios" title="Comentarios"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H8l-5 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg><span class="nav-txt">Comentarios</span><span class="nav-badge"></span></a>
     <a href="/boletines" title="Boletines"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h13a2 2 0 0 1 2 2v14H6a2 2 0 0 1-2-2z"/><path d="M19 8h1a1 1 0 0 1 1 1v9a2 2 0 0 1-2 2"/><path d="M8 8h7M8 12h7M8 16h4"/></svg><span class="nav-txt">Boletines</span></a>
     <a href="/crons" title="Automatizaciones"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg><span class="nav-txt">Automatizaciones</span></a>
@@ -333,6 +334,33 @@
     <p><strong>En el panel principal</strong>, al lado de LEAD aparece la etapa del CRM de ese titular (salvo <em>Nuevo</em>, que es la de casi todos). Pasando el mouse se ve a quién está asignado y el próximo seguimiento.</p>
     <p>Si un lead se cargó al CRM cuando todavía no tenía CUIT y después el sistema lo consigue, su etapa y su historial se pasan solos al CUIT (a los pocos minutos): no se pierde nada. Un titular sin CUIT ni nombre usable (por ejemplo, "(titular a confirmar manualmente)") aparece como un lead por cada acta.</p>
 
+    <h2 id="clientes">👥 Clientes y vigilancia marcaria</h2>
+    <p>Link <strong>Clientes</strong> en la barra de arriba. Es la cartera de clientes del estudio y, arriba de ella, la <strong>vigilancia marcaria</strong>: el sistema mira todas las solicitudes nuevas de INPI y avisa cuando aparece una parecida a la marca de un cliente, mientras todavía se puede presentar oposición. La vigilancia se hace <strong>para todos los clientes</strong>, paguen o no; la casilla «Tiene contratada la vigilancia» de cada cliente solo indica a quién se le cobra y se le manda el informe (y separa, en las alertas, a los que son una oportunidad para ofrecerla).</p>
+    <p><strong>Cinco pestañas:</strong></p>
+    <ul>
+      <li><strong>👥 Clientes:</strong> la lista (buscar por nombre, CUIT, email, marca o acta), con cantidad de marcas, si tiene la vigilancia contratada, alertas abiertas y el próximo vencimiento. <strong>+ Nuevo cliente</strong> lo crea; un click en una fila abre su ficha.</li>
+      <li><strong>🔎 Vigilancia:</strong> las alertas (ver abajo) y, arriba, <strong>Probar un nombre</strong> para ver qué solicitudes conocidas se parecen a una marca antes de presentarla.</li>
+      <li><strong>📅 Vencimientos:</strong> los plazos de toda la cartera juntos: renovaciones, declaración jurada de uso, cierre de oposiciones de terceros, oposiciones recibidas y el plazo para oponerse a las marcas parecidas detectadas. Agrupados: vencidos o de hoy, 7, 30 y 90 días, más adelante. Son orientativos: la fecha exacta se confirma en el expediente.</li>
+      <li><strong>🏷 Por matrícula:</strong> las matrículas del estudio y las solicitudes presentadas con ellas que todavía no están en la cartera (ver abajo).</li>
+      <li><strong>⚙ Ajustes:</strong> sensibilidad de la vigilancia, clases relacionadas y palabras genéricas (ver abajo).</li>
+    </ul>
+    <p><strong>Cargar la cartera.</strong> Hay tres formas de sumar marcas a un cliente, en su ficha o por matrícula:</p>
+    <ul>
+      <li><strong>Por número de acta:</strong> pegás uno o varios números de acta (separados por coma o uno por línea). El sistema consulta cada uno en INPI y carga los datos: marca, tipo, clase, titular, CUIT, estado del trámite, concesión, vencimiento, agente, oposiciones y movimientos del expediente. Si un acta ya está en otro cliente avisa, y si INPI no la devuelve no la carga. Si INPI bloquea justo en ese momento, la marca se guarda igual como <em>pendiente de consultar</em> y el seguimiento diario la completa sola.</li>
+      <li><strong>Por CUIT o titular:</strong> «Buscar por CUIT o titular en INPI» lista las marcas que INPI tiene a nombre de ese CUIT o nombre (marcando las que ya están en la cartera) y suma las que elijas. Solo muestra número, marca, clase y titular: el resto se completa al sumarlas.</li>
+      <li><strong>Por matrícula:</strong> cargá en la pestaña <em>Por matrícula</em> las matrículas del estudio (la tuya y la de tu socio/a). Todo lo que se presente con ellas (visto en los boletines y en el escaneo de actas) se propone acá agrupado por titular: lo sumás a un cliente existente, creás un cliente nuevo con esos datos, o lo descartás (no vuelve a proponerse). Si el CUIT de la solicitud ya es de <strong>un</strong> cliente, la marca entra sola a su cartera. <em>Ojo: solo ve lo que pasó por los boletines procesados y el escaneo, no toda la historia de la matrícula en INPI; las marcas viejas se cargan por acta o por CUIT.</em></li>
+      <li><strong>Desde el CRM:</strong> en la ficha de un lead, <strong>Convertir en cliente</strong> crea el cliente (con su CUIT, email y teléfono), pasa sus marcas a la cartera y deja el lead en la etapa <em>Cliente</em>. Después, la ficha del lead muestra un link a la del cliente.</li>
+    </ul>
+    <p><strong>Ficha del cliente:</strong> datos de contacto, notas, origen, <em>vigilancia contratada</em> y <em>activo</em> (un cliente inactivo no se vigila ni se avisa); la lista de sus marcas con estado, agente, vencimiento, oposiciones y último movimiento; plazos; alertas; y novedades del expediente. En cada marca: <strong>Vigilar</strong> (tildado por defecto), <strong>En todas las clases</strong> (compara también contra clases sin relación, para marcas famosas o muy distintivas), <strong>otros nombres a vigilar</strong> (variantes, abreviaturas, el nombre comercial; separados por coma), ↻ para volver a consultar el expediente ahora, <strong>Mover</strong> a otro cliente y <strong>Sacar</strong> de la cartera.</p>
+    <p><strong>Alertas de vigilancia.</strong> Dos tipos:</p>
+    <ul>
+      <li><strong>Parecido:</strong> una solicitud nueva se parece a una marca de la cartera. Muestra las dos marcas lado a lado, el <strong>porcentaje de parecido</strong>, el <strong>nivel</strong> (ALTA desde 90, MEDIA desde 82, BAJA desde 75; se cambia en Ajustes), el motivo («suenan igual», «una contiene a la otra», «comparten la palabra…», «clase vinculada») y hasta cuándo se puede presentar oposición (30 días corridos desde la publicación en el boletín; si todavía no se publicó, el plazo empieza cuando se publique). Solo se alertan solicitudes cuyo plazo de oposición sigue abierto, y no se alerta si la solicitud es del mismo CUIT del cliente, si ya está en la cartera o si fue denegada. Una solicitud presentada por el propio estudio para otro titular sí alerta: sirve para detectar un conflicto entre clientes.</li>
+      <li><strong>Otro agente (🔀):</strong> un cliente (por CUIT) presentó una marca nueva con otro agente o por su cuenta. No es un riesgo para sus marcas: es el momento de hablar con él.</li>
+    </ul>
+    <p>Cada alerta se trabaja con los botones <strong>Monitorear</strong>, <strong>Hay que oponer</strong>, <strong>Oposición presentada</strong> y <strong>Descartar</strong> (en las de otro agente: <em>Lo sigo</em>, <em>Ya lo hablé</em>, <em>Descartar</em>), con una nota libre; queda registrado quién cambió el estado y cuándo. Se puede filtrar por estado, nivel, tipo, cliente y «solo clientes sin vigilancia contratada». El número rojo en la pestaña cuenta las alertas ALTAS todavía sin mirar. Las alertas <em>ALTA</em> y <em>MEDIA</em> y las de otro agente también llegan por mail (ver el Manual).</p>
+    <p><strong>Ajustes.</strong> <em>Puntaje mínimo</em> para crear una alerta y los cortes de nivel (un cambio se aplica desde la próxima corrida; las alertas ya creadas no se tocan). <em>Clases relacionadas</em>: pares de clases que suelen chocar (por ejemplo 25 con 35): un parecido en una clase relacionada alerta con un pequeño descuento; en una clase sin relación solo alerta si los nombres son casi idénticos o si la marca se vigila «en todas las clases». <em>Palabras genéricas</em> (GRUPO, SERVICIOS…): se ignoran al comparar, para no alertar por «GRUPO ALFA» contra «GRUPO BETA».</p>
+    <p><strong>Cómo compara.</strong> El parecido es el mejor de cuatro criterios: escrito (letras), sonoro (cómo se pronuncia en castellano rioplatense: KASA = CASA, PHARMA = FARMA), una marca contenida dentro de la otra (KOMUNIKA / KOMUNIKA PLUS) y palabra distintiva en común. Es una ayuda para no perder oposiciones, <strong>no un dictamen</strong>: lo decide una persona. Compara contra las solicitudes de los últimos 18 meses que pasaron por los boletines y el escaneo de actas.</p>
+
     <h2>💬 Comentarios internos</h2>
     <p>Sirven para dejarse mensajes entre las personas del equipo dentro del panel, sin depender del WhatsApp o el mail. Cada comentario queda con quién lo escribió (el usuario con el que entraste al panel) y la fecha.</p>
     <ul>
@@ -376,7 +404,8 @@ le asigna un puntaje de prioridad. Después sigue a cada marca a lo largo del ti
               los números de acta siguientes al último que encontró. De cada acta nueva sin agente guarda clase, marca (el nombre sale de la ficha del
               expediente, así que también las Mixtas quedan con nombre), tipo, titular, CUIT y email, y la muestra en el panel con la etiqueta <strong>🆕 pre-boletín</strong>. Así se
               puede contactar al solicitante semanas antes que nadie. Cuando después sale en su boletín, la misma
-              marca se completa con los datos del boletín, sin duplicarse.</p>
+              marca se completa con los datos del boletín, sin duplicarse. Las solicitudes <strong>con agente</strong> no van al panel de leads, pero se
+              guardan aparte para la vigilancia marcaria (ver paso 8).</p>
           </div>
         </li>
         <li class="paso">
@@ -446,6 +475,18 @@ le asigna un puntaje de prioridad. Después sigue a cada marca a lo largo del ti
               para poder ofrecer ese seguimiento como servicio.</p>
           </div>
         </li>
+        <li class="paso">
+          <div class="num verde">8</div>
+          <div class="cuerpo">
+            <h3>Clientes y vigilancia marcaria</h3>
+            <p>Los clientes del estudio se cargan en <strong>Clientes</strong> (por acta, por CUIT, por matrícula o convirtiendo un lead).
+              De cada marca de la cartera el sistema lee el expediente en INPI todos los días y guarda las novedades (concesión,
+              oposición o vista, cambio de titular, movimientos). Tres veces por día compara todas las solicitudes nuevas —las de los
+              boletines y las que encuentra el escaneo de actas, sin esperar al boletín— con las marcas de la cartera: si alguna se parece,
+              crea una <strong>alerta</strong> mientras todavía corre el plazo de oposición; si un cliente presenta una marca con otro agente,
+              también. Las alertas y los plazos que se acercan llegan por mail. Se hace para todos los clientes; la vigilancia contratada marca a quién se le cobra.</p>
+          </div>
+        </li>
       </ul>
 
       <div class="seccion-manual">
@@ -455,7 +496,7 @@ le asigna un puntaje de prioridad. Después sigue a cada marca a lo largo del ti
         <ul>
           <li>Arriba, una <strong>franja de estado</strong>: verde si todo funciona; amarilla o roja si algún proceso
             falló o quedó cancelado, con el nombre del proceso (clic para ir a su tarjeta).</li>
-          <li><strong>Conseguir leads</strong> y <strong>Seguir a los leads</strong>: siempre visibles, cada tarjeta con
+          <li><strong>Conseguir leads</strong>, <strong>Seguir a los leads</strong> y <strong>Clientes y vigilancia</strong>: siempre visibles, cada tarjeta con
             el número que importa (leads nuevos hoy, última acta encontrada en INPI, último boletín, oposiciones de la semana, concesiones del mes). La <strong>última acta encontrada</strong> es hasta dónde llegó el escaneo: el número más alto que INPI ya tenía cargado (sea lead o no); el reporte del + muestra la última de cada día.</li>
           <li><strong>Mantenimiento</strong>: plegado; se abre solo si algo ahí falla. "Completar datos faltantes" junta
             los tres reintentos (sin verificar, sin email, sin nombre) con lo que le queda pendiente a cada uno.</li>
@@ -477,7 +518,8 @@ le asigna un puntaje de prioridad. Después sigue a cada marca a lo largo del ti
                 anterior se haya cortado a mitad: nunca vuelve a revisar las que ya pasó. Guarda solo los leads (sin agente), con email si se pudo, como
                 <strong>pre-boletín</strong>. El nombre de la marca (incluidas las Mixtas) lo lee de la ficha del expediente
                 (DATOS GENERALES); si ahí no está, del Formulario o del webservice de INPI por CUIT. Las marcas con abogado
-                se descartan: las carga el boletín después.</td></tr>
+                no van al panel de leads (las carga el boletín después), pero se guardan aparte con su agente para que la
+                <strong>vigilancia</strong> las compare con las marcas de los clientes.</td></tr>
             <tr><td><strong>Boletín publicado</strong><br><small>(antes "Pipeline de boletines")</small></td><td>Lunes, miércoles, viernes y sábado, 6 hs</td>
               <td>Busca el boletín de "Marcas Nuevas" más reciente que todavía no esté importado, lee el PDF, separa
                 cada solicitud, completa el nombre de las marcas Mixtas/Figurativas (que en el PDF son solo un logo),
@@ -493,6 +535,23 @@ le asigna un puntaje de prioridad. Después sigue a cada marca a lo largo del ti
             <tr><td><strong>Concesiones y vencimientos</strong><br><small>(antes "Revisión de estado del trámite")</small></td><td>Lunes, 8 hs</td>
               <td>Para las marcas que todavía no tienen resolución, revisa si INPI la concedió o denegó, y guarda
                 fecha de concesión, número de disposición y vencimiento.</td></tr>
+            <tr><th colspan="3" style="background:#f4f6f9;text-align:left;">Clientes y vigilancia</th></tr>
+            <tr><td><strong>Vigilancia marcaria</strong></td><td>Todos los días, 5:20, 11:20 y 17:20 hs (1 h 20 después de cada escaneo de actas)</td>
+              <td>1) Suma a la cartera las solicitudes presentadas con una matrícula del estudio cuando su CUIT es de un cliente
+                (las demás quedan como propuesta en Clientes → Por matrícula). 2) Compara cada solicitud nueva (boletines y
+                escaneo de actas) contra las marcas vigiladas de los clientes activos —parecido escrito, sonoro, contenida,
+                palabra en común, ajustado por clase— y crea las alertas; avisa también si un cliente presentó una marca con
+                otro agente. Solo alerta solicitudes con el plazo de oposición abierto, y nunca dos veces la misma pareja.
+                3) Recompara las marcas de la cartera cuyo nombre, términos extra o clase cambiaron. 4) Manda el mail de
+                <em>Cartera y vigilancia</em>. No consulta INPI: trabaja sobre la base. La comparación de las solicitudes del
+                boletín de las 6 hs entra en la corrida de las 11:20.</td></tr>
+            <tr><td><strong>Seguimiento de la cartera</strong></td><td>Todos los días, 7:45 hs</td>
+              <td>Vuelve a leer en INPI el expediente de cada marca de un cliente activo: primero las recién cargadas o que
+                nunca se pudieron consultar, después las que siguen en trámite (una vez por día) y las concedidas o
+                denegadas (una vez cada 30 días). Guarda estado, concesión, vencimiento, agente, oposiciones y movimientos, y
+                registra como <em>novedad</em> cada cambio (estado, oposición, publicación, titular, movimiento nuevo del
+                expediente). Si INPI bloquea varias consultas seguidas, corta y sigue en la próxima corrida; corta también a los
+                25 minutos.</td></tr>
             <tr><th colspan="3" style="background:#f4f6f9;text-align:left;">Mantenimiento (tarjeta “Completar datos faltantes” y “Panel actualizado”)</th></tr>
             <tr><td><strong>Completar datos faltantes → Sin verificar</strong><br><small>(antes "Reintento de marcas sin verificar")</small></td><td>Cada 2 horas (horas impares)</td>
               <td>Vuelve a consultar las marcas en las que no se pudo confirmar si tienen agente (columna Lead
@@ -524,6 +583,15 @@ le asigna un puntaje de prioridad. Después sigue a cada marca a lo largo del ti
               avisa una sola vez; si no hay novedades, no llega nada. No incluye a los que ya sumaron un apoderado.</p>
           </div>
           <div class="tarjeta-mini">
+            <h4>🔎 Cartera y vigilancia</h4>
+            <p>Mail que sale al terminar cada corrida de la vigilancia, <strong>solo si hay algo nuevo</strong>: alertas nuevas de
+              parecido de nivel ALTA o MEDIA (las BAJAS quedan solo en el panel), clientes que presentaron una marca con otro agente,
+              <strong>plazos que se acercan</strong> (renovación y declaración jurada a 90, 60, 30 y 7 días; cierre del plazo para
+              oponerse a una marca parecida a 14, 7 y 3 días; cada umbral se avisa una sola vez) y <strong>novedades de los
+              expedientes</strong> de la cartera (concesión, oposición o vista, publicación, cambio de titular, movimientos). Cada
+              cosa se avisa una sola vez. Las alertas de clientes sin vigilancia contratada salen marcadas como tales.</p>
+          </div>
+          <div class="tarjeta-mini">
             <h4>🚫 INPI está bloqueando</h4>
             <p>Llega solo si INPI empieza a bloquear en forma <strong>masiva</strong> (5 consultas seguidas bloqueadas,
               ninguna que responda, o más del 25% bloqueadas) en cualquiera de los procesos. Un bloqueo suelto es
@@ -539,6 +607,7 @@ le asigna un puntaje de prioridad. Después sigue a cada marca a lo largo del ti
             <tr><th>Reintentar (en la ficha)</th><td>Vuelve a consultar en vivo un expediente puntual y actualiza carácter, email, CUIT y score.</td></tr>
             <tr><th>Importar boletín</th><td>En <strong>Boletines</strong> se ven todos los boletines de marcas nuevas publicados por INPI y cuáles ya están cargados. El botón Importar procesa uno puntual (por ejemplo, del historial) sin esperar al pipeline.</td></tr>
             <tr><th>CRM de leads</th><td>En <strong>CRM</strong>: mover leads de etapa arrastrando tarjetas, asignarlos, registrar gestiones, agendar seguimientos, cargar teléfono (con botón de WhatsApp), servicio y honorarios. La agenda junta seguimientos, oposiciones sin gestionar y plazos próximos.</td></tr>
+            <tr><th>Clientes y vigilancia</th><td>En <strong>Clientes</strong>: cargar clientes y sumarles marcas por acta, por CUIT/titular o por matrícula; convertir un lead del CRM en cliente; decidir cada alerta de vigilancia (monitorear, oponer, oposición presentada, descartar); <strong>Probar un nombre</strong> contra las solicitudes conocidas; ver todos los vencimientos; ajustar la sensibilidad, las clases relacionadas y las palabras genéricas. El botón ↻ de cada marca vuelve a consultar su expediente en INPI en el momento.</td></tr>
             <tr><th>Comentarios</th><td>Botón 💬 en cada fila o sección <strong>Comentarios</strong>: dejarle un mensaje a otra persona del equipo (o a todos), vinculado o no a un acta, y marcarlo como resuelto cuando se atendió.</td></tr>
             <tr><th>Correr ahora</th><td>En <strong>Automatizaciones</strong>, cada proceso automático tiene su propio botón para dispararlo a mano (en "Completar datos faltantes", uno por fila).</td></tr>
             <tr><th>Agregar marca manualmente</th><td>Carga al panel un acta puntual que no vino por boletín ni por el escaneo (desde GitHub Actions).</td></tr>
@@ -577,9 +646,17 @@ le asigna un puntaje de prioridad. Después sigue a cada marca a lo largo del ti
               teléfono/WhatsApp, próximo seguimiento y, si se cerró, servicio y honorarios.</p>
           </div>
           <div class="tarjeta-mini">
+            <h4>Clientes y vigilancia (<code>/clientes</code>)</h4>
+            <p>La cartera de clientes y la vigilancia marcaria, en cinco pestañas: <strong>Clientes</strong> (lista y ficha con
+              sus marcas, plazos, alertas y novedades), <strong>Vigilancia</strong> (alertas de parecidos y de clientes con otro
+              agente, y «Probar un nombre»), <strong>Vencimientos</strong> (todos los plazos de la cartera), <strong>Por matrícula</strong>
+              (marcas presentadas con las matrículas del estudio para sumar a la cartera) y <strong>Ajustes</strong>. Arriba,
+              chips con clientes, marcas, vigilancias contratadas, alertas abiertas y marcas pendientes de consultar.</p>
+          </div>
+          <div class="tarjeta-mini">
             <h4>Automatizaciones (<code>/crons</code>)</h4>
             <p>Arriba dice si todo funciona o qué proceso necesita atención. Debajo, los procesos agrupados en
-              Conseguir leads, Seguir a los leads y Mantenimiento (plegado), cada uno con su número útil, cuándo
+              Conseguir leads, Seguir a los leads, Clientes y vigilancia y Mantenimiento (plegado), cada uno con su número útil, cuándo
               corrió, cuándo vuelve a correr y su botón para correrlo a mano. El <strong>+</strong> de cada tarjeta muestra
               el reporte día por día de ese proceso (descargable para Excel).</p>
           </div>
@@ -633,6 +710,15 @@ le asigna un puntaje de prioridad. Después sigue a cada marca a lo largo del ti
             <tr><th>Estado del trámite</th><td>Resultado final del trámite en INPI: Concedida, Denegada, o todavía en curso.</td></tr>
             <tr><th>Fecha de concesión</th><td>Fecha en que INPI otorgó la marca — desde ahí se cuentan los plazos de declaración jurada y renovación.</td></tr>
             <tr><th>Declaración jurada de uso</th><td>Declaración de uso de medio término: se presenta dentro del año siguiente al 5.º aniversario de la concesión, declarando que la marca está en uso. El CRM la muestra como plazo orientativo.</td></tr>
+            <tr><th>Cliente / cartera</th><td>Persona o empresa que ya es cliente del estudio (sección Clientes), con sus marcas. La cartera es independiente de los leads: puede incluir marcas viejas que nunca pasaron por un boletín procesado.</td></tr>
+            <tr><th>Vigilancia marcaria</th><td>Control de las solicitudes nuevas de INPI para detectar marcas parecidas a las de un cliente mientras todavía se puede oponer. El estudio la hace para todos los clientes; «vigilancia contratada» indica a quién se le cobra.</td></tr>
+            <tr><th>Alerta de vigilancia</th><td>Aviso de que una solicitud nueva se parece a una marca de un cliente (con porcentaje y nivel ALTA / MEDIA / BAJA) o de que un cliente presentó una marca con otro agente. Se trabaja con los estados Nueva, Monitorear, Oponer, Oposición presentada y Descartada.</td></tr>
+            <tr><th>Plazo de oposición</th><td>30 días corridos desde la publicación en el boletín, durante los cuales un tercero puede oponerse a una solicitud. La vigilancia solo alerta mientras está abierto (con 3 días de margen).</td></tr>
+            <tr><th>Clases relacionadas</th><td>Pares de clases de Niza que suelen chocar (productos y su venta o servicio asociado). Un parecido entre clases relacionadas alerta; entre clases sin relación, solo si los nombres son casi idénticos.</td></tr>
+            <tr><th>Palabra genérica</th><td>Palabra que no distingue una marca (GRUPO, SERVICIOS…). La vigilancia la ignora al comparar.</td></tr>
+            <tr><th>Matrícula del estudio</th><td>Número de matrícula de agente de los profesionales del estudio. Lo que se presenta con ella se propone (o se suma solo, si el CUIT es de un cliente) a la cartera.</td></tr>
+            <tr><th>Otro agente</th><td>Alerta: un cliente presentó una marca nueva con otro agente o sin agente. Es una oportunidad de hablar con él.</td></tr>
+            <tr><th>Novedad del expediente</th><td>Cambio detectado en una marca de la cartera al releer su expediente en INPI (estado, oposición, publicación, titular, movimiento nuevo).</td></tr>
             <tr><th>Renovación</th><td>Trámite para extender el registro 10 años más, antes de que venza.</td></tr>
           </tbody>
         </table>
