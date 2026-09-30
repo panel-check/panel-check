@@ -71,6 +71,10 @@ ALTER TABLE marcas ADD COLUMN IF NOT EXISTS fecha_vencimiento_marca DATE;
 ALTER TABLE marcas ADD COLUMN IF NOT EXISTS representacion_posterior_oposicion BOOLEAN;
 ALTER TABLE marcas ADD COLUMN IF NOT EXISTS detalle_representacion_posterior TEXT;
 
+-- Agregado el 30/09/2026: aviso por mail (Resend) de leads con oposición/vista
+-- nueva -- ver scripts/notificar_oposiciones.py. Cada lead se avisa una sola vez.
+ALTER TABLE marcas ADD COLUMN IF NOT EXISTS notificado_oposicion_en TIMESTAMPTZ;
+
 -- Agregado el 30/09/2026: escaneo directo de números de acta secuenciales
 -- (scripts/escanear_actas_nuevas.py). El acta se asigna al depositar la
 -- solicitud -- semanas antes de que INPI lo publique en un boletín -- así

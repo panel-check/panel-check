@@ -30,8 +30,14 @@ El workflow `.github/workflows/pipeline.yml` corre estos 6 pasos automáticament
 - **Railway** — crear cuenta en railway.app, un proyecto nuevo con:
   - Un servicio **Postgres** (Railway te da la `DATABASE_URL` armada).
   - Un servicio **NocoDB** conectado a esa misma base, para el panel visual.
-- **Resend o Mailrelay** — no hace falta todavía para esta prueba. Se suma
-  cuando se resuelva el tema legal de los envíos de prospección.
+- **Resend** — aviso interno diario de leads con oposición/vista nueva
+  (`scripts/notificar_oposiciones.py`, corre al final de
+  `revisar_oposiciones.yml`). Secrets: `RESEND_API_KEY` (obligatorio) y,
+  opcionales, `RESEND_FROM` (default `avisos@quieroregistrarmimarca.com.ar`,
+  tiene que ser del dominio verificado en Resend), `NOTIFICAR_A` (default
+  `marcas@komunikacion.com.ar`, varios separados por coma) y `PANEL_URL`.
+  Cada lead se avisa una sola vez (`notificado_oposicion_en`); si no hay
+  novedades no se manda nada.
 
 ### 2. Cargar los secrets en GitHub
 

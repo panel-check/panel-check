@@ -42,3 +42,18 @@ jobs:
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL || secrets.DATABASE_PUBLIC_URL }}
           PYTHONUNBUFFERED: "1"
+
+      - name: Avisar por mail los leads con oposición/vista nueva (Resend)
+        # Corre aunque el paso anterior haya fallado a mitad de camino: avisa
+        # lo que sí alcanzó a detectar.
+        if: success() || failure()
+        run: |
+          cd scripts
+          python3 notificar_oposiciones.py
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL || secrets.DATABASE_PUBLIC_URL }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          RESEND_FROM: ${{ secrets.RESEND_FROM }}
+          NOTIFICAR_A: ${{ secrets.NOTIFICAR_A }}
+          PANEL_URL: ${{ secrets.PANEL_URL }}
+          PYTHONUNBUFFERED: "1"
