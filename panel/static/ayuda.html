@@ -210,7 +210,7 @@
           <td class="puntos pos">+50</td>
         </tr>
         <tr>
-          <td>Se verificó y <strong>tiene</strong> agente/apoderado (no es lead)</td>
+          <td>Se verificó y <strong>tiene</strong> agente/apoderado (no es lead), o el boletín ya trae número de matrícula de agente</td>
           <td class="puntos neg">−100</td>
         </tr>
         <tr>
@@ -219,14 +219,15 @@
         </tr>
       </tbody>
     </table>
-    <p>Ejemplo: una marca sin matrícula, verificada como lead real y con email recuperado llega a <strong>120</strong> (50+50+20). Una marca que resultó tener apoderado queda en <strong>−50</strong> (50−100), bien abajo en la lista.</p>
+    <p>Ejemplo: una marca sin matrícula, verificada como lead real y con email recuperado llega a <strong>120</strong> (50+50+20). Una marca que resultó tener apoderado queda en <strong>−50</strong> (50−100), y una que el boletín ya trae con matrícula de agente queda en <strong>−100</strong>: las dos bien abajo en la lista.</p>
     <p>Si todavía no se verificó contra INPI (columna "Lead" en gris, "sin verificar"), no se suma ni resta nada por esa parte — mejor subestimar el score que arriesgar marcar como lead algo que no se confirmó.</p>
 
     <h2>La columna "Lead"</h2>
     <ul>
       <li><span class="badge lead" style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;background:#fde8e8;color:#c0392b;">LEAD</span> — se confirmó contra el expediente de INPI que se presentó sin agente ni gestor.</li>
-      <li><span class="badge no-lead" style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;background:#e6f4ea;color:#1a8754;">Apoderado / Gestor Ratificado</span> — tiene agente, no es un lead para prospección.</li>
-      <li><span class="badge sin-dato" style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;background:#eef0f2;color:#6b7280;">sin verificar</span> — todavía no se pudo confirmar contra INPI para esta marca (casi siempre porque INPI bloqueó esa consulta puntual). El reintento automático la vuelve a probar cada 2 horas.</li>
+      <li><span class="badge no-lead" style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;background:#e6f4ea;color:#1a8754;">Apoderado / Gestor Ratificado</span> — tiene agente según el expediente de INPI; no es un lead para prospección.</li>
+      <li><span class="badge no-lead" style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;background:#e6f4ea;color:#1a8754;">Agente (matrícula 1234)</span> — el boletín ya la publica con el número de matrícula de un agente, así que no es lead. Estas no se consultan en INPI (no hace falta) y por eso tampoco tienen email.</li>
+      <li><span class="badge sin-dato" style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;background:#eef0f2;color:#6b7280;">sin verificar</span> — es un lead posible (el boletín la trae sin matrícula o con "Part.") que todavía no se pudo confirmar contra INPI, casi siempre porque INPI bloqueó esa consulta puntual. El reintento automático la vuelve a probar cada 2 horas. Solo quedan "sin verificar" las que de verdad falta revisar.</li>
     </ul>
 
     <h2>🆕 Pre-boletín</h2>
@@ -475,7 +476,8 @@ le asigna un puntaje de prioridad. Después sigue a cada marca a lo largo del ti
             <tr><td><strong>Boletín publicado</strong><br><small>(antes "Pipeline de boletines")</small></td><td>Lunes, miércoles, viernes y sábado, 6 hs</td>
               <td>Busca el boletín de "Marcas Nuevas" más reciente que todavía no esté importado, lee el PDF, separa
                 cada solicitud, completa el nombre de las marcas Mixtas/Figurativas (que en el PDF son solo un logo),
-                verifica en INPI cada una sin matrícula de agente y carga todo al panel. Procesa un boletín por
+                verifica en INPI cada una sin matrícula de agente (o con "Part."), marca directamente como <em>con agente</em>
+                las que el boletín trae con número de matrícula, y carga todo al panel. Procesa un boletín por
                 corrida; tarda alrededor de 2 horas porque consulta INPI de a una marca, con pausas, para no ser
                 bloqueado.</td></tr>
             <tr><th colspan="3" style="background:#f4f6f9;text-align:left;">Seguir a los leads</th></tr>
@@ -489,7 +491,9 @@ le asigna un puntaje de prioridad. Después sigue a cada marca a lo largo del ti
             <tr><th colspan="3" style="background:#f4f6f9;text-align:left;">Mantenimiento (tarjeta “Completar datos faltantes” y “Panel actualizado”)</th></tr>
             <tr><td><strong>Completar datos faltantes → Sin verificar</strong><br><small>(antes "Reintento de marcas sin verificar")</small></td><td>Cada 2 horas (horas impares)</td>
               <td>Vuelve a consultar las marcas en las que no se pudo confirmar si tienen agente (columna Lead
-                "sin verificar"), casi siempre por un bloqueo puntual de INPI.</td></tr>
+                "sin verificar"), casi siempre por un bloqueo puntual de INPI. Solo consulta leads posibles (sin
+                matrícula o "Part."); si encuentra alguna "sin verificar" que el boletín trae con número de
+                matrícula, la marca como <em>con agente</em> sin consultar INPI.</td></tr>
             <tr><td><strong>Completar datos faltantes → Sin email</strong><br><small>(antes "Reintento de emails faltantes")</small></td><td>Cada 2 horas (horas pares)</td>
               <td>Para los leads ya confirmados que quedaron "sin email", vuelve a abrir la Grilla Digital y el
                 Formulario para conseguirlo. Es lo mismo que el botón <strong>Reintentar</strong>, pero en lote. Si a la
@@ -586,8 +590,8 @@ le asigna un puntaje de prioridad. Después sigue a cada marca a lo largo del ti
           </div>
           <div class="tarjeta-mini">
             <h4>Estados que se ven en el panel</h4>
-            <p><strong>LEAD</strong> (prioridad), <strong>con agente</strong> (descartado), <strong>sin verificar</strong>
-              (todavía no se confirmó), <strong>⚠ OPOSICIÓN</strong> (un tercero se opone), <strong>👁 VISTA DE INPI</strong>
+            <p><strong>LEAD</strong> (prioridad), <strong>con agente</strong> (descartado: por el expediente de INPI o por la matrícula del boletín),
+              <strong>sin verificar</strong> (lead posible que todavía no se pudo confirmar), <strong>⚠ OPOSICIÓN</strong> (un tercero se opone), <strong>👁 VISTA DE INPI</strong>
               (observación de oficio, no de un tercero), <strong>✓ CONCEDIDA / DENEGADA</strong>, <strong>🆕 pre-boletín</strong>
               (detectada por el escaneo, todavía sin publicar). Además, la etapa del <strong>CRM</strong> del titular
               (Contactado, Respondió, Reunión / propuesta, Cliente o Descartado).</p>

@@ -31,6 +31,17 @@ import psycopg2.extras
 from validar_leads import calcular_lead_score, crear_sesion, revisar_acta
 
 
+MARCAR_CON_AGENTE_SQL = """
+    UPDATE marcas
+    SET es_lead = FALSE,
+        caracter = 'Agente (matrícula ' || TRIM(matricula_agente) || ')',
+        lead_score = -100 + CASE WHEN COALESCE(email, '') <> '' THEN 20 ELSE 0 END,
+        actualizado_en = now()
+    WHERE es_lead IS NULL
+      AND TRIM(COALESCE(matricula_agente, '')) NOT IN ('', 'Part.')
+"""
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--limit", type=int, default=None, help="tope de actas a reintentar en esta corrida")
@@ -43,11 +54,23 @@ def main():
 
     conn = psycopg2.connect(dsn)
     try:
+        # Primero: las que el boletín ya trae con matrícula de agente no hace
+        # falta consultarlas en INPI — tienen agente, no son leads. Se marcan
+        # directo (así dejan de verse como "sin verificar" y no gastan
+        # consultas a INPI). Mismo criterio que marcar_con_agente_por_matricula
+        # en validar_leads.py. Sirve también de corrección para las cargadas
+        # antes del 30/09/2026, que quedaban con es_lead NULL.
+        with conn.cursor() as cur:
+            cur.execute(MARCAR_CON_AGENTE_SQL)
+            print(f"Marcadas 'con agente' por matrícula del boletín: {cur.rowcount}")
+        conn.commit()
+
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
             cur.execute(
                 """
                 SELECT acta, matricula_agente FROM marcas
                 WHERE es_lead IS NULL
+                  AND TRIM(COALESCE(matricula_agente, '')) IN ('', 'Part.')
                 ORDER BY fecha_presentacion
                 """
             )

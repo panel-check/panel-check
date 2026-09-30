@@ -994,6 +994,22 @@ def calcular_lead_score(row: dict) -> int:
     return score
 
 
+def marcar_con_agente_por_matricula(row: dict) -> bool:
+    """Si el boletín trae número de matrícula de agente (ni vacío ni "Part."),
+    la marca tiene agente: es_lead=False sin necesidad de consultar INPI.
+    Devuelve True si la marcó. Mismo criterio que el UPDATE de
+    reintentar_sin_verificar.py (MARCAR_CON_AGENTE_SQL)."""
+    matricula = (row.get("matricula_agente") or "").strip()
+    if matricula in ("", "Part."):
+        return False
+    if row.get("es_lead") not in (None, ""):
+        return False  # ya tiene un resultado real de INPI: no pisarlo
+    row["caracter"] = f"Agente (matrícula {matricula})"
+    row["es_lead"] = False
+    row["lead_score"] = calcular_lead_score(row)
+    return True
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--in", dest="in_path", required=True)
@@ -1025,6 +1041,13 @@ def main():
         print(f"  [{i}/{len(candidatas)}] acta {row['acta']}: caracter={info['caracter']!r} "
               f"es_lead={info['es_lead']} email={'sí' if info['email'] else 'no'}")
         time.sleep(args.delay)  # freno de mano, no golpear el portal
+
+    # Las que el boletín ya trae con número de matrícula de agente no se
+    # consultan en INPI (no son candidatas), pero SÍ se sabe que no son leads:
+    # se marcan como "con agente" en vez de quedar como "sin verificar", que
+    # tiene que quedar reservado para leads posibles que INPI no dejó revisar.
+    for row in rows:
+        marcar_con_agente_por_matricula(row)
 
     for row in rows:
         row.setdefault("caracter", "")

@@ -498,7 +498,7 @@ GRUPOS_AUTOMATIZACIONES = [
                     {"etiqueta": "Sin verificar", "workflow_file": "reintentar_sin_verificar.yml",
                      "cron": "0 0,2,4,6,8,10,12,14,16,18,20,22 * * *",
                      "horario": "cada 2 horas (horas impares)",
-                     "pendientes_sql": "SELECT COUNT(*) FROM marcas WHERE es_lead IS NULL"},
+                     "pendientes_sql": "SELECT COUNT(*) FROM marcas WHERE es_lead IS NULL AND TRIM(COALESCE(matricula_agente, '')) IN ('', 'Part.')"},
                     {"etiqueta": "Sin email", "workflow_file": "reintentar_sin_email.yml",
                      "cron": "0 1,3,5,7,9,11,13,15,17,19,21,23 * * *",
                      "horario": "cada 2 horas (horas pares)",
