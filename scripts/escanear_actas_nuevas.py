@@ -153,6 +153,11 @@ def main():
 
             existe, _texto = existe_expediente(s, acta)
             if existe is None:
+                # Un bloqueo suelto es normal: esperar y reintentar una vez.
+                print(f"  acta {acta}: bloqueado por el WAF, reintento en 30 s")
+                time.sleep(30)
+                existe, _texto = existe_expediente(s, acta)
+            if existe is None:
                 # WAF bloqueó la consulta -- no sabemos si existe, cortamos
                 # esta corrida entera para no seguir "avanzando" el puntero
                 # sobre números que en realidad no se llegaron a revisar.

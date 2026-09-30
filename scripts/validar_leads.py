@@ -119,6 +119,9 @@ def titular_de_pagina(html: str) -> str | None:
 def crear_sesion() -> requests.Session:
     s = requests.Session()
     s.headers.update(HEADERS)
+    # Alarma de bloqueo masivo del WAF (mail + corrida en rojo) -- ver monitor_bloqueo.py
+    import monitor_bloqueo
+    monitor_bloqueo.instalar(s)
     try:
         s.get(f"{BASE}/MarcasConsultas/Grilla", timeout=30)
     except requests.RequestException as e:

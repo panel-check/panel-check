@@ -9,6 +9,11 @@ permissions:
 jobs:
   backfill:
     runs-on: ubuntu-latest
+    env:
+      # Alarma de bloqueo masivo de INPI (scripts/monitor_bloqueo.py)
+      RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+      RESEND_FROM: ${{ secrets.RESEND_FROM }}
+      NOTIFICAR_A: ${{ secrets.NOTIFICAR_A }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
