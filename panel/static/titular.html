@@ -6,6 +6,7 @@
 <title>Detalle de titular — Kom Marcas Inpi</title>
 <link rel="stylesheet" href="/static/comun.css" />
 <script src="/static/sesion.js" defer></script>
+<script src="/static/menu.js" defer></script>
 </head>
 <body>
 
@@ -17,11 +18,21 @@
     <a href="/" title="Leads"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5h18M3 12h18M3 19h12"/></svg><span class="nav-txt">Leads</span></a>
     <a href="/crm" title="CRM"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="5" height="16" rx="1.5"/><rect x="10" y="4" width="5" height="11" rx="1.5"/><rect x="17" y="4" width="4" height="7" rx="1.5"/></svg><span class="nav-txt">CRM</span></a>
     <a href="/clientes" title="Clientes"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M16 20v-1.5a3.5 3.5 0 0 0-3.5-3.5h-5A3.5 3.5 0 0 0 4 18.5V20"/><circle cx="10" cy="8" r="3.5"/><path d="M20 20v-1.5a3.5 3.5 0 0 0-2.5-3.35M15 4.6a3.5 3.5 0 0 1 0 6.8"/></svg><span class="nav-txt">Clientes</span></a>
-    <a href="/comentarios" id="link-comentarios" title="Comentarios"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H8l-5 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg><span class="nav-txt">Comentarios</span><span class="nav-badge"></span></a>
-    <a href="/boletines" title="Boletines"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h13a2 2 0 0 1 2 2v14H6a2 2 0 0 1-2-2z"/><path d="M19 8h1a1 1 0 0 1 1 1v9a2 2 0 0 1-2 2"/><path d="M8 8h7M8 12h7M8 16h4"/></svg><span class="nav-txt">Boletines</span></a>
-    <a href="/crons" title="Automatizaciones"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg><span class="nav-txt">Automatizaciones</span></a>
-    <a href="/mails" title="Mails"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/></svg><span class="nav-txt">Mails</span></a>
-    <a href="/ayuda" title="Ayuda"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.6v.6"/><path d="M12 17h.01"/></svg><span class="nav-txt">Ayuda</span></a>
+    <div class="nav-grupo">
+      <button type="button" class="nav-boton" aria-haspopup="true" aria-expanded="false" title="Automatizaciones"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg><span class="nav-txt">Automatizaciones</span><svg class="nav-chev" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button>
+      <div class="nav-sub" role="menu">
+        <a href="/boletines" role="menuitem"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h13a2 2 0 0 1 2 2v14H6a2 2 0 0 1-2-2z"/><path d="M19 8h1a1 1 0 0 1 1 1v9a2 2 0 0 1-2 2"/><path d="M8 8h7M8 12h7M8 16h4"/></svg><span class="nav-sub-txt">Boletines</span></a>
+        <a href="/crons" role="menuitem"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg><span class="nav-sub-txt">Crons</span></a>
+      </div>
+    </div>
+    <div class="nav-grupo">
+      <button type="button" class="nav-boton" aria-haspopup="true" aria-expanded="false" title="Más"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1.2"/><circle cx="12" cy="12" r="1.2"/><circle cx="19" cy="12" r="1.2"/></svg><span class="nav-txt">Más</span><svg class="nav-chev" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button>
+      <div class="nav-sub nav-sub-der" role="menu">
+        <a href="/mails" role="menuitem"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/></svg><span class="nav-sub-txt">Mails</span></a>
+        <a href="/ayuda" role="menuitem"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.6v.6"/><path d="M12 17h.01"/></svg><span class="nav-sub-txt">Ayuda</span></a>
+      </div>
+    </div>
+    <button type="button" class="nav-boton nav-coment" id="link-comentarios" title="Comentarios" aria-label="Comentarios" aria-expanded="false"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H8l-5 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg><span class="nav-badge"></span></button>
   </nav>
 </header>
 

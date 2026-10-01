@@ -103,6 +103,90 @@ header.app-header {
 }
 .app-header .nav a:hover { background: #f1f3f6; color: var(--texto); }
 .app-header .nav a.activa { background: var(--azul-claro); color: var(--azul); }
+
+/* Botones del menú (grupos con submenú y el de comentarios): se ven igual que los links. */
+.app-header .nav .nav-boton {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 34px;
+  padding: 0 11px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: #4b5563;
+  font: inherit;
+  font-size: 13.5px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+.app-header .nav .nav-boton:hover,
+.app-header .nav .nav-grupo:hover > .nav-boton,
+.app-header .nav .nav-grupo.abierto > .nav-boton { background: #f1f3f6; color: var(--texto); }
+.app-header .nav .nav-boton.activa { background: var(--azul-claro); color: var(--azul); }
+.app-header .nav .nav-boton:focus-visible { outline: none; box-shadow: var(--foco); }
+.app-header .nav-chev {
+  width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 2.4;
+  stroke-linecap: round; stroke-linejoin: round; margin-left: -2px; opacity: .7;
+}
+.app-header .nav-coment { margin-left: 4px; padding: 0 9px; }
+
+/* Submenús: se abren al pasar el mouse (o con un clic, en pantallas táctiles). */
+.app-header .nav-grupo { position: relative; }
+.app-header .nav-sub {
+  display: none;
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  min-width: 190px;
+  padding: 6px;
+  background: #fff;
+  border: 1px solid var(--borde);
+  border-radius: 10px;
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.12);
+  z-index: 60;
+}
+.app-header .nav-sub-der { left: auto; right: 0; }
+.app-header .nav-sub::before { content: ""; position: absolute; top: -8px; left: 0; right: 0; height: 8px; } /* puente: el mouse no pierde el hover */
+.app-header .nav-grupo:hover > .nav-sub,
+.app-header .nav-grupo.abierto > .nav-sub { display: block; }
+.app-header .nav-sub a { display: flex; width: 100%; height: 36px; padding: 0 10px; white-space: nowrap; }
+.app-header .nav-sub-txt { display: inline; }
+
+/* Panel lateral de comentarios (menu.js): tapa 1/4 de la pantalla, a la derecha. */
+.panel-coment {
+  position: fixed;
+  top: 56px;
+  right: 0;
+  bottom: 0;
+  width: 25vw;
+  min-width: 380px;
+  max-width: 100vw;
+  display: flex;
+  flex-direction: column;
+  background: #fff;
+  border-left: 1px solid var(--borde);
+  box-shadow: -12px 0 30px rgba(15, 23, 42, 0.12);
+  transform: translateX(105%);
+  visibility: hidden;
+  transition: transform 0.2s ease, visibility 0.2s;
+  z-index: 40;
+}
+.panel-coment.abierto { transform: none; visibility: visible; }
+.panel-coment-cab {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  height: 46px; padding: 0 8px 0 16px; border-bottom: 1px solid var(--borde); flex-shrink: 0;
+}
+.panel-coment-cab strong { font-size: 14px; }
+.panel-coment-cab button {
+  width: 32px; height: 32px; border: 0; border-radius: 8px; background: none; cursor: pointer;
+  color: var(--gris); font-size: 20px; line-height: 1;
+}
+.panel-coment-cab button:hover { background: #f1f3f6; color: var(--texto); }
+.panel-coment-cab button:focus-visible { outline: none; box-shadow: var(--foco); }
+.panel-coment iframe { flex: 1; width: 100%; border: 0; background: var(--fondo); }
 .app-header .nav-ico {
   width: 17px;
   height: 17px;
@@ -129,13 +213,14 @@ header.app-header {
 @media (max-width: 1100px) { .app-header .marca-sub { display: none; } }
 @media (max-width: 860px) {
   .app-header .nav-txt { display: none; }
-  .app-header .nav a { padding: 0 9px; }
+  .app-header .nav a, .app-header .nav .nav-boton { padding: 0 9px; }
   .app-header .nav-badge { position: absolute; top: 1px; right: 0; }
+  .panel-coment { width: 100vw; min-width: 0; }
 }
 @media (max-width: 520px) {
   header.app-header { padding: 0 12px; gap: 8px; }
   .app-header .marca-nombre, .app-header .marca-sep { display: none; }
-  .app-header .nav a { padding: 0 7px; }
+  .app-header .nav a, .app-header .nav .nav-boton { padding: 0 7px; }
 }
 
 /* ── Controles de formulario de las barras de filtros ── */

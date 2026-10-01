@@ -132,7 +132,7 @@ def instalar(app, conexion):
         respuesta = await call_next(request)
         h = respuesta.headers
         h.setdefault("X-Content-Type-Options", "nosniff")
-        h.setdefault("X-Frame-Options", "DENY")
+        h.setdefault("X-Frame-Options", "SAMEORIGIN")  # SAMEORIGIN: el panel de comentarios (menu.js) se muestra en un iframe propio
         h.setdefault("Referrer-Policy", "same-origin")
         h.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
         if request.headers.get("x-forwarded-proto") == "https":

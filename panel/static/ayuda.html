@@ -168,6 +168,7 @@
   }
 </style>
 <script src="/static/sesion.js" defer></script>
+<script src="/static/menu.js" defer></script>
 </head>
 <body>
 
@@ -179,11 +180,21 @@
     <a href="/" title="Leads"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5h18M3 12h18M3 19h12"/></svg><span class="nav-txt">Leads</span></a>
     <a href="/crm" title="CRM"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="5" height="16" rx="1.5"/><rect x="10" y="4" width="5" height="11" rx="1.5"/><rect x="17" y="4" width="4" height="7" rx="1.5"/></svg><span class="nav-txt">CRM</span></a>
     <a href="/clientes" title="Clientes"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M16 20v-1.5a3.5 3.5 0 0 0-3.5-3.5h-5A3.5 3.5 0 0 0 4 18.5V20"/><circle cx="10" cy="8" r="3.5"/><path d="M20 20v-1.5a3.5 3.5 0 0 0-2.5-3.35M15 4.6a3.5 3.5 0 0 1 0 6.8"/></svg><span class="nav-txt">Clientes</span></a>
-    <a href="/comentarios" id="link-comentarios" title="Comentarios"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H8l-5 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg><span class="nav-txt">Comentarios</span><span class="nav-badge"></span></a>
-    <a href="/boletines" title="Boletines"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h13a2 2 0 0 1 2 2v14H6a2 2 0 0 1-2-2z"/><path d="M19 8h1a1 1 0 0 1 1 1v9a2 2 0 0 1-2 2"/><path d="M8 8h7M8 12h7M8 16h4"/></svg><span class="nav-txt">Boletines</span></a>
-    <a href="/crons" title="Automatizaciones"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg><span class="nav-txt">Automatizaciones</span></a>
-    <a href="/mails" title="Mails"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/></svg><span class="nav-txt">Mails</span></a>
-    <a href="/ayuda" class="activa" aria-current="page" title="Ayuda"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.6v.6"/><path d="M12 17h.01"/></svg><span class="nav-txt">Ayuda</span></a>
+    <div class="nav-grupo">
+      <button type="button" class="nav-boton" aria-haspopup="true" aria-expanded="false" title="Automatizaciones"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg><span class="nav-txt">Automatizaciones</span><svg class="nav-chev" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button>
+      <div class="nav-sub" role="menu">
+        <a href="/boletines" role="menuitem"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h13a2 2 0 0 1 2 2v14H6a2 2 0 0 1-2-2z"/><path d="M19 8h1a1 1 0 0 1 1 1v9a2 2 0 0 1-2 2"/><path d="M8 8h7M8 12h7M8 16h4"/></svg><span class="nav-sub-txt">Boletines</span></a>
+        <a href="/crons" role="menuitem"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg><span class="nav-sub-txt">Crons</span></a>
+      </div>
+    </div>
+    <div class="nav-grupo">
+      <button type="button" class="nav-boton activa" aria-haspopup="true" aria-expanded="false" title="Más"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1.2"/><circle cx="12" cy="12" r="1.2"/><circle cx="19" cy="12" r="1.2"/></svg><span class="nav-txt">Más</span><svg class="nav-chev" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button>
+      <div class="nav-sub nav-sub-der" role="menu">
+        <a href="/mails" role="menuitem"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/></svg><span class="nav-sub-txt">Mails</span></a>
+        <a href="/ayuda" role="menuitem" class="activa" aria-current="page"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.6v.6"/><path d="M12 17h.01"/></svg><span class="nav-sub-txt">Ayuda</span></a>
+      </div>
+    </div>
+    <button type="button" class="nav-boton nav-coment" id="link-comentarios" title="Comentarios" aria-label="Comentarios" aria-expanded="false"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H8l-5 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg><span class="nav-badge"></span></button>
   </nav>
 </header>
 
@@ -257,7 +268,7 @@
     <p>En la ficha del titular y en el CRM, si una marca todavía no tiene CUIT pero el mismo nombre ya aparece con un CUIT (uno solo) en otra de sus marcas, se toma ese CUIT: así la marca "sin verificar" no queda como un titular aparte.</p>
 
     <h2>Barra de arriba y filtros</h2>
-    <p>La barra de arriba es igual en todas las pantallas: <strong>Leads</strong> (este panel), <strong>CRM</strong>, <strong>Comentarios</strong>, <strong>Boletines</strong>, <strong>Automatizaciones</strong> y <strong>Ayuda</strong>. La pantalla en la que estás queda marcada en celeste, y el click en "Panel de leads" (a la izquierda) siempre vuelve al panel principal. En pantallas angostas se ven solo los íconos; pasando el mouse aparece el nombre.</p>
+    <p>La barra de arriba es igual en todas las pantallas: <strong>Leads</strong> (este panel), <strong>CRM</strong>, <strong>Clientes</strong>, <strong>Automatizaciones</strong>, <strong>Más</strong> y, al final, el ícono de chat de <strong>Comentarios</strong>. <strong>Automatizaciones</strong> y <strong>Más</strong> abren un submenú al pasar el mouse (o con un clic, en el celular o la tablet): <em>Automatizaciones</em> tiene <strong>Boletines</strong> y <strong>Crons</strong> (los procesos automáticos); <em>Más</em> tiene <strong>Mails</strong> y <strong>Ayuda</strong>. La pantalla en la que estás queda marcada en celeste (y su grupo también), y el click en "Panel de leads" (a la izquierda) siempre vuelve al panel principal. En pantallas angostas se ven solo los íconos; pasando el mouse aparece el nombre.</p>
     <ul>
       <li><strong>Los desplegables filtran solos</strong> apenas se cambia la opción. La búsqueda libre se aplica con <strong>Enter</strong> o con el botón <strong>Filtrar</strong>.</li>
       <li>Los filtros que están recortando resultados se ven <strong>resaltados en celeste</strong>, para saber de un vistazo qué se está filtrando.</li>
@@ -387,7 +398,7 @@
     </ul>
 
     <h2 id="mails">✉️ Mails (cuentas, remitentes y plantillas)</h2>
-    <p>En la sección <strong>Mails</strong> (barra de arriba) se ve y se configura cada mail que manda el sistema. A la izquierda están los mails, separados en <em>Avisos internos</em> (oposiciones y vistas, cartera y vigilancia, formulario de cliente recibido, INPI está bloqueando) y <em>Prospectos</em> (primer contacto a un lead). Al elegir uno aparece su configuración y una vista previa con datos de ejemplo.</p>
+    <p>En la sección <strong>Mails</strong> (barra de arriba → <strong>Más</strong> → Mails) se ve y se configura cada mail que manda el sistema. A la izquierda están los mails, separados en <em>Prospectos</em> (primer contacto a un lead) y <em>Avisos internos</em> (oposiciones y vistas, cartera y vigilancia, formulario de cliente recibido, INPI está bloqueando). Al elegir uno aparece su configuración y una vista previa con datos de ejemplo.</p>
     <ul>
       <li><strong>Cuenta de Resend:</strong> de cuál de las dos cuentas sale el mail. <em>Interna</em> es para los avisos al equipo; <em>Prospectos</em> es para escribirle a los leads (otro dominio, otra cuenta). Las claves de Resend <strong>no se guardan en el panel</strong>: viven como variables de entorno (<code>RESEND_API_KEY</code> y <code>RESEND_API_KEY_PROSPECTOS</code>) en los secrets de GitHub y en Railway. Debajo del selector se ve si esa variable está cargada en el servidor del panel.</li>
       <li><strong>Remitente:</strong> el mail desde el que sale, por ejemplo <code>Nombre &lt;mail@dominio.com&gt;</code>. Su dominio tiene que estar verificado en esa cuenta de Resend; si el panel puede consultarlo y no lo está, no deja guardar y lo avisa.</li>
@@ -404,9 +415,9 @@
     <p>Sirven para dejarse mensajes entre las personas del equipo dentro del panel, sin depender del WhatsApp o el mail. Cada comentario queda con quién lo escribió (el usuario con el que entraste al panel) y la fecha.</p>
     <ul>
       <li><strong>Sobre una marca:</strong> en cada fila del panel principal y de la ficha por titular hay un botón <strong>💬</strong>. Abre los comentarios de esa acta y permite agregar uno nuevo ya vinculado. Si la marca tiene comentarios, el botón muestra cuántos; si alguno está sin resolver, se pinta en amarillo.</li>
-      <li><strong>Sección Comentarios</strong> (link <strong>Comentarios</strong> en la barra de arriba): todos los comentarios juntos, con pestañas <em>Sin resolver</em>, <em>Para mí</em>, <em>Resueltos</em> y <em>Todos</em>, y filtro por número de acta. Desde acá también se puede escribir un comentario general o poner a mano el número de acta (sirve incluso para un acta que todavía no está cargada en el panel, por ejemplo la marca que invoca un oponente).</li>
+      <li><strong>Panel de Comentarios</strong> (ícono de chat 💬 al final de la barra de arriba): al hacer clic no se abre otra pantalla, sino un panel a la derecha que tapa 1/4 de la pantalla sin sacarte de donde estás; se cierra con la <strong>✕</strong> de arriba del panel, con <strong>Esc</strong> o volviendo a tocar el ícono. Muestra todos los comentarios juntos, con pestañas <em>Sin resolver</em>, <em>Para mí</em>, <em>Resueltos</em> y <em>Todos</em>, y filtro por número de acta. Desde acá también se puede escribir un comentario general o poner a mano el número de acta (sirve incluso para un acta que todavía no está cargada en el panel, por ejemplo la marca que invoca un oponente).</li>
       <li><strong>Para:</strong> se puede dirigir a una persona puntual o a todo el equipo. Los que van dirigidos a vos se ven con una barra amarilla a la izquierda.</li>
-      <li><strong>Contador de nuevos:</strong> el número amarillo al lado de "Comentarios" (en la barra de arriba) cuenta los comentarios de otros (para vos o para todos) escritos desde la última vez que entraste a esa sección. Se apaga al entrar.</li>
+      <li><strong>Contador de nuevos:</strong> el número amarillo del ícono de chat (en la barra de arriba) cuenta los comentarios de otros (para vos o para todos) escritos desde la última vez que abriste el panel de comentarios. Se apaga al abrirlo.</li>
       <li><strong>Responder</strong> precarga el formulario dirigido a quien escribió, con la misma acta. <strong>✓ Resolver</strong> da por cerrado el tema sin borrarlo (se puede reabrir). <strong>Borrar</strong> solo aparece en tus propios comentarios.</li>
     </ul>
     <p>Por ahora no mandan aviso por mail: se ven al entrar al panel.</p>
@@ -531,7 +542,7 @@ le asigna un puntaje de prioridad. Después sigue a cada marca a lo largo del ti
       <div class="seccion-manual">
         <h2>Procesos automáticos</h2>
         <p>Corren solos en GitHub Actions, sin que nadie tenga que hacer nada. Horarios en hora de Argentina.</p>
-        <p>La pantalla <strong>Automatizaciones</strong> los muestra agrupados por lo que hacen para el equipo:</p>
+        <p>La pantalla <strong>Automatizaciones → Crons</strong> los muestra agrupados por lo que hacen para el equipo:</p>
         <ul>
           <li>Arriba, una <strong>franja de estado</strong>: verde si todo funciona; amarilla o roja si algún proceso
             falló o quedó cancelado, con el nombre del proceso (clic para ir a su tarjeta).</li>
@@ -665,16 +676,16 @@ le asigna un puntaje de prioridad. Después sigue a cada marca a lo largo del ti
         <table class="tabla-glosario">
           <tbody>
             <tr><th>Reintentar (en la ficha)</th><td>Vuelve a consultar en vivo un expediente puntual y actualiza carácter, email, CUIT y score.</td></tr>
-            <tr><th>Importar boletín</th><td>En <strong>Boletines</strong> se ven todos los boletines de marcas nuevas publicados por INPI y cuáles ya están cargados. El botón Importar procesa uno puntual (por ejemplo, del historial) sin esperar al pipeline.</td></tr>
+            <tr><th>Importar boletín</th><td>En <strong>Automatizaciones → Boletines</strong> se ven todos los boletines de marcas nuevas publicados por INPI y cuáles ya están cargados. El botón Importar procesa uno puntual (por ejemplo, del historial) sin esperar al pipeline.</td></tr>
             <tr><th>CRM de leads</th><td>En <strong>CRM</strong>: mover leads de etapa arrastrando tarjetas, asignarlos, registrar gestiones, agendar seguimientos, cargar teléfono (con botón de WhatsApp), servicio y honorarios. La agenda junta seguimientos, oposiciones sin gestionar y plazos próximos.</td></tr>
             <tr><th>Clientes y vigilancia</th><td>En <strong>Clientes</strong>: cargar clientes y sumarles marcas por acta, por CUIT/titular o por matrícula; convertir un lead del CRM en cliente; decidir cada alerta de vigilancia (monitorear, oponer, oposición presentada, descartar); <strong>Probar un nombre</strong> contra las solicitudes conocidas; ver todos los vencimientos; ajustar la sensibilidad, las clases relacionadas y las palabras genéricas. El botón ↻ de cada marca vuelve a consultar su expediente en INPI en el momento.</td></tr>
             <tr><th>Formularios para clientes</th><td>En <strong>Clientes → 📝 Formularios</strong>: copiar o mandar por WhatsApp el link del formulario de Persona física o jurídica; ver las respuestas que llegaron, abrir o descargar sus archivos, marcarlas como revisadas o borrarlas. Cada formulario enviado crea (o actualiza, si el CUIT ya existe) el cliente con todos sus datos.</td></tr>
             <tr><th>Generar poder para firmar</th><td>En la ficha de un cliente: arma el poder ya completo con sus datos (persona física o jurídica), editable antes de bajarlo, en PDF o Word. Queda guardado en la ficha. Los datos del apoderado se cambian en <strong>Clientes → Ajustes</strong>.</td></tr>
-            <tr><th>Mails</th><td>En <strong>Mails</strong>: elegir la cuenta de Resend, el remitente, el Reply-To y los destinatarios de cada mail del sistema, ver su vista previa, editar la plantilla de prospectos y administrar la lista de bajas. Cambiar la configuración es solo para administradores.</td></tr>
-            <tr><th>Comentarios</th><td>Botón 💬 en cada fila o sección <strong>Comentarios</strong>: dejarle un mensaje a otra persona del equipo (o a todos), vinculado o no a un acta, y marcarlo como resuelto cuando se atendió.</td></tr>
+            <tr><th>Mails</th><td>En <strong>Más → Mails</strong>: elegir la cuenta de Resend, el remitente, el Reply-To y los destinatarios de cada mail del sistema, ver su vista previa, editar la plantilla de prospectos y administrar la lista de bajas. Cambiar la configuración es solo para administradores.</td></tr>
+            <tr><th>Comentarios</th><td>Botón 💬 en cada fila, o el ícono de chat de la barra de arriba (abre un panel a la derecha): dejarle un mensaje a otra persona del equipo (o a todos), vinculado o no a un acta, y marcarlo como resuelto cuando se atendió.</td></tr>
             <tr><th>Usuarios del panel</th><td>En <strong>Mi cuenta → Usuarios del panel</strong> (solo administradores): crear usuarios con clave temporal, resetear claves, dar o quitar administrador, desactivar/reactivar, y ver los últimos intentos de ingreso.</td></tr>
             <tr><th>Recuperar el acceso</th><td>Si nadie puede entrar (se perdieron todas las claves de administrador): en Railway, servicio <em>Panel Leads</em>, agregar la variable <code>PANEL_RECUPERAR</code> con el valor <code>usuario:claveTemporal</code>. Al redeployar, ese usuario queda activo, administrador y con esa clave (pide cambiarla al entrar). <strong>Después hay que borrar la variable.</strong></td></tr>
-            <tr><th>Correr ahora</th><td>En <strong>Automatizaciones</strong>, cada proceso automático tiene su propio botón para dispararlo a mano (en "Completar datos faltantes", uno por fila).</td></tr>
+            <tr><th>Correr ahora</th><td>En <strong>Automatizaciones → Crons</strong>, cada proceso automático tiene su propio botón para dispararlo a mano (en "Completar datos faltantes", uno por fila).</td></tr>
             <tr><th>Agregar marca manualmente</th><td>Carga al panel un acta puntual que no vino por boletín ni por el escaneo (desde GitHub Actions).</td></tr>
             
             <tr><th>Inspeccionar acta</th><td>Diagnóstico: muestra qué devuelve INPI para un acta, para revisar un caso raro (desde GitHub Actions).</td></tr>
@@ -719,22 +730,27 @@ le asigna un puntaje de prioridad. Después sigue a cada marca a lo largo del ti
               chips con clientes, marcas, vigilancias contratadas, alertas abiertas y marcas pendientes de consultar.</p>
           </div>
           <div class="tarjeta-mini">
-            <h4>Automatizaciones (<code>/crons</code>)</h4>
+            <h4>Automatizaciones → Crons (<code>/crons</code>)</h4>
             <p>Arriba dice si todo funciona o qué proceso necesita atención. Debajo, los procesos agrupados en
               Conseguir leads, Seguir a los leads, Clientes y vigilancia y Mantenimiento (plegado), cada uno con su número útil, cuándo
               corrió, cuándo vuelve a correr y su botón para correrlo a mano. El <strong>+</strong> de cada tarjeta muestra
               el reporte día por día de ese proceso (descargable para Excel).</p>
           </div>
           <div class="tarjeta-mini">
-            <h4>Boletines (<code>/boletines</code>)</h4>
+            <h4>Automatizaciones → Boletines (<code>/boletines</code>)</h4>
             <p>Todos los boletines de marcas nuevas publicados por INPI, cuáles ya están importados y cuántas marcas
               trajo cada uno, con el botón para importar los que falten.</p>
           </div>
           <div class="tarjeta-mini">
-            <h4>Comentarios (<code>/comentarios</code>)</h4>
+            <h4>Comentarios (ícono de chat, <code>/comentarios</code>)</h4>
             <p>Mensajes internos entre las personas del equipo, generales o vinculados a un número de acta, dirigidos a
               alguien puntual o a todos. Se pueden responder y marcar como resueltos. Cada fila del panel tiene un botón
-              💬 para ver o agregar comentarios de esa marca, y el encabezado muestra cuántos comentarios nuevos hay.</p>
+              💬 para ver o agregar comentarios de esa marca. El ícono de chat de la barra de arriba abre todos los comentarios en un panel a la derecha (se cierra con la ✕) y muestra cuántos nuevos hay.</p>
+          </div>
+          <div class="tarjeta-mini">
+            <h4>Más → Mails (<code>/mails</code>)</h4>
+            <p>Cuenta de Resend, remitente, Reply-To y destinatarios de cada mail del sistema, vista previa, plantilla de
+              prospectos y lista de bajas. Se explica en <em>Mails (cuentas, remitentes y plantillas)</em> de la pestaña Ayuda.</p>
           </div>
           <div class="tarjeta-mini">
             <h4>Mi cuenta (<code>/cuenta</code>)</h4>
