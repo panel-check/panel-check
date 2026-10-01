@@ -151,7 +151,7 @@ async function cargar() {
   }
   document.getElementById("aviso-permiso").innerHTML = puedeEditar() ? "" :
     '<div class="aviso-solo-lectura">Podés ver la configuración y las vistas previas. Para cambiarla hace falta un usuario administrador.</div>';
-  if (!actual || !datos.mails.some(m => m.clave === actual)) actual = datos.mails[0].clave;
+  if (!actual || !datos.mails.some(m => m.clave === actual)) actual = (datos.mails.find(m => m.grupo === "prospectos") || datos.mails[0]).clave;
   pintarLista();
   pintarDetalle();
 }
@@ -162,7 +162,7 @@ function nombreCuenta(id) {
 }
 
 function pintarLista() {
-  const grupos = [["interno", "Avisos internos"], ["prospectos", "Prospectos"]];
+  const grupos = [["prospectos", "Prospectos"], ["interno", "Avisos internos"]];
   document.getElementById("lista").innerHTML = grupos.map(([g, titulo]) => {
     const items = datos.mails.filter(m => m.grupo === g).map(m => `
       <button type="button" class="item-mail ${m.clave === actual ? "activo" : ""}" data-clave="${esc(m.clave)}">
