@@ -233,6 +233,20 @@ def email_de_remitente(remitente: str) -> str | None:
     return m.group(1) if m else None
 
 
+# Nombre que ve el destinatario en la bandeja en los mails a prospectos.
+NOMBRE_REMITENTE_PROSPECTOS = "Smarties"
+
+
+def con_nombre(remitente: str, grupo: str) -> str:
+    """En los mails a prospectos, si el remitente es solo la dirección
+    (sin nombre), le agrega «Smarties» para que en la bandeja no aparezca
+    «smarties» en minúscula. Si ya tiene un nombre, se respeta."""
+    r = (remitente or "").strip()
+    if grupo == "prospectos" and _RE_EMAIL.match(r):
+        return f"{NOMBRE_REMITENTE_PROSPECTOS} <{r}>"
+    return r
+
+
 def lista_de_emails(texto: str) -> list:
     return [d.strip() for d in (texto or "").split(",") if d.strip()]
 
@@ -256,7 +270,7 @@ def validar_config(clave: str, valores: dict) -> dict:
     remitente = (valores.get("remitente") or "").strip()
     if not remitente or not email_de_remitente(remitente):
         raise ValueError('El remitente tiene que ser un mail válido, por ejemplo "Avisos <avisos@dominio.com>" o "avisos@dominio.com"')
-    out["remitente"] = remitente
+    out["remitente"] = con_nombre(remitente, cat["grupo"])
 
     responder_a = (valores.get("responder_a") or "").strip()
     if responder_a and not _RE_EMAIL.match(responder_a):
@@ -346,6 +360,7 @@ def combinar(clave: str, guardada: dict) -> dict:
     g = guardada or {}
     cuenta = g.get("cuenta") if g.get("cuenta") in CUENTAS else cat["cuenta"]
     remitente = g.get("remitente") or (os.environ.get(cat.get("env_remitente", "")) if cat.get("env_remitente") else None) or cat["remitente"]
+    remitente = con_nombre(remitente, cat["grupo"])
     destinatarios = g.get("destinatarios") or (os.environ.get(cat.get("env_destinatarios", "")) if cat.get("env_destinatarios") else None) or cat["destinatarios"]
     responder_a = g["responder_a"] if g.get("responder_a") is not None else cat["responder_a"]
     cfg = {
