@@ -11,10 +11,11 @@ Quedan afuera los que ya sumaron apoderado/gestor después de la oposición
 
 Variables de entorno:
     DATABASE_URL     (obligatoria)
-    RESEND_API_KEY   (obligatoria, salvo con --dry-run)
-    RESEND_FROM      remitente; tiene que ser de un dominio VERIFICADO en Resend
-                     (default: "Avisos Panel <avisos@quieroregistrarmimarca.com.ar>")
-    NOTIFICAR_A      destinatarios separados por coma (default: marcas@komunikacion.com.ar)
+    RESEND_API_KEY   (obligatoria, salvo con --dry-run). Si en el panel (pestaña Mails) se
+                     eligió otra cuenta de Resend, la variable es la de esa cuenta.
+    RESEND_FROM / NOTIFICAR_A   valores de respaldo: lo que se configura en la pestaña Mails
+                     del panel (remitente, Reply-To, destinatarios) tiene prioridad.
+                     Por defecto: "Avisos Panel <avisos@quieroregistrarmimarca.com.ar>" y marcas@komunikacion.com.ar
     PANEL_URL        base del panel (default: https://panel.registrodemimarca.com.ar)
 
 Uso:
@@ -33,6 +34,8 @@ import psycopg2
 import psycopg2.extras
 import requests
 
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "panel"))
+
 DEFAULT_FROM = "Avisos Panel <avisos@quieroregistrarmimarca.com.ar>"
 DEFAULT_TO = "marcas@komunikacion.com.ar"
 DEFAULT_PANEL = "https://panel.registrodemimarca.com.ar"
@@ -50,67 +53,18 @@ SQL_PENDIENTES = """
 """
 
 
-def clave_titular(r):
-    # Mismo criterio que claveTitular() en panel/static/comun.js.
-    cuit = (r.get("cuit") or "").strip()
-    if cuit:
-        return cuit
-    return " ".join((r.get("titular") or "").split()).upper()
+import mails_core  # noqa: E402
+from mails_plantillas import armar_html_oposiciones as armar_html  # noqa: E402
 
 
-def tipo_aviso(r):
-    d = (r.get("detalle_oposicion") or "").upper()
-    return "Oposición" if "OPO" in d else "Vista"
-
-
-def armar_html(filas, panel_url):
-    e = lambda v: html.escape(str(v)) if v not in (None, "") else "—"
-    tarjetas = []
-    for r in filas:
-        nombre = r.get("denominacion_inpi") or r.get("denominacion") or "(sin denominación)"
-        clave = clave_titular(r)
-        link = f"{panel_url}/titular/{quote(clave, safe='')}" if clave else panel_url
-        tipo = tipo_aviso(r)
-        fp = r.get("fecha_publicacion")
-        fecha = fp.strftime("%d/%m/%Y") if hasattr(fp, "strftime") else fp
-        color = "#b42318" if tipo == "Oposición" else "#b54708"
-        oponente = ""
-        if r.get("oponente_nombre"):
-            oponente = f"<div style='color:#475467;font-size:13px'>Opone: {e(r['oponente_nombre'])}"
-            if r.get("marca_oponente_denominacion"):
-                oponente += f" (marca {e(r['marca_oponente_denominacion'])})"
-            oponente += "</div>"
-        tarjetas.append(f"""
-        <tr><td style="padding:14px 16px;border-bottom:1px solid #eaecf0">
-          <div style="font-size:12px;font-weight:600;color:{color};text-transform:uppercase;letter-spacing:.04em">{tipo}</div>
-          <div style="font-size:16px;font-weight:600;color:#101828;margin:2px 0">{e(nombre)}</div>
-          <div style="color:#475467;font-size:13px">Acta {e(r['acta'])} · Clase {e(r.get('clase'))} · Publicada {e(fecha)}</div>
-          <div style="color:#475467;font-size:13px">Titular: {e(r.get('titular'))} · {e(r.get('email'))}</div>
-          {oponente}
-          <a href="{html.escape(link)}" style="display:inline-block;margin-top:10px;padding:8px 14px;background:#1d4ed8;color:#ffffff;text-decoration:none;border-radius:6px;font-size:14px;font-weight:600">Ver lead</a>
-        </td></tr>""")
-    n = len(filas)
-    titulo = f"{n} lead{'s' if n != 1 else ''} con oposición o vista nueva"
-    return titulo, f"""<!doctype html>
-<html><body style="margin:0;background:#f2f4f7;font-family:Arial,Helvetica,sans-serif">
-<table width="100%" cellpadding="0" cellspacing="0" style="background:#f2f4f7;padding:24px 0"><tr><td align="center">
-<table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:#ffffff;border-radius:8px;overflow:hidden">
-  <tr><td style="padding:20px 16px;border-bottom:1px solid #eaecf0">
-    <div style="font-size:20px;font-weight:700;color:#101828">{html.escape(titulo)}</div>
-    <div style="color:#475467;font-size:14px;margin-top:4px">Solicitantes sin apoderado que recibieron una oposición de tercero o una vista de INPI desde el último aviso.</div>
-  </td></tr>
-  {''.join(tarjetas)}
-  <tr><td style="padding:14px 16px;color:#98a2b3;font-size:12px">
-    Aviso automático del panel · <a href="{html.escape(panel_url)}" style="color:#98a2b3">abrir panel</a>
-  </td></tr>
-</table></td></tr></table></body></html>"""
-
-
-def enviar_resend(api_key, remitente, destinatarios, asunto, cuerpo):
+def enviar_resend(api_key, remitente, destinatarios, asunto, cuerpo, responder_a=None):
+    payload = {"from": remitente, "to": destinatarios, "subject": asunto, "html": cuerpo}
+    if responder_a:
+        payload["reply_to"] = responder_a
     r = requests.post(
         "https://api.resend.com/emails",
         headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
-        json={"from": remitente, "to": destinatarios, "subject": asunto, "html": cuerpo},
+        json=payload,
         timeout=30,
     )
     if r.status_code >= 300:
@@ -127,12 +81,11 @@ def main():
     dsn = os.environ.get("DATABASE_URL")
     if not dsn:
         sys.exit("Falta la variable de entorno DATABASE_URL")
-    api_key = os.environ.get("RESEND_API_KEY")
+    # Cuenta de Resend, remitente y destinatarios: se configuran en el panel (pestaña Mails).
+    cfg_mail = mails_core.preparar("oposiciones", dsn)
+    api_key, remitente, destinatarios = cfg_mail["api_key"], cfg_mail["remitente"], cfg_mail["destinatarios"]
     if not (api_key or args.dry_run or args.solo_marcar):
-        sys.exit("Falta la variable de entorno RESEND_API_KEY")
-
-    remitente = os.environ.get("RESEND_FROM") or DEFAULT_FROM
-    destinatarios = [d.strip() for d in (os.environ.get("NOTIFICAR_A") or DEFAULT_TO).split(",") if d.strip()]
+        sys.exit(f"Falta la variable de entorno {cfg_mail['env_key']}")
     panel_url = (os.environ.get("PANEL_URL") or DEFAULT_PANEL).rstrip("/")
 
     conn = psycopg2.connect(dsn)
@@ -158,7 +111,7 @@ def main():
                     f.write(cuerpo)
                 print(f"[dry-run] Asunto: {asunto}. HTML guardado en {ruta}. No se envió ni se marcó nada.")
                 return
-            mail_id = enviar_resend(api_key, remitente, destinatarios, asunto, cuerpo)
+            mail_id = enviar_resend(api_key, remitente, destinatarios, asunto, cuerpo, cfg_mail["responder_a"])
             print(f"Mail enviado (id {mail_id}) a {len(destinatarios)} destinatario(s).")
 
         with conn.cursor() as cur:

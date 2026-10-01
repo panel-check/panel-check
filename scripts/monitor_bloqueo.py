@@ -85,28 +85,35 @@ def _link_corrida() -> str:
 
 
 def _enviar_mail(proceso: str, motivo: str) -> None:
-    api_key = os.environ.get("RESEND_API_KEY")
+    # Cuenta, remitente y destinatarios: los de la pestaña Mails del panel
+    # (si la base no responde, quedan los de respaldo: RESEND_FROM / NOTIFICAR_A).
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "panel"))
+    try:
+        import mails_core
+        import mails_plantillas
+        cfg = mails_core.preparar("bloqueo")
+        api_key, remitente, destinatarios, responder_a = cfg["api_key"], cfg["remitente"], cfg["destinatarios"], cfg["responder_a"]
+        env_key = cfg["env_key"]
+        asunto, cuerpo = mails_plantillas.armar_mail_bloqueo(proceso, motivo, _estado["ok"], _estado["bloqueadas"], _link_corrida())
+    except Exception as e:  # noqa: BLE001 — la alarma no puede depender de la configuración
+        print(f"::warning::No se pudo leer la configuración de mails ({e}); se usan los valores de respaldo")
+        api_key, env_key = os.environ.get("RESEND_API_KEY"), "RESEND_API_KEY"
+        remitente = os.environ.get("RESEND_FROM") or DEFAULT_FROM
+        destinatarios = [d.strip() for d in (os.environ.get("NOTIFICAR_A") or DEFAULT_TO).split(",") if d.strip()]
+        responder_a = None
+        asunto = f"⚠️ INPI está bloqueando consultas ({proceso})"
+        cuerpo = f"<p><b>INPI está bloqueando las consultas del sistema.</b></p><p>Proceso: <b>{proceso}</b><br>Detalle: {motivo}</p>"
     if not api_key:
-        print("::warning::No hay RESEND_API_KEY -- no se pudo mandar el mail de alarma de bloqueo")
+        print(f"::warning::No hay {env_key} -- no se pudo mandar el mail de alarma de bloqueo")
         return
-    remitente = os.environ.get("RESEND_FROM") or DEFAULT_FROM
-    destinatarios = [d.strip() for d in (os.environ.get("NOTIFICAR_A") or DEFAULT_TO).split(",") if d.strip()]
-    link = _link_corrida()
-    cuerpo = (
-        f"<p><b>INPI está bloqueando las consultas del sistema.</b></p>"
-        f"<p>Proceso: <b>{proceso}</b><br>Detalle: {motivo}<br>"
-        f"Consultas OK en esta corrida: {_estado['ok']} — bloqueadas: {_estado['bloqueadas']}</p>"
-        f"<p>Las marcas afectadas quedaron como “no verificadas” y los reintentos las vuelven a "
-        f"probar solas. Si este aviso se repite en varias corridas seguidas, es un bloqueo "
-        f"sostenido: conviene pausar los workflows un día y bajar el ritmo de consultas.</p>"
-        + (f'<p><a href="{link}">Ver la corrida en GitHub</a></p>' if link else "")
-    )
+    payload = {"from": remitente, "to": destinatarios, "subject": asunto, "html": cuerpo}
+    if responder_a:
+        payload["reply_to"] = responder_a
     try:
         r = requests.post(
             "https://api.resend.com/emails",
             headers={"Authorization": f"Bearer {api_key}"},
-            json={"from": remitente, "to": destinatarios,
-                  "subject": f"⚠️ INPI está bloqueando consultas ({proceso})", "html": cuerpo},
+            json=payload,
             timeout=30,
         )
         print(f"Mail de alarma de bloqueo: HTTP {r.status_code}")

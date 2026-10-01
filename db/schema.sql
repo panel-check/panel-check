@@ -393,3 +393,24 @@ CREATE TABLE IF NOT EXISTS poderes_generados (
     generado_en   TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_poderes_cliente ON poderes_generados(cliente_id, generado_en DESC);
+
+-- ── Configuración de mails (pestaña Mails del panel) ────────────────────
+-- Las crea el panel al arrancar (panel/mails_core.py: crear_tablas). Las API
+-- keys NO se guardan acá: viven en variables de entorno.
+CREATE TABLE IF NOT EXISTS mails_config (
+    clave           TEXT PRIMARY KEY,
+    cuenta          TEXT,
+    remitente       TEXT,
+    responder_a     TEXT,
+    destinatarios   TEXT,
+    asunto          TEXT,
+    cuerpo          TEXT,
+    actualizado_en  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    actualizado_por TEXT
+);
+CREATE TABLE IF NOT EXISTS mails_bajas (
+    email      TEXT PRIMARY KEY,
+    motivo     TEXT,
+    creada_en  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    creada_por TEXT
+);

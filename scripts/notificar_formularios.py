@@ -12,9 +12,8 @@ LOCKED), así que nunca sale el mismo mail dos veces.
 
 Variables de entorno:
     DATABASE_URL     (o DATABASE_PUBLIC_URL)
-    RESEND_API_KEY   obligatoria (salvo --dry-run)
-    RESEND_FROM      remitente verificado en Resend
-    NOTIFICAR_A      destinatarios separados por coma (default marcas@komunikacion.com.ar)
+    RESEND_API_KEY   obligatoria (salvo --dry-run); o la de la cuenta elegida en el panel (pestaña Mails)
+    RESEND_FROM / NOTIFICAR_A   valores de respaldo: la pestaña Mails del panel tiene prioridad
     PANEL_URL        base del panel
 """
 
@@ -27,6 +26,7 @@ import psycopg2
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "panel"))
 import cartera  # noqa: E402
 import formularios_core as fc  # noqa: E402
+import mails_core  # noqa: E402
 
 from registro import registrar  # noqa: E402
 
@@ -39,11 +39,11 @@ def main():
     dsn = os.environ.get("DATABASE_URL") or os.environ.get("DATABASE_PUBLIC_URL")
     if not dsn:
         sys.exit("Falta la variable de entorno DATABASE_URL")
-    api_key = os.environ.get("RESEND_API_KEY")
+    # Cuenta de Resend, remitente y destinatarios: se configuran en el panel (pestaña Mails).
+    cfg_mail = mails_core.preparar("formularios", dsn)
+    api_key, remitente, destinatarios = cfg_mail["api_key"], cfg_mail["remitente"], cfg_mail["destinatarios"]
     if not (api_key or args.dry_run):
-        sys.exit("Falta la variable de entorno RESEND_API_KEY")
-    remitente = os.environ.get("RESEND_FROM") or fc.DEFAULT_FROM
-    destinatarios = [d.strip() for d in (os.environ.get("NOTIFICAR_A") or fc.DEFAULT_TO).split(",") if d.strip()]
+        sys.exit(f"Falta la variable de entorno {cfg_mail['env_key']}")
     panel_url = (os.environ.get("PANEL_URL") or fc.DEFAULT_PANEL).rstrip("/")
 
     conn = psycopg2.connect(dsn)

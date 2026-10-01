@@ -38,6 +38,13 @@ El workflow `.github/workflows/pipeline.yml` corre estos 6 pasos automáticament
   `marcas@komunikacion.com.ar`, varios separados por coma) y `PANEL_URL`.
   Cada lead se avisa una sola vez (`notificado_oposicion_en`); si no hay
   novedades no se manda nada.
+  Hay **dos cuentas de Resend**: la interna (`RESEND_API_KEY`, avisos al equipo)
+  y la de prospectos (`RESEND_API_KEY_PROSPECTOS`, contacto con leads; Resend
+  no permite envío en frío, ver su política de uso aceptable). Cuenta, remitente,
+  Reply-To, destinatarios y la plantilla de prospectos se configuran en la
+  pestaña **Mails** del panel (tablas `mails_config` y `mails_bajas`); las API
+  keys nunca se guardan en la base. `RESEND_FROM` y `NOTIFICAR_A` quedan como
+  respaldo si no hay nada guardado.
 
 ### 2. Cargar los secrets en GitHub
 

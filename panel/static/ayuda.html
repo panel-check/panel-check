@@ -182,6 +182,7 @@
     <a href="/comentarios" id="link-comentarios" title="Comentarios"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H8l-5 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg><span class="nav-txt">Comentarios</span><span class="nav-badge"></span></a>
     <a href="/boletines" title="Boletines"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h13a2 2 0 0 1 2 2v14H6a2 2 0 0 1-2-2z"/><path d="M19 8h1a1 1 0 0 1 1 1v9a2 2 0 0 1-2 2"/><path d="M8 8h7M8 12h7M8 16h4"/></svg><span class="nav-txt">Boletines</span></a>
     <a href="/crons" title="Automatizaciones"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg><span class="nav-txt">Automatizaciones</span></a>
+    <a href="/mails" title="Mails"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/></svg><span class="nav-txt">Mails</span></a>
     <a href="/ayuda" class="activa" aria-current="page" title="Ayuda"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.6v.6"/><path d="M12 17h.01"/></svg><span class="nav-txt">Ayuda</span></a>
   </nav>
 </header>
@@ -384,6 +385,20 @@
       <li><strong>Usuarios del panel</strong> (solo administradores, en Mi cuenta): agregar usuarios con clave temporal, resetear claves, dar o quitar permiso de administrador y desactivar a alguien (deja de poder entrar al instante; sus comentarios y registros quedan). Abajo se ven los últimos intentos de ingreso, buenos y fallidos.</li>
       <li><strong>¿Se olvidó la clave?</strong> Un administrador la resetea desde Usuarios. Si no queda nadie que pueda entrar, ver <em>Recuperar el acceso</em> en el Manual del sistema.</li>
     </ul>
+
+    <h2 id="mails">✉️ Mails (cuentas, remitentes y plantillas)</h2>
+    <p>En la sección <strong>Mails</strong> (barra de arriba) se ve y se configura cada mail que manda el sistema. A la izquierda están los mails, separados en <em>Avisos internos</em> (oposiciones y vistas, cartera y vigilancia, formulario de cliente recibido, INPI está bloqueando) y <em>Prospectos</em> (primer contacto a un lead). Al elegir uno aparece su configuración y una vista previa con datos de ejemplo.</p>
+    <ul>
+      <li><strong>Cuenta de Resend:</strong> de cuál de las dos cuentas sale el mail. <em>Interna</em> es para los avisos al equipo; <em>Prospectos</em> es para escribirle a los leads (otro dominio, otra cuenta). Las claves de Resend <strong>no se guardan en el panel</strong>: viven como variables de entorno (<code>RESEND_API_KEY</code> y <code>RESEND_API_KEY_PROSPECTOS</code>) en los secrets de GitHub y en Railway. Debajo del selector se ve si esa variable está cargada en el servidor del panel.</li>
+      <li><strong>Remitente:</strong> el mail desde el que sale, por ejemplo <code>Nombre &lt;mail@dominio.com&gt;</code>. Su dominio tiene que estar verificado en esa cuenta de Resend; si el panel puede consultarlo y no lo está, no deja guardar y lo avisa.</li>
+      <li><strong>Reply-To:</strong> a dónde llegan las respuestas. Si está vacío, van al remitente. En el formulario de cliente recibido es automático: responde al email que dejó el cliente.</li>
+      <li><strong>Destinatarios</strong> (solo avisos internos): quiénes reciben el aviso, separados por coma.</li>
+      <li><strong>Plantilla de prospectos:</strong> asunto y cuerpo del primer contacto, editables acá. Se pueden usar las variables <code>{{titular}}</code>, <code>{{marca}}</code>, <code>{{acta}}</code> y <code>{{clase}}</code> (con un clic en cada una se insertan en el cuerpo) y la vista previa se actualiza mientras se escribe. Al final de cada mail a prospectos se agrega siempre la línea de baja, que no se puede quitar.</li>
+      <li><strong>Avisos internos:</strong> su contenido se arma solo con datos del momento, por eso no se edita el texto; la vista previa muestra cómo se ve con datos inventados.</li>
+      <li><strong>Volver a los valores por defecto</strong> borra lo que se guardó para ese mail.</li>
+      <li><strong>Bajas</strong> (pestaña arriba a la izquierda): lista de personas a las que no se les escribe más (por ejemplo, quien respondió BAJA). Un administrador puede agregar o quitar mails.</li>
+    </ul>
+    <p>Ver la configuración y las vistas previas lo puede hacer cualquier usuario; <strong>guardar cambios y tocar las bajas</strong> es solo para administradores. <strong>Por ahora el sistema no manda mails a prospectos:</strong> la plantilla y la cuenta quedan configuradas para cuando se decida empezar.</p>
 
     <h2>💬 Comentarios internos</h2>
     <p>Sirven para dejarse mensajes entre las personas del equipo dentro del panel, sin depender del WhatsApp o el mail. Cada comentario queda con quién lo escribió (el usuario con el que entraste al panel) y la fecha.</p>
@@ -601,6 +616,11 @@ le asigna un puntaje de prioridad. Después sigue a cada marca a lo largo del ti
 
       <div class="seccion-manual">
         <h2>Avisos por mail</h2>
+        <p style="font-size:13px;color:#6b7280;margin:0 0 12px;">Los cuatro avisos internos usan la cuenta, el remitente y los destinatarios que se configuran en la sección
+          <strong>Mails</strong> del panel (guardados en la tabla <code>mails_config</code>); si no hay nada guardado, valen las variables
+          <code>RESEND_FROM</code> y <code>NOTIFICAR_A</code> y, en último caso, los valores por defecto. Los cuerpos de los mails están
+          en <code>panel/mails_plantillas.py</code> (los mismos que usa la vista previa). Hay dos cuentas de Resend: <em>interna</em>
+          (<code>RESEND_API_KEY</code>) y <em>prospectos</em> (<code>RESEND_API_KEY_PROSPECTOS</code>); las claves no se guardan en la base.</p>
         <div class="tarjetas-panel">
           <div class="tarjeta-mini">
             <h4>⚠ Oposiciones y vistas</h4>
@@ -625,6 +645,13 @@ le asigna un puntaje de prioridad. Después sigue a cada marca a lo largo del ti
               Cada formulario se avisa una sola vez. Responder el mail le contesta directo al cliente.</p>
           </div>
           <div class="tarjeta-mini">
+            <h4>✉️ Primer contacto a un lead (todavía sin envío)</h4>
+            <p>Plantilla para presentarse a un solicitante sin agente, con la cuenta de <em>prospectos</em> (remitente
+              <code>smarties@registrodemimarca.com.ar</code>, Reply-To <code>info@smartiesconsultora.com.ar</code>). Se edita en
+              <strong>Mails</strong>, lleva siempre la línea de baja y hay una lista de bajas para no volver a escribirle a quien la pidió.
+              <strong>El sistema todavía no la envía a nadie.</strong></p>
+          </div>
+          <div class="tarjeta-mini">
             <h4>🚫 INPI está bloqueando</h4>
             <p>Llega solo si INPI empieza a bloquear en forma <strong>masiva</strong> (5 consultas seguidas bloqueadas,
               ninguna que responda, o más del 25% bloqueadas) en cualquiera de los procesos. Un bloqueo suelto es
@@ -643,6 +670,7 @@ le asigna un puntaje de prioridad. Después sigue a cada marca a lo largo del ti
             <tr><th>Clientes y vigilancia</th><td>En <strong>Clientes</strong>: cargar clientes y sumarles marcas por acta, por CUIT/titular o por matrícula; convertir un lead del CRM en cliente; decidir cada alerta de vigilancia (monitorear, oponer, oposición presentada, descartar); <strong>Probar un nombre</strong> contra las solicitudes conocidas; ver todos los vencimientos; ajustar la sensibilidad, las clases relacionadas y las palabras genéricas. El botón ↻ de cada marca vuelve a consultar su expediente en INPI en el momento.</td></tr>
             <tr><th>Formularios para clientes</th><td>En <strong>Clientes → 📝 Formularios</strong>: copiar o mandar por WhatsApp el link del formulario de Persona física o jurídica; ver las respuestas que llegaron, abrir o descargar sus archivos, marcarlas como revisadas o borrarlas. Cada formulario enviado crea (o actualiza, si el CUIT ya existe) el cliente con todos sus datos.</td></tr>
             <tr><th>Generar poder para firmar</th><td>En la ficha de un cliente: arma el poder ya completo con sus datos (persona física o jurídica), editable antes de bajarlo, en PDF o Word. Queda guardado en la ficha. Los datos del apoderado se cambian en <strong>Clientes → Ajustes</strong>.</td></tr>
+            <tr><th>Mails</th><td>En <strong>Mails</strong>: elegir la cuenta de Resend, el remitente, el Reply-To y los destinatarios de cada mail del sistema, ver su vista previa, editar la plantilla de prospectos y administrar la lista de bajas. Cambiar la configuración es solo para administradores.</td></tr>
             <tr><th>Comentarios</th><td>Botón 💬 en cada fila o sección <strong>Comentarios</strong>: dejarle un mensaje a otra persona del equipo (o a todos), vinculado o no a un acta, y marcarlo como resuelto cuando se atendió.</td></tr>
             <tr><th>Usuarios del panel</th><td>En <strong>Mi cuenta → Usuarios del panel</strong> (solo administradores): crear usuarios con clave temporal, resetear claves, dar o quitar administrador, desactivar/reactivar, y ver los últimos intentos de ingreso.</td></tr>
             <tr><th>Recuperar el acceso</th><td>Si nadie puede entrar (se perdieron todas las claves de administrador): en Railway, servicio <em>Panel Leads</em>, agregar la variable <code>PANEL_RECUPERAR</code> con el valor <code>usuario:claveTemporal</code>. Al redeployar, ese usuario queda activo, administrador y con esa clave (pide cambiarla al entrar). <strong>Después hay que borrar la variable.</strong></td></tr>
@@ -752,6 +780,9 @@ le asigna un puntaje de prioridad. Después sigue a cada marca a lo largo del ti
             <tr><th>Próximo seguimiento</th><td>Fecha en la que hay que volver a contactar a un lead. Aparece en la Agenda del CRM y en la tarjeta (en rojo si ya pasó).</td></tr>
             <tr><th>Asignado</th><td>Persona del equipo que se ocupa de ese lead. Se filtra con "Míos" en el CRM.</td></tr>
             <tr><th>Comentario interno</th><td>Nota que deja una persona del equipo para otra (o para todos) dentro del panel, opcionalmente vinculada a un acta. "Resuelto" significa que el tema ya se atendió.</td></tr>
+            <tr><th>Cuenta de Resend</th><td>Cada cuenta de Resend (servicio de envío de mails) tiene su propia clave y sus dominios verificados. El sistema usa una <em>interna</em> para avisar al equipo y otra de <em>prospectos</em> para escribirle a los leads.</td></tr>
+            <tr><th>Reply-To</th><td>Dirección a la que llegan las respuestas de un mail, que puede ser distinta de la que lo envió.</td></tr>
+            <tr><th>Baja</th><td>Persona que pidió no recibir más mensajes (respondió BAJA). Queda en la lista de bajas de la sección Mails y no se le vuelve a escribir.</td></tr>
             <tr><th>Estado del trámite</th><td>Resultado final del trámite en INPI: Concedida, Denegada, o todavía en curso.</td></tr>
             <tr><th>Fecha de concesión</th><td>Fecha en que INPI otorgó la marca — desde ahí se cuentan los plazos de declaración jurada y renovación.</td></tr>
             <tr><th>Declaración jurada de uso</th><td>Declaración de uso de medio término: se presenta dentro del año siguiente al 5.º aniversario de la concesión, declarando que la marca está en uso. El CRM la muestra como plazo orientativo.</td></tr>

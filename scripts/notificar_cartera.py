@@ -16,9 +16,10 @@ Si no hay nada nuevo no manda nada. Al enviar, marca todo como avisado.
 
 Variables de entorno:
     DATABASE_URL     (obligatoria)
-    RESEND_API_KEY   (obligatoria, salvo con --dry-run / --solo-marcar)
-    RESEND_FROM      remitente verificado en Resend
-    NOTIFICAR_A      destinatarios separados por coma (default: marcas@komunikacion.com.ar)
+    RESEND_API_KEY   (obligatoria, salvo con --dry-run / --solo-marcar); o la de la cuenta
+                     elegida en el panel (pestaña Mails)
+    RESEND_FROM / NOTIFICAR_A   valores de respaldo: la pestaña Mails del panel tiene prioridad
+                     (default: remitente de Avisos Panel y marcas@komunikacion.com.ar)
     PANEL_URL        base del panel (default: https://panel.registrodemimarca.com.ar)
 
 Uso:
@@ -39,6 +40,7 @@ import requests
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "panel"))
 import cartera  # noqa: E402
+import mails_core  # noqa: E402
 
 from registro import registrar  # noqa: E402
 
@@ -136,86 +138,17 @@ def plazos_a_avisar(cur, hoy):
     return out
 
 
-def _e(v):
-    return html.escape(str(v)) if v not in (None, "") else "—"
+from mails_plantillas import armar_html_cartera as armar_html  # noqa: E402
 
 
-def _fecha(f):
-    return f.strftime("%d/%m/%Y") if hasattr(f, "strftime") else (f or "—")
-
-
-def armar_html(alertas, plazos, novedades, panel_url):
-    secciones = []
-    if alertas:
-        filas = []
-        for a in alertas:
-            if a["tipo"] == "otro_agente":
-                filas.append(f"""<tr><td style="padding:12px 16px;border-bottom:1px solid #eaecf0">
-                  <div style="font-size:12px;font-weight:600;color:#6d28d9;text-transform:uppercase">Cliente con otro agente</div>
-                  <div style="font-size:15px;font-weight:600;color:#101828">{_e(a['cliente_nombre'])} presentó «{_e(a['denominacion_nueva'])}»</div>
-                  <div style="color:#475467;font-size:13px">Acta {_e(a['acta_nueva'])} · clase {_e(a['clase_nueva'])} · {_e(a['agente_nuevo'])} · {_e(a['fuente_nueva'])}</div></td></tr>""")
-            else:
-                color = "#b42318" if a["nivel"] == "alta" else "#b54708"
-                contrato = "" if a["vigilancia_contratada"] else " · <em>sin vigilancia contratada</em>"
-                filas.append(f"""<tr><td style="padding:12px 16px;border-bottom:1px solid #eaecf0">
-                  <div style="font-size:12px;font-weight:600;color:{color};text-transform:uppercase">Parecido {_e(a['nivel'])} · {a['puntaje']}%</div>
-                  <div style="font-size:15px;font-weight:600;color:#101828">«{_e(a['denominacion_nueva'])}» se parece a «{_e(a['denominacion_cliente'])}»</div>
-                  <div style="color:#475467;font-size:13px">Cliente: {_e(a['cliente_nombre'])}{contrato}<br>
-                    Nueva: acta {_e(a['acta_nueva'])}, clase {_e(a['clase_nueva'])}, {_e(a['agente_nuevo'])} · {_e(a['fuente_nueva'])}<br>
-                    De la cartera: acta {_e(a['acta_cliente'])}, clase {_e(a['clase_cliente'])} · {_e(a['motivos'])}</div></td></tr>""")
-        secciones.append(("Vigilancia: alertas nuevas", filas))
-    if plazos:
-        filas = []
-        for p, u, _ in plazos:
-            color = "#b42318" if p["dias"] <= 7 else "#b54708"
-            dias = "hoy" if p["dias"] == 0 else ("mañana" if p["dias"] == 1 else f"en {p['dias']} días")
-            filas.append(f"""<tr><td style="padding:12px 16px;border-bottom:1px solid #eaecf0">
-              <div style="font-size:12px;font-weight:600;color:{color};text-transform:uppercase">{_fecha(p['fecha'])} · {dias}</div>
-              <div style="font-size:15px;font-weight:600;color:#101828">{_e(p['titulo'])}</div>
-              <div style="color:#475467;font-size:13px">{_e(p.get('cliente'))}{' · ' + _e(p['marca']) if p.get('marca') else ''}{' · acta ' + _e(p['acta']) if p.get('acta') else ''}<br>{_e(p.get('detalle'))}</div></td></tr>""")
-        secciones.append(("Plazos que se acercan", filas))
-    if novedades:
-        filas = []
-        ultimo = None
-        for n in novedades:
-            cab = f"{n['cliente_nombre']} · {n['denominacion'] or 'acta ' + n['acta']}"
-            if cab != ultimo:
-                filas.append(f"""<tr><td style="padding:10px 16px 0;font-size:14px;font-weight:600;color:#101828">{_e(cab)} <span style="color:#98a2b3;font-weight:400">(acta {_e(n['acta'])})</span></td></tr>""")
-                ultimo = cab
-            filas.append(f"""<tr><td style="padding:2px 16px 4px 28px;color:#475467;font-size:13px">• {_e(n['texto'])}</td></tr>""")
-        secciones.append(("Novedades en los expedientes", filas))
-
-    partes = []
-    if alertas:
-        partes.append(f"{len(alertas)} alerta{'s' if len(alertas) != 1 else ''}")
-    if plazos:
-        partes.append(f"{len(plazos)} plazo{'s' if len(plazos) != 1 else ''}")
-    if novedades:
-        partes.append(f"{len(novedades)} novedad{'es' if len(novedades) != 1 else ''}")
-    titulo = "Cartera y vigilancia: " + " · ".join(partes)
-    cuerpo_secciones = "".join(
-        f"""<tr><td style="padding:14px 16px 6px;font-size:13px;font-weight:700;color:#344054;text-transform:uppercase;letter-spacing:.04em;background:#f9fafb">{html.escape(t)}</td></tr>{''.join(f)}"""
-        for t, f in secciones
-    )
-    link = f"{panel_url}/clientes?vista=vigilancia"
-    return titulo, f"""<!doctype html>
-<html><body style="margin:0;background:#f2f4f7;font-family:Arial,Helvetica,sans-serif">
-<table width="100%" cellpadding="0" cellspacing="0" style="background:#f2f4f7;padding:24px 0"><tr><td align="center">
-<table width="640" cellpadding="0" cellspacing="0" style="max-width:640px;width:100%;background:#ffffff;border-radius:8px;overflow:hidden">
-  <tr><td style="padding:20px 16px;border-bottom:1px solid #eaecf0">
-    <div style="font-size:20px;font-weight:700;color:#101828">{html.escape(titulo)}</div>
-    <a href="{html.escape(link)}" style="display:inline-block;margin-top:10px;padding:8px 14px;background:#1d4ed8;color:#ffffff;text-decoration:none;border-radius:6px;font-size:14px;font-weight:600">Abrir Clientes y vigilancia</a>
-  </td></tr>
-  {cuerpo_secciones}
-  <tr><td style="padding:14px 16px;color:#98a2b3;font-size:12px">Fechas orientativas: confirmar siempre en el expediente. Aviso automático del panel · <a href="{html.escape(panel_url)}" style="color:#98a2b3">abrir panel</a></td></tr>
-</table></td></tr></table></body></html>"""
-
-
-def enviar_resend(api_key, remitente, destinatarios, asunto, cuerpo):
+def enviar_resend(api_key, remitente, destinatarios, asunto, cuerpo, responder_a=None):
+    payload = {"from": remitente, "to": destinatarios, "subject": asunto, "html": cuerpo}
+    if responder_a:
+        payload["reply_to"] = responder_a
     r = requests.post(
         "https://api.resend.com/emails",
         headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
-        json={"from": remitente, "to": destinatarios, "subject": asunto, "html": cuerpo},
+        json=payload,
         timeout=30,
     )
     if r.status_code >= 300:
@@ -232,11 +165,11 @@ def main():
     dsn = os.environ.get("DATABASE_URL") or os.environ.get("DATABASE_PUBLIC_URL")
     if not dsn:
         sys.exit("Falta la variable de entorno DATABASE_URL")
-    api_key = os.environ.get("RESEND_API_KEY")
+    # Cuenta de Resend, remitente y destinatarios: se configuran en el panel (pestaña Mails).
+    cfg_mail = mails_core.preparar("cartera", dsn)
+    api_key, remitente, destinatarios = cfg_mail["api_key"], cfg_mail["remitente"], cfg_mail["destinatarios"]
     if not (api_key or args.dry_run or args.solo_marcar):
-        sys.exit("Falta la variable de entorno RESEND_API_KEY")
-    remitente = os.environ.get("RESEND_FROM") or DEFAULT_FROM
-    destinatarios = [d.strip() for d in (os.environ.get("NOTIFICAR_A") or DEFAULT_TO).split(",") if d.strip()]
+        sys.exit(f"Falta la variable de entorno {cfg_mail['env_key']}")
     panel_url = (os.environ.get("PANEL_URL") or DEFAULT_PANEL).rstrip("/")
 
     conn = psycopg2.connect(dsn)
@@ -262,7 +195,7 @@ def main():
                         f.write(cuerpo)
                     print(f"[dry-run] Asunto: {asunto}. HTML en {ruta}. No se envió ni se marcó nada.")
                     return
-                mail_id = enviar_resend(api_key, remitente, destinatarios, asunto, cuerpo)
+                mail_id = enviar_resend(api_key, remitente, destinatarios, asunto, cuerpo, cfg_mail["responder_a"])
                 enviado = 1
                 print(f"Mail enviado (id {mail_id}) a {len(destinatarios)} destinatario(s).")
             with conn.cursor() as cur:

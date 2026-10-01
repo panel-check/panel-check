@@ -48,6 +48,8 @@ import auth_api
 import cartera
 import cartera_api
 import formularios_api
+import mails_api
+import mails_core
 import formularios_core
 import inpi_lead
 
@@ -132,6 +134,16 @@ def migrar_columnas_panel():
             conn.commit()
     except Exception as e:
         print(f"[startup] tablas de clientes/vigilancia salteadas (no bloqueante): {e}")
+
+    # Configuración de los mails (pestaña /mails): no toca `marcas`.
+    try:
+        with conexion() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SET lock_timeout = '3s'")
+                mails_core.crear_tablas(cur)
+            conn.commit()
+    except Exception as e:
+        print(f"[startup] tablas de mails salteadas (no bloqueante): {e}")
 
 
 def _crear_tablas_crm(cur):
@@ -2633,6 +2645,11 @@ def pagina_clientes(_: str = Depends(verificar_pagina)):
     return FileResponse(os.path.join(os.path.dirname(__file__), "static", "clientes.html"))
 
 
+@app.get("/mails")
+def pagina_mails(_: str = Depends(verificar_pagina)):
+    return FileResponse(os.path.join(os.path.dirname(__file__), "static", "mails.html"))
+
+
 @app.get("/crm")
 def pagina_crm(_: str = Depends(verificar_pagina)):
     return FileResponse(os.path.join(os.path.dirname(__file__), "static", "crm.html"))
@@ -2653,6 +2670,9 @@ app.include_router(cartera_api.crear_router(
 # Formularios para clientes (persona física / jurídica): páginas públicas
 # /formulario/... (sin login) + gestión de respuestas en Clientes → Formularios.
 app.include_router(formularios_api.crear_router(verificar_login, conexion))
+
+# Pestaña "Mails": cuenta de Resend, remitente, reply-to y plantillas de cada mail.
+app.include_router(mails_api.crear_router(verificar_login, _auth.verificar_admin, conexion))
 
 
 class ArchivosSinCache(StaticFiles):

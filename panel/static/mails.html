@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Mails — Panel de leads</title>
+<link rel="stylesheet" href="/static/comun.css" />
+<style>
+  .contenido { max-width: 1080px; margin: 24px auto 60px; padding: 0 20px; }
+  .tabs-mails { display: flex; gap: 4px; border-bottom: 1px solid var(--borde); margin-bottom: 18px; }
+  .tabs-mails button {
+    background: none; border: none; border-bottom: 2px solid transparent; padding: 10px 14px;
+    font: inherit; font-size: 14px; font-weight: 600; color: var(--gris); cursor: pointer; margin-bottom: -1px;
+  }
+  .tabs-mails button.activo { color: var(--azul); border-bottom-color: var(--azul); }
+  .intro { color: var(--gris); font-size: 13px; margin: 0 0 16px; max-width: 760px; line-height: 1.5; }
+  .grid-mails { display: grid; grid-template-columns: 280px 1fr; gap: 18px; align-items: start; }
+  @media (max-width: 820px) { .grid-mails { grid-template-columns: 1fr; } }
+  .lista-mails { display: flex; flex-direction: column; gap: 8px; }
+  .item-mail {
+    text-align: left; background: #fff; border: 1px solid var(--borde); border-radius: 10px; padding: 11px 13px;
+    cursor: pointer; font: inherit; color: var(--texto);
+  }
+  .item-mail:hover { border-color: #9cc0e3; }
+  .item-mail.activo { border-color: var(--azul); box-shadow: var(--foco); }
+  .item-mail .nom { font-size: 14px; font-weight: 600; display: block; }
+  .item-mail .cta { font-size: 12px; color: var(--gris); display: block; margin-top: 3px; }
+  .grupo-titulo { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--gris); font-weight: 700; margin: 10px 2px 0; }
+  .grupo-titulo:first-child { margin-top: 0; }
+  .caja-mail { background: #fff; border: 1px solid var(--borde); border-radius: 10px; padding: 18px 20px; margin-bottom: 16px; }
+  .caja-mail h2 { font-size: 16px; margin: 0 0 4px; }
+  .caja-mail h3 { font-size: 13px; margin: 18px 0 8px; color: #1f2430; }
+  .caja-mail .desc { color: var(--gris); font-size: 13px; margin: 0 0 14px; }
+  .campo { margin-bottom: 12px; }
+  .campo label { display: block; font-size: 12px; font-weight: 600; color: #344054; margin-bottom: 4px; }
+  .campo input[type=text], .campo select, .campo textarea {
+    width: 100%; padding: 8px 10px; border: 1px solid var(--borde-control); border-radius: 8px; font: inherit; font-size: 14px; background: #fff;
+  }
+  .campo textarea { min-height: 260px; resize: vertical; line-height: 1.5; font-family: inherit; }
+  .campo input:focus, .campo select:focus, .campo textarea:focus { outline: none; box-shadow: var(--foco); border-color: var(--azul); }
+  .campo input:disabled, .campo select:disabled, .campo textarea:disabled { background: #f3f4f6; color: var(--gris); }
+  .campo .ayuda-campo { font-size: 12px; color: var(--gris); margin-top: 4px; }
+  .fila-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  @media (max-width: 640px) { .fila-2 { grid-template-columns: 1fr; } }
+  .estado-cuenta { font-size: 12px; margin-top: 4px; }
+  .estado-cuenta.ok { color: var(--verde); }
+  .estado-cuenta.no { color: #b54708; }
+  .barra-acciones { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 6px; }
+  .barra-acciones .msg { font-size: 13px; }
+  .barra-acciones .msg.ok { color: var(--verde); }
+  .barra-acciones .msg.err { color: var(--rojo); }
+  button.primario { background: var(--azul); color: #fff; border: 1px solid var(--azul); border-radius: 8px; padding: 8px 16px; font: inherit; font-size: 14px; font-weight: 600; cursor: pointer; }
+  button.primario:hover { background: var(--azul-oscuro); }
+  button.primario:disabled { opacity: .5; cursor: not-allowed; }
+  button.secundario { background: #fff; color: var(--texto); border: 1px solid var(--borde-control); border-radius: 8px; padding: 8px 14px; font: inherit; font-size: 14px; cursor: pointer; }
+  button.secundario:hover { background: #f3f4f6; }
+  button.secundario:disabled { opacity: .5; cursor: not-allowed; }
+  .pie-baja {
+    background: #f9fafb; border: 1px dashed var(--borde-control); border-radius: 8px; padding: 9px 12px;
+    font-size: 12px; color: var(--gris); margin-top: 6px;
+  }
+  .variables { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+  .variables code {
+    background: var(--azul-claro); color: var(--azul); border-radius: 6px; padding: 2px 8px; font-size: 12px; cursor: pointer; border: 1px solid transparent;
+  }
+  .variables code:hover { border-color: #9cc0e3; }
+  .previa-asunto { font-size: 13px; color: #344054; margin-bottom: 8px; }
+  .previa-asunto strong { color: var(--texto); }
+  iframe.previa { width: 100%; height: 440px; border: 1px solid var(--borde); border-radius: 8px; background: #fff; }
+  .aviso-solo-lectura { background: #fff6d6; border: 1px solid #f5b400; border-radius: 8px; padding: 8px 12px; font-size: 13px; margin-bottom: 14px; }
+  table.bajas { width: 100%; border-collapse: collapse; font-size: 13px; }
+  table.bajas th, table.bajas td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--borde); }
+  table.bajas th { font-size: 12px; color: var(--gris); font-weight: 600; }
+  .vacio { color: var(--gris); font-size: 13px; padding: 10px 0; }
+  .meta-guardado { font-size: 12px; color: var(--gris); margin-top: 10px; }
+</style>
+<script src="/static/sesion.js" defer></script>
+</head>
+<body>
+
+<header class="app-header">
+  <a class="marca" href="/" title="Volver al panel de leads"><span class="marca-logo">®</span><span class="marca-nombre">Panel de leads</span></a>
+  <span class="marca-sep">/</span>
+  <h1>Mails</h1>
+  <nav class="nav">
+    <a href="/" title="Leads"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5h18M3 12h18M3 19h12"/></svg><span class="nav-txt">Leads</span></a>
+    <a href="/crm" title="CRM"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="5" height="16" rx="1.5"/><rect x="10" y="4" width="5" height="11" rx="1.5"/><rect x="17" y="4" width="4" height="7" rx="1.5"/></svg><span class="nav-txt">CRM</span></a>
+    <a href="/clientes" title="Clientes"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M16 20v-1.5a3.5 3.5 0 0 0-3.5-3.5h-5A3.5 3.5 0 0 0 4 18.5V20"/><circle cx="10" cy="8" r="3.5"/><path d="M20 20v-1.5a3.5 3.5 0 0 0-2.5-3.35M15 4.6a3.5 3.5 0 0 1 0 6.8"/></svg><span class="nav-txt">Clientes</span></a>
+    <a href="/comentarios" id="link-comentarios" title="Comentarios"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H8l-5 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg><span class="nav-txt">Comentarios</span><span class="nav-badge"></span></a>
+    <a href="/boletines" title="Boletines"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h13a2 2 0 0 1 2 2v14H6a2 2 0 0 1-2-2z"/><path d="M19 8h1a1 1 0 0 1 1 1v9a2 2 0 0 1-2 2"/><path d="M8 8h7M8 12h7M8 16h4"/></svg><span class="nav-txt">Boletines</span></a>
+    <a href="/crons" title="Automatizaciones"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg><span class="nav-txt">Automatizaciones</span></a>
+    <a href="/mails" class="activa" aria-current="page" title="Mails"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/></svg><span class="nav-txt">Mails</span></a>
+    <a href="/ayuda#mails" title="Ayuda"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.6v.6"/><path d="M12 17h.01"/></svg><span class="nav-txt">Ayuda</span></a>
+  </nav>
+</header>
+
+<div class="contenido">
+  <div class="tabs-mails" id="tabs">
+    <button type="button" data-tab="mails" class="activo">Mails y plantillas</button>
+    <button type="button" data-tab="bajas">Bajas</button>
+  </div>
+
+  <div id="tab-mails">
+    <p class="intro">Acá se configura de qué cuenta de Resend sale cada mail, con qué remitente y a dónde llegan las respuestas.
+      Los avisos internos arman su contenido solos con datos en vivo (la vista previa usa datos de ejemplo); la plantilla de
+      prospectos se edita acá mismo. Las claves de Resend no se guardan en el panel: viven como variables de entorno.</p>
+    <div id="aviso-permiso"></div>
+    <div class="grid-mails">
+      <div class="lista-mails" id="lista">Cargando…</div>
+      <div id="detalle"></div>
+    </div>
+  </div>
+
+  <div id="tab-bajas" hidden>
+    <p class="intro">Personas a las que no se les escribe más. Cuando alguien responde <strong>BAJA</strong> a un mail de prospectos,
+      se agrega acá; el envío a prospectos tiene que consultar esta lista antes de mandar cada mail.</p>
+    <div class="caja-mail">
+      <h2>Agregar una baja</h2>
+      <div class="fila-2" style="margin-top:10px;">
+        <div class="campo"><label for="baja-email">Mail</label><input type="text" id="baja-email" placeholder="persona@ejemplo.com" /></div>
+        <div class="campo"><label for="baja-motivo">Motivo (opcional)</label><input type="text" id="baja-motivo" placeholder="Respondió BAJA" /></div>
+      </div>
+      <div class="barra-acciones"><button type="button" class="primario" id="baja-agregar">Agregar</button><span class="msg" id="baja-msg"></span></div>
+    </div>
+    <div class="caja-mail"><div id="bajas-lista">Cargando…</div></div>
+  </div>
+</div>
+
+<script src="/static/comun.js"></script>
+<script>
+let datos = null;
+let yo = null;
+let actual = null;
+let timerPrevia = null;
+
+const esc = _escapeHtml;
+const puedeEditar = () => !!(yo && yo.es_admin);
+
+function fechaCorta(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  return d.toLocaleString("es-AR", { dateStyle: "short", timeStyle: "short" });
+}
+
+async function cargar() {
+  try {
+    [yo, datos] = await Promise.all([quienSoy(), api("/api/mails")]);
+  } catch (e) {
+    document.getElementById("lista").innerHTML = `<p style="color:var(--rojo);">No se pudo cargar (${esc(e.message)}).</p>`;
+    return;
+  }
+  document.getElementById("aviso-permiso").innerHTML = puedeEditar() ? "" :
+    '<div class="aviso-solo-lectura">Podés ver la configuración y las vistas previas. Para cambiarla hace falta un usuario administrador.</div>';
+  if (!actual || !datos.mails.some(m => m.clave === actual)) actual = datos.mails[0].clave;
+  pintarLista();
+  pintarDetalle();
+}
+
+function nombreCuenta(id) {
+  const c = datos.cuentas.find(x => x.id === id);
+  return c ? c.nombre : id;
+}
+
+function pintarLista() {
+  const grupos = [["interno", "Avisos internos"], ["prospectos", "Prospectos"]];
+  document.getElementById("lista").innerHTML = grupos.map(([g, titulo]) => {
+    const items = datos.mails.filter(m => m.grupo === g).map(m => `
+      <button type="button" class="item-mail ${m.clave === actual ? "activo" : ""}" data-clave="${esc(m.clave)}">
+        <span class="nom">${esc(m.nombre)}</span>
+        <span class="cta">${esc(nombreCuenta(m.config.cuenta))} · ${esc(m.config.remitente.replace(/^.*<|>$/g, ""))}</span>
+      </button>`).join("");
+    return `<div class="grupo-titulo">${titulo}</div>${items}`;
+  }).join("");
+  document.querySelectorAll(".item-mail").forEach(b => b.addEventListener("click", () => {
+    actual = b.dataset.clave; pintarLista(); pintarDetalle();
+  }));
+}
+
+function pintarDetalle() {
+  const m = datos.mails.find(x => x.clave === actual);
+  const c = m.config;
+  const dis = puedeEditar() ? "" : "disabled";
+  const interno = m.grupo === "interno";
+
+  const opcionesCuenta = datos.cuentas.map(x =>
+    `<option value="${esc(x.id)}" ${x.id === c.cuenta ? "selected" : ""}>${esc(x.nombre)}</option>`).join("");
+
+  const campoReply = m.responder_a_automatico
+    ? `<div class="campo"><label>Reply-To</label><input type="text" disabled value="Automático" />
+         <div class="ayuda-campo">Las respuestas van a ${esc(m.responder_a_automatico)}.</div></div>`
+    : `<div class="campo"><label for="f-reply">Reply-To (a dónde llegan las respuestas)</label>
+         <input type="text" id="f-reply" ${dis} value="${esc(c.responder_a)}" placeholder="info@dominio.com" />
+         <div class="ayuda-campo">Opcional. Si está vacío, las respuestas van al remitente.</div></div>`;
+
+  const campoDest = interno ? `
+      <div class="campo"><label for="f-dest">Destinatarios (separados por coma)</label>
+        <input type="text" id="f-dest" ${dis} value="${esc(c.destinatarios)}" /></div>` : "";
+
+  const plantilla = m.editable ? `
+    <h3>Plantilla del mail</h3>
+    <div class="campo"><label for="f-asunto">Asunto</label><input type="text" id="f-asunto" ${dis} value="${esc(c.asunto)}" /></div>
+    <div class="campo"><label for="f-cuerpo">Cuerpo</label>
+      <textarea id="f-cuerpo" ${dis}>${esc(c.cuerpo)}</textarea>
+      <div class="variables">${Object.entries(datos.variables).map(([k, d]) =>
+        `<code data-var="${esc(k)}" title="${esc(d)} — clic para insertar">{{${esc(k)}}}</code>`).join("")}</div>
+      <div class="pie-baja"><strong>Se agrega siempre al final (no se puede quitar):</strong> ${esc(datos.pie_baja)}</div>
+    </div>` : "";
+
+  const cuentaInfo = (id) => {
+    const x = datos.cuentas.find(y => y.id === id);
+    return x.clave_cargada
+      ? `<div class="estado-cuenta ok">✓ La variable <code>${esc(x.env)}</code> está cargada en el servidor del panel.</div>`
+      : `<div class="estado-cuenta no">La variable <code>${esc(x.env)}</code> no está cargada en el servidor del panel (Railway). `
+        + `Los avisos de los procesos automáticos la toman de los secrets de GitHub.</div>`;
+  };
+
+  document.getElementById("detalle").innerHTML = `
+    <div class="caja-mail">
+      <h2>${esc(m.nombre)}</h2>
+      <p class="desc">${esc(m.descripcion)}</p>
+      <div class="campo"><label for="f-cuenta">Cuenta de Resend</label>
+        <select id="f-cuenta" ${dis}>${opcionesCuenta}</select>
+        <div id="info-cuenta">${cuentaInfo(c.cuenta)}</div></div>
+      <div class="fila-2">
+        <div class="campo"><label for="f-from">Remitente</label>
+          <input type="text" id="f-from" ${dis} value="${esc(c.remitente)}" placeholder="Nombre <mail@dominio.com>" />
+          <div class="ayuda-campo">El dominio tiene que estar verificado en esa cuenta de Resend.</div></div>
+        ${campoReply}
+      </div>
+      ${campoDest}
+      ${plantilla}
+      <div class="barra-acciones">
+        <button type="button" class="primario" id="b-guardar" ${dis}>Guardar</button>
+        <button type="button" class="secundario" id="b-restablecer" ${dis}>Volver a los valores por defecto</button>
+        <span class="msg" id="msg"></span>
+      </div>
+      ${c.actualizado_en ? `<div class="meta-guardado">Última modificación: ${esc(fechaCorta(c.actualizado_en))}${c.actualizado_por ? " por " + esc(c.actualizado_por) : ""}.</div>`
+        : '<div class="meta-guardado">Usa los valores por defecto (nada guardado todavía).</div>'}
+    </div>
+    <div class="caja-mail">
+      <h2>Vista previa</h2>
+      <p class="desc">${interno ? "Con datos de ejemplo. El contenido real se arma solo con los datos del momento." : "Con datos de ejemplo. Se actualiza mientras escribís."}</p>
+      <div class="previa-asunto"><strong>Asunto:</strong> <span id="previa-asunto">…</span> <span class="msg err" id="msg-previa" style="margin-left:8px;"></span></div>
+      <iframe class="previa" id="previa" sandbox title="Vista previa del mail"></iframe>
+    </div>`;
+
+  document.getElementById("f-cuenta").addEventListener("change", e => {
+    document.getElementById("info-cuenta").innerHTML = cuentaInfo(e.target.value);
+  });
+  document.getElementById("b-guardar").addEventListener("click", guardar);
+  document.getElementById("b-restablecer").addEventListener("click", restablecer);
+  if (m.editable) {
+    ["f-asunto", "f-cuerpo"].forEach(id => document.getElementById(id).addEventListener("input", () => {
+      clearTimeout(timerPrevia); timerPrevia = setTimeout(vistaPrevia, 350);
+    }));
+    document.querySelectorAll(".variables code").forEach(el => el.addEventListener("click", () => {
+      if (!puedeEditar()) return;
+      const t = document.getElementById("f-cuerpo");
+      const ini = t.selectionStart, fin = t.selectionEnd, v = `{{${el.dataset.var}}}`;
+      t.value = t.value.slice(0, ini) + v + t.value.slice(fin);
+      t.focus(); t.selectionStart = t.selectionEnd = ini + v.length;
+      vistaPrevia();
+    }));
+  }
+  vistaPrevia();
+}
+
+function leerForm() {
+  const m = datos.mails.find(x => x.clave === actual);
+  const v = (id) => { const el = document.getElementById(id); return el ? el.value : undefined; };
+  const body = { cuenta: v("f-cuenta"), remitente: v("f-from"), responder_a: v("f-reply") ?? m.config.responder_a };
+  if (m.grupo === "interno") body.destinatarios = v("f-dest");
+  if (m.editable) { body.asunto = v("f-asunto"); body.cuerpo = v("f-cuerpo"); }
+  return body;
+}
+
+function mostrarMsg(texto, ok) {
+  const el = document.getElementById("msg");
+  if (el) { el.textContent = texto; el.className = "msg " + (ok ? "ok" : "err"); }
+}
+
+async function vistaPrevia() {
+  const m = datos.mails.find(x => x.clave === actual);
+  const body = m.editable ? { asunto: document.getElementById("f-asunto").value, cuerpo: document.getElementById("f-cuerpo").value } : {};
+  const claveAlPedir = actual;
+  try {
+    const r = await apiJson(`/api/mails/${encodeURIComponent(actual)}/vista-previa`, "POST", body);
+    if (claveAlPedir !== actual) return;
+    document.getElementById("previa-asunto").textContent = r.asunto;
+    document.getElementById("previa").srcdoc = r.html;
+    document.getElementById("msg-previa").textContent = "";
+  } catch (e) {
+    if (claveAlPedir !== actual) return;
+    document.getElementById("previa-asunto").textContent = "—";
+    document.getElementById("msg-previa").textContent = e.message;
+  }
+}
+
+async function guardar() {
+  const btn = document.getElementById("b-guardar");
+  btn.disabled = true; mostrarMsg("Guardando…", true);
+  try {
+    await apiJson(`/api/mails/${encodeURIComponent(actual)}`, "POST", leerForm());
+    await cargar();
+    mostrarMsg("Guardado ✓", true);
+  } catch (e) {
+    mostrarMsg(e.message, false);
+    btn.disabled = false;
+  }
+}
+
+async function restablecer() {
+  if (!confirm("¿Volver a los valores por defecto de este mail? Se pierde lo que cambiaste.")) return;
+  try {
+    await apiJson(`/api/mails/${encodeURIComponent(actual)}/restablecer`, "POST");
+    await cargar();
+    mostrarMsg("Restablecido ✓", true);
+  } catch (e) { mostrarMsg(e.message, false); }
+}
+
+// ── Bajas ──
+async function cargarBajas() {
+  const cont = document.getElementById("bajas-lista");
+  try {
+    const bajas = await api("/api/mails/bajas");
+    cont.innerHTML = bajas.length ? `<table class="bajas"><thead><tr><th>Mail</th><th>Motivo</th><th>Desde</th><th></th></tr></thead><tbody>${
+      bajas.map(b => `<tr><td>${esc(b.email)}</td><td>${esc(b.motivo || "—")}</td><td>${esc(fechaCorta(b.creada_en))}${b.creada_por ? " · " + esc(b.creada_por) : ""}</td>
+        <td>${puedeEditar() ? `<button type="button" class="secundario" data-quitar="${esc(b.email)}">Quitar</button>` : ""}</td></tr>`).join("")
+    }</tbody></table>` : '<p class="vacio">Todavía no hay bajas.</p>';
+    cont.querySelectorAll("[data-quitar]").forEach(b => b.addEventListener("click", async () => {
+      if (!confirm(`¿Quitar a ${b.dataset.quitar} de la lista de bajas? Volvería a poder recibir mails.`)) return;
+      try { await apiJson(`/api/mails/bajas/${encodeURIComponent(b.dataset.quitar)}`, "DELETE"); cargarBajas(); }
+      catch (e) { alert(e.message); }
+    }));
+  } catch (e) {
+    cont.innerHTML = `<p style="color:var(--rojo);">No se pudo cargar (${esc(e.message)}).</p>`;
+  }
+}
+
+document.getElementById("baja-agregar").addEventListener("click", async () => {
+  const msg = document.getElementById("baja-msg");
+  if (!puedeEditar()) { msg.textContent = "Solo un administrador puede agregar bajas."; msg.className = "msg err"; return; }
+  try {
+    await apiJson("/api/mails/bajas", "POST", {
+      email: document.getElementById("baja-email").value,
+      motivo: document.getElementById("baja-motivo").value,
+    });
+    document.getElementById("baja-email").value = "";
+    document.getElementById("baja-motivo").value = "";
+    msg.textContent = "Agregada ✓"; msg.className = "msg ok";
+    cargarBajas();
+  } catch (e) { msg.textContent = e.message; msg.className = "msg err"; }
+});
+
+document.querySelectorAll("#tabs button").forEach(b => b.addEventListener("click", () => {
+  document.querySelectorAll("#tabs button").forEach(x => x.classList.toggle("activo", x === b));
+  document.getElementById("tab-mails").hidden = b.dataset.tab !== "mails";
+  document.getElementById("tab-bajas").hidden = b.dataset.tab !== "bajas";
+  if (b.dataset.tab === "bajas") cargarBajas();
+}));
+
+cargar();
+</script>
+</body>
+</html>

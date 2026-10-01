@@ -28,6 +28,7 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 from pydantic import BaseModel
 
 import formularios_core as fc
+import mails_core
 import poderes
 
 STATIC = os.path.join(os.path.dirname(__file__), "static")
@@ -112,14 +113,15 @@ def crear_router(verificar_login, conexion) -> APIRouter:
         return conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
     def _aviso_en_segundo_plano(respuesta_id: int):
-        api_key = os.environ.get("RESEND_API_KEY")
+        # Cuenta, remitente y destinatarios: los de la pestaña Mails del panel.
+        cfg_mail = mails_core.preparar("formularios")
+        api_key = cfg_mail["api_key"]
         if not api_key:
             return  # lo manda el respaldo automático (scripts/notificar_formularios.py)
-        destinatarios = [d.strip() for d in (os.environ.get("NOTIFICAR_A") or fc.DEFAULT_TO).split(",") if d.strip()]
         try:
             with conexion() as conn:
-                fc.avisar_respuesta(conn, respuesta_id, api_key, os.environ.get("RESEND_FROM") or fc.DEFAULT_FROM,
-                                    destinatarios, (os.environ.get("PANEL_URL") or fc.DEFAULT_PANEL).rstrip("/"))
+                fc.avisar_respuesta(conn, respuesta_id, api_key, cfg_mail["remitente"],
+                                    cfg_mail["destinatarios"], (os.environ.get("PANEL_URL") or fc.DEFAULT_PANEL).rstrip("/"))
         except Exception as e:  # noqa: BLE001 — queda pendiente para el respaldo
             print(f"[formularios] aviso de la respuesta {respuesta_id} no enviado: {e}")
 
