@@ -66,6 +66,13 @@ EJEMPLO_PROSPECTO = {
 }
 
 # Línea de baja: va SIEMPRE al final de los mails a prospectos y no se edita.
+# Encabezado fijo de los mails a prospectos: franja azul con dos líneas
+# doradas y el título en blanco, a todo el ancho del mail. Es HTML (no una
+# imagen) para que se vea nítido y no dependa de que se carguen imágenes.
+ENCABEZADO_TITULO = "BOLETÍN DE MARCAS Y PATENTES"
+COLOR_AZUL = "#133465"
+COLOR_DORADO = "#d9b05b"
+
 PIE_BAJA = "Si no querés recibir más mensajes nuestros, respondé BAJA y no te escribimos más."
 
 ASUNTO_PROSPECTO = "Tu solicitud de marca {{marca}} (acta {{acta}})"
@@ -387,8 +394,8 @@ def _sustituir(texto: str, datos: dict, escapar: bool) -> str:
 
 
 def render_prospecto(asunto: str, cuerpo: str, datos: dict) -> tuple:
-    """(asunto, html, texto) con las variables reemplazadas y la línea de baja
-    obligatoria al final. El cuerpo se escribe como texto: los saltos de línea
+    """(asunto, html, texto) con las variables reemplazadas, el encabezado fijo
+    arriba y la línea de baja obligatoria al final. El cuerpo se escribe como texto: los saltos de línea
     se respetan y todo el contenido se escapa (no se interpreta HTML)."""
     asunto_final = _sustituir(asunto, datos, escapar=False).replace("\r", " ").replace("\n", " ").strip()
     texto = _sustituir(cuerpo, datos, escapar=False).strip() + "\n\n--\n" + PIE_BAJA
@@ -396,11 +403,32 @@ def render_prospecto(asunto: str, cuerpo: str, datos: dict) -> tuple:
     for bloque in _sustituir(html.escape(cuerpo, quote=False), datos, escapar=True).strip().split("\n\n"):
         bloque = _RE_URL.sub(lambda m: f'<a href="{m.group(0)}" style="color:#1d4ed8">{m.group(0)}</a>', bloque)
         parrafos.append('<p style="margin:0 0 14px">' + bloque.replace("\r", "").replace("\n", "<br>") + "</p>")
+    linea = (f'<tr><td height="3" style="height:3px;background:{COLOR_DORADO};font-size:0;line-height:0;'
+             f'mso-line-height-rule:exactly">&nbsp;</td></tr>')
+    encabezado = (
+        f'<tr><td style="background:{COLOR_AZUL};padding:22px 22px">'
+        '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">'
+        + linea
+        + '<tr><td align="center" style="padding:16px 4px;color:#ffffff;'
+          "font-family:Montserrat,'Helvetica Neue',Arial,Helvetica,sans-serif;font-size:22px;line-height:1.25;"
+          f'font-weight:700;letter-spacing:1px;text-align:center">{html.escape(ENCABEZADO_TITULO)}</td></tr>'
+        + linea
+        + "</table></td></tr>"
+    )
     cuerpo_html = (
-        '<div style="font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.5;color:#1f2430">'
+        '<!doctype html><html><head><meta charset="utf-8">'
+        '<meta name="viewport" content="width=device-width,initial-scale=1">'
+        '<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@700&display=swap" rel="stylesheet">'
+        '</head><body style="margin:0;padding:0;background:#eef1f5">'
+        '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#eef1f5">'
+        '<tr><td align="center" style="padding:24px 0">'
+        '<table role="presentation" width="600" cellpadding="0" cellspacing="0" border="0" '
+        'style="width:100%;max-width:600px;background:#ffffff;border-collapse:collapse">'
+        + encabezado
+        + '<tr><td style="padding:28px 28px 24px;font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.5;color:#1f2430;word-break:break-word;overflow-wrap:anywhere">'
         + "".join(parrafos)
         + f'<p style="margin:22px 0 0;padding-top:12px;border-top:1px solid #e2e5ea;font-size:12px;color:#6b7280">{html.escape(PIE_BAJA)}</p>'
-        + "</div>"
+        + "</td></tr></table></td></tr></table></body></html>"
     )
     return asunto_final, cuerpo_html, texto
 
