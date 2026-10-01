@@ -606,6 +606,8 @@ async function _cargarModalComentarios(acta, conForm = false) {
 // Contador de comentarios nuevos en el ícono de chat del encabezado
 // (cualquier elemento con id="link-comentarios").
 async function actualizarContadorComentarios() {
+  // Si está menu.js (todas las pantallas del panel), él maneja el ícono, el número y el cartelito.
+  if (typeof window.refrescarChat === "function") return window.refrescarChat();
   const link = document.getElementById("link-comentarios");
   if (!link) return;
   try {

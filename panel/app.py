@@ -1655,8 +1655,8 @@ def borrar_comentario(comentario_id: int, usuario: str = Depends(verificar_login
 @app.get("/api/comentarios/resumen")
 def resumen_comentarios(usuario: str = Depends(verificar_login)):
     """Contador para el encabezado: comentarios de otros (para mí o para
-    todos) escritos después de la última vez que abrí /comentarios, y
-    cuántos abiertos van dirigidos a mí."""
+    todos) escritos después de la última vez que abrí el chat, cuántos
+    abiertos van dirigidos a mí y cuál fue el último mensaje nuevo."""
     with conexion() as conn:
         with conn.cursor() as cur:
             cur.execute(
@@ -1671,7 +1671,24 @@ def resumen_comentarios(usuario: str = Depends(verificar_login)):
                 (usuario, usuario, usuario, usuario),
             )
             nuevos, abiertos_para_mi = cur.fetchone()
-    return {"nuevos": nuevos, "abiertos_para_mi": abiertos_para_mi}
+            # El último mensaje nuevo, para el cartelito del chat (menu.js).
+            cur.execute(
+                """
+                SELECT c.id, c.autor, c.destinatario, c.acta, c.texto
+                FROM comentarios c
+                LEFT JOIN comentarios_visto v ON v.usuario = %s
+                WHERE c.autor <> %s AND (c.destinatario = %s OR c.destinatario IS NULL)
+                  AND c.creado_en > COALESCE(v.visto_hasta, '-infinity')
+                ORDER BY c.id DESC LIMIT 1
+                """,
+                (usuario, usuario, usuario),
+            )
+            u = cur.fetchone()
+    ultimo = None
+    if u:
+        ultimo = {"id": u[0], "autor": u[1], "para_mi": u[2] == usuario, "acta": u[3],
+                  "texto": (u[4] or "")[:200]}
+    return {"nuevos": nuevos, "abiertos_para_mi": abiertos_para_mi, "ultimo": ultimo}
 
 
 @app.post("/api/comentarios/visto")
