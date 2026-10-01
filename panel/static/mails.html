@@ -40,6 +40,16 @@
   .campo input:focus, .campo select:focus, .campo textarea:focus { outline: none; box-shadow: var(--foco); border-color: var(--azul); }
   .campo input:disabled, .campo select:disabled, .campo textarea:disabled { background: #f3f4f6; color: var(--gris); }
   .campo .ayuda-campo { font-size: 12px; color: var(--gris); margin-top: 4px; }
+  .prueba-real { background: #f8fafc; border: 1px dashed var(--borde-control); border-radius: 8px; padding: 12px 14px; margin: 0 0 14px; }
+  .prueba-real > .ayuda-campo { font-size: 12px; color: var(--gris); margin-top: 8px; }
+  .prueba-real h3 { margin: 0 0 8px !important; }
+  .resultados-marca { border: 1px solid var(--borde); border-radius: 8px; background: #fff; max-height: 240px; overflow: auto; margin-top: 4px; }
+  .resultados-marca button { display: block; width: 100%; text-align: left; background: none; border: 0; border-bottom: 1px solid var(--borde); padding: 8px 10px; font: inherit; font-size: 13px; cursor: pointer; }
+  .resultados-marca button:hover { background: #eef4ff; }
+  .resultados-marca button:last-child { border-bottom: 0; }
+  .resultados-marca small, .marca-elegida small { color: var(--gris); }
+  .marca-elegida { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; background: #eef4ff; border: 1px solid #c7d7fe; border-radius: 8px; padding: 8px 10px; font-size: 13px; }
+  .marca-elegida .quitar { margin-left: auto; }
   .fila-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
   @media (max-width: 640px) { .fila-2 { grid-template-columns: 1fr; } }
   .estado-cuenta { font-size: 12px; margin-top: 4px; }
@@ -113,8 +123,8 @@
 
   <div id="tab-mails">
     <p class="intro">Acá se configura de qué cuenta de Resend sale cada mail, con qué remitente y a dónde llegan las respuestas.
-      Los avisos internos arman su contenido solos con datos en vivo (la vista previa usa datos de ejemplo); la plantilla de
-      prospectos se edita acá mismo. Las claves de Resend no se guardan en el panel: viven como variables de entorno.</p>
+      Los avisos internos arman su contenido solos con datos en vivo (la vista previa usa datos de ejemplo); las plantillas de
+      prospectos se editan acá mismo y se pueden probar con los datos reales de una marca, mandándose un test a ustedes. Las claves de Resend no se guardan en el panel: viven como variables de entorno.</p>
     <div id="aviso-permiso"></div>
     <div class="grid-mails">
       <div class="lista-mails" id="lista">Cargando…</div>
@@ -143,6 +153,8 @@ let datos = null;
 let yo = null;
 let actual = null;
 let timerPrevia = null;
+let timerBusqueda = null;
+let marcaTest = null;   // marca real elegida para la vista previa y el envío de prueba
 
 const esc = _escapeHtml;
 const puedeEditar = () => !!(yo && yo.es_admin);
@@ -250,7 +262,24 @@ function pintarDetalle() {
     </div>
     <div class="caja-mail">
       <h2>Vista previa</h2>
-      <p class="desc">${interno ? "Con datos de ejemplo. El contenido real se arma solo con los datos del momento." : "Con datos de ejemplo. Se actualiza mientras escribís."}</p>
+      <p class="desc">${interno ? "Con datos de ejemplo. El contenido real se arma solo con los datos del momento."
+        : "Con datos de ejemplo o con los de una marca real elegida abajo. Se actualiza mientras escribís."}</p>
+      ${m.editable ? `
+      <div class="prueba-real">
+        <h3>Probar con datos reales</h3>
+        <div class="campo"><label for="t-buscar">Marca para la prueba</label>
+          <div id="t-marca"></div>
+          <input type="text" id="t-buscar" placeholder="Buscar por acta, marca o titular" autocomplete="off" />
+          <div id="t-resultados"></div>
+          <div class="ayuda-campo">Se usan su titular, marca, acta y clase reales. <strong>A la marca no se le manda nada.</strong></div></div>
+        <div class="campo"><label for="t-para">Enviar test a (separados por coma)</label>
+          <input type="text" id="t-para" ${dis} placeholder="marcas@komunikacion.com.ar" /></div>
+        <div class="barra-acciones">
+          <button type="button" class="primario" id="b-test" ${dis}>Enviar test</button>
+          <span class="msg" id="msg-test"></span>
+        </div>
+        <div class="ayuda-campo">Sale tal como está en pantalla (aunque no esté guardado), con la cuenta y el remitente de arriba y «[TEST]» al principio del asunto.</div>
+      </div>` : ""}
       <div class="previa-asunto"><strong>Asunto:</strong> <span id="previa-asunto">…</span> <span class="msg err" id="msg-previa" style="margin-left:8px;"></span></div>
       <iframe class="previa" id="previa" sandbox title="Vista previa del mail"></iframe>
     </div>`;
@@ -273,7 +302,64 @@ function pintarDetalle() {
       vistaPrevia();
     }));
   }
+  if (m.editable) prepararPrueba();
   vistaPrevia();
+}
+
+function pintarMarcaTest() {
+  const cont = document.getElementById("t-marca");
+  const input = document.getElementById("t-buscar");
+  if (!cont) return;
+  if (!marcaTest) { cont.innerHTML = ""; input.hidden = false; return; }
+  input.hidden = true;
+  cont.innerHTML = `<div class="marca-elegida"><span><strong>${esc(marcaTest.marca || "(sin denominación)")}</strong>
+      <small>· acta ${esc(marcaTest.acta)} · clase ${esc(marcaTest.clase ?? "—")} · ${esc(marcaTest.titular || "—")}${marcaTest.email ? " · su mail: " + esc(marcaTest.email) + " (no se usa)" : ""}</small></span>
+    <button type="button" class="secundario quitar" id="t-quitar">Cambiar</button></div>`;
+  document.getElementById("t-quitar").addEventListener("click", () => {
+    marcaTest = null; pintarMarcaTest(); vistaPrevia(); document.getElementById("t-buscar").focus();
+  });
+}
+
+function prepararPrueba() {
+  const input = document.getElementById("t-buscar");
+  const res = document.getElementById("t-resultados");
+  pintarMarcaTest();
+  input.addEventListener("input", () => {
+    clearTimeout(timerBusqueda);
+    const q = input.value.trim();
+    if (q.length < 2) { res.innerHTML = ""; return; }
+    timerBusqueda = setTimeout(async () => {
+      try {
+        const filas = await api(`/api/mails/marcas-test?q=${encodeURIComponent(q)}`);
+        if (input.value.trim() !== q) return;
+        res.innerHTML = filas.length ? `<div class="resultados-marca">${filas.map((f, i) => `
+          <button type="button" data-i="${i}"><strong>${esc(f.marca || "(sin denominación)")}</strong>
+            <small>· acta ${esc(f.acta)} · clase ${esc(f.clase ?? "—")} · ${esc(f.titular || "—")}</small></button>`).join("")}</div>`
+          : '<div class="ayuda-campo">No se encontró ninguna marca.</div>';
+        res.querySelectorAll("[data-i]").forEach(b => b.addEventListener("click", () => {
+          marcaTest = filas[+b.dataset.i];
+          input.value = ""; res.innerHTML = "";
+          pintarMarcaTest(); vistaPrevia();
+        }));
+      } catch (e) { res.innerHTML = `<div class="ayuda-campo" style="color:var(--rojo)">${esc(e.message)}</div>`; }
+    }, 300);
+  });
+  document.getElementById("b-test").addEventListener("click", enviarTest);
+}
+
+async function enviarTest() {
+  const btn = document.getElementById("b-test");
+  const msg = document.getElementById("msg-test");
+  const para = document.getElementById("t-para").value.trim();
+  if (!para) { msg.textContent = "Escribí a qué mail mandar la prueba."; msg.className = "msg err"; return; }
+  if (!marcaTest && !confirm("No elegiste ninguna marca: la prueba sale con los datos de ejemplo. ¿Mandarla igual?")) return;
+  btn.disabled = true; msg.textContent = "Enviando…"; msg.className = "msg ok";
+  try {
+    const r = await apiJson(`/api/mails/${encodeURIComponent(actual)}/test`, "POST",
+      { ...leerForm(), acta: marcaTest ? marcaTest.acta : null, para });
+    msg.textContent = `Enviado a ${r.para.join(", ")} ✓`; msg.className = "msg ok";
+  } catch (e) { msg.textContent = e.message; msg.className = "msg err"; }
+  btn.disabled = false;
 }
 
 function leerForm() {
@@ -292,7 +378,8 @@ function mostrarMsg(texto, ok) {
 
 async function vistaPrevia() {
   const m = datos.mails.find(x => x.clave === actual);
-  const body = m.editable ? { asunto: document.getElementById("f-asunto").value, cuerpo: document.getElementById("f-cuerpo").value } : {};
+  const body = m.editable ? { asunto: document.getElementById("f-asunto").value, cuerpo: document.getElementById("f-cuerpo").value,
+                               acta: marcaTest ? marcaTest.acta : null } : {};
   const claveAlPedir = actual;
   try {
     const r = await apiJson(`/api/mails/${encodeURIComponent(actual)}/vista-previa`, "POST", body);

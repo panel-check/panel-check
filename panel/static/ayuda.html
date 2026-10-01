@@ -405,6 +405,7 @@
       <li><strong>Reply-To:</strong> a dónde llegan las respuestas. Si está vacío, van al remitente. En el formulario de cliente recibido es automático: responde al email que dejó el cliente.</li>
       <li><strong>Destinatarios</strong> (solo avisos internos): quiénes reciben el aviso, separados por coma.</li>
       <li><strong>Plantillas de prospectos:</strong> hay dos, cada una con su asunto y cuerpo editables acá: <em>Primer contacto a un lead</em> (presentarse a quien presentó su marca sin agente) y <em>Marca publicada (vigilancia)</em> (felicitar al titular cuando su marca sale en el Boletín, contarle el cambio de la Resolución INPI 583/2025 y ofrecer la vigilancia). Los textos entre corchetes, como <code>[NOMBRE DEL ESTUDIO]</code> o <code>FIRMA</code>, no se completan solos: hay que reemplazarlos a mano en la plantilla antes de empezar a enviar. Los links del cuerpo salen clickeables. Se pueden usar las variables <code>{{titular}}</code>, <code>{{marca}}</code>, <code>{{acta}}</code> y <code>{{clase}}</code> (con un clic en cada una se insertan en el cuerpo) y la vista previa se actualiza mientras se escribe. Al final de cada mail a prospectos se agrega siempre la línea de baja, que no se puede quitar.</li>
+      <li><strong>Probar con datos reales</strong> (solo plantillas de prospectos, debajo de la vista previa): se busca una marca de la base por acta, nombre o titular y la vista previa pasa a mostrarse con su titular, marca, acta y clase reales. Con <strong>Enviar test</strong> el mail sale, tal como está en pantalla aunque no esté guardado, <strong>solo a los mails que se escriban en «Enviar test a»</strong> (hasta 5, separados por coma), con «[TEST]» al principio del asunto. <strong>A la marca no se le manda nada nunca</strong>: su mail se muestra solo como referencia. Usa la cuenta y el remitente elegidos arriba, así que también sirve para comprobar que la cuenta de prospectos de Resend funciona. Mandar el test es solo para administradores y necesita que <code>RESEND_API_KEY_PROSPECTOS</code> esté cargada en Railway.</li>
       <li><strong>Avisos internos:</strong> su contenido se arma solo con datos del momento, por eso no se edita el texto; la vista previa muestra cómo se ve con datos inventados.</li>
       <li><strong>Volver a los valores por defecto</strong> borra lo que se guardó para ese mail.</li>
       <li><strong>Bajas</strong> (pestaña arriba a la izquierda): lista de personas a las que no se les escribe más (por ejemplo, quien respondió BAJA). Un administrador puede agregar o quitar mails.</li>
@@ -661,6 +662,12 @@ le asigna un puntaje de prioridad. Después sigue a cada marca a lo largo del ti
               <code>smarties@registrodemimarca.com.ar</code>, Reply-To <code>info@smartiesconsultora.com.ar</code>). Se edita en
               <strong>Mails</strong>, lleva siempre la línea de baja y hay una lista de bajas para no volver a escribirle a quien la pidió.
               <strong>El sistema todavía no la envía a nadie.</strong></p>
+          </div>
+          <div class="tarjeta-mini">
+            <h4>🧪 Envío de prueba de las plantillas de prospectos (manual)</h4>
+            <p>Desde <strong>Mails</strong>, un administrador elige una marca real y manda la plantilla con esos datos a los
+              mails que escriba (hasta 5), con «[TEST]» en el asunto. Nunca va al mail de la marca. Sale por la cuenta de
+              <em>prospectos</em>, con la clave <code>RESEND_API_KEY_PROSPECTOS</code> del servidor del panel (Railway).</p>
           </div>
           <div class="tarjeta-mini">
             <h4>🎉 Marca publicada / vigilancia (todavía sin envío)</h4>

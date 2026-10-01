@@ -405,18 +405,55 @@ def render_prospecto(asunto: str, cuerpo: str, datos: dict) -> tuple:
     return asunto_final, cuerpo_html, texto
 
 
+def datos_de_marca(cur, acta: str):
+    """Variables de la plantilla de prospectos con los datos REALES de una
+    marca de la base ({titular, marca, acta, clase}), o None si no existe.
+    Se usa para la vista previa y el envío de prueba con una marca elegida."""
+    cur.execute("SELECT acta, clase, titular, denominacion, denominacion_inpi FROM marcas WHERE acta = %s",
+                ((acta or "").strip(),))
+    f = cur.fetchone()
+    if not f:
+        return None
+    return {
+        "titular": f["titular"] or "",
+        "marca": f["denominacion_inpi"] or f["denominacion"] or "",
+        "acta": f["acta"],
+        "clase": "" if f["clase"] is None else str(f["clase"]),
+    }
+
+
+def enviar_test(cuenta: str, remitente: str, responder_a: str, para: list, asunto: str, html_cuerpo: str, texto: str) -> str:
+    """Manda un mail de PRUEBA a las direcciones que se eligieron a mano en el
+    panel (nunca al email de la marca). Devuelve el id de Resend."""
+    env_key = CUENTAS[cuenta]["env"]
+    api_key = os.environ.get(env_key)
+    if not api_key:
+        raise ValueError(f"La variable {env_key} no está cargada en el servidor del panel (Railway): sin esa clave no se puede mandar la prueba.")
+    payload = {"from": remitente, "to": para, "subject": "[TEST] " + asunto, "html": html_cuerpo, "text": texto}
+    if responder_a:
+        payload["reply_to"] = responder_a
+    r = requests.post("https://api.resend.com/emails",
+                      headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+                      json=payload, timeout=30)
+    if r.status_code >= 300:
+        raise ValueError(f"Resend rechazó el envío ({r.status_code}): {r.text[:300]}")
+    return r.json().get("id") or ""
+
+
 def esta_de_baja(cur, email: str) -> bool:
     cur.execute("SELECT 1 FROM mails_bajas WHERE email = %s", ((email or "").strip().lower(),))
     return cur.fetchone() is not None
 
 
 # ── Vista previa ──────────────────────────────────────────────────────────
-def vista_previa(clave: str, cfg: dict, panel_url: str = DEFAULT_PANEL) -> dict:
-    """{asunto, html} de ejemplo del mail (para la pestaña Mails)."""
+def vista_previa(clave: str, cfg: dict, panel_url: str = DEFAULT_PANEL, datos: dict = None) -> dict:
+    """{asunto, html} del mail (para la pestaña Mails). En las plantillas de
+    prospectos, `datos` son los de una marca real elegida; si no hay, se usan
+    los de ejemplo."""
     import mails_plantillas as mp
 
     if CATALOGO[clave].get("editable"):
-        asunto, cuerpo, _ = render_prospecto(cfg["asunto"], cfg["cuerpo"], EJEMPLO_PROSPECTO)
+        asunto, cuerpo, _ = render_prospecto(cfg["asunto"], cfg["cuerpo"], datos or EJEMPLO_PROSPECTO)
         return {"asunto": asunto, "html": cuerpo}
     if clave == "formularios":
         import formularios_core as fc
