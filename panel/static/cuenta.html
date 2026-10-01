@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="robots" content="noindex, nofollow" />
+<title>Mi cuenta — Panel de leads</title>
+<link rel="stylesheet" href="/static/comun.css" />
+<script src="/static/sesion.js" defer></script>
+<style>
+  .contenido { max-width: 920px; margin: 24px auto 60px; padding: 0 20px; }
+  .bloque { background: #fff; border: 1px solid var(--borde); border-radius: 12px; padding: 18px 20px; margin-bottom: 18px; }
+  .bloque h2 { font-size: 15px; margin: 0 0 4px; letter-spacing: -0.01em; }
+  .bloque p.desc { margin: 0 0 14px; color: var(--gris); font-size: 13px; line-height: 1.5; }
+  .aviso { padding: 11px 14px; border-radius: 10px; margin-bottom: 18px; font-size: 13.5px; line-height: 1.5; }
+  .aviso-alerta { background: #fff6dd; border: 1px solid #f2d27a; color: #6b4e00; }
+  .aviso-ok { background: #e7f5ee; border: 1px solid #a9dcc1; color: #13563a; }
+  .aviso-error { background: #fdecea; border: 1px solid #f5c6c0; color: #8a1f14; }
+  .form-fila { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; align-items: start; }
+  #form-reset.form-fila { align-items: end; }
+  .form-fila label { display: block; font-size: 12px; font-weight: 600; color: #374151; }
+  .form-fila input, .form-fila select { display: block; width: 100%; margin-top: 5px; height: 36px; padding: 0 10px;
+      border: 1px solid var(--borde-control); border-radius: 8px; font: inherit; font-size: 13.5px; background: #fff; }
+  .form-fila input:focus, .form-fila select:focus { outline: none; border-color: var(--azul); box-shadow: var(--foco); }
+  .acciones-form { display: flex; gap: 8px; align-items: center; margin-top: 14px; flex-wrap: wrap; }
+  .btn { height: 34px; padding: 0 14px; border-radius: 8px; border: 1px solid var(--azul); background: var(--azul); color: #fff;
+         font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
+  .btn:hover { background: var(--azul-oscuro); border-color: var(--azul-oscuro); }
+  .btn.sec { background: #fff; color: var(--texto); border-color: var(--borde-control); font-weight: 500; }
+  .btn.sec:hover { background: #f3f4f6; }
+  .btn.peligro { background: #fff; color: var(--rojo); border-color: #efc1bb; font-weight: 500; }
+  .btn.peligro:hover { background: #fdecea; }
+  .btn.chico { height: 28px; padding: 0 10px; font-size: 12px; }
+  .msg { font-size: 13px; }
+  .msg.ok { color: var(--verde); } .msg.error { color: var(--rojo); }
+  table.t { width: 100%; border-collapse: collapse; font-size: 13px; }
+  table.t th { text-align: left; font-size: 11.5px; text-transform: uppercase; letter-spacing: .03em; color: var(--gris); font-weight: 600;
+               padding: 8px 10px; border-bottom: 1px solid var(--borde); white-space: nowrap; }
+  table.t td { padding: 9px 10px; border-bottom: 1px solid #eef0f3; vertical-align: middle; }
+  table.t tr:last-child td { border-bottom: 0; }
+  table.t th, table.t td { white-space: normal; background: transparent; cursor: default; position: static; }
+  table.t .celda-acc .btn { white-space: nowrap; }
+  .tabla-scroll { overflow-x: auto; max-width: 100%; }
+  .chip { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 11.5px; font-weight: 600; white-space: nowrap; }
+  .chip-azul { background: var(--azul-claro); color: var(--azul); }
+  .chip-verde { background: #e7f5ee; color: var(--verde); }
+  .chip-gris { background: #eef0f3; color: var(--gris); }
+  .chip-rojo { background: #fdecea; color: var(--rojo); }
+  .chip-amarillo { background: #fff6dd; color: #8a6400; }
+  .gris { color: var(--gris); }
+  .celda-acc { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+  .medidor { height: 4px; border-radius: 2px; background: #eef0f3; margin-top: 6px; overflow: hidden; }
+  .medidor span { display: block; height: 100%; width: 0; transition: width .2s, background .2s; }
+  .reset-caja { display: none; margin: 4px 0 14px; padding: 12px 14px; border-radius: 10px; background: #f6f8fb; border: 1px solid var(--borde); }
+  .reset-caja.abierta { display: block; }
+  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  @media (max-width: 700px) { .form-fila { grid-template-columns: 1fr; } .contenido { padding: 0 12px; } .bloque { padding: 16px 14px; } }
+</style>
+</head>
+<body>
+
+
+<header class="app-header">
+  <a class="marca" href="/" title="Volver al panel de leads"><span class="marca-logo">®</span><span class="marca-nombre">Panel de leads</span></a>
+  <span class="marca-sep">/</span>
+  <h1>Mi cuenta</h1>
+  <nav class="nav">
+    <a href="/" title="Leads"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5h18M3 12h18M3 19h12"/></svg><span class="nav-txt">Leads</span></a>
+    <a href="/crm" title="CRM"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="5" height="16" rx="1.5"/><rect x="10" y="4" width="5" height="11" rx="1.5"/><rect x="17" y="4" width="4" height="7" rx="1.5"/></svg><span class="nav-txt">CRM</span></a>
+    <a href="/clientes" title="Clientes"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M16 20v-1.5a3.5 3.5 0 0 0-3.5-3.5h-5A3.5 3.5 0 0 0 4 18.5V20"/><circle cx="10" cy="8" r="3.5"/><path d="M20 20v-1.5a3.5 3.5 0 0 0-2.5-3.35M15 4.6a3.5 3.5 0 0 1 0 6.8"/></svg><span class="nav-txt">Clientes</span></a>
+    <a href="/comentarios" id="link-comentarios" title="Comentarios"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H8l-5 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg><span class="nav-txt">Comentarios</span><span class="nav-badge"></span></a>
+    <a href="/boletines" title="Boletines"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h13a2 2 0 0 1 2 2v14H6a2 2 0 0 1-2-2z"/><path d="M19 8h1a1 1 0 0 1 1 1v9a2 2 0 0 1-2 2"/><path d="M8 8h7M8 12h7M8 16h4"/></svg><span class="nav-txt">Boletines</span></a>
+    <a href="/crons" title="Automatizaciones"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg><span class="nav-txt">Automatizaciones</span></a>
+    <a href="/ayuda" title="Ayuda"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.6v.6"/><path d="M12 17h.01"/></svg><span class="nav-txt">Ayuda</span></a>
+  </nav>
+</header>
+
+<div class="contenido">
+  <div id="aviso-cambiar" class="aviso aviso-alerta" hidden>
+    <strong>Tenés que elegir una clave nueva antes de seguir.</strong> La que usaste es temporal (te la dio un administrador o se restableció).
+  </div>
+
+  <section class="bloque">
+    <h2>Cambiar mi clave</h2>
+    <p class="desc">Usá al menos 10 caracteres. Una frase de varias palabras es fácil de recordar y difícil de adivinar
+      (ej. <span class="mono">mate-con-tres-medialunas</span>). Al cambiarla se cierran tus sesiones en otros dispositivos.</p>
+    <form id="form-clave" autocomplete="on">
+      <input type="text" name="username" id="usuario-oculto" autocomplete="username" hidden />
+      <div class="form-fila">
+        <label>Clave actual<input type="password" id="clave-actual" autocomplete="current-password" required /></label>
+        <label>Clave nueva<input type="password" id="clave-nueva" autocomplete="new-password" required />
+          <div class="medidor"><span id="medidor"></span></div></label>
+        <label>Repetir clave nueva<input type="password" id="clave-repetir" autocomplete="new-password" required /></label>
+      </div>
+      <div class="acciones-form">
+        <button class="btn" type="submit">Guardar clave</button>
+        <span class="msg" id="msg-clave"></span>
+      </div>
+    </form>
+  </section>
+
+  <section class="bloque">
+    <h2>Mis sesiones abiertas</h2>
+    <p class="desc">Dispositivos donde está iniciada tu sesión. Si ves uno que no reconocés, cerralo y cambiá tu clave.</p>
+    <div class="tabla-scroll"><table class="t" id="tabla-sesiones"><tbody><tr><td class="gris">Cargando…</td></tr></tbody></table></div>
+    <div class="acciones-form">
+      <button class="btn sec" id="cerrar-otras" type="button">Cerrar todas las demás sesiones</button>
+      <button class="btn peligro" type="button" onclick="cerrarSesion()">Cerrar esta sesión</button>
+      <span class="msg" id="msg-sesiones"></span>
+    </div>
+  </section>
+
+  <section class="bloque" id="usuarios" hidden>
+    <h2>Usuarios del panel</h2>
+    <p class="desc">Cada persona tiene que entrar con su propio usuario (así los comentarios, asignaciones y cambios del CRM quedan a su nombre).
+      Al crear un usuario o resetear una clave, pasale la clave temporal por un canal privado: la va a tener que cambiar al entrar.</p>
+    <div class="reset-caja" id="reset-caja">
+      <form id="form-reset" class="form-fila" style="grid-template-columns: minmax(0,2fr) auto auto; ">
+        <label>Clave temporal para <strong id="reset-usuario"></strong><input type="text" id="reset-clave" class="mono" autocomplete="off" required /></label>
+        <button class="btn sec" type="button" id="reset-generar">Generar otra</button>
+        <button class="btn" type="submit">Guardar</button>
+      </form>
+      <div class="acciones-form" style="margin-top:8px"><button class="btn sec chico" type="button" id="reset-cancelar">Cancelar</button><span class="msg" id="msg-reset"></span></div>
+    </div>
+    <div class="tabla-scroll"><table class="t" id="tabla-usuarios"><tbody></tbody></table></div>
+
+    <h2 style="margin-top:22px">Agregar usuario</h2>
+    <form id="form-nuevo" autocomplete="off">
+      <div class="form-fila">
+        <label>Usuario<input id="nuevo-usuario" placeholder="ej. pamela" autocapitalize="none" spellcheck="false" required /></label>
+        <label>Clave temporal<input id="nuevo-clave" class="mono" required /></label>
+        <label>Rol<select id="nuevo-rol"><option value="0">Usuario</option><option value="1">Administrador</option></select></label>
+      </div>
+      <div class="acciones-form">
+        <button class="btn" type="submit">Crear usuario</button>
+        <button class="btn sec" type="button" id="nuevo-generar">Generar clave</button>
+        <span class="msg" id="msg-nuevo"></span>
+      </div>
+    </form>
+  </section>
+
+  <section class="bloque" id="ingresos" hidden>
+    <h2>Últimos intentos de ingreso</h2>
+    <p class="desc">Los últimos 100 intentos (buenos y fallidos). Con 5 claves mal en 15 minutos para un mismo usuario desde una misma conexión
+      (o 20 desde una conexión, o 30 para un usuario desde cualquier lado), el ingreso se bloquea 15 minutos.</p>
+    <div class="tabla-scroll" style="max-height: 360px; overflow-y: auto"><table class="t" id="tabla-ingresos"><tbody></tbody></table></div>
+  </section>
+</div>
+
+<script>
+  const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const fh = (iso) => { if (!iso) return "—"; const d = new Date(iso); return isNaN(d) ? iso :
+      d.toLocaleString("es-AR", { day: "2-digit", month: "2-digit", year: "2-digit", hour: "2-digit", minute: "2-digit" }); };
+  function hace(iso) {
+    if (!iso) return "nunca";
+    const s = (Date.now() - new Date(iso).getTime()) / 1000;
+    if (s < 90) return "recién"; if (s < 3600) return `hace ${Math.round(s / 60)} min`;
+    if (s < 86400) return `hace ${Math.round(s / 3600)} h`; if (s < 86400 * 30) return `hace ${Math.round(s / 86400)} días`;
+    return fh(iso);
+  }
+  async function pedir(url, metodo = "GET", body) {
+    const r = await fetch(url, { method: metodo, credentials: "include",
+      headers: body ? { "Content-Type": "application/json" } : {}, body: body ? JSON.stringify(body) : undefined });
+    if (r.status === 401) { irAlLogin(); throw new Error("Sesión vencida"); }
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(d.detail || `Error ${r.status}`);
+    return d;
+  }
+  function msg(id, texto, tipo = "ok") { const el = document.getElementById(id); el.textContent = texto; el.className = "msg " + tipo; }
+
+  let YO = null;
+
+  // ── Cambiar clave ──
+  function puntaje(c) {
+    let p = 0; if (c.length >= 10) p++; if (c.length >= 14) p++; if (c.length >= 20) p++;
+    if (/[a-z]/.test(c) && /[A-Z]/.test(c)) p++; if (/\d/.test(c)) p++; if (/[^A-Za-z0-9]/.test(c)) p++;
+    return Math.min(p, 5);
+  }
+  document.getElementById("clave-nueva").addEventListener("input", (e) => {
+    const p = puntaje(e.target.value), m = document.getElementById("medidor");
+    m.style.width = (e.target.value ? Math.max(p, 1) * 20 : 0) + "%";
+    m.style.background = p <= 1 ? "var(--rojo)" : p <= 3 ? "#e0a800" : "var(--verde)";
+  });
+  document.getElementById("form-clave").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const actual = document.getElementById("clave-actual").value;
+    const nueva = document.getElementById("clave-nueva").value;
+    if (nueva !== document.getElementById("clave-repetir").value) return msg("msg-clave", "Las claves nuevas no coinciden", "error");
+    try {
+      const d = await pedir("/api/cuenta/clave", "POST", { actual, nueva });
+      e.target.reset(); document.getElementById("medidor").style.width = "0";
+      msg("msg-clave", "Clave actualizada" + (d.sesiones_cerradas ? ` · se cerraron ${d.sesiones_cerradas} sesiones en otros dispositivos` : ""));
+      if (YO && YO.debe_cambiar_clave) { setTimeout(() => location.href = "/", 1200); }
+      cargarSesiones();
+    } catch (err) { msg("msg-clave", err.message, "error"); }
+  });
+
+  // ── Sesiones ──
+  async function cargarSesiones() {
+    const tb = document.querySelector("#tabla-sesiones tbody");
+    try {
+      const filas = await pedir("/api/cuenta/sesiones");
+      document.querySelector("#tabla-sesiones").innerHTML =
+        `<thead><tr><th>Dispositivo</th><th>IP</th><th>Última actividad</th><th>Inicio</th><th>Vence</th><th></th></tr></thead><tbody>` +
+        filas.map((s) => `<tr>
+          <td>${esc(s.dispositivo)} ${s.actual ? '<span class="chip chip-azul">Esta sesión</span>' : ""}</td>
+          <td class="mono gris">${esc(s.ip || "—")}</td>
+          <td>${hace(s.ultima_actividad)}</td><td class="gris">${fh(s.creada_en)}</td>
+          <td class="gris">${fh(s.expira_en)}${s.recordar ? "" : ' <span class="chip chip-gris">corta</span>'}</td>
+          <td><div class="celda-acc">${s.actual ? "" : `<button class="btn peligro chico" data-cerrar="${esc(s.id)}">Cerrar</button>`}</div></td>
+        </tr>`).join("") + "</tbody>";
+      document.querySelectorAll("[data-cerrar]").forEach((b) => b.addEventListener("click", async () => {
+        try { await pedir(`/api/cuenta/sesiones/${b.dataset.cerrar}`, "DELETE"); cargarSesiones(); }
+        catch (err) { msg("msg-sesiones", err.message, "error"); }
+      }));
+      document.getElementById("cerrar-otras").disabled = filas.length <= 1;
+    } catch (err) { tb.innerHTML = `<tr><td class="msg error">${esc(err.message)}</td></tr>`; }
+  }
+  document.getElementById("cerrar-otras").addEventListener("click", async () => {
+    try { const d = await pedir("/api/cuenta/sesiones/cerrar-otras", "POST"); msg("msg-sesiones", `Se cerraron ${d.cerradas} sesiones`); cargarSesiones(); }
+    catch (err) { msg("msg-sesiones", err.message, "error"); }
+  });
+
+  // ── Usuarios (admin) ──
+  let resetPara = null;
+  async function claveSugerida() { return (await pedir("/api/usuarios/clave-sugerida")).clave; }
+  async function cargarUsuarios() {
+    const filas = await pedir("/api/usuarios");
+    document.querySelector("#tabla-usuarios").innerHTML =
+      `<thead><tr><th>Usuario</th><th>Rol</th><th>Estado</th><th>Último ingreso</th><th>Clave cambiada</th><th></th></tr></thead><tbody>` +
+      filas.map((u) => {
+        const yo = u.usuario === YO.usuario;
+        const estado = !u.activo ? '<span class="chip chip-rojo">Desactivado</span>'
+          : u.debe_cambiar_clave ? '<span class="chip chip-amarillo">Clave temporal</span>'
+          : '<span class="chip chip-verde">Activo</span>';
+        return `<tr>
+          <td><strong>${esc(u.usuario)}</strong>${yo ? ' <span class="gris">(vos)</span>' : ""}${u.sesiones ? `<div class="gris" style="font-size:12px">${u.sesiones} sesión${u.sesiones > 1 ? "es" : ""} abierta${u.sesiones > 1 ? "s" : ""}</div>` : ""}</td>
+          <td>${u.es_admin ? '<span class="chip chip-azul">Administrador</span>' : '<span class="chip chip-gris">Usuario</span>'}</td>
+          <td>${estado}</td>
+          <td>${hace(u.ultimo_ingreso)}</td>
+          <td class="gris">${fh(u.clave_cambiada_en)}</td>
+          <td><div class="celda-acc">
+            ${u.activo ? `<button class="btn sec chico" data-reset="${esc(u.usuario)}">Resetear clave</button>` : ""}
+            ${u.activo ? `<button class="btn sec chico" data-admin="${esc(u.usuario)}" data-valor="${u.es_admin ? 0 : 1}">${u.es_admin ? "Quitar admin" : "Hacer admin"}</button>` : ""}
+            ${yo ? "" : `<button class="btn ${u.activo ? "peligro" : "sec"} chico" data-activo="${esc(u.usuario)}" data-valor="${u.activo ? 0 : 1}">${u.activo ? "Desactivar" : "Reactivar"}</button>`}
+          </div></td></tr>`;
+      }).join("") + "</tbody>";
+
+    document.querySelectorAll("[data-reset]").forEach((b) => b.addEventListener("click", async () => {
+      resetPara = b.dataset.reset;
+      document.getElementById("reset-usuario").textContent = resetPara;
+      document.getElementById("reset-clave").value = await claveSugerida();
+      msg("msg-reset", resetPara === YO.usuario ? "Es tu propio usuario: la clave queda definitiva." : "Se van a cerrar sus sesiones abiertas.", "gris");
+      document.getElementById("reset-caja").classList.add("abierta");
+      document.getElementById("reset-clave").select();
+    }));
+    document.querySelectorAll("[data-admin]").forEach((b) => b.addEventListener("click", async () => {
+      try { await pedir(`/api/usuarios/${encodeURIComponent(b.dataset.admin)}`, "PUT", { es_admin: b.dataset.valor === "1" }); cargarUsuarios(); }
+      catch (err) { alertaUsuarios(err.message); }
+    }));
+    document.querySelectorAll("[data-activo]").forEach((b) => b.addEventListener("click", async () => {
+      const activar = b.dataset.valor === "1";
+      if (!activar && !confirm(`¿Desactivar a ${b.dataset.activo}? No va a poder entrar y se cierran sus sesiones. Sus comentarios y registros quedan.`)) return;
+      try { await pedir(`/api/usuarios/${encodeURIComponent(b.dataset.activo)}`, "PUT", { activo: activar }); cargarUsuarios(); }
+      catch (err) { alertaUsuarios(err.message); }
+    }));
+  }
+  function alertaUsuarios(t) { msg("msg-nuevo", t, "error"); }
+
+  document.getElementById("reset-generar").addEventListener("click", async () => { document.getElementById("reset-clave").value = await claveSugerida(); });
+  document.getElementById("reset-cancelar").addEventListener("click", () => document.getElementById("reset-caja").classList.remove("abierta"));
+  document.getElementById("form-reset").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const clave = document.getElementById("reset-clave").value;
+    try {
+      await pedir(`/api/usuarios/${encodeURIComponent(resetPara)}/clave`, "POST", { clave });
+      if (resetPara === YO.usuario) { location.href = "/login"; return; }
+      msg("msg-reset", `Listo. Pasale a ${resetPara} esta clave temporal: ${clave}`);
+      cargarUsuarios();
+    } catch (err) { msg("msg-reset", err.message, "error"); }
+  });
+
+  document.getElementById("nuevo-generar").addEventListener("click", async () => { document.getElementById("nuevo-clave").value = await claveSugerida(); });
+  document.getElementById("form-nuevo").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const usuario = document.getElementById("nuevo-usuario").value.trim();
+    const clave = document.getElementById("nuevo-clave").value;
+    try {
+      await pedir("/api/usuarios", "POST", { usuario, clave, es_admin: document.getElementById("nuevo-rol").value === "1" });
+      msg("msg-nuevo", `Usuario ${usuario} creado. Clave temporal: ${clave}`);
+      e.target.reset(); cargarUsuarios();
+    } catch (err) { msg("msg-nuevo", err.message, "error"); }
+  });
+
+  async function cargarIngresos() {
+    const filas = await pedir("/api/usuarios/ingresos");
+    const motivo = { clave: "Clave o usuario incorrecto", inactivo: "Usuario desactivado", bloqueado: "Bloqueado por intentos" };
+    document.querySelector("#tabla-ingresos").innerHTML =
+      `<thead><tr><th>Cuándo</th><th>Usuario</th><th>Resultado</th><th>IP</th></tr></thead><tbody>` +
+      (filas.length ? filas.map((f) => `<tr><td>${fh(f.cuando)}</td><td>${esc(f.usuario || "—")}</td>
+        <td>${f.exito ? '<span class="chip chip-verde">Ingresó</span>' : `<span class="chip chip-rojo">${esc(motivo[f.motivo] || "Falló")}</span>`}</td>
+        <td class="mono gris">${esc(f.ip || "—")}</td></tr>`).join("") : '<tr><td class="gris" colspan="4">Sin registros todavía</td></tr>') + "</tbody>";
+  }
+
+  (async function iniciar() {
+    try { YO = await pedir("/api/yo"); } catch (_) { return; }
+    document.getElementById("usuario-oculto").value = YO.usuario;
+    if (YO.debe_cambiar_clave || new URLSearchParams(location.search).has("cambiar")) {
+      document.getElementById("aviso-cambiar").hidden = !YO.debe_cambiar_clave;
+      document.getElementById("clave-actual").focus();
+    }
+    cargarSesiones();
+    if (YO.es_admin && !YO.debe_cambiar_clave) {
+      document.getElementById("usuarios").hidden = false;
+      document.getElementById("ingresos").hidden = false;
+      document.getElementById("nuevo-clave").value = await claveSugerida();
+      await cargarUsuarios();
+      cargarIngresos();
+      if (location.hash === "#usuarios") document.getElementById("usuarios").scrollIntoView();
+    }
+  })();
+</script>
+</body>
+</html>

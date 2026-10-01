@@ -167,6 +167,7 @@
     #tab-manual { display: block !important; }
   }
 </style>
+<script src="/static/sesion.js" defer></script>
 </head>
 <body>
 
@@ -371,6 +372,18 @@
     <p>Cada alerta se trabaja con los botones <strong>Monitorear</strong>, <strong>Hay que oponer</strong>, <strong>Oposición presentada</strong> y <strong>Descartar</strong> (en las de otro agente: <em>Lo sigo</em>, <em>Ya lo hablé</em>, <em>Descartar</em>), con una nota libre; queda registrado quién cambió el estado y cuándo. Se puede filtrar por estado, nivel, tipo, cliente y «solo clientes sin vigilancia contratada». El número rojo en la pestaña cuenta las alertas ALTAS todavía sin mirar. Las alertas <em>ALTA</em> y <em>MEDIA</em> y las de otro agente también llegan por mail (ver el Manual).</p>
     <p><strong>Ajustes.</strong> <em>Puntaje mínimo</em> para crear una alerta y los cortes de nivel (un cambio se aplica desde la próxima corrida; las alertas ya creadas no se tocan). <em>Clases relacionadas</em>: pares de clases que suelen chocar (por ejemplo 25 con 35): un parecido en una clase relacionada alerta con un pequeño descuento; en una clase sin relación solo alerta si los nombres son casi idénticos o si la marca se vigila «en todas las clases». <em>Palabras genéricas</em> (GRUPO, SERVICIOS…): se ignoran al comparar, para no alertar por «GRUPO ALFA» contra «GRUPO BETA».</p>
     <p><strong>Cómo compara.</strong> El parecido es el mejor de cuatro criterios: escrito (letras), sonoro (cómo se pronuncia en castellano rioplatense: KASA = CASA, PHARMA = FARMA), una marca contenida dentro de la otra (KOMUNIKA / KOMUNIKA PLUS) y palabra distintiva en común. Es una ayuda para no perder oposiciones, <strong>no un dictamen</strong>: lo decide una persona. Compara contra las solicitudes de los últimos 18 meses que pasaron por los boletines y el escaneo de actas.</p>
+
+    <h2 id="sesion">🔐 Ingresar, cerrar sesión y Mi cuenta</h2>
+    <p>Cada persona entra con <strong>su propio usuario</strong>: así los comentarios, las asignaciones y los cambios del CRM quedan a su nombre.</p>
+    <ul>
+      <li><strong>Ingresar:</strong> en la pantalla de ingreso, usuario y clave. Si tildás <em>Mantener la sesión iniciada</em>, la sesión dura 30 días en ese dispositivo; si no, se cierra al cerrar el navegador (o a las 12 h). No lo tildes en una compu compartida.</li>
+      <li><strong>Cerrar sesión / cambiar de usuario:</strong> arriba a la derecha está tu usuario (círculo con tu inicial). Al tocarlo aparece <strong>Cerrar sesión</strong>; después podés entrar con otro usuario.</li>
+      <li><strong>Mi cuenta:</strong> desde el mismo menú. Ahí cambiás tu clave (mínimo 10 caracteres; al cambiarla se cierran tus sesiones en otros dispositivos) y ves en qué dispositivos está abierta tu sesión, con la opción de cerrar cualquiera o todas las demás.</li>
+      <li><strong>Clave temporal:</strong> si un administrador te creó el usuario o te reseteó la clave, al entrar el panel te pide elegir una clave nueva antes de seguir.</li>
+      <li><strong>Demasiados intentos:</strong> con 5 claves mal seguidas para un usuario desde una misma conexión, el ingreso se frena 15 minutos (protege contra quien prueba claves). Esperá o pedí que te reseteen la clave.</li>
+      <li><strong>Usuarios del panel</strong> (solo administradores, en Mi cuenta): agregar usuarios con clave temporal, resetear claves, dar o quitar permiso de administrador y desactivar a alguien (deja de poder entrar al instante; sus comentarios y registros quedan). Abajo se ven los últimos intentos de ingreso, buenos y fallidos.</li>
+      <li><strong>¿Se olvidó la clave?</strong> Un administrador la resetea desde Usuarios. Si no queda nadie que pueda entrar, ver <em>Recuperar el acceso</em> en el Manual del sistema.</li>
+    </ul>
 
     <h2>💬 Comentarios internos</h2>
     <p>Sirven para dejarse mensajes entre las personas del equipo dentro del panel, sin depender del WhatsApp o el mail. Cada comentario queda con quién lo escribió (el usuario con el que entraste al panel) y la fecha.</p>
@@ -631,6 +644,8 @@ le asigna un puntaje de prioridad. Después sigue a cada marca a lo largo del ti
             <tr><th>Formularios para clientes</th><td>En <strong>Clientes → 📝 Formularios</strong>: copiar o mandar por WhatsApp el link del formulario de Persona física o jurídica; ver las respuestas que llegaron, abrir o descargar sus archivos, marcarlas como revisadas o borrarlas. Cada formulario enviado crea (o actualiza, si el CUIT ya existe) el cliente con todos sus datos.</td></tr>
             <tr><th>Generar poder para firmar</th><td>En la ficha de un cliente: arma el poder ya completo con sus datos (persona física o jurídica), editable antes de bajarlo, en PDF o Word. Queda guardado en la ficha. Los datos del apoderado se cambian en <strong>Clientes → Ajustes</strong>.</td></tr>
             <tr><th>Comentarios</th><td>Botón 💬 en cada fila o sección <strong>Comentarios</strong>: dejarle un mensaje a otra persona del equipo (o a todos), vinculado o no a un acta, y marcarlo como resuelto cuando se atendió.</td></tr>
+            <tr><th>Usuarios del panel</th><td>En <strong>Mi cuenta → Usuarios del panel</strong> (solo administradores): crear usuarios con clave temporal, resetear claves, dar o quitar administrador, desactivar/reactivar, y ver los últimos intentos de ingreso.</td></tr>
+            <tr><th>Recuperar el acceso</th><td>Si nadie puede entrar (se perdieron todas las claves de administrador): en Railway, servicio <em>Panel Leads</em>, agregar la variable <code>PANEL_RECUPERAR</code> con el valor <code>usuario:claveTemporal</code>. Al redeployar, ese usuario queda activo, administrador y con esa clave (pide cambiarla al entrar). <strong>Después hay que borrar la variable.</strong></td></tr>
             <tr><th>Correr ahora</th><td>En <strong>Automatizaciones</strong>, cada proceso automático tiene su propio botón para dispararlo a mano (en "Completar datos faltantes", uno por fila).</td></tr>
             <tr><th>Agregar marca manualmente</th><td>Carga al panel un acta puntual que no vino por boletín ni por el escaneo (desde GitHub Actions).</td></tr>
             
@@ -694,6 +709,12 @@ le asigna un puntaje de prioridad. Después sigue a cada marca a lo largo del ti
               💬 para ver o agregar comentarios de esa marca, y el encabezado muestra cuántos comentarios nuevos hay.</p>
           </div>
           <div class="tarjeta-mini">
+            <h4>Mi cuenta (<code>/cuenta</code>)</h4>
+            <p>Se abre desde tu usuario, arriba a la derecha (donde también está <strong>Cerrar sesión</strong>). Cambiar tu
+              clave, ver y cerrar tus sesiones abiertas en otros dispositivos y, si sos administrador, manejar los
+              <strong>usuarios del panel</strong> y revisar los últimos intentos de ingreso.</p>
+          </div>
+          <div class="tarjeta-mini">
             <h4>Estados que se ven en el panel</h4>
             <p><strong>LEAD</strong> (prioridad), <strong>con agente</strong> (descartado: por el expediente de INPI o por la matrícula del boletín),
               <strong>sin verificar</strong> (lead posible que todavía no se pudo confirmar), <strong>⚠ OPOSICIÓN</strong> (un tercero se opone), <strong>👁 VISTA DE INPI</strong>
@@ -743,6 +764,8 @@ le asigna un puntaje de prioridad. Después sigue a cada marca a lo largo del ti
             <tr><th>Matrícula del estudio</th><td>Número de matrícula de agente de los profesionales del estudio. Lo que se presenta con ella se propone (o se suma solo, si el CUIT es de un cliente) a la cartera.</td></tr>
             <tr><th>Otro agente</th><td>Alerta: un cliente presentó una marca nueva con otro agente o sin agente. Es una oportunidad de hablar con él.</td></tr>
             <tr><th>Novedad del expediente</th><td>Cambio detectado en una marca de la cartera al releer su expediente en INPI (estado, oposición, publicación, titular, movimiento nuevo).</td></tr>
+            <tr><th>Sesión</th><td>El tiempo que quedás adentro del panel en un dispositivo después de ingresar. Se cierra con <em>Cerrar sesión</em>, al vencer (12 h, o 30 días con «Mantener la sesión iniciada»), tras 14 días sin uso, al cambiar la clave (las de otros dispositivos) o si un administrador desactiva el usuario.</td></tr>
+            <tr><th>Administrador</th><td>Usuario del panel que además puede crear, desactivar y resetear la clave de otros usuarios. Siempre tiene que quedar al menos uno activo.</td></tr>
             <tr><th>Renovación</th><td>Trámite para extender el registro 10 años más, antes de que venza.</td></tr>
           </tbody>
         </table>

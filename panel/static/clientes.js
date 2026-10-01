@@ -709,6 +709,7 @@ function tamanoLegible(b) { return b >= 1024 * 1024 ? (b / 1024 / 1024).toFixed(
 /* ── Poder para firmar ─────────────────────────────────────────── */
 async function bajarArchivo(url, opciones, nombreDefecto) {
   const r = await fetch(url, { credentials: "include", ...opciones });
+  if (r.status === 401 && typeof irAlLogin === "function") irAlLogin();
   if (!r.ok) {
     let d = `${r.status}`; try { d = (await r.json()).detail || d; } catch (_) {}
     throw new Error(d);

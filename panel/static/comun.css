@@ -922,3 +922,33 @@ tr.crm-fila:hover { background: var(--azul-claro); }
 .cl-mas { border: 1px solid var(--borde); border-radius: 8px; padding: 8px 10px; background: #fafbfc; }
 .cl-mas summary { cursor: pointer; font-size: 13px; color: var(--azul); font-weight: 500; }
 .cl-mas .cl-form { margin-top: 8px; }
+
+/* ── Menú de usuario (sesion.js) ── */
+.menu-usuario { position: relative; flex-shrink: 0; }
+.menu-usuario .mu-boton {
+  display: inline-flex; align-items: center; gap: 7px; height: 34px; padding: 0 8px 0 4px;
+  border: 1px solid var(--borde); border-radius: 18px; background: #fff; cursor: pointer;
+  font: inherit; font-size: 13px; color: var(--texto);
+}
+.menu-usuario .mu-boton:hover { background: #f6f7f9; }
+.menu-usuario .mu-boton:focus-visible { outline: none; box-shadow: var(--foco); }
+.menu-usuario .mu-avatar {
+  width: 26px; height: 26px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center;
+  background: var(--azul); color: #fff; font-size: 12px; font-weight: 700;
+}
+.menu-usuario .mu-nombre { max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
+.menu-usuario .mu-chev { width: 14px; height: 14px; fill: none; stroke: var(--gris); stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
+.menu-usuario .mu-panel {
+  position: absolute; right: 0; top: 42px; min-width: 220px; background: #fff; border: 1px solid var(--borde);
+  border-radius: 10px; box-shadow: 0 10px 30px rgba(15, 23, 42, 0.12); padding: 6px; z-index: 60;
+}
+.menu-usuario .mu-cab { padding: 8px 10px 10px; font-size: 12px; color: var(--gris); border-bottom: 1px solid var(--borde); margin-bottom: 4px; }
+.menu-usuario .mu-cab strong { display: block; font-size: 14px; color: var(--texto); margin-top: 2px; word-break: break-all; }
+.menu-usuario .mu-rol { display: inline-block; margin-top: 6px; padding: 1px 8px; border-radius: 10px; background: var(--azul-claro); color: var(--azul); font-size: 11px; font-weight: 600; }
+.menu-usuario .mu-panel a, .menu-usuario .mu-panel button {
+  display: block; width: 100%; text-align: left; padding: 8px 10px; border-radius: 6px; border: 0; background: none;
+  font: inherit; font-size: 13.5px; color: var(--texto); text-decoration: none; cursor: pointer;
+}
+.menu-usuario .mu-panel a:hover, .menu-usuario .mu-panel button:hover { background: #f1f3f6; }
+.menu-usuario .mu-salir { color: var(--rojo) !important; }
+@media (max-width: 900px) { .menu-usuario .mu-nombre, .menu-usuario .mu-chev { display: none; } .menu-usuario .mu-boton { padding: 0 3px; } }

@@ -4,6 +4,7 @@
 
 async function api(path, opciones = {}) {
   const r = await fetch(path, { credentials: "include", ...opciones });
+  if (r.status === 401 && typeof irAlLogin === "function") irAlLogin();
   if (!r.ok) throw new Error(`${r.status}`);
   return r.json();
 }
@@ -386,6 +387,7 @@ async function apiJson(path, metodo, body) {
     headers: { "Content-Type": "application/json" },
     body: body ? JSON.stringify(body) : undefined,
   });
+  if (r.status === 401 && typeof irAlLogin === "function") irAlLogin();
   if (!r.ok) {
     let detalle = `${r.status}`;
     try { detalle = (await r.json()).detail || detalle; } catch (_) {}

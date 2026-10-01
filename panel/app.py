@@ -6,18 +6,19 @@ Backend chiquito (FastAPI) que se conecta a la misma Postgres del pipeline
 prospección, y para marcar leads como "contactado" (el pipeline nunca toca
 esa columna, es exclusiva del panel).
 
-Login: HTTP Basic simple, con uno o varios usuarios. No es para datos súper
-sensibles, es para no dejar el link completamente abierto.
+Login: usuarios con clave hasheada en Postgres y sesión con cookie (con
+"Cerrar sesión"), ver auth.py / auth_api.py. Los usuarios se administran desde
+el panel (Mi cuenta → Usuarios).
 
-Variables de entorno requeridas:
+Variables de entorno:
     DATABASE_URL    - la misma que usa cargar_db.py
-    PANEL_USER      - usuario para el login (modo de un solo usuario)
-    PANEL_PASSWORD  - clave para el login (modo de un solo usuario)
-    PANEL_USERS     - opcional, para varios usuarios a la vez: pares
-                      "usuario:clave" separados por coma, ej.
-                      "ana:unaClaveLarga,beto:otraClaveLarga"
-                      (nunca poner las claves reales acá: el repo es público)
-                      (se suma a PANEL_USER/PANEL_PASSWORD si también están)
+    PANEL_RECUPERAR - opcional y temporal, "usuario:clave": al arrancar deja
+                      ese usuario activo, administrador y con esa clave (para
+                      cuando nadie puede entrar). Borrarla después de usarla.
+    PANEL_USER / PANEL_PASSWORD / PANEL_USERS
+                    - formato viejo (HTTP Basic). Solo se leen una vez, para
+                      crear los usuarios si la tabla usuarios_panel está vacía.
+                      Después se pueden (y conviene) borrar de Railway.
     GITHUB_TOKEN    - opcional, para la sección "Automatizaciones" (/crons):
                       un Personal Access Token (fine-grained) con permiso
                       "Actions: Read-only" sobre este repo. Sin esto, esa
@@ -25,7 +26,7 @@ Variables de entorno requeridas:
                       última corrida.
 
 Correr local:
-    DATABASE_URL=... PANEL_USER=admin PANEL_PASSWORD=... uvicorn app:app --reload
+    DATABASE_URL=... PANEL_RECUPERAR=admin:unaClaveLarga uvicorn app:app --reload
 """
 
 import os
@@ -39,10 +40,11 @@ import psycopg2.extras
 import requests
 from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse
-from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+import auth
+import auth_api
 import cartera
 import cartera_api
 import formularios_api
@@ -50,35 +52,13 @@ import formularios_core
 import inpi_lead
 
 DATABASE_URL = os.environ.get("DATABASE_URL")
-PANEL_USER = os.environ.get("PANEL_USER")
-PANEL_PASSWORD = os.environ.get("PANEL_PASSWORD")
-PANEL_USERS_RAW = os.environ.get("PANEL_USERS", "")
 
 if not DATABASE_URL:
     raise RuntimeError("Falta la variable de entorno DATABASE_URL")
 
-# Usuarios habilitados para entrar al panel: {usuario: clave}. Se puede definir
-# un solo usuario (PANEL_USER/PANEL_PASSWORD) y/o varios a la vez (PANEL_USERS,
-# pares "usuario:clave" separados por coma) — ambos se combinan.
-USUARIOS_PANEL: dict[str, str] = {}
-if PANEL_USER and PANEL_PASSWORD:
-    USUARIOS_PANEL[PANEL_USER] = PANEL_PASSWORD
-for par in PANEL_USERS_RAW.split(","):
-    par = par.strip()
-    if not par:
-        continue
-    usuario, _, clave = par.partition(":")
-    if usuario and clave:
-        USUARIOS_PANEL[usuario] = clave
-
-if not USUARIOS_PANEL:
-    raise RuntimeError(
-        "No hay ningún usuario configurado: definí PANEL_USER + PANEL_PASSWORD "
-        "y/o PANEL_USERS"
-    )
-
-app = FastAPI(title="Panel de leads — Kom Marcas Inpi")
-security = HTTPBasic()
+# Sin /docs ni /openapi.json públicos: no hace falta mostrarle a cualquiera el
+# mapa completo de la API.
+app = FastAPI(title="Panel de leads", docs_url=None, redoc_url=None, openapi_url=None)
 
 
 @app.on_event("startup")
@@ -101,6 +81,17 @@ def migrar_columnas_panel():
     Fix: lock_timeout corto + no fatal — si no consigue el lock rápido, la
     migración se salta esta vez (las columnas ya existen en producción de
     sobra) en vez de trabar el arranque del panel entero."""
+    # Usuarios y sesiones del login (ver auth.py). Va primero y aparte: no
+    # toca `marcas`, y sin esto nadie puede entrar.
+    try:
+        with conexion() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SET lock_timeout = '5s'")
+                auth.inicializar(cur)
+            conn.commit()
+    except Exception as e:
+        print(f"[startup] inicialización del login falló: {e}")
+
     try:
         with conexion() as conn:
             with conn.cursor() as cur:
@@ -834,20 +825,6 @@ def _ultima_corrida_workflow(workflow_file: str) -> dict:
     return resultado
 
 
-def verificar_login(credenciales: HTTPBasicCredentials = Depends(security)) -> str:
-    clave_esperada = USUARIOS_PANEL.get(credenciales.username)
-    # comparación en tiempo constante incluso cuando el usuario no existe,
-    # para no filtrar por timing qué usuarios son válidos
-    clave_ok = secrets.compare_digest(credenciales.password, clave_esperada or "")
-    if clave_esperada is None or not clave_ok:
-        raise HTTPException(
-            status_code=401,
-            detail="Usuario o clave incorrectos",
-            headers={"WWW-Authenticate": "Basic"},
-        )
-    return credenciales.username
-
-
 @contextmanager
 def conexion():
     # jit=off: las consultas del CRM agregan toda la tabla `marcas` y el JIT de
@@ -857,6 +834,13 @@ def conexion():
         yield conn
     finally:
         conn.close()
+
+
+# Login con sesiones (ver auth.py / auth_api.py): rutas /login, /api/login,
+# /api/logout, /cuenta, /api/usuarios... + middleware de seguridad.
+_auth = auth_api.instalar(app, conexion)
+verificar_login = _auth.verificar_login      # API: 401 sin sesión
+verificar_pagina = _auth.verificar_pagina    # pantallas: redirige a /login
 
 
 # ── Cruce "misma marca en varias clases" ──────────────────────────────────
@@ -1556,13 +1540,6 @@ COLUMNAS_COMENTARIO = """
 """
 
 
-@app.get("/api/yo")
-def quien_soy(usuario: str = Depends(verificar_login)):
-    """Usuario logueado + lista de usuarios del panel (para el selector
-    "Para:" de los comentarios). No expone claves."""
-    return {"usuario": usuario, "usuarios": sorted(USUARIOS_PANEL.keys())}
-
-
 @app.get("/api/comentarios")
 def listar_comentarios(
     usuario: str = Depends(verificar_login),
@@ -1607,7 +1584,7 @@ def crear_comentario(body: ComentarioNuevo, usuario: str = Depends(verificar_log
     if len(texto) > 5000:
         raise HTTPException(status_code=400, detail="El comentario es demasiado largo (máx. 5000 caracteres)")
     destinatario = (body.destinatario or "").strip() or None
-    if destinatario and destinatario not in USUARIOS_PANEL:
+    if destinatario and not _auth.usuario_existe(destinatario):
         raise HTTPException(status_code=400, detail=f"No existe el usuario {destinatario}")
     acta = _normalizar_acta(body.acta)
     if body.acta and not acta:
@@ -2462,7 +2439,7 @@ def crm_ficha(clave: str = Query(...), usuario: str = Depends(verificar_login)):
         "cliente": cliente,
         "etapas": [{"id": e, "nombre": ETAPAS_CRM_NOMBRE[e]} for e in ETAPAS_CRM],
         "tipos_actividad": [{"id": k, "nombre": v} for k, v in TIPOS_ACTIVIDAD.items()],
-        "usuarios": sorted(USUARIOS_PANEL.keys()),
+        "usuarios": _auth.usuarios_activos(),
         "usuario": usuario,
     }
 
@@ -2479,7 +2456,7 @@ def crm_actualizar(body: CrmActualizacion, clave: str = Query(...), usuario: str
         cambios["etapa"] = body.etapa
     if "asignado" in enviados:
         asignado = (body.asignado or "").strip() or None
-        if asignado and asignado not in USUARIOS_PANEL:
+        if asignado and not _auth.usuario_existe(asignado):
             raise HTTPException(status_code=400, detail=f"No existe el usuario {asignado}")
         cambios["asignado"] = asignado
     if "telefono" in enviados:
@@ -2622,42 +2599,42 @@ def version():
 
 
 @app.get("/")
-def index(_: str = Depends(verificar_login)):
+def index(_: str = Depends(verificar_pagina)):
     return FileResponse(os.path.join(os.path.dirname(__file__), "static", "index.html"))
 
 
 @app.get("/titular/{clave}")
-def pagina_titular(clave: str, _: str = Depends(verificar_login)):
+def pagina_titular(clave: str, _: str = Depends(verificar_pagina)):
     return FileResponse(os.path.join(os.path.dirname(__file__), "static", "titular.html"))
 
 
 @app.get("/ayuda")
-def pagina_ayuda(_: str = Depends(verificar_login)):
+def pagina_ayuda(_: str = Depends(verificar_pagina)):
     return FileResponse(os.path.join(os.path.dirname(__file__), "static", "ayuda.html"))
 
 
 @app.get("/crons")
-def pagina_crons(_: str = Depends(verificar_login)):
+def pagina_crons(_: str = Depends(verificar_pagina)):
     return FileResponse(os.path.join(os.path.dirname(__file__), "static", "crons.html"))
 
 
 @app.get("/boletines")
-def pagina_boletines(_: str = Depends(verificar_login)):
+def pagina_boletines(_: str = Depends(verificar_pagina)):
     return FileResponse(os.path.join(os.path.dirname(__file__), "static", "boletines.html"))
 
 
 @app.get("/comentarios")
-def pagina_comentarios(_: str = Depends(verificar_login)):
+def pagina_comentarios(_: str = Depends(verificar_pagina)):
     return FileResponse(os.path.join(os.path.dirname(__file__), "static", "comentarios.html"))
 
 
 @app.get("/clientes")
-def pagina_clientes(_: str = Depends(verificar_login)):
+def pagina_clientes(_: str = Depends(verificar_pagina)):
     return FileResponse(os.path.join(os.path.dirname(__file__), "static", "clientes.html"))
 
 
 @app.get("/crm")
-def pagina_crm(_: str = Depends(verificar_login)):
+def pagina_crm(_: str = Depends(verificar_pagina)):
     return FileResponse(os.path.join(os.path.dirname(__file__), "static", "crm.html"))
 
 
@@ -2669,7 +2646,7 @@ app.include_router(cartera_api.crear_router(
     verificar_login, conexion,
     SimpleNamespace(
         asegurar_claves=_asegurar_claves, clave_existente=_clave_existente, actas_de_clave=_actas_de_clave,
-        aplicar_cambios_crm=_aplicar_cambios_crm, usuarios=USUARIOS_PANEL,
+        aplicar_cambios_crm=_aplicar_cambios_crm, usuarios=_auth.usuarios_activos,
     ),
 ))
 
