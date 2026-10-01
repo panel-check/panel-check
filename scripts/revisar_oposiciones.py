@@ -117,7 +117,7 @@ def main():
                       AND fecha_publicacion > %s
                       AND tuvo_oposicion IS NOT TRUE
                       AND (revisado_parcial_en IS NULL
-                           OR revisado_parcial_en < now() - make_interval(hours => %s))
+                           OR revisado_parcial_en < now() - %s * interval '1 hour')
                     ORDER BY revisado_parcial_en NULLS FIRST, fecha_publicacion
                     """,
                     (corte, args.min_horas),
