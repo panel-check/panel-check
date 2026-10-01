@@ -48,6 +48,8 @@ class ClienteNuevo(BaseModel):
     estado_civil: Optional[str] = None
     conyuge_nombre: Optional[str] = None
     conyuge_dni: Optional[str] = None
+    firmante_nombre: Optional[str] = None
+    firmante_cargo: Optional[str] = None
 
 
 class ClienteCambios(BaseModel):
@@ -71,6 +73,8 @@ class ClienteCambios(BaseModel):
     estado_civil: Optional[str] = None
     conyuge_nombre: Optional[str] = None
     conyuge_dni: Optional[str] = None
+    firmante_nombre: Optional[str] = None
+    firmante_cargo: Optional[str] = None
 
 
 class ActaNueva(BaseModel):
@@ -431,6 +435,9 @@ def crear_router(verificar_login, conexion, crm) -> APIRouter:
                 novedades = cur.fetchall()
                 alertas = _alertas(cur, {"cliente_id": cliente_id}, limite=200)
                 formularios = formularios_api.respuestas_de(cur, "cliente_id = %s", (cliente_id,))
+                cur.execute("SELECT id, datos, generado_por, generado_en FROM poderes_generados WHERE cliente_id = %s "
+                            "ORDER BY generado_en DESC LIMIT 20", (cliente_id,))
+                poderes_cli = cur.fetchall()
         plazos = []
         for m in marcas:
             m["cliente_nombre"] = cliente["nombre"]
@@ -439,7 +446,7 @@ def crear_router(verificar_login, conexion, crm) -> APIRouter:
                                if a["estado"] in cartera.ESTADOS_ALERTA_ABIERTOS and a["tipo"] == "similitud") if p]
         plazos.sort(key=lambda p: p["fecha"])
         return {"cliente": cliente, "marcas": marcas, "novedades": novedades, "alertas": alertas,
-                "plazos": plazos, "formularios": formularios, "tipos_persona": formularios_core.TIPO_LEGIBLE,
+                "plazos": plazos, "formularios": formularios, "poderes": poderes_cli, "tipos_persona": formularios_core.TIPO_LEGIBLE,
                 "origenes": cartera.ORIGENES_CLIENTE, "estados_alerta": cartera.ESTADOS_ALERTA}
 
     @router.put("/api/clientes/{cliente_id}")

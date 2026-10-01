@@ -350,6 +350,8 @@ ALTER TABLE clientes ADD COLUMN IF NOT EXISTS domicilio_comercial TEXT;
 ALTER TABLE clientes ADD COLUMN IF NOT EXISTS estado_civil TEXT;
 ALTER TABLE clientes ADD COLUMN IF NOT EXISTS conyuge_nombre TEXT;
 ALTER TABLE clientes ADD COLUMN IF NOT EXISTS conyuge_dni TEXT;
+ALTER TABLE clientes ADD COLUMN IF NOT EXISTS firmante_nombre TEXT;
+ALTER TABLE clientes ADD COLUMN IF NOT EXISTS firmante_cargo TEXT;
 
 CREATE TABLE IF NOT EXISTS formularios_respuestas (
     id                SERIAL PRIMARY KEY,
@@ -380,3 +382,14 @@ CREATE TABLE IF NOT EXISTS formularios_archivos (
     subido_en     TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_form_arch_resp ON formularios_archivos(respuesta_id);
+
+-- Poderes generados desde la ficha del cliente (panel/poderes.py)
+CREATE TABLE IF NOT EXISTS poderes_generados (
+    id            SERIAL PRIMARY KEY,
+    cliente_id    INTEGER REFERENCES clientes(id) ON DELETE CASCADE,
+    datos         JSONB NOT NULL,
+    apoderado     TEXT NOT NULL,
+    generado_por  TEXT,
+    generado_en   TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_poderes_cliente ON poderes_generados(cliente_id, generado_en DESC);

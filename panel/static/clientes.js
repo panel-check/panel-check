@@ -197,6 +197,7 @@ const CAMPOS_EXTRA = [
   ["dni", "DNI"], ["nacionalidad", "Nacionalidad"], ["domicilio", "Domicilio"], ["localidad", "Localidad"],
   ["provincia", "Provincia"], ["codigo_postal", "Código postal"], ["domicilio_comercial", "Domicilio comercial"],
   ["estado_civil", "Estado civil"], ["conyuge_nombre", "Cónyuge (nombre y apellido)"], ["conyuge_dni", "DNI del cónyuge"],
+  ["firmante_nombre", "Firmante (persona jurídica)"], ["firmante_cargo", "Cargo del firmante"],
 ];
 
 function leerCampos(form, conActivo = false) {
@@ -294,8 +295,11 @@ async function abrirCliente(id) {
         <label class="check"><input type="checkbox" name="activo" ${c.activo ? "checked" : ""}> Cliente activo (los inactivos no se vigilan)</label></form>
       <div class="cl-acciones">
         <button type="button" class="cl-btn" id="cli-guardar">Guardar datos</button>
+        <button type="button" class="cl-btn sec" id="cli-poder-btn">📄 Generar poder para firmar</button>
         <button type="button" class="cl-btn peligro" id="cli-borrar">Borrar cliente</button>
         <span class="cl-estado" id="cli-estado"></span></div>
+      <div class="cl-caja" id="cli-poder" hidden style="margin-top:10px"></div>
+      <div id="cli-poderes-lista">${d.poderes && d.poderes.length ? "<h4>Poderes generados</h4>" + htmlPoderes(d.poderes) : ""}</div>
 
       ${d.formularios && d.formularios.length ? `<h4>Formularios completados (${d.formularios.length})</h4>
         ${d.formularios.map(f => htmlRespuesta(f, { enFicha: true })).join("")}` : ""}
@@ -326,6 +330,8 @@ async function abrirCliente(id) {
     </div>`;
   cont.parentElement.scrollTop = scroll;
   conectarRespuestas(cont, () => abrirCliente(id));
+  $("cli-poder-btn").addEventListener("click", () => abrirGeneradorPoder(id));
+  conectarPoderes(id);
   conectarFichaCliente(cont, d);
 }
 
@@ -649,6 +655,11 @@ async function pintarAjustes() {
         <div class="cl-acciones"><button type="button" class="cl-btn" id="aj-guardar">Guardar</button><span class="cl-estado" id="aj-estado"></span></div>
         <p class="crm-nota">Bajar el puntaje mínimo genera más alertas (más falsos positivos). Un cambio se aplica desde la próxima corrida de la vigilancia; las alertas ya creadas no se tocan.</p></div>
 
+      <h4 style="margin:18px 0 6px">Poder: datos del apoderado</h4>
+      <div class="cl-caja"><p class="crm-gris" style="margin:0 0 6px">Va en el poder después de «Por el presente otorgo a…». Dejalo vacío y guardá para volver al texto original.</p>
+        <textarea id="aj-apoderado" rows="3"></textarea>
+        <div class="cl-acciones"><button type="button" class="cl-btn" id="aj-apoderado-guardar">Guardar</button><span class="cl-estado" id="aj-apoderado-estado"></span></div></div>
+
       <h4 style="margin:18px 0 6px">Clases relacionadas</h4>
       <p class="crm-gris" style="margin:0 0 4px">Clases de Niza que suelen chocar entre sí (por ejemplo indumentaria 25 y su venta, 35). Una marca parecida en una clase relacionada alerta con un descuento chico; en una clase sin relación solo alerta si es casi idéntica (o si la marca se vigila «en todas las clases»).</p>
       <div class="cl-chips">${r.clases_relacionadas.map(p => `<span class="cl-chip">${p.clase_a} ↔ ${p.clase_b}<button type="button" data-quitar-par="${p.clase_a},${p.clase_b}" title="Quitar">×</button></span>`).join("")}</div>
@@ -661,6 +672,13 @@ async function pintarAjustes() {
       <div class="cl-chips">${r.palabras_genericas.map(p => `<span class="cl-chip">${esc(p)}<button type="button" data-quitar-pal="${esc(p)}" title="Quitar">×</button></span>`).join("")}</div>
       <div class="cl-barra" style="padding:0"><label>Palabra<input id="pal-new" style="width:180px"></label>
         <button type="button" class="cl-btn sec" id="pal-add">Agregar</button></div></div>`;
+    api("/api/poderes-apoderado").then(a => { $("aj-apoderado").value = a.texto; }).catch(() => {});
+    $("aj-apoderado-guardar").addEventListener("click", async () => {
+      const e = $("aj-apoderado-estado");
+      try { await apiJson("/api/poderes-apoderado", "PUT", { texto: $("aj-apoderado").value }); e.textContent = "Guardado."; e.className = "cl-estado";
+            const a = await api("/api/poderes-apoderado"); $("aj-apoderado").value = a.texto; }
+      catch (err) { e.textContent = err.message; e.className = "cl-estado mal"; }
+    });
     $("aj-guardar").addEventListener("click", async () => {
       const f = $("aj-form").elements; const e = $("aj-estado");
       try {
@@ -686,11 +704,99 @@ async function pintarAjustes() {
 
 
 /* ── Formularios para clientes ─────────────────────────────────── */
+function tamanoLegible(b) { return b >= 1024 * 1024 ? (b / 1024 / 1024).toFixed(1) + " MB" : Math.max(1, Math.round(b / 1024)) + " KB"; }
+
+/* ── Poder para firmar ─────────────────────────────────────────── */
+async function bajarArchivo(url, opciones, nombreDefecto) {
+  const r = await fetch(url, { credentials: "include", ...opciones });
+  if (!r.ok) {
+    let d = `${r.status}`; try { d = (await r.json()).detail || d; } catch (_) {}
+    throw new Error(d);
+  }
+  const cd = r.headers.get("Content-Disposition") || "";
+  const m = cd.match(/filename\*=UTF-8''([^;]+)/);
+  const nombre = m ? decodeURIComponent(m[1]) : nombreDefecto;
+  const blob = await r.blob();
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob); a.download = nombre;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+}
+
+function htmlPoderes(lista) {
+  if (!lista || !lista.length) return "";
+  return `<ul class="cl-lista-simple">${lista.map(p => `<li data-poder="${p.id}">
+      <span class="crm-gris">${fmtFechaHora(p.generado_en)}${p.generado_por ? " · " + esc(p.generado_por) : ""}</span> ·
+      ${esc((p.datos.aclaracion || p.datos.otorgante || "").slice(0, 60))} · lugar y fecha: ${esc(p.datos.lugar)}, ${crmFecha(p.datos.fecha)}
+      <button type="button" class="cl-btn sec mini" data-bajar-poder="pdf">PDF</button>
+      <button type="button" class="cl-btn sec mini" data-bajar-poder="docx">Word</button>
+      <button type="button" class="cl-btn peligro mini" data-borrar-poder title="Saca este poder de la lista">×</button></li>`).join("")}</ul>`;
+}
+
+async function abrirGeneradorPoder(clienteId) {
+  const caja = $("cli-poder");
+  if (!caja.hidden) { caja.hidden = true; return; }
+  caja.hidden = false;
+  caja.innerHTML = '<p class="crm-cargando">Preparando…</p>';
+  let r;
+  try { r = await api(`/api/clientes/${clienteId}/poder`); }
+  catch (e) { caja.innerHTML = `<p class="crm-error">No se pudo preparar (${esc(e.message)}).</p>`; return; }
+  const p = r.propuesta;
+  const faltan = [];
+  if (!p.otorgante.match(/domicili/)) faltan.push("domicilio");
+  if (p.tipo_persona === "fisica" && !p.otorgante.match(/DNI/)) faltan.push("DNI");
+  if (p.tipo_persona === "juridica" && !p.aclaracion) faltan.push("quién firma");
+  caja.innerHTML = `
+    <p class="crm-gris" style="margin:0 0 8px">Se arma con el modelo del estudio y los datos del cliente. Revisá el texto (por ejemplo «domiciliado» / «domiciliada») y descargalo para mandárselo a firmar.</p>
+    ${faltan.length ? `<p class="crm-error" style="padding:0 0 8px">Ojo: falta ${faltan.join(", ")} en la ficha. Podés completarlo acá abajo o en «Datos para el trámite».</p>` : ""}
+    <form class="cl-form" id="poder-form" style="margin-top:0">
+      <label>Tipo<select name="tipo_persona">${Object.entries(est.tiposPersona).map(([k, v]) => `<option value="${k}" ${k === p.tipo_persona ? "selected" : ""}>${esc(v)}</option>`).join("")}</select></label>
+      <label>Lugar<input name="lugar" value="${esc(p.lugar)}"></label>
+      <label>Fecha<input type="date" name="fecha" value="${esc(p.fecha)}"></label>
+      <label class="ancho">El abajo firmante…<textarea name="otorgante" rows="3">${esc(p.otorgante)}</textarea></label>
+      <label>Aclaración (quien firma)<input name="aclaracion" value="${esc(p.aclaracion)}"></label>
+      <label data-solo-juridica>Cargo<input name="cargo" value="${esc(p.cargo)}" placeholder="ej. Socio gerente"></label>
+    </form>
+    <p class="crm-nota">Apoderado: ${esc(r.apoderado)} <a href="/clientes?vista=ajustes" title="Se cambia en Ajustes">(cambiar)</a></p>
+    <div class="cl-acciones"><button type="button" class="cl-btn" data-generar="pdf">Descargar PDF</button>
+      <button type="button" class="cl-btn sec" data-generar="docx">Descargar Word</button>
+      <span class="cl-estado" id="poder-estado"></span></div>`;
+  const form = $("poder-form");
+  const cargoVisible = () => { form.querySelector("[data-solo-juridica]").hidden = form.elements.tipo_persona.value !== "juridica"; };
+  form.elements.tipo_persona.addEventListener("change", cargoVisible); cargoVisible();
+  caja.querySelectorAll("[data-generar]").forEach(b => b.addEventListener("click", async () => {
+    const f = form.elements;
+    const datos = { tipo_persona: f.tipo_persona.value, otorgante: f.otorgante.value, lugar: f.lugar.value,
+                    fecha: f.fecha.value, aclaracion: f.aclaracion.value, cargo: f.tipo_persona.value === "juridica" ? f.cargo.value : "" };
+    const e = $("poder-estado"); e.className = "cl-estado"; e.textContent = "Generando…"; b.disabled = true;
+    try {
+      await bajarArchivo(`/api/clientes/${clienteId}/poder?formato=${b.dataset.generar}`,
+        { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(datos) }, `Poder.${b.dataset.generar}`);
+      e.textContent = "Listo: se descargó y quedó en «Poderes generados».";
+      const d = await api(`/api/clientes/${clienteId}`);
+      $("cli-poderes-lista").innerHTML = "<h4>Poderes generados</h4>" + htmlPoderes(d.poderes);
+      conectarPoderes(clienteId);
+    } catch (err) { e.textContent = err.message; e.className = "cl-estado mal"; }
+    b.disabled = false;
+  }));
+}
+
+function conectarPoderes(clienteId) {
+  const cont = $("cli-poderes-lista");
+  if (!cont) return;
+  cont.querySelectorAll("[data-bajar-poder]").forEach(b => b.addEventListener("click", () =>
+    pedir(() => bajarArchivo(`/api/poderes/${b.closest("[data-poder]").dataset.poder}?formato=${b.dataset.bajarPoder}`, {}, "Poder." + b.dataset.bajarPoder))));
+  cont.querySelectorAll("[data-borrar-poder]").forEach(b => b.addEventListener("click", async () => {
+    await pedir(() => apiJson(`/api/poderes/${b.closest("[data-poder]").dataset.poder}`, "DELETE"));
+    b.closest("li").remove();
+  }));
+}
+
 function htmlRespuesta(f, { enFicha = false } = {}) {
   const archivos = f.archivos.length ? `<div class="fm-archivos">${f.archivos.map(a => `
       <span class="fm-archivo"><span class="crm-gris">${esc(a.etiqueta)}:</span>
         <a href="/api/formularios/archivos/${a.id}?ver=1" target="_blank" rel="noopener">${esc(a.nombre)}</a>
-        <small class="crm-gris">(${(a.tamano / 1024 / 1024).toFixed(1)} MB)</small>
+        <small class="crm-gris">(${tamanoLegible(a.tamano)})</small>
         <a href="/api/formularios/archivos/${a.id}" title="Descargar">⬇</a></span>`).join("")}</div>` : "";
   const filas = f.respuestas.map(r => `<tr><td>${esc(r.etiqueta)}</td><td>${esc(r.valor).replace(/\n/g, "<br>")}</td></tr>`).join("");
   const aviso = f.aviso_enviado_en ? `mail enviado ${fmtFechaHora(f.aviso_enviado_en)}`

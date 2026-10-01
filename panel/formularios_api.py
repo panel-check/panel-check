@@ -16,7 +16,10 @@ Del panel (con login):
 
 import os
 import threading
+import datetime as _dt
+import json
 import time
+from typing import Optional
 from urllib.parse import quote
 from collections import defaultdict, deque
 import psycopg2.extras
@@ -25,6 +28,7 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 from pydantic import BaseModel
 
 import formularios_core as fc
+import poderes
 
 STATIC = os.path.join(os.path.dirname(__file__), "static")
 MAX_ENVIO = 32 * 1024 * 1024  # tope del pedido entero (3 archivos de 10 MB + texto)
@@ -36,6 +40,26 @@ MIME_VER_EN_LINEA = {"application/pdf", "image/jpeg", "image/png", "image/webp",
 
 class CambioEstado(BaseModel):
     estado: str
+
+
+class DatosPoder(BaseModel):
+    tipo_persona: str
+    otorgante: str
+    lugar: str
+    fecha: str
+    aclaracion: Optional[str] = ""
+    cargo: Optional[str] = ""
+
+
+class Apoderado(BaseModel):
+    texto: str
+
+
+def leer_apoderado(cur) -> str:
+    cur.execute("SELECT valor FROM vigilancia_config WHERE clave = 'poder_apoderado'")
+    f = cur.fetchone()
+    v = (f["valor"] if isinstance(f, dict) else f[0]) if f else None
+    return v or poderes.APODERADO_DEFAULT
 
 
 def _ip(request: Request) -> str:
@@ -229,6 +253,92 @@ def crear_router(verificar_login, conexion) -> APIRouter:
         return Response(content=bytes(a["contenido"]), media_type=a["mime"],
                         headers={"Content-Disposition": disp, "X-Content-Type-Options": "nosniff",
                                  "Content-Security-Policy": "default-src 'none'; img-src 'self'; style-src 'unsafe-inline'"})
+
+    # ── Poder para firmar ─────────────────────────────────────────────
+    def _archivo_poder(d: dict, apoderado: str, formato: str) -> Response:
+        if formato == "docx":
+            contenido = poderes.generar_docx(d, apoderado)
+            mime = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        else:
+            formato, contenido, mime = "pdf", poderes.generar_pdf(d, apoderado), "application/pdf"
+        nombre = poderes.nombre_archivo(d, formato)
+        return Response(content=contenido, media_type=mime,
+                        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(nombre)}"})
+
+    @router.get("/api/clientes/{cliente_id}/poder")
+    def propuesta_poder(cliente_id: int, _: str = Depends(verificar_login)):
+        with conexion() as conn:
+            with rcur(conn) as cur:
+                cur.execute("SELECT * FROM clientes WHERE id = %s", (cliente_id,))
+                c = cur.fetchone()
+                if not c:
+                    raise HTTPException(status_code=404, detail="No existe ese cliente")
+                apoderado = leer_apoderado(cur)
+        return {"propuesta": poderes.propuesta(c, _dt.datetime.now(_dt.timezone(_dt.timedelta(hours=-3))).date()),
+                "apoderado": apoderado}
+
+    @router.post("/api/clientes/{cliente_id}/poder")
+    def generar_poder(cliente_id: int, body: DatosPoder, formato: str = "pdf", usuario: str = Depends(verificar_login)):
+        d = {k: (getattr(body, k) or "").strip() for k in DatosPoder.model_fields}
+        if d["tipo_persona"] not in fc.TIPO_LEGIBLE:
+            raise HTTPException(status_code=400, detail="Tipo de persona inválido")
+        if not d["otorgante"] or not d["lugar"]:
+            raise HTTPException(status_code=400, detail="Faltan los datos del otorgante o el lugar")
+        if len(d["otorgante"]) > 1500 or any(len(d[k]) > 200 for k in ("lugar", "aclaracion", "cargo")):
+            raise HTTPException(status_code=400, detail="Algún dato es demasiado largo")
+        try:
+            _dt.date.fromisoformat(d["fecha"])
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Fecha inválida")
+        with conexion() as conn:
+            with rcur(conn) as cur:
+                cur.execute("SELECT id FROM clientes WHERE id = %s", (cliente_id,))
+                if not cur.fetchone():
+                    raise HTTPException(status_code=404, detail="No existe ese cliente")
+                apoderado = leer_apoderado(cur)
+                cur.execute("INSERT INTO poderes_generados (cliente_id, datos, apoderado, generado_por) VALUES (%s, %s, %s, %s)",
+                            (cliente_id, json.dumps(d, ensure_ascii=False), apoderado, usuario))
+            conn.commit()
+        return _archivo_poder(d, apoderado, formato)
+
+    @router.get("/api/poderes/{pid}")
+    def bajar_poder(pid: int, formato: str = "pdf", _: str = Depends(verificar_login)):
+        with conexion() as conn:
+            with rcur(conn) as cur:
+                cur.execute("SELECT datos, apoderado FROM poderes_generados WHERE id = %s", (pid,))
+                f = cur.fetchone()
+        if not f:
+            raise HTTPException(status_code=404, detail="No existe ese poder")
+        return _archivo_poder(f["datos"], f["apoderado"], formato)
+
+    @router.delete("/api/poderes/{pid}")
+    def borrar_poder(pid: int, _: str = Depends(verificar_login)):
+        with conexion() as conn:
+            with conn.cursor() as cur:
+                cur.execute("DELETE FROM poderes_generados WHERE id = %s", (pid,))
+            conn.commit()
+        return {"ok": True}
+
+    @router.get("/api/poderes-apoderado")
+    def ver_apoderado(_: str = Depends(verificar_login)):
+        with conexion() as conn:
+            with rcur(conn) as cur:
+                return {"texto": leer_apoderado(cur), "default": poderes.APODERADO_DEFAULT}
+
+    @router.put("/api/poderes-apoderado")
+    def guardar_apoderado(body: Apoderado, _: str = Depends(verificar_login)):
+        t = " ".join((body.texto or "").split())
+        if len(t) > 600:
+            raise HTTPException(status_code=400, detail="El texto es demasiado largo")
+        with conexion() as conn:
+            with conn.cursor() as cur:
+                if t:
+                    cur.execute("INSERT INTO vigilancia_config (clave, valor) VALUES ('poder_apoderado', %s) "
+                                "ON CONFLICT (clave) DO UPDATE SET valor = EXCLUDED.valor", (t,))
+                else:  # vacío = volver al texto original
+                    cur.execute("DELETE FROM vigilancia_config WHERE clave = 'poder_apoderado'")
+            conn.commit()
+        return {"ok": True}
 
     return router
 

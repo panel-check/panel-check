@@ -5,3 +5,5 @@ requests
 pdfplumber
 beautifulsoup4
 python-multipart
+reportlab
+python-docx

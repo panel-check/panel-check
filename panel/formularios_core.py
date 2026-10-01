@@ -95,10 +95,15 @@ FORMULARIOS = {
             {"id": "nombre", "tipo": "texto", "etiqueta": "Razón social", "obligatorio": True, "cliente": "nombre"},
             {"id": "cuit", "tipo": "texto", "etiqueta": "CUIT", "obligatorio": True, "cliente": "cuit", "formato": "cuit"},
             {"id": "telefono", "tipo": "texto", "etiqueta": "Teléfono / WhatsApp", "obligatorio": False, "cliente": "telefono"},
-            {"id": "contacto", "tipo": "texto", "etiqueta": "Persona de contacto", "obligatorio": False, "cliente": "contacto"},
+            {"id": "firmante_nombre", "tipo": "texto", "etiqueta": "Nombre y apellido de quien firma por la empresa", "obligatorio": True,
+             "cliente": "firmante_nombre", "ayuda": "La persona que va a firmar el poder (representante legal o apoderado)."},
+            {"id": "firmante_cargo", "tipo": "texto", "etiqueta": "Cargo de quien firma", "obligatorio": True,
+             "cliente": "firmante_cargo", "ayuda": "Por ejemplo: Socio gerente, Presidente, Apoderado."},
             {"id": "constancia_cuit", "tipo": "archivo", "etiqueta": "Constancia de CUIT", "obligatorio": True,
              "ayuda": "PDF, imagen o Word. Máximo 10 MB.", "mimes": MIME_DOCS},
-            {"id": "domicilio", "tipo": "texto", "etiqueta": "Domicilio completo", "obligatorio": True, "cliente": "domicilio"},
+            {"id": "domicilio", "tipo": "texto", "etiqueta": "Domicilio completo", "obligatorio": True, "cliente": "domicilio",
+             "ayuda": "Calle, número, piso/depto y localidad."},
+            {"id": "provincia", "tipo": "lista", "etiqueta": "Provincia", "obligatorio": True, "cliente": "provincia", "opciones": PROVINCIAS},
             {"id": "estatuto", "tipo": "archivo", "etiqueta": "Estatuto / contrato social / poder", "obligatorio": True,
              "ayuda": "PDF, imagen o Word. Máximo 10 MB.", "mimes": MIME_DOCS},
         ],
@@ -110,7 +115,7 @@ TIPO_LEGIBLE = {"fisica": "Persona física", "juridica": "Persona jurídica"}
 # Columnas que se agregan a `clientes` para guardar lo que llega del formulario.
 COLUMNAS_CLIENTE_NUEVAS = [
     "tipo_persona", "dni", "nacionalidad", "domicilio", "localidad", "provincia", "codigo_postal",
-    "domicilio_comercial", "estado_civil", "conyuge_nombre", "conyuge_dni",
+    "domicilio_comercial", "estado_civil", "conyuge_nombre", "conyuge_dni", "firmante_nombre", "firmante_cargo",
 ]
 
 
@@ -154,6 +159,19 @@ def crear_tablas(cur):
         """
     )
     cur.execute("CREATE INDEX IF NOT EXISTS idx_form_arch_resp ON formularios_archivos(respuesta_id)")
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS poderes_generados (
+            id            SERIAL PRIMARY KEY,
+            cliente_id    INTEGER REFERENCES clientes(id) ON DELETE CASCADE,
+            datos         JSONB NOT NULL,
+            apoderado     TEXT NOT NULL,
+            generado_por  TEXT,
+            generado_en   TIMESTAMPTZ NOT NULL DEFAULT now()
+        )
+        """
+    )
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_poderes_cliente ON poderes_generados(cliente_id, generado_en DESC)")
 
 
 # ── Validación ────────────────────────────────────────────────────────────
@@ -257,6 +275,8 @@ def guardar_respuesta(cur, slug: str, datos: dict, archivos: list, ip: str) -> d
     campos_cliente = {c["cliente"]: datos[c["id"]] for c in form["campos"]
                       if c.get("cliente") and datos.get(c["id"])}
     campos_cliente["tipo_persona"] = tipo
+    if campos_cliente.get("firmante_nombre"):
+        campos_cliente.setdefault("contacto", campos_cliente["firmante_nombre"])
     autor = "formulario web"
 
     cur.execute("SELECT * FROM clientes WHERE cuit = %s AND activo ORDER BY id LIMIT 1", (datos.get("cuit"),))
