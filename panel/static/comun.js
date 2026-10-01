@@ -594,7 +594,7 @@ async function _cargarModalComentarios(acta, conForm = false) {
   if (conForm || !document.getElementById("mc-lista")) {
     const marca = lista.find(c => c.denominacion_inpi || c.denominacion);
     cont.innerHTML = `
-      <h3 class="titulo-coment">💬 Comentarios — acta ${_escapeHtml(acta)}${marca ? ` · ${_escapeHtml(marca.denominacion_inpi || marca.denominacion)}` : ""}</h3>
+      <h3 class="titulo-coment">💬 Chat — acta ${_escapeHtml(acta)}${marca ? ` · ${_escapeHtml(marca.denominacion_inpi || marca.denominacion)}` : ""}</h3>
       ${htmlFormComentario({ acta, conActa: false, idPrefijo: "mc" })}
       <div id="mc-lista">${htmlLista}</div>
     `;
@@ -603,7 +603,7 @@ async function _cargarModalComentarios(acta, conForm = false) {
   }
 }
 
-// Contador de comentarios nuevos en el link "Comentarios" del encabezado
+// Contador de comentarios nuevos en el ícono de chat del encabezado
 // (cualquier elemento con id="link-comentarios").
 async function actualizarContadorComentarios() {
   const link = document.getElementById("link-comentarios");

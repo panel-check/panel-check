@@ -56,13 +56,13 @@
     panel = document.createElement("aside");
     panel.className = "panel-coment";
     panel.id = "panel-coment";
-    panel.setAttribute("aria-label", "Comentarios");
+    panel.setAttribute("aria-label", "Chat");
     panel.innerHTML = `
       <div class="panel-coment-cab">
-        <strong>Comentarios</strong>
-        <button type="button" class="panel-coment-cerrar" title="Cerrar" aria-label="Cerrar comentarios">✕</button>
+        <strong>Chat</strong>
+        <button type="button" class="panel-coment-cerrar" title="Cerrar" aria-label="Cerrar el chat">✕</button>
       </div>
-      <iframe title="Comentarios internos"></iframe>`;
+      <iframe title="Chat interno"></iframe>`;
     document.body.appendChild(panel);
     panel.querySelector(".panel-coment-cerrar").addEventListener("click", () => abrirComentarios(false));
     // El contador se actualiza cuando la pantalla de comentarios ya marcó todo como visto.
