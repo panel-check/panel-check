@@ -582,7 +582,8 @@ le asigna un puntaje de prioridad. Después sigue a cada marca a lo largo del ti
             <tr><td><strong>Oposiciones y vistas</strong><br><small>(antes "Revisión de oposiciones/vistas")</small></td><td>Todos los días, 7 hs</td>
               <td>Para los leads publicados hace 33 días o más (ya cerró el plazo de 30 días para oponerse), revisa
                 una vez la Grilla Digital: si hay una oposición de un tercero o una vista de INPI la marca en el
-                panel, y manda el <strong>mail de aviso</strong> con las novedades.</td></tr>
+                panel, y manda el <strong>mail de aviso</strong> con las novedades. Además existe la
+                <strong>revisión anticipada</strong> (manual, ver Herramientas manuales) para los leads con el plazo todavía abierto.</td></tr>
             <tr><td><strong>Concesiones y vencimientos</strong><br><small>(antes "Revisión de estado del trámite")</small></td><td>Lunes, 8 hs</td>
               <td>Para las marcas que todavía no tienen resolución, revisa si INPI la concedió o denegó, y guarda
                 fecha de concesión, número de disposición y vencimiento.</td></tr>
@@ -701,6 +702,7 @@ le asigna un puntaje de prioridad. Después sigue a cada marca a lo largo del ti
             <tr><th>Usuarios del panel</th><td>En <strong>Mi cuenta → Usuarios del panel</strong> (solo administradores): crear usuarios con clave temporal, resetear claves, dar o quitar administrador, desactivar/reactivar, y ver los últimos intentos de ingreso.</td></tr>
             <tr><th>Recuperar el acceso</th><td>Si nadie puede entrar (se perdieron todas las claves de administrador): en Railway, servicio <em>Panel Leads</em>, agregar la variable <code>PANEL_RECUPERAR</code> con el valor <code>usuario:claveTemporal</code>. Al redeployar, ese usuario queda activo, administrador y con esa clave (pide cambiarla al entrar). <strong>Después hay que borrar la variable.</strong></td></tr>
             <tr><th>Correr ahora</th><td>En <strong>Automatizaciones → Crons</strong>, cada proceso automático tiene su propio botón para dispararlo a mano (en "Completar datos faltantes", uno por fila).</td></tr>
+            <tr><th>Revisión anticipada de oposiciones</th><td>En GitHub Actions, workflow <em>Oposiciones y vistas</em> → <em>Run workflow</em>, tildando <code>parcial</code>: revisa en la Grilla Digital los leads cuyo plazo de 30 días para oponerse <strong>todavía está abierto</strong>. Una oposición figura en la grilla desde que entra, aunque el titular recién se entera al cerrar el plazo; detectarla antes permite contactarlo antes que INPI. No da al lead por revisado: la revisión definitiva del día 33 corre igual después. Guarda cuándo se miró cada lead (<code>revisado_parcial_en</code>) y no vuelve a mirar uno revisado hace menos de 20 horas. No manda el mail de aviso: lo que detecta sale en el aviso de la corrida diaria de las 7 hs.</td></tr>
             <tr><th>Agregar marca manualmente</th><td>Carga al panel un acta puntual que no vino por boletín ni por el escaneo (desde GitHub Actions).</td></tr>
             
             <tr><th>Inspeccionar acta</th><td>Diagnóstico: muestra qué devuelve INPI para un acta, para revisar un caso raro (desde GitHub Actions).</td></tr>

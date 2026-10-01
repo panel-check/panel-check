@@ -27,9 +27,25 @@ chequea una sola vez (no todos los días para siempre). Si algún día INPI
 tarda en resolver la oposición y hay que revisar de nuevo más adelante, por
 ahora se puede resetear esa columna a mano.
 
+Modo --parcial (revisión anticipada): mira los leads cuyo plazo de oposición
+todavía está ABIERTO (publicados hace menos de --dias días). Una oposición
+puede entrar desde el día de la publicación y ya figura en la Grilla Digital,
+aunque el titular recién se entera cuando cierra el plazo; detectarla antes
+nos deja contactarlo antes que INPI. Diferencias con la revisión normal:
+  - NUNCA marca revisado_oposicion_en: la revisión definitiva del día 33
+    sigue corriendo igual después, aunque la parcial haya dado "sin oposición".
+  - Guarda revisado_parcial_en = now() en cada acta y, en la próxima corrida
+    parcial, revisa primero las que hace más que no se miran (--min-horas
+    evita volver a mirar una acta revisada hace poco).
+  - Las que ya tienen oposición detectada no se vuelven a mirar en parcial
+    (el seguimiento de representación posterior lo hace la revisión normal).
+Si detecta una oposición, la guarda igual que la revisión normal, así el
+aviso por mail (notificar_oposiciones.py) la toma como cualquier otra.
+
 Uso:
     DATABASE_URL=... python3 revisar_oposiciones.py
     DATABASE_URL=... python3 revisar_oposiciones.py --dias 33 --delay 1.5
+    DATABASE_URL=... python3 revisar_oposiciones.py --parcial
 
 Alcance: solo es_lead = true (particulares/empresas sin agente ni apoderado).
 Las que ya tienen agente quedan afuera a propósito — ese trámite lo maneja
@@ -67,6 +83,15 @@ def main():
     )
     ap.add_argument("--delay", type=float, default=1.5, help="segundos entre acta y acta (freno de mano)")
     ap.add_argument("--limit", type=int, default=None, help="tope de actas a revisar, útil para pruebas")
+    ap.add_argument(
+        "--parcial", action="store_true",
+        help="revisión anticipada de leads con el plazo de oposición todavía abierto "
+             "(publicados hace menos de --dias días); no marca revisado_oposicion_en",
+    )
+    ap.add_argument(
+        "--min-horas", type=float, default=20.0,
+        help="solo con --parcial: no volver a mirar una acta revisada en parcial hace menos de estas horas",
+    )
     args = ap.parse_args()
 
     dsn = os.environ.get("DATABASE_URL")
@@ -78,27 +103,50 @@ def main():
     conn = psycopg2.connect(dsn)
     try:
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-            cur.execute(
-                """
-                SELECT acta, titular, fecha_publicacion
-                FROM marcas
-                WHERE es_lead = true
-                  AND fecha_publicacion IS NOT NULL
-                  AND fecha_publicacion <= %s
-                  AND (
-                    revisado_oposicion_en IS NULL
-                    OR (tuvo_oposicion = true AND representacion_posterior_oposicion IS NOT TRUE)
-                  )
-                ORDER BY fecha_publicacion
-                """,
-                (corte,),
-            )
+            cur.execute("ALTER TABLE marcas ADD COLUMN IF NOT EXISTS revisado_parcial_en TIMESTAMPTZ")
+            conn.commit()
+            if args.parcial:
+                # Plazo abierto: publicados DESPUÉS del corte (hace menos de N días).
+                # Las que ya tienen oposición detectada no se miran de nuevo.
+                cur.execute(
+                    """
+                    SELECT acta, titular, fecha_publicacion
+                    FROM marcas
+                    WHERE es_lead = true
+                      AND fecha_publicacion IS NOT NULL
+                      AND fecha_publicacion > %s
+                      AND tuvo_oposicion IS NOT TRUE
+                      AND (revisado_parcial_en IS NULL
+                           OR revisado_parcial_en < now() - make_interval(hours => %s))
+                    ORDER BY revisado_parcial_en NULLS FIRST, fecha_publicacion
+                    """,
+                    (corte, args.min_horas),
+                )
+            else:
+                cur.execute(
+                    """
+                    SELECT acta, titular, fecha_publicacion
+                    FROM marcas
+                    WHERE es_lead = true
+                      AND fecha_publicacion IS NOT NULL
+                      AND fecha_publicacion <= %s
+                      AND (
+                        revisado_oposicion_en IS NULL
+                        OR (tuvo_oposicion = true AND representacion_posterior_oposicion IS NOT TRUE)
+                      )
+                    ORDER BY fecha_publicacion
+                    """,
+                    (corte,),
+                )
             pendientes = cur.fetchall()
 
         if args.limit:
             pendientes = pendientes[: args.limit]
 
-        print(f"Leads con publicación <= {corte.isoformat()} (>= {args.dias} días) sin revisar todavía: {len(pendientes)}")
+        if args.parcial:
+            print(f"[PARCIAL] Leads con plazo abierto (publicación > {corte.isoformat()}, < {args.dias} días) a revisar: {len(pendientes)}")
+        else:
+            print(f"Leads con publicación <= {corte.isoformat()} (>= {args.dias} días) sin revisar todavía: {len(pendientes)}")
 
         s = crear_sesion()
         con_oposicion = 0
@@ -152,7 +200,11 @@ def main():
                         f"{fila_rep.get('Referencia', '')}"
                     )
 
-            revisado_en = "now()" if (not tuvo_oposicion or representacion_posterior) else None
+            # En parcial el plazo sigue abierto: nunca se da por revisada.
+            if args.parcial:
+                revisado_en = None
+            else:
+                revisado_en = "now()" if (not tuvo_oposicion or representacion_posterior) else None
 
             with conn.cursor() as cur:
                 cur.execute(
@@ -166,7 +218,8 @@ def main():
                         actas_marca_oponente = %s, marca_oponente_denominacion = %s,
                         marca_oponente_numero_registro = %s,
                         representacion_posterior_oposicion = %s,
-                        detalle_representacion_posterior = %s
+                        detalle_representacion_posterior = %s,
+                        revisado_parcial_en = {"now()" if args.parcial else "revisado_parcial_en"}
                     WHERE acta = %s
                     """,
                     (
@@ -200,10 +253,13 @@ def main():
             time.sleep(args.delay)
 
         print(f"\nRevisadas: {len(pendientes)}. Con oposición/vista detectada: {con_oposicion}.")
-        registrar("revisar_oposiciones.yml", {
-            "revisadas": len(pendientes), "con_oposicion": con_oposicion,
-            "sin_oposicion": len(pendientes) - con_oposicion,
-        }, conn)
+        if not args.parcial:
+            # La parcial no se registra: el registro/tarjeta "Oposiciones y vistas"
+            # del panel cuenta las revisiones definitivas del día 33.
+            registrar("revisar_oposiciones.yml", {
+                "revisadas": len(pendientes), "con_oposicion": con_oposicion,
+                "sin_oposicion": len(pendientes) - con_oposicion,
+            }, conn)
     finally:
         conn.close()
 

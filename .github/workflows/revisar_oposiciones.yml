@@ -15,6 +15,11 @@ on:
         description: "Tope de actas a revisar en esta corrida (dejar vacío = todas)"
         required: false
         default: ""
+      parcial:
+        description: "Revisión anticipada: mira los leads con el plazo de oposición todavía abierto (menos de 'dias' días). No los da por revisados."
+        type: boolean
+        required: false
+        default: false
 
 permissions:
   contents: read
@@ -37,12 +42,13 @@ jobs:
       - name: Instalar dependencias
         run: pip install -r requirements.txt
 
-      - name: Revisar Grilla Digital de leads publicados hace >= 33 días
+      - name: Revisar Grilla Digital de leads (>= 33 días; con "parcial", los de plazo abierto)
         run: |
           cd scripts
           args=""
           if [ -n "${{ inputs.dias }}" ]; then args="$args --dias ${{ inputs.dias }}"; fi
           if [ -n "${{ inputs.limit }}" ]; then args="$args --limit ${{ inputs.limit }}"; fi
+          if [ "${{ inputs.parcial }}" = "true" ]; then args="$args --parcial"; fi
           python3 revisar_oposiciones.py $args
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL || secrets.DATABASE_PUBLIC_URL }}
@@ -51,7 +57,9 @@ jobs:
       - name: Avisar por mail los leads con oposición/vista nueva (Resend)
         # Corre aunque el paso anterior haya fallado a mitad de camino: avisa
         # lo que sí alcanzó a detectar.
-        if: success() || failure()
+        # En una corrida parcial manual no se manda: el aviso sale en la corrida
+        # diaria de las 7 hs con todo lo pendiente.
+        if: (success() || failure()) && inputs.parcial != true
         run: |
           cd scripts
           python3 notificar_oposiciones.py

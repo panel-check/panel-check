@@ -74,6 +74,8 @@ ALTER TABLE marcas ADD COLUMN IF NOT EXISTS detalle_representacion_posterior TEX
 -- Agregado el 30/09/2026: aviso por mail (Resend) de leads con oposición/vista
 -- nueva -- ver scripts/notificar_oposiciones.py. Cada lead se avisa una sola vez.
 ALTER TABLE marcas ADD COLUMN IF NOT EXISTS notificado_oposicion_en TIMESTAMPTZ;
+-- Revisión anticipada (revisar_oposiciones.py --parcial): última vez que se miró en parcial el lead con el plazo abierto.
+ALTER TABLE marcas ADD COLUMN IF NOT EXISTS revisado_parcial_en TIMESTAMPTZ;
 
 -- Agregado el 30/09/2026: escaneo directo de números de acta secuenciales
 -- (scripts/escanear_actas_nuevas.py). El acta se asigna al depositar la
