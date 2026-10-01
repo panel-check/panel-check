@@ -336,3 +336,47 @@ CREATE TABLE IF NOT EXISTS vigilancia_clases_relacionadas (
 CREATE TABLE IF NOT EXISTS vigilancia_palabras_genericas (palabra TEXT PRIMARY KEY);
 
 CREATE TABLE IF NOT EXISTS vigilancia_config (clave TEXT PRIMARY KEY, valor TEXT);
+
+-- ── Formularios para clientes (Clientes → Formularios) ──────────────────
+-- Las crea el panel al arrancar (panel/formularios_core.py: crear_tablas).
+ALTER TABLE clientes ADD COLUMN IF NOT EXISTS tipo_persona TEXT;
+ALTER TABLE clientes ADD COLUMN IF NOT EXISTS dni TEXT;
+ALTER TABLE clientes ADD COLUMN IF NOT EXISTS nacionalidad TEXT;
+ALTER TABLE clientes ADD COLUMN IF NOT EXISTS domicilio TEXT;
+ALTER TABLE clientes ADD COLUMN IF NOT EXISTS localidad TEXT;
+ALTER TABLE clientes ADD COLUMN IF NOT EXISTS provincia TEXT;
+ALTER TABLE clientes ADD COLUMN IF NOT EXISTS codigo_postal TEXT;
+ALTER TABLE clientes ADD COLUMN IF NOT EXISTS domicilio_comercial TEXT;
+ALTER TABLE clientes ADD COLUMN IF NOT EXISTS estado_civil TEXT;
+ALTER TABLE clientes ADD COLUMN IF NOT EXISTS conyuge_nombre TEXT;
+ALTER TABLE clientes ADD COLUMN IF NOT EXISTS conyuge_dni TEXT;
+
+CREATE TABLE IF NOT EXISTS formularios_respuestas (
+    id                SERIAL PRIMARY KEY,
+    formulario        TEXT NOT NULL,           -- persona-fisica | persona-juridica
+    tipo_persona      TEXT NOT NULL,           -- fisica | juridica
+    datos             JSONB NOT NULL DEFAULT '{}'::jsonb,
+    cliente_id        INTEGER REFERENCES clientes(id) ON DELETE SET NULL,
+    cliente_nuevo     BOOLEAN NOT NULL DEFAULT false,
+    estado            TEXT NOT NULL DEFAULT 'nueva',   -- nueva | revisada
+    recibido_en       TIMESTAMPTZ NOT NULL DEFAULT now(),
+    ip                TEXT,
+    revisado_por      TEXT,
+    revisado_en       TIMESTAMPTZ,
+    aviso_enviado_en  TIMESTAMPTZ,
+    aviso_error       TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_form_resp_cliente ON formularios_respuestas(cliente_id);
+CREATE INDEX IF NOT EXISTS idx_form_resp_recibido ON formularios_respuestas(recibido_en DESC);
+
+CREATE TABLE IF NOT EXISTS formularios_archivos (
+    id            SERIAL PRIMARY KEY,
+    respuesta_id  INTEGER NOT NULL REFERENCES formularios_respuestas(id) ON DELETE CASCADE,
+    campo         TEXT NOT NULL,
+    nombre        TEXT NOT NULL,
+    mime          TEXT NOT NULL,
+    tamano        INTEGER NOT NULL,
+    contenido     BYTEA NOT NULL,
+    subido_en     TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_form_arch_resp ON formularios_archivos(respuesta_id);

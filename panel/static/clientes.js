@@ -4,13 +4,14 @@
  * pasa por esc() antes de ir al HTML; los datos viajan en atributos data-*. */
 
 const esc = crmEsc;
-const VISTAS = ["clientes", "marcas", "vigilancia", "vencimientos", "matricula", "ajustes"];
+const VISTAS = ["clientes", "marcas", "formularios", "vigilancia", "vencimientos", "matricula", "ajustes"];
 const est = {
   vista: "clientes",
   clientes: [], origenes: {},
   alertas: { estado: "abiertas", nivel: "", tipo: "", cliente_id: "", sin_contratar: false },
   estadosAlerta: {},
   clienteAbierto: null,
+  tiposPersona: { fisica: "Persona física", juridica: "Persona jurídica" },
 };
 
 const $ = id => document.getElementById(id);
@@ -44,7 +45,7 @@ function cambiarVista(v, { sinURL = false } = {}) {
 }
 
 function cargarVista() {
-  ({ clientes: pintarClientes, marcas: pintarMarcas, vigilancia: pintarVigilancia, vencimientos: pintarVencimientos,
+  ({ clientes: pintarClientes, marcas: pintarMarcas, formularios: pintarFormularios, vigilancia: pintarVigilancia, vencimientos: pintarVencimientos,
      matricula: pintarMatricula, ajustes: pintarAjustes })[est.vista]();
 }
 
@@ -184,9 +185,19 @@ function camposClienteHtml(c = {}) {
     <label>Teléfono<input name="telefono" value="${esc(c.telefono || "")}"></label>
     <label>Persona de contacto<input name="contacto" value="${esc(c.contacto || "")}"></label>
     <label>Origen<select name="origen">${origenes}</select></label>
+    <label>Tipo de persona<select name="tipo_persona"><option value="">—</option>${Object.entries(est.tiposPersona).map(([k, v]) => `<option value="${k}" ${k === c.tipo_persona ? "selected" : ""}>${esc(v)}</option>`).join("")}</select></label>
     <label class="check"><input type="checkbox" name="vigilancia_contratada" ${c.vigilancia_contratada ? "checked" : ""}> Tiene contratada la vigilancia (se le cobra y se le manda el informe)</label>
+    <details class="cl-mas ancho" ${CAMPOS_EXTRA.some(([k]) => c[k]) ? "open" : ""}><summary>Datos para el trámite (DNI, domicilio, estado civil…)</summary>
+      <div class="cl-form">${CAMPOS_EXTRA.map(([k, t]) => `<label>${t}<input name="${k}" value="${esc(c[k] || "")}"></label>`).join("")}</div></details>
     <label class="ancho">Notas internas<textarea name="notas" rows="2">${esc(c.notas || "")}</textarea></label>`;
 }
+
+// Datos que completa el cliente en el formulario web (también editables a mano).
+const CAMPOS_EXTRA = [
+  ["dni", "DNI"], ["nacionalidad", "Nacionalidad"], ["domicilio", "Domicilio"], ["localidad", "Localidad"],
+  ["provincia", "Provincia"], ["codigo_postal", "Código postal"], ["domicilio_comercial", "Domicilio comercial"],
+  ["estado_civil", "Estado civil"], ["conyuge_nombre", "Cónyuge (nombre y apellido)"], ["conyuge_dni", "DNI del cónyuge"],
+];
 
 function leerCampos(form, conActivo = false) {
   const f = form.elements;
@@ -195,7 +206,9 @@ function leerCampos(form, conActivo = false) {
     telefono: f.telefono.value.trim() || null, contacto: f.contacto.value.trim() || null,
     origen: f.origen.value, notas: f.notas.value.trim() || null,
     vigilancia_contratada: f.vigilancia_contratada.checked,
+    tipo_persona: f.tipo_persona.value || null,
   };
+  CAMPOS_EXTRA.forEach(([k]) => { v[k] = f[k].value.trim() || null; });
   if (conActivo && f.activo) v.activo = f.activo.checked;
   return v;
 }
@@ -239,6 +252,7 @@ async function abrirCliente(id) {
     d = await api(`/api/clientes/${id}`);
   } catch (e) { cont.innerHTML = `<p class="crm-error">No se pudo cargar el cliente (${esc(e.message)}).</p>`; return; }
   est.origenes = d.origenes; est.estadosAlerta = d.estados_alerta;
+  if (d.tipos_persona) est.tiposPersona = d.tipos_persona;
   const c = d.cliente;
   const scroll = cont.parentElement.scrollTop;
 
@@ -283,6 +297,9 @@ async function abrirCliente(id) {
         <button type="button" class="cl-btn peligro" id="cli-borrar">Borrar cliente</button>
         <span class="cl-estado" id="cli-estado"></span></div>
 
+      ${d.formularios && d.formularios.length ? `<h4>Formularios completados (${d.formularios.length})</h4>
+        ${d.formularios.map(f => htmlRespuesta(f, { enFicha: true })).join("")}` : ""}
+
       <h4>Sumar marcas</h4>
       <div class="cl-caja">
         <label class="crm-gris" style="display:block;margin-bottom:4px">Números de acta (uno por línea o separados por coma). Se consulta cada uno en INPI y se cargan todos los datos.</label>
@@ -308,6 +325,7 @@ async function abrirCliente(id) {
       <h4>Novedades del expediente</h4>${novedadesHtml}
     </div>`;
   cont.parentElement.scrollTop = scroll;
+  conectarRespuestas(cont, () => abrirCliente(id));
   conectarFichaCliente(cont, d);
 }
 
@@ -666,6 +684,117 @@ async function pintarAjustes() {
   } catch (e) { cont.innerHTML = `<div class="cl-vista"><p class="crm-error">No se pudo cargar (${esc(e.message)}).</p></div>`; }
 }
 
+
+/* ── Formularios para clientes ─────────────────────────────────── */
+function htmlRespuesta(f, { enFicha = false } = {}) {
+  const archivos = f.archivos.length ? `<div class="fm-archivos">${f.archivos.map(a => `
+      <span class="fm-archivo"><span class="crm-gris">${esc(a.etiqueta)}:</span>
+        <a href="/api/formularios/archivos/${a.id}?ver=1" target="_blank" rel="noopener">${esc(a.nombre)}</a>
+        <small class="crm-gris">(${(a.tamano / 1024 / 1024).toFixed(1)} MB)</small>
+        <a href="/api/formularios/archivos/${a.id}" title="Descargar">⬇</a></span>`).join("")}</div>` : "";
+  const filas = f.respuestas.map(r => `<tr><td>${esc(r.etiqueta)}</td><td>${esc(r.valor).replace(/\n/g, "<br>")}</td></tr>`).join("");
+  const aviso = f.aviso_enviado_en ? `mail enviado ${fmtFechaHora(f.aviso_enviado_en)}`
+    : f.aviso_error ? `<span class="crm-error" style="padding:0" title="${esc(f.aviso_error)}">mail pendiente (se reintenta solo)</span>` : "mail pendiente (se envía en minutos)";
+  return `<div class="fm-resp cl-caja" data-resp="${f.id}">
+    <div class="fm-cab"><strong>${esc(f.tipo_legible)}</strong> · recibido ${fmtFechaHora(f.recibido_en)}
+      ${f.estado === "nueva" ? '<span class="cl-tag azul">Nueva</span>' : `<span class="cl-tag ok" title="${esc(f.revisado_por || "")}">Revisada</span>`}
+      ${f.cliente_nuevo ? '<span class="cl-tag">creó el cliente</span>' : '<span class="cl-tag">actualizó datos del cliente</span>'}
+      <small class="crm-gris">· ${aviso}</small></div>
+    <details ${enFicha ? "" : "open"}><summary>Ver respuestas${f.archivos.length ? ` y ${f.archivos.length} archivo(s)` : ""}</summary>
+      <table class="fm-tabla">${filas}</table>${archivos}</details>
+    <div class="cl-acciones">
+      ${f.estado === "nueva" ? '<button type="button" class="cl-btn sec mini" data-fm="revisada">✓ Marcar revisada</button>' : '<button type="button" class="cl-btn sec mini" data-fm="nueva">Volver a «nueva»</button>'}
+      <button type="button" class="cl-btn peligro mini" data-fm="borrar" title="Borra la respuesta y sus archivos. El cliente queda.">Borrar respuesta</button></div>
+  </div>`;
+}
+
+function conectarRespuestas(cont, recargar) {
+  cont.querySelectorAll("[data-fm]").forEach(b => b.addEventListener("click", async () => {
+    const id = b.closest("[data-resp]").dataset.resp;
+    const acc = b.dataset.fm;
+    if (acc === "borrar" && !confirm("¿Borrar esta respuesta y sus archivos? El cliente y sus datos quedan como están.")) return;
+    b.disabled = true;
+    try {
+      if (acc === "borrar") await apiJson(`/api/formularios/${id}`, "DELETE");
+      else await apiJson(`/api/formularios/${id}/estado`, "POST", { estado: acc });
+      cargarBadgeFormularios();
+      recargar();
+    } catch (e) { alert(e.message); b.disabled = false; }
+  }));
+}
+
+async function cargarBadgeFormularios() {
+  try { const r = await api("/api/formularios?estado=nueva"); $("badge-formularios").textContent = r.nuevas ? String(r.nuevas) : ""; } catch (_) {}
+}
+
+async function pintarFormularios() {
+  const cont = vista("formularios");
+  if (!cont.dataset.armado) {
+    cont.dataset.armado = "1";
+    cont.innerHTML = `<div class="cl-vista">
+      <div id="fm-links"></div>
+      <div class="cl-barra" style="margin-top:14px"><label>Mostrar<select id="fm-estado">
+        <option value="">Todas</option><option value="nueva" selected>Nuevas (sin revisar)</option><option value="revisada">Revisadas</option></select></label></div>
+      <div id="fm-lista"></div></div>`;
+    $("fm-estado").addEventListener("change", pintarFormularios);
+  }
+  const lista = $("fm-lista");
+  try {
+    const r = await api(`/api/formularios?estado=${$("fm-estado").value}`);
+    $("badge-formularios").textContent = r.nuevas ? String(r.nuevas) : "";
+    $("fm-links").innerHTML = `<div class="fm-links">${r.formularios.map(f => {
+      const url = location.origin + f.ruta;
+      return `<div class="cl-caja fm-link"><div><strong>${esc(f.tipo)}</strong><br><small class="crm-gris">${esc(f.titulo)}</small></div>
+        <input readonly value="${esc(url)}" onclick="this.select()">
+        <div class="cl-acciones" style="margin-top:0"><button type="button" class="cl-btn mini" data-copiar="${esc(url)}">Copiar link</button>
+          <a class="cl-btn sec mini" href="${esc(url)}" target="_blank" rel="noopener">Abrir</a>
+          <a class="cl-btn sec mini" href="https://wa.me/?text=${encodeURIComponent("Hola! Te paso el formulario para iniciar el registro de tu marca: " + url)}" target="_blank" rel="noopener">WhatsApp</a></div></div>`;
+    }).join("")}</div>
+      <p class="cl-pie">Estos links son públicos: el cliente los abre sin usuario ni clave. Al enviarlo se crea el cliente con todos sus datos (o, si ya existía uno con ese CUIT, se le actualizan) y llega un mail a marcas@komunikacion.com.ar con las respuestas y los archivos.</p>`;
+    $("fm-links").querySelectorAll("[data-copiar]").forEach(b => b.addEventListener("click", async () => {
+      try { await navigator.clipboard.writeText(b.dataset.copiar); b.textContent = "¡Copiado!"; }
+      catch (_) { b.closest(".fm-link").querySelector("input").select(); document.execCommand("copy"); b.textContent = "¡Copiado!"; }
+      setTimeout(() => { b.textContent = "Copiar link"; }, 1800);
+    }));
+    if (!r.respuestas.length) {
+      lista.innerHTML = `<p class="vacio">${$("fm-estado").value === "nueva" ? "No hay formularios nuevos sin revisar." : "Todavía no llegó ningún formulario."}</p>`;
+      return;
+    }
+    lista.innerHTML = `<table class="cl-tabla"><thead><tr><th>Recibido</th><th>Tipo</th><th>Titular</th><th>CUIT</th><th>Marca</th><th>Archivos</th><th>Estado</th><th></th></tr></thead><tbody>
+      ${r.respuestas.map(f => `<tr data-resp="${f.id}">
+        <td>${fmtFechaHora(f.recibido_en)}</td>
+        <td>${esc(est.tiposPersona[f.tipo_persona] || f.tipo_persona)}</td>
+        <td><strong>${esc(f.nombre || "")}</strong><br><small class="crm-gris">${esc(f.email || "")}</small></td>
+        <td>${esc(f.cuit || "")}</td>
+        <td>${esc(f.marca || "—")}</td>
+        <td>${f.archivos ? "📎 " + f.archivos : "—"}</td>
+        <td>${f.estado === "nueva" ? '<span class="cl-tag azul">Nueva</span>' : '<span class="cl-tag ok">Revisada</span>'}
+          ${f.cliente_nuevo ? "" : '<br><small class="crm-gris">ya era cliente</small>'}</td>
+        <td style="white-space:nowrap">${f.cliente_id ? `<button type="button" class="cl-btn mini" data-ver-cliente="${f.cliente_id}">Ver cliente</button>` : '<small class="crm-gris">cliente borrado</small>'}
+          <button type="button" class="cl-btn sec mini" data-ver-resp="${f.id}">Respuestas</button></td></tr>`).join("")}
+      </tbody></table><p class="cl-pie">${r.respuestas.length} formulario(s).</p>`;
+    lista.querySelectorAll("[data-ver-cliente]").forEach(b => b.addEventListener("click", () => abrirCliente(+b.dataset.verCliente)));
+    lista.querySelectorAll("[data-ver-resp]").forEach(b => b.addEventListener("click", () => abrirRespuesta(+b.dataset.verResp)));
+  } catch (e) {
+    lista.innerHTML = `<p class="crm-error">No se pudo cargar (${esc(e.message)}).</p>`;
+  }
+}
+
+async function abrirRespuesta(id) {
+  $("modal-cliente").classList.add("abierto");
+  const cont = $("modal-cliente-contenido");
+  cont.dataset.id = "";
+  cont.innerHTML = '<p class="crm-cargando">Cargando…</p>';
+  try {
+    const f = await api(`/api/formularios/${id}`);
+    cont.innerHTML = `<div class="cl-ficha"><h3>${esc(f.datos.nombre || "Formulario")}</h3>
+      ${f.cliente_id ? `<div class="cl-acciones" style="margin-top:0"><button type="button" class="cl-btn sec" id="fm-ir-cliente">Abrir ficha del cliente</button></div>` : ""}
+      ${htmlRespuesta(f)}</div>`;
+    if (f.cliente_id) $("fm-ir-cliente").addEventListener("click", () => abrirCliente(f.cliente_id));
+    conectarRespuestas(cont, () => { pintarFormularios(); abrirRespuesta(id); });
+  } catch (e) { cont.innerHTML = `<p class="crm-error">No se pudo cargar (${esc(e.message)}).</p>`; }
+}
+
 /* ── Arranque ───────────────────────────────────────────────────── */
 document.querySelectorAll("#pestanas button").forEach(b => b.addEventListener("click", () => cambiarVista(b.dataset.vista)));
 (async function () {
@@ -674,6 +803,7 @@ document.querySelectorAll("#pestanas button").forEach(b => b.addEventListener("c
   cargarResumen();
   cambiarVista(v, { sinURL: true });
   if (p.get("cliente")) abrirCliente(+p.get("cliente"));
+  cargarBadgeFormularios();
   // el badge de "Por matrícula" se llena sin entrar a la pestaña
   try { const r = await api("/api/cartera/por-matricula"); $("badge-matricula").textContent = r.grupos.length ? String(r.grupos.length) : ""; } catch (_) {}
 })();

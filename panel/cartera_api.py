@@ -20,6 +20,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
 import cartera
+import formularios_api
+import formularios_core
 import inpi_lead
 import vigilancia_core as vig
 
@@ -35,6 +37,17 @@ class ClienteNuevo(BaseModel):
     notas: Optional[str] = None
     origen: Optional[str] = "cartera"
     vigilancia_contratada: Optional[bool] = False
+    tipo_persona: Optional[str] = None
+    dni: Optional[str] = None
+    nacionalidad: Optional[str] = None
+    domicilio: Optional[str] = None
+    localidad: Optional[str] = None
+    provincia: Optional[str] = None
+    codigo_postal: Optional[str] = None
+    domicilio_comercial: Optional[str] = None
+    estado_civil: Optional[str] = None
+    conyuge_nombre: Optional[str] = None
+    conyuge_dni: Optional[str] = None
 
 
 class ClienteCambios(BaseModel):
@@ -47,6 +60,17 @@ class ClienteCambios(BaseModel):
     origen: Optional[str] = None
     vigilancia_contratada: Optional[bool] = None
     activo: Optional[bool] = None
+    tipo_persona: Optional[str] = None
+    dni: Optional[str] = None
+    nacionalidad: Optional[str] = None
+    domicilio: Optional[str] = None
+    localidad: Optional[str] = None
+    provincia: Optional[str] = None
+    codigo_postal: Optional[str] = None
+    domicilio_comercial: Optional[str] = None
+    estado_civil: Optional[str] = None
+    conyuge_nombre: Optional[str] = None
+    conyuge_dni: Optional[str] = None
 
 
 class ActaNueva(BaseModel):
@@ -281,9 +305,15 @@ def crear_router(verificar_login, conexion, crm) -> APIRouter:
             if email and "@" not in email:
                 raise HTTPException(status_code=400, detail="El email no parece válido")
             out["email"] = email
-        for k, largo in (("telefono", 60), ("contacto", 200), ("notas", 4000)):
+        for k, largo in (("telefono", 60), ("contacto", 200), ("notas", 4000)) + tuple(
+                (c, 300) for c in formularios_core.COLUMNAS_CLIENTE_NUEVAS if c != "tipo_persona"):
             if hay(k):
                 out[k] = _limpio(getattr(body, k), largo)
+        if hay("tipo_persona"):
+            tp = (body.tipo_persona or "").strip() or None
+            if tp and tp not in formularios_core.TIPO_LEGIBLE:
+                raise HTTPException(status_code=400, detail="Tipo de persona inválido")
+            out["tipo_persona"] = tp
         if hay("origen") and body.origen is not None:
             if body.origen not in cartera.ORIGENES_CLIENTE:
                 raise HTTPException(status_code=400, detail=f"Origen desconocido: {body.origen}")
@@ -400,6 +430,7 @@ def crear_router(verificar_login, conexion, crm) -> APIRouter:
                 )
                 novedades = cur.fetchall()
                 alertas = _alertas(cur, {"cliente_id": cliente_id}, limite=200)
+                formularios = formularios_api.respuestas_de(cur, "cliente_id = %s", (cliente_id,))
         plazos = []
         for m in marcas:
             m["cliente_nombre"] = cliente["nombre"]
@@ -408,7 +439,8 @@ def crear_router(verificar_login, conexion, crm) -> APIRouter:
                                if a["estado"] in cartera.ESTADOS_ALERTA_ABIERTOS and a["tipo"] == "similitud") if p]
         plazos.sort(key=lambda p: p["fecha"])
         return {"cliente": cliente, "marcas": marcas, "novedades": novedades, "alertas": alertas,
-                "plazos": plazos, "origenes": cartera.ORIGENES_CLIENTE, "estados_alerta": cartera.ESTADOS_ALERTA}
+                "plazos": plazos, "formularios": formularios, "tipos_persona": formularios_core.TIPO_LEGIBLE,
+                "origenes": cartera.ORIGENES_CLIENTE, "estados_alerta": cartera.ESTADOS_ALERTA}
 
     @router.put("/api/clientes/{cliente_id}")
     def actualizar_cliente(cliente_id: int, body: ClienteCambios, usuario: str = Depends(verificar_login)):

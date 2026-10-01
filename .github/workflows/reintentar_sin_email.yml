@@ -48,3 +48,17 @@ jobs:
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL || secrets.DATABASE_PUBLIC_URL }}
           PYTHONUNBUFFERED: "1"
+
+      # Respaldo del aviso por mail de los formularios para clientes
+      # (Clientes → Formularios): el panel lo manda al instante si tiene
+      # RESEND_API_KEY; si no pudo, sale acá. Va en un paso aparte para que
+      # un error de mail no marque como fallida la búsqueda de emails.
+      - name: Avisar formularios de clientes pendientes
+        if: always()
+        continue-on-error: true
+        run: |
+          cd scripts
+          python3 notificar_formularios.py
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL || secrets.DATABASE_PUBLIC_URL }}
+          PYTHONUNBUFFERED: "1"

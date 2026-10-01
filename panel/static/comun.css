@@ -903,3 +903,22 @@ tr.crm-fila:hover { background: var(--azul-claro); }
 .vg-cab a, .cl-venc a { color: var(--azul); text-decoration: none; }
 .vg-cab a:hover { text-decoration: underline; }
 .cl-marcas td:last-child { white-space: nowrap; }
+
+/* ── Clientes → Formularios ── */
+.fm-links { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 10px; }
+.fm-link { display: flex; flex-direction: column; gap: 8px; }
+.fm-link input { width: 100%; font: inherit; font-size: 12.5px; padding: 6px 9px; border: 1px solid var(--borde-control); border-radius: 6px; background: #fff; color: var(--texto); }
+.fm-link a.cl-btn { text-decoration: none; }
+.fm-resp { margin-bottom: 10px; }
+.fm-cab { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: 13px; }
+.fm-resp details { margin-top: 8px; }
+.fm-resp summary { cursor: pointer; font-size: 13px; color: var(--azul); font-weight: 500; }
+.fm-tabla { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 13px; }
+.fm-tabla td { padding: 5px 8px; border-bottom: 1px solid var(--borde); vertical-align: top; }
+.fm-tabla td:first-child { color: var(--gris); width: 40%; }
+.fm-archivos { display: flex; flex-direction: column; gap: 4px; margin-top: 8px; font-size: 13px; }
+.fm-archivo a { color: var(--azul); }
+.cl-mas.ancho { grid-column: 1 / -1; }
+.cl-mas { border: 1px solid var(--borde); border-radius: 8px; padding: 8px 10px; background: #fafbfc; }
+.cl-mas summary { cursor: pointer; font-size: 13px; color: var(--azul); font-weight: 500; }
+.cl-mas .cl-form { margin-top: 8px; }

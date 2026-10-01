@@ -45,6 +45,8 @@ from pydantic import BaseModel
 
 import cartera
 import cartera_api
+import formularios_api
+import formularios_core
 import inpi_lead
 
 DATABASE_URL = os.environ.get("DATABASE_URL")
@@ -135,6 +137,7 @@ def migrar_columnas_panel():
             with conn.cursor() as cur:
                 cur.execute("SET lock_timeout = '3s'")
                 cartera.crear_tablas(cur)
+                formularios_core.crear_tablas(cur)
             conn.commit()
     except Exception as e:
         print(f"[startup] tablas de clientes/vigilancia salteadas (no bloqueante): {e}")
@@ -724,6 +727,7 @@ REPORTES_AUTOMATIZACIONES = {
         "columnas": [
             ("emails_conseguidos", "Emails conseguidos", "suma"),
             ("reintentados", "Reintentados", "suma"),
+            ("formularios_avisados", "Formularios de clientes avisados (respaldo)", "suma"),
             ("siguen", "Pendientes al final del día", "ultimo"),
         ],
     },
@@ -2668,6 +2672,10 @@ app.include_router(cartera_api.crear_router(
         aplicar_cambios_crm=_aplicar_cambios_crm, usuarios=USUARIOS_PANEL,
     ),
 ))
+
+# Formularios para clientes (persona física / jurídica): páginas públicas
+# /formulario/... (sin login) + gestión de respuestas en Clientes → Formularios.
+app.include_router(formularios_api.crear_router(verificar_login, conexion))
 
 
 class ArchivosSinCache(StaticFiles):

@@ -46,6 +46,7 @@ ORIGENES_CLIENTE = {
     "cartera": "Cartera previa",
     "sistema": "Vino del sistema de leads",
     "referido": "Referido",
+    "formulario": "Completó el formulario web",
     "otro": "Otro",
 }
 

@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="robots" content="noindex" />
+<title>Formulario de registro de marca</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" />
+<style>
+  :root {
+    --azul: #015197; --azul-oscuro: #013e74; --azul-claro: #e8f1fa;
+    --texto: #1f2430; --gris: #5b6472; --borde: #dfe3e9; --fondo: #f3f5f8;
+    --rojo: #b42318; --rojo-claro: #fef3f2; --verde: #1a8754;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: "Inter", -apple-system, "Segoe UI", Roboto, Arial, sans-serif; background: var(--fondo);
+         color: var(--texto); -webkit-font-smoothing: antialiased; line-height: 1.45; }
+  .pagina { max-width: 680px; margin: 0 auto; padding: 28px 16px 60px; }
+  .tarjeta { background: #fff; border: 1px solid var(--borde); border-radius: 12px; padding: 22px 24px; margin-bottom: 12px; }
+  .cabecera { border-top: 8px solid var(--azul); }
+  h1 { font-size: 24px; line-height: 1.25; margin: 0 0 8px; letter-spacing: -0.01em; }
+  .desc { color: var(--gris); margin: 0; }
+  .otro { display: inline-block; margin-top: 12px; color: var(--azul); font-weight: 500; font-size: 14px; }
+  .oblig-nota { color: var(--rojo); font-size: 13px; margin-top: 14px; }
+  .campo label.titulo, .campo .titulo { display: block; font-weight: 600; font-size: 15px; margin-bottom: 4px; }
+  .campo .ayuda { color: var(--gris); font-size: 13px; margin: 0 0 10px; }
+  .ast { color: var(--rojo); margin-left: 2px; }
+  input[type=text], input[type=email], select, textarea {
+    width: 100%; font: inherit; font-size: 16px; padding: 10px 12px; border: 1px solid #c9d0da; border-radius: 8px;
+    background: #fff; color: var(--texto); }
+  textarea { min-height: 96px; resize: vertical; }
+  input:focus, select:focus, textarea:focus { outline: none; border-color: var(--azul); box-shadow: 0 0 0 3px rgba(1,81,151,.15); }
+  .opciones { display: flex; flex-direction: column; gap: 8px; }
+  .opciones label { display: flex; align-items: center; gap: 10px; font-size: 15px; cursor: pointer; padding: 4px 0; }
+  .opciones input { width: 18px; height: 18px; accent-color: var(--azul); margin: 0; }
+  .archivo { border: 1px dashed #b8c2cf; border-radius: 10px; padding: 14px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .archivo .btn-sec { flex-shrink: 0; }
+  .archivo .nombre-arch { color: var(--gris); font-size: 14px; word-break: break-all; }
+  .archivo input[type=file] { display: none; }
+  .nota-bloque { background: var(--azul-claro); }
+  .nota-bloque .titulo { display: block; font-weight: 600; margin-bottom: 6px; }
+  .nota-bloque p { margin: 0; color: #1d3b5c; font-size: 14px; }
+  .campo.con-error { border-color: var(--rojo); }
+  .campo .err { display: none; color: var(--rojo); font-size: 13px; margin-top: 8px; }
+  .campo.con-error .err { display: block; }
+  .acciones { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 18px; flex-wrap: wrap; }
+  button { font: inherit; cursor: pointer; border-radius: 8px; }
+  .btn { background: var(--azul); color: #fff; border: 0; padding: 12px 26px; font-weight: 600; font-size: 15px; }
+  .btn:hover { background: var(--azul-oscuro); }
+  .btn:disabled { opacity: .6; cursor: wait; }
+  .btn-sec { background: #fff; color: var(--azul); border: 1px solid #b8c9dc; padding: 8px 14px; font-weight: 500; font-size: 14px; }
+  .btn-link { background: none; border: 0; color: var(--gris); font-size: 14px; padding: 6px 0; text-decoration: underline; }
+  .error-general { display: none; background: var(--rojo-claro); color: var(--rojo); border: 1px solid #fecdca; border-radius: 10px;
+                   padding: 12px 14px; margin-bottom: 12px; font-size: 14px; }
+  .trampa { position: absolute; left: -9999px; width: 1px; height: 1px; overflow: hidden; }
+  .ok { text-align: center; padding: 40px 24px; }
+  .ok .tilde { width: 56px; height: 56px; border-radius: 50%; background: #e7f6ee; color: var(--verde); display: grid; place-items: center;
+               font-size: 30px; margin: 0 auto 14px; }
+  .ok h2 { margin: 0 0 6px; font-size: 22px; }
+  .ok p { color: var(--gris); margin: 0; }
+  .cargando { color: var(--gris); text-align: center; padding: 40px 0; }
+  @media (max-width: 520px) { .tarjeta { padding: 18px 16px; } h1 { font-size: 21px; } .acciones { flex-direction: column-reverse; align-items: stretch; } .btn { width: 100%; } }
+</style>
+</head>
+<body>
+<main class="pagina" id="app"><p class="cargando">Cargando formulario…</p></main>
+
+<script>
+const slug = location.pathname.replace(/\/+$/, "").split("/").pop();
+const app = document.getElementById("app");
+let def = null;
+
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const mb = n => (n / 1024 / 1024).toFixed(1).replace(".0", "") + " MB";
+
+function htmlCampo(c) {
+  const ast = c.obligatorio ? '<span class="ast">*</span>' : "";
+  const ayuda = c.ayuda ? `<p class="ayuda">${esc(c.ayuda)}</p>` : "";
+  const id = `f-${c.id}`;
+  let control = "";
+  if (c.tipo === "nota") {
+    return `<div class="tarjeta nota-bloque" data-campo="${c.id}"><span class="titulo">${esc(c.etiqueta)}</span><p>${esc(c.ayuda || "")}</p></div>`;
+  }
+  if (c.tipo === "texto" || c.tipo === "email") {
+    const extra = c.tipo === "email" ? 'type="email" autocomplete="email" inputmode="email"'
+      : c.formato === "cuit" || c.formato === "dni" ? 'type="text" inputmode="numeric"' : 'type="text"';
+    control = `<input ${extra} id="${id}" name="${c.id}" maxlength="300">`;
+  } else if (c.tipo === "parrafo") {
+    control = `<textarea id="${id}" name="${c.id}" maxlength="4000"></textarea>`;
+  } else if (c.tipo === "lista") {
+    control = `<select id="${id}" name="${c.id}"><option value="">Elegí una opción</option>${c.opciones.map(o => `<option>${esc(o)}</option>`).join("")}</select>`;
+  } else if (c.tipo === "opcion") {
+    control = `<div class="opciones" role="radiogroup">${c.opciones.map(o => `<label><input type="radio" name="${c.id}" value="${esc(o)}"> ${esc(o)}</label>`).join("")}</div>`;
+  } else if (c.tipo === "archivo") {
+    const acepta = (c.mimes || []).join(",");
+    control = `<div class="archivo"><button type="button" class="btn-sec" data-elegir="${c.id}">Elegir archivo</button>
+      <span class="nombre-arch" id="n-${c.id}">Ningún archivo elegido</span>
+      <input type="file" id="${id}" name="${c.id}" accept="${acepta}"></div>`;
+  }
+  const lbl = c.tipo === "opcion" || c.tipo === "archivo" ? `<span class="titulo">${esc(c.etiqueta)}${ast}</span>` : `<label class="titulo" for="${id}">${esc(c.etiqueta)}${ast}</label>`;
+  return `<div class="tarjeta campo" data-campo="${c.id}">${lbl}${ayuda}${control}<div class="err"></div></div>`;
+}
+
+function valores() {
+  const f = document.getElementById("form");
+  const v = {};
+  def.campos.forEach(c => {
+    if (c.tipo === "opcion") v[c.id] = (f.querySelector(`input[name="${c.id}"]:checked`) || {}).value || "";
+    else if (c.tipo === "archivo") v[c.id] = f.elements[c.id].files[0] || null;
+    else if (c.tipo !== "nota") v[c.id] = f.elements[c.id].value.trim();
+  });
+  return v;
+}
+
+const visible = (c, v) => !c.si || v[c.si.campo] === c.si.valor;
+
+function actualizarVisibles() {
+  const v = valores();
+  def.campos.forEach(c => { document.querySelector(`[data-campo="${c.id}"]`).hidden = !visible(c, v); });
+}
+
+function validar() {
+  const v = valores();
+  let primero = null;
+  def.campos.forEach(c => {
+    const caja = document.querySelector(`[data-campo="${c.id}"]`);
+    if (c.tipo === "nota") return;
+    let err = "";
+    if (visible(c, v)) {
+      const val = v[c.id];
+      if (c.obligatorio && !val) err = "Esta pregunta es obligatoria.";
+      else if (val && c.tipo === "email" && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(val)) err = "Revisá el correo electrónico.";
+      else if (val && c.formato === "cuit" && val.replace(/\D/g, "").length !== 11) err = "Tiene que tener 11 números.";
+      else if (val && c.formato === "dni" && !/^\d{6,9}$/.test(val.replace(/\D/g, ""))) err = "Revisá el número.";
+      else if (val && c.tipo === "archivo" && val.size > def.max_archivo) err = `El archivo pesa ${mb(val.size)}: el máximo es ${mb(def.max_archivo)}.`;
+    }
+    caja.classList.toggle("con-error", !!err);
+    caja.querySelector(".err").textContent = err;
+    if (err && !primero) primero = caja;
+  });
+  if (primero) primero.scrollIntoView({ behavior: "smooth", block: "center" });
+  return !primero;
+}
+
+async function enviar(ev) {
+  ev.preventDefault();
+  const errGen = document.getElementById("error-general");
+  errGen.style.display = "none";
+  if (!validar()) return;
+  const btn = document.getElementById("btn-enviar");
+  btn.disabled = true; btn.textContent = "Enviando…";
+  const v = valores();
+  const datos = new FormData();
+  def.campos.forEach(c => {
+    if (c.tipo === "nota" || !visible(c, v) || !v[c.id]) return;
+    datos.append(c.id, v[c.id]);
+  });
+  datos.append("sitio_web", document.getElementById("sitio_web").value);
+  try {
+    const r = await fetch(`/api/publico/formulario/${encodeURIComponent(slug)}`, { method: "POST", body: datos });
+    if (!r.ok) {
+      let msg = "No se pudo enviar el formulario. Probá de nuevo en unos minutos.";
+      try { msg = (await r.json()).detail || msg; } catch (_) {}
+      if (r.status === 413) msg = "Los archivos pesan demasiado (máximo 10 MB cada uno).";
+      throw new Error(msg);
+    }
+    app.innerHTML = `<div class="tarjeta cabecera ok"><div class="tilde">✓</div><h2>¡Gracias! Recibimos tus datos</h2>
+      <p>Ya nos llegó el formulario. Nos vamos a poner en contacto con vos a la brevedad.</p></div>`;
+    window.scrollTo(0, 0);
+  } catch (e) {
+    errGen.textContent = e.message; errGen.style.display = "block";
+    errGen.scrollIntoView({ behavior: "smooth", block: "center" });
+    btn.disabled = false; btn.textContent = "Enviar";
+  }
+}
+
+async function iniciar() {
+  try {
+    const r = await fetch(`/api/publico/formulario/${encodeURIComponent(slug)}`);
+    if (!r.ok) throw new Error();
+    def = await r.json();
+  } catch (_) {
+    app.innerHTML = '<div class="tarjeta cabecera"><h1>Formulario no disponible</h1><p class="desc">Revisá el link o pedinos uno nuevo.</p></div>';
+    return;
+  }
+  document.title = def.titulo;
+  app.innerHTML = `
+    <div class="tarjeta cabecera"><h1>${esc(def.titulo)}</h1><p class="desc">${esc(def.descripcion)}</p>
+      ${def.otro ? `<a class="otro" href="/formulario/${esc(def.otro.slug)}">${esc(def.otro.texto)} →</a>` : ""}
+      <div class="oblig-nota">* Indica que la pregunta es obligatoria</div></div>
+    <form id="form" novalidate>
+      ${def.campos.map(htmlCampo).join("")}
+      <div class="trampa" aria-hidden="true"><label>No completar<input type="text" id="sitio_web" name="sitio_web" tabindex="-1" autocomplete="off"></label></div>
+      <div class="error-general" id="error-general" role="alert"></div>
+      <div class="acciones"><button type="button" class="btn-link" id="btn-borrar">Borrar formulario</button>
+        <button type="submit" class="btn" id="btn-enviar">Enviar</button></div>
+    </form>`;
+  const form = document.getElementById("form");
+  form.addEventListener("submit", enviar);
+  form.addEventListener("change", ev => {
+    actualizarVisibles();
+    const caja = ev.target.closest(".campo");
+    if (caja && caja.classList.contains("con-error")) { caja.classList.remove("con-error"); }
+    if (ev.target.type === "file") {
+      const f = ev.target.files[0];
+      document.getElementById(`n-${ev.target.name}`).textContent = f ? `${f.name} (${mb(f.size)})` : "Ningún archivo elegido";
+    }
+  });
+  form.querySelectorAll("[data-elegir]").forEach(b => b.addEventListener("click", () => form.elements[b.dataset.elegir].click()));
+  document.getElementById("btn-borrar").addEventListener("click", () => {
+    if (!confirm("¿Borrar todas las respuestas del formulario?")) return;
+    form.reset();
+    form.querySelectorAll(".nombre-arch").forEach(n => { n.textContent = "Ningún archivo elegido"; });
+    form.querySelectorAll(".con-error").forEach(n => n.classList.remove("con-error"));
+    actualizarVisibles();
+  });
+  actualizarVisibles();
+}
+iniciar();
+</script>
+</body>
+</html>

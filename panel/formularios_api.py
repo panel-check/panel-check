@@ -1,0 +1,234 @@
+"""
+Rutas de los formularios para clientes (ver formularios_core.py).
+
+Públicas (sin login — son las que abre el cliente):
+  GET  /formulario/persona-fisica | /formulario/persona-juridica   la página
+  GET  /api/publico/formulario/{slug}                              definición de campos
+  POST /api/publico/formulario/{slug}                              envío (multipart)
+
+Del panel (con login):
+  GET    /api/formularios                    links + respuestas recibidas
+  GET    /api/formularios/{id}               una respuesta completa
+  POST   /api/formularios/{id}/estado        marcar revisada / nueva
+  DELETE /api/formularios/{id}               borrar respuesta y archivos (no el cliente)
+  GET    /api/formularios/archivos/{id}      descargar / ver un archivo
+"""
+
+import os
+import threading
+import time
+from urllib.parse import quote
+from collections import defaultdict, deque
+import psycopg2.extras
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
+from fastapi.responses import FileResponse, JSONResponse, Response
+from pydantic import BaseModel
+
+import formularios_core as fc
+
+STATIC = os.path.join(os.path.dirname(__file__), "static")
+MAX_ENVIO = 32 * 1024 * 1024  # tope del pedido entero (3 archivos de 10 MB + texto)
+ENVIOS_POR_HORA = 10          # por IP, contra spam / robots
+
+# Tipos que el navegador puede mostrar sin riesgo (nunca HTML/SVG).
+MIME_VER_EN_LINEA = {"application/pdf", "image/jpeg", "image/png", "image/webp", "image/gif"}
+
+
+class CambioEstado(BaseModel):
+    estado: str
+
+
+def _ip(request: Request) -> str:
+    xff = request.headers.get("x-forwarded-for", "")
+    return (xff.split(",")[0].strip() if xff else (request.client.host if request.client else "")) or "?"
+
+
+_envios = defaultdict(deque)
+_envios_lock = threading.Lock()
+
+
+def _limite_envios(ip: str):
+    ahora = time.time()
+    with _envios_lock:
+        q = _envios[ip]
+        while q and ahora - q[0] > 3600:
+            q.popleft()
+        if len(q) >= ENVIOS_POR_HORA:
+            raise HTTPException(status_code=429, detail="Recibimos muchos envíos desde tu conexión. Probá de nuevo en un rato.")
+        q.append(ahora)
+
+
+def respuestas_de(cur, donde: str, val) -> list:
+    """Respuestas con sus archivos (sin el contenido) y las respuestas en orden
+    legible. También la usa la ficha del cliente (cartera_api)."""
+    cur.execute(f"SELECT * FROM formularios_respuestas WHERE {donde} ORDER BY recibido_en DESC", val)
+    filas = cur.fetchall()
+    if not filas:
+        return []
+    cur.execute("SELECT id, respuesta_id, campo, nombre, mime, tamano FROM formularios_archivos "
+                "WHERE respuesta_id = ANY(%s) ORDER BY id", ([f["id"] for f in filas],))
+    por_resp = {}
+    for a in cur.fetchall():
+        por_resp.setdefault(a["respuesta_id"], []).append(a)
+    etiquetas = {s: {c["id"]: c["etiqueta"] for c in f["campos"]} for s, f in fc.FORMULARIOS.items()}
+    for f in filas:
+        f["archivos"] = por_resp.get(f["id"], [])
+        for a in f["archivos"]:
+            a["etiqueta"] = etiquetas.get(f["formulario"], {}).get(a["campo"], a["campo"])
+        f["respuestas"] = [{"etiqueta": k, "valor": v} for k, v in
+                           fc.respuestas_legibles(f["formulario"], f["datos"] or {})]
+        f["tipo_legible"] = fc.TIPO_LEGIBLE.get(f["tipo_persona"], f["tipo_persona"])
+    return filas
+
+
+def crear_router(verificar_login, conexion) -> APIRouter:
+    router = APIRouter()
+
+    def rcur(conn):
+        return conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+    def _aviso_en_segundo_plano(respuesta_id: int):
+        api_key = os.environ.get("RESEND_API_KEY")
+        if not api_key:
+            return  # lo manda el respaldo automático (scripts/notificar_formularios.py)
+        destinatarios = [d.strip() for d in (os.environ.get("NOTIFICAR_A") or fc.DEFAULT_TO).split(",") if d.strip()]
+        try:
+            with conexion() as conn:
+                fc.avisar_respuesta(conn, respuesta_id, api_key, os.environ.get("RESEND_FROM") or fc.DEFAULT_FROM,
+                                    destinatarios, (os.environ.get("PANEL_URL") or fc.DEFAULT_PANEL).rstrip("/"))
+        except Exception as e:  # noqa: BLE001 — queda pendiente para el respaldo
+            print(f"[formularios] aviso de la respuesta {respuesta_id} no enviado: {e}")
+
+    # ── Públicas ──────────────────────────────────────────────────────
+    @router.get("/formulario/{slug}", include_in_schema=False)
+    def pagina_formulario(slug: str):
+        if slug not in fc.FORMULARIOS:
+            raise HTTPException(status_code=404, detail="Formulario inexistente")
+        r = FileResponse(os.path.join(STATIC, "formulario.html"))
+        r.headers["Cache-Control"] = "no-cache"
+        r.headers["X-Robots-Tag"] = "noindex"
+        return r
+
+    @router.get("/api/publico/formulario/{slug}")
+    def definicion(slug: str):
+        f = fc.FORMULARIOS.get(slug)
+        if not f:
+            raise HTTPException(status_code=404, detail="Formulario inexistente")
+        return {"slug": slug, **{k: f[k] for k in ("titulo", "descripcion", "otro")},
+                "campos": [{k: v for k, v in c.items() if k != "cliente"} for c in f["campos"]],
+                "max_archivo": fc.MAX_ARCHIVO}
+
+    @router.post("/api/publico/formulario/{slug}")
+    async def enviar(slug: str, request: Request, background: BackgroundTasks):
+        if slug not in fc.FORMULARIOS:
+            raise HTTPException(status_code=404, detail="Formulario inexistente")
+        try:
+            largo = int(request.headers.get("content-length") or 0)
+        except ValueError:
+            largo = 0
+        if largo > MAX_ENVIO:
+            raise HTTPException(status_code=413, detail="Los archivos pesan demasiado (máximo 10 MB cada uno).")
+        ip = _ip(request)
+        _limite_envios(ip)
+        form = await request.form(max_files=10, max_fields=60)
+        if (form.get("sitio_web") or "").strip():  # campo trampa invisible: solo lo llenan los robots
+            return {"ok": True}
+        valores, archivos = {}, {}
+        for clave, valor in form.multi_items():
+            if hasattr(valor, "read"):
+                contenido = await valor.read(fc.MAX_ARCHIVO + 1)
+                if contenido:
+                    archivos[clave] = (valor.filename or "archivo", valor.content_type or "", contenido)
+            else:
+                valores[clave] = str(valor)
+        try:
+            datos, validos = fc.validar(slug, valores, archivos)
+        except fc.ErrorFormulario as e:
+            return JSONResponse(status_code=400, content={"detail": str(e)})
+        with conexion() as conn:
+            with rcur(conn) as cur:
+                res = fc.guardar_respuesta(cur, slug, datos, validos, ip)
+            conn.commit()
+        background.add_task(_aviso_en_segundo_plano, res["respuesta_id"])
+        return {"ok": True}
+
+    # ── Del panel ─────────────────────────────────────────────────────
+    @router.get("/api/formularios")
+    def listar(estado: str = "", _: str = Depends(verificar_login)):
+        cond, val = [], []
+        if estado in ("nueva", "revisada"):
+            cond.append("r.estado = %s")
+            val.append(estado)
+        donde = ("WHERE " + " AND ".join(cond)) if cond else ""
+        with conexion() as conn:
+            with rcur(conn) as cur:
+                cur.execute(
+                    f"""
+                    SELECT r.id, r.formulario, r.tipo_persona, r.estado, r.recibido_en, r.cliente_id, r.cliente_nuevo,
+                           r.aviso_enviado_en, r.aviso_error, r.revisado_por, r.revisado_en,
+                           r.datos->>'nombre' AS nombre, r.datos->>'cuit' AS cuit, r.datos->>'email' AS email,
+                           r.datos->>'marca_nombre' AS marca, c.nombre AS cliente_nombre,
+                           (SELECT COUNT(*) FROM formularios_archivos a WHERE a.respuesta_id = r.id) AS archivos
+                    FROM formularios_respuestas r LEFT JOIN clientes c ON c.id = r.cliente_id
+                    {donde} ORDER BY r.recibido_en DESC LIMIT 500
+                    """,
+                    val,
+                )
+                filas = cur.fetchall()
+                cur.execute("SELECT COUNT(*) AS n FROM formularios_respuestas WHERE estado = 'nueva'")
+                nuevas = cur.fetchone()["n"]
+        return {"respuestas": filas, "nuevas": nuevas,
+                "formularios": [{"slug": s, "titulo": f["titulo"], "tipo": fc.TIPO_LEGIBLE[f["tipo_persona"]],
+                                 "ruta": f"/formulario/{s}"} for s, f in fc.FORMULARIOS.items()]}
+
+    @router.get("/api/formularios/{rid}")
+    def ver(rid: int, _: str = Depends(verificar_login)):
+        with conexion() as conn:
+            with rcur(conn) as cur:
+                filas = respuestas_de(cur, "id = %s", (rid,))
+        if not filas:
+            raise HTTPException(status_code=404, detail="No existe esa respuesta")
+        return filas[0]
+
+    @router.post("/api/formularios/{rid}/estado")
+    def cambiar_estado(rid: int, body: CambioEstado, usuario: str = Depends(verificar_login)):
+        if body.estado not in ("nueva", "revisada"):
+            raise HTTPException(status_code=400, detail="Estado inválido")
+        with conexion() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE formularios_respuestas SET estado = %s, revisado_por = %s, revisado_en = now() WHERE id = %s",
+                    (body.estado, usuario if body.estado == "revisada" else None, rid),
+                )
+                if not cur.rowcount:
+                    raise HTTPException(status_code=404, detail="No existe esa respuesta")
+            conn.commit()
+        return {"ok": True}
+
+    @router.delete("/api/formularios/{rid}")
+    def borrar(rid: int, _: str = Depends(verificar_login)):
+        with conexion() as conn:
+            with conn.cursor() as cur:
+                cur.execute("DELETE FROM formularios_respuestas WHERE id = %s", (rid,))
+                if not cur.rowcount:
+                    raise HTTPException(status_code=404, detail="No existe esa respuesta")
+            conn.commit()
+        return {"ok": True}
+
+    @router.get("/api/formularios/archivos/{aid}")
+    def archivo(aid: int, ver: bool = False, _: str = Depends(verificar_login)):
+        with conexion() as conn:
+            with rcur(conn) as cur:
+                cur.execute("SELECT nombre, mime, contenido FROM formularios_archivos WHERE id = %s", (aid,))
+                a = cur.fetchone()
+        if not a:
+            raise HTTPException(status_code=404, detail="No existe ese archivo")
+        en_linea = ver and a["mime"] in MIME_VER_EN_LINEA
+        nombre = a["nombre"].replace('"', "")
+        disp = f"{'inline' if en_linea else 'attachment'}; filename*=UTF-8''{quote(nombre)}"
+        return Response(content=bytes(a["contenido"]), media_type=a["mime"],
+                        headers={"Content-Disposition": disp, "X-Content-Type-Options": "nosniff",
+                                 "Content-Security-Policy": "default-src 'none'; img-src 'self'; style-src 'unsafe-inline'"})
+
+    return router
+
