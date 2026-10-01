@@ -47,6 +47,10 @@ Uso:
     DATABASE_URL=... python3 revisar_oposiciones.py --dias 33 --delay 1.5
     DATABASE_URL=... python3 revisar_oposiciones.py --parcial
 
+Si además de la oposición aparece un apoderado/gestor sumado después, el lead
+deja de serlo: es_lead pasa a false (caracter "Apoderado/gestor posterior a la
+oposición") y se recalcula el score. Los datos de la oposición se conservan.
+
 Alcance: solo es_lead = true (particulares/empresas sin agente ni apoderado).
 Las que ya tienen agente quedan afuera a propósito — ese trámite lo maneja
 su propio apoderado.
@@ -72,6 +76,40 @@ from validar_leads import (
     descargar_formulario_oposicion,
     detectar_oposicion,
 )
+
+
+CARACTER_POSTERIOR = "Apoderado/gestor posterior a la oposición"
+
+# es_lead pasa a false y el score se recalcula con la misma fórmula de
+# validar_leads.calcular_lead_score (+50 sin matrícula, -100 por no ser lead,
+# +20 con email).
+SQL_PASAR_A_CON_AGENTE = """
+    UPDATE marcas
+    SET es_lead = false,
+        caracter = %s,
+        lead_score = (CASE WHEN TRIM(COALESCE(matricula_agente, '')) IN ('', 'Part.') THEN 50 ELSE 0 END)
+                     - 100 + (CASE WHEN COALESCE(email, '') <> '' THEN 20 ELSE 0 END),
+        actualizado_en = now()
+    WHERE es_lead IS TRUE
+      AND representacion_posterior_oposicion IS TRUE
+"""
+
+
+def pasar_a_con_agente(conn, acta=None):
+    """Si alguien se sumó como apoderado/gestor después de la oposición, el
+    titular ya no es un lead frío: es_lead=false (igual que una marca con
+    agente), así sale del panel de leads y de los avisos. Sin acta, aplica a
+    todos los que ya estaban marcados (por si quedó alguno de corridas
+    anteriores). La fila sigue en la base con su oposición y su detalle."""
+    sql, args = SQL_PASAR_A_CON_AGENTE, [CARACTER_POSTERIOR]
+    if acta:
+        sql += "      AND acta = %s\n"
+        args.append(acta)
+    with conn.cursor() as cur:
+        cur.execute(sql, args)
+        n = cur.rowcount
+    conn.commit()
+    return n
 
 
 def main():
@@ -105,6 +143,11 @@ def main():
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
             cur.execute("ALTER TABLE marcas ADD COLUMN IF NOT EXISTS revisado_parcial_en TIMESTAMPTZ")
             conn.commit()
+        # Arrastre: los que ya tenían apoderado/gestor posterior y seguían como lead.
+        previos = pasar_a_con_agente(conn)
+        if previos:
+            print(f"Leads con oposición y apoderado/gestor posterior pasados a 'con agente': {previos}")
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
             if args.parcial:
                 # Plazo abierto: publicados DESPUÉS del corte (hace menos de N días).
                 # Las que ya tienen oposición detectada no se miran de nuevo.
@@ -239,13 +282,16 @@ def main():
                 )
             conn.commit()
 
+            if representacion_posterior:
+                pasar_a_con_agente(conn, acta)
+
             if tuvo_oposicion:
                 con_oposicion += 1
                 # No se imprime el titular ni el detalle/oponente: son datos
                 # personales de terceros (nombre, CUIT/DNI, fundamento) que no
                 # deben quedar en los logs de Actions (repo público). Sí se
                 # siguen guardando en la base (UPDATE de arriba), sin cambios.
-                extra = " (ya con apoderado/gestor posterior)" if representacion_posterior else ""
+                extra = " (ya con apoderado/gestor posterior: pasa a 'con agente')" if representacion_posterior else ""
                 print(f"  [{i}/{len(pendientes)}] acta {acta}: CON OPOSICIÓN/VISTA{extra}")
             else:
                 print(f"  [{i}/{len(pendientes)}] acta {acta}: sin oposición")

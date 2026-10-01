@@ -1277,12 +1277,20 @@ def reintentar_email(acta: str, _: str = Depends(verificar_login)):
     Tarda unos segundos (varias requests contra INPI en serie)."""
     with conexion() as conn:
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-            cur.execute("SELECT matricula_agente FROM marcas WHERE acta = %s", (acta,))
+            cur.execute(
+                "SELECT matricula_agente, representacion_posterior_oposicion FROM marcas WHERE acta = %s",
+                (acta,),
+            )
             fila = cur.fetchone()
             if not fila:
                 raise HTTPException(status_code=404, detail=f"No existe el acta {acta}")
 
         info = inpi_lead.revisar_acta(acta)
+        if fila.get("representacion_posterior_oposicion"):
+            # Se sumó un apoderado/gestor después de la oposición: sigue sin ser lead
+            # aunque el expediente todavía muestre el carácter vacío.
+            info["es_lead"] = False
+            info["caracter"] = "Apoderado/gestor posterior a la oposición"
         nuevo_score = inpi_lead.calcular_lead_score(
             fila["matricula_agente"], info["es_lead"], bool(info["email"])
         )

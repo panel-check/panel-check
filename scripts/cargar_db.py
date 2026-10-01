@@ -146,11 +146,17 @@ def main():
                     -- fila no es M/F y nunca intenta buscarlo).
                     cuit = COALESCE(EXCLUDED.cuit, marcas.cuit),
                     matricula_agente = EXCLUDED.matricula_agente,
-                    caracter = EXCLUDED.caracter,
-                    es_lead = EXCLUDED.es_lead,
+                    -- Si se detectó un apoderado/gestor posterior a la oposición
+                    -- (revisar_oposiciones.py), reprocesar el boletín no lo devuelve
+                    -- a lead.
+                    caracter = CASE WHEN marcas.representacion_posterior_oposicion IS TRUE
+                                    THEN marcas.caracter ELSE EXCLUDED.caracter END,
+                    es_lead = CASE WHEN marcas.representacion_posterior_oposicion IS TRUE
+                                   THEN FALSE ELSE EXCLUDED.es_lead END,
                     email = EXCLUDED.email,
                     email_apoderado = EXCLUDED.email_apoderado,
-                    lead_score = EXCLUDED.lead_score,
+                    lead_score = CASE WHEN marcas.representacion_posterior_oposicion IS TRUE
+                                      THEN marcas.lead_score ELSE EXCLUDED.lead_score END,
                     motivo_sin_email = EXCLUDED.motivo_sin_email,
                     -- fecha_publicacion tampoco se pisa con NULL: no cambia con
                     -- el tiempo, así que si ya la teníamos no hace falta perderla.
