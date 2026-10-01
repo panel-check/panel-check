@@ -20,6 +20,8 @@ import re
 
 import requests
 
+import archivos_seguros
+
 # ── Definición de los formularios ─────────────────────────────────────────
 # Única fuente de verdad: la página pública se arma con esto (lo pide por
 # /api/publico/formulario/{tipo}), el backend valida con esto y el mail y la
@@ -38,8 +40,9 @@ PROVINCIAS = [
     "Santiago del Estero", "Tierra del Fuego", "Tucumán",
 ]
 
+# El .doc viejo no se acepta: puede traer macros escondidas (ver archivos_seguros.py).
 MIME_DOCS = ["application/pdf", "image/jpeg", "image/png", "image/webp",
-             "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"]
+             "application/vnd.openxmlformats-officedocument.wordprocessingml.document"]
 MIME_LOGO = ["image/jpeg", "image/png", "image/webp", "image/gif", "application/pdf"]
 EXT_POR_MIME = {
     "application/pdf": ".pdf", "image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp",
@@ -100,12 +103,12 @@ FORMULARIOS = {
             {"id": "firmante_cargo", "tipo": "texto", "etiqueta": "Cargo de quien firma", "obligatorio": True,
              "cliente": "firmante_cargo", "ayuda": "Por ejemplo: Socio gerente, Presidente, Apoderado."},
             {"id": "constancia_cuit", "tipo": "archivo", "etiqueta": "Constancia de CUIT", "obligatorio": True,
-             "ayuda": "PDF, imagen o Word. Máximo 10 MB.", "mimes": MIME_DOCS},
+             "ayuda": "PDF, imagen (JPG, PNG) o Word (.docx). Máximo 10 MB.", "mimes": MIME_DOCS},
             {"id": "domicilio", "tipo": "texto", "etiqueta": "Domicilio completo", "obligatorio": True, "cliente": "domicilio",
              "ayuda": "Calle, número, piso/depto y localidad."},
             {"id": "provincia", "tipo": "lista", "etiqueta": "Provincia", "obligatorio": True, "cliente": "provincia", "opciones": PROVINCIAS},
             {"id": "estatuto", "tipo": "archivo", "etiqueta": "Estatuto / contrato social / poder", "obligatorio": True,
-             "ayuda": "PDF, imagen o Word. Máximo 10 MB.", "mimes": MIME_DOCS},
+             "ayuda": "PDF, imagen (JPG, PNG) o Word (.docx). Máximo 10 MB.", "mimes": MIME_DOCS},
         ],
     },
 }
@@ -214,7 +217,7 @@ def nombre_archivo_seguro(nombre: str, mime: str) -> str:
     base = base[:120]
     ext = EXT_POR_MIME.get(mime, "")
     if ext and not base.lower().endswith(ext) and not (ext == ".jpg" and base.lower().endswith(".jpeg")):
-        base += ext
+        base = re.sub(r"\.(gif|png|jpe?g|webp|pdf|docx?)$", "", base, flags=re.I) + ext  # p.ej. un GIF se guarda como PNG
     return base
 
 
@@ -238,6 +241,10 @@ def validar(slug: str, valores: dict, archivos: dict) -> tuple:
             mime = detectar_mime(contenido, declarado or "")
             if mime not in c.get("mimes", MIME_DOCS):
                 raise ErrorFormulario(f"«{c['etiqueta']}»: el tipo de archivo no está permitido. {c.get('ayuda', '')}".strip())
+            try:  # revisión de seguridad: imágenes regeneradas, PDF/Word sin contenido activo
+                contenido, mime = archivos_seguros.revisar(contenido, mime)
+            except archivos_seguros.ArchivoRechazado as e:
+                raise ErrorFormulario(f"«{c['etiqueta']}»: {e}")
             validos.append({"campo": c["id"], "nombre": nombre_archivo_seguro(nombre, mime), "mime": mime,
                             "contenido": contenido})
             continue

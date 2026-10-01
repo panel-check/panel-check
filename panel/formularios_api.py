@@ -23,6 +23,7 @@ from typing import Optional
 from urllib.parse import quote
 from collections import defaultdict, deque
 import psycopg2.extras
+import requests
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse, Response
 from pydantic import BaseModel
@@ -106,6 +107,29 @@ def respuestas_de(cur, donde: str, val) -> list:
     return filas
 
 
+# ── Captcha (Cloudflare Turnstile) ─────────────────────────────────────────
+# Se activa solo si Railway tiene TURNSTILE_SITE_KEY y TURNSTILE_SECRET_KEY.
+# Sin esas variables el formulario sigue protegido por el campo trampa y el
+# límite de envíos por conexión, pero sin captcha.
+def _turnstile_activo() -> bool:
+    return bool(os.environ.get("TURNSTILE_SITE_KEY") and os.environ.get("TURNSTILE_SECRET_KEY"))
+
+
+def _captcha_ok(token: str, ip: str) -> bool:
+    if not _turnstile_activo():
+        return True
+    if not token or len(token) > 2048:
+        return False
+    try:
+        r = requests.post("https://challenges.cloudflare.com/turnstile/v0/siteverify",
+                          data={"secret": os.environ["TURNSTILE_SECRET_KEY"], "response": token, "remoteip": ip},
+                          timeout=10)
+        return bool(r.json().get("success"))
+    except Exception as e:  # noqa: BLE001 — si Cloudflare no responde, no se le traba el envío al cliente
+        print(f"[formularios] Turnstile no respondió ({e}); se acepta el envío (sigue el límite por conexión)")
+        return True
+
+
 def crear_router(verificar_login, conexion) -> APIRouter:
     router = APIRouter()
 
@@ -142,7 +166,8 @@ def crear_router(verificar_login, conexion) -> APIRouter:
             raise HTTPException(status_code=404, detail="Formulario inexistente")
         return {"slug": slug, **{k: f[k] for k in ("titulo", "descripcion", "otro")},
                 "campos": [{k: v for k, v in c.items() if k != "cliente"} for c in f["campos"]],
-                "max_archivo": fc.MAX_ARCHIVO}
+                "max_archivo": fc.MAX_ARCHIVO,
+                "turnstile_site_key": os.environ.get("TURNSTILE_SITE_KEY") if _turnstile_activo() else None}
 
     @router.post("/api/publico/formulario/{slug}")
     async def enviar(slug: str, request: Request, background: BackgroundTasks):
@@ -159,6 +184,9 @@ def crear_router(verificar_login, conexion) -> APIRouter:
         form = await request.form(max_files=10, max_fields=60)
         if (form.get("sitio_web") or "").strip():  # campo trampa invisible: solo lo llenan los robots
             return {"ok": True}
+        if not _captcha_ok(str(form.get("cf-turnstile-response") or ""), ip):
+            return JSONResponse(status_code=400, content={"detail": "No pudimos verificar que no seas un robot. "
+                                                          "Esperá a que aparezca el tilde de verificación y volvé a enviar."})
         valores, archivos = {}, {}
         for clave, valor in form.multi_items():
             if hasattr(valor, "read"):

@@ -53,6 +53,7 @@
   .btn-link { background: none; border: 0; color: var(--gris); font-size: 14px; padding: 6px 0; text-decoration: underline; }
   .error-general { display: none; background: var(--rojo-claro); color: var(--rojo); border: 1px solid #fecdca; border-radius: 10px;
                    padding: 12px 14px; margin-bottom: 12px; font-size: 14px; }
+  .captcha { margin-top: 14px; min-height: 65px; }
   .trampa { position: absolute; left: -9999px; width: 1px; height: 1px; overflow: hidden; }
   .ok { text-align: center; padding: 40px 24px; }
   .ok .tilde { width: 56px; height: 56px; border-radius: 50%; background: #e7f6ee; color: var(--verde); display: grid; place-items: center;
@@ -70,6 +71,20 @@
 const slug = location.pathname.replace(/\/+$/, "").split("/").pop();
 const app = document.getElementById("app");
 let def = null;
+let captchaId = null;
+
+function cargarCaptcha() {
+  // Cloudflare Turnstile: casi siempre se resuelve solo, sin que el cliente tenga que hacer nada.
+  const caja = document.getElementById("captcha");
+  caja.hidden = false;
+  window.alCargarTurnstile = () => {
+    captchaId = turnstile.render(caja, { sitekey: def.turnstile_site_key, language: "es", theme: "light" });
+  };
+  const sc = document.createElement("script");
+  sc.src = "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit&onload=alCargarTurnstile";
+  sc.async = true; sc.defer = true;
+  document.head.appendChild(sc);
+}
 
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const mb = n => (n / 1024 / 1024).toFixed(1).replace(".0", "") + " MB";
@@ -157,6 +172,15 @@ async function enviar(ev) {
     datos.append(c.id, v[c.id]);
   });
   datos.append("sitio_web", document.getElementById("sitio_web").value);
+  if (def.turnstile_site_key) {
+    const token = window.turnstile && captchaId !== null ? turnstile.getResponse(captchaId) : "";
+    if (!token) {
+      errGen.textContent = "Esperá a que aparezca el tilde de verificación (abajo del formulario) y volvé a enviar.";
+      errGen.style.display = "block"; btn.disabled = false; btn.textContent = "Enviar";
+      return;
+    }
+    datos.append("cf-turnstile-response", token);
+  }
   try {
     const r = await fetch(`/api/publico/formulario/${encodeURIComponent(slug)}`, { method: "POST", body: datos });
     if (!r.ok) {
@@ -170,6 +194,7 @@ async function enviar(ev) {
     window.scrollTo(0, 0);
   } catch (e) {
     errGen.textContent = e.message; errGen.style.display = "block";
+    if (window.turnstile && captchaId !== null) turnstile.reset(captchaId);
     errGen.scrollIntoView({ behavior: "smooth", block: "center" });
     btn.disabled = false; btn.textContent = "Enviar";
   }
@@ -192,6 +217,7 @@ async function iniciar() {
     <form id="form" novalidate>
       ${def.campos.map(htmlCampo).join("")}
       <div class="trampa" aria-hidden="true"><label>No completar<input type="text" id="sitio_web" name="sitio_web" tabindex="-1" autocomplete="off"></label></div>
+      <div class="captcha" id="captcha" hidden></div>
       <div class="error-general" id="error-general" role="alert"></div>
       <div class="acciones"><button type="button" class="btn-link" id="btn-borrar">Borrar formulario</button>
         <button type="submit" class="btn" id="btn-enviar">Enviar</button></div>
@@ -216,6 +242,7 @@ async function iniciar() {
     actualizarVisibles();
   });
   actualizarVisibles();
+  if (def.turnstile_site_key) cargarCaptcha();
 }
 iniciar();
 </script>
