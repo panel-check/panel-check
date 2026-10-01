@@ -80,6 +80,32 @@ Si te interesa, respondé este mail y lo vemos sin compromiso.
 Saludos,
 Smarties Consultora"""
 
+ASUNTO_MARCA_PUBLICADA = "¡Felicitaciones! Su marca {{marca}} ya fue publicada"
+CUERPO_MARCA_PUBLICADA = """Hola, {{titular}}:
+
+¡Felicitaciones! Les escribimos porque su marca {{marca}} (Acta N.º {{acta}}, clase {{clase}}) fue publicada en el Boletín de Marcas del INPI. Es un paso importante: significa que la solicitud ya superó el Estudio Fondo IA.
+
+A partir de ahora corren 30 días para que terceros puedan oponerse. Si nadie lo hace, el trámite sigue su curso hacia la concesión.
+
+Queríamos contarles algo que mucha gente todavía no sabe y que puede afectar a su marca a futuro.
+
+Desde diciembre de 2025 (Resolución INPI 583/2025), el INPI ya no frena por su cuenta las marcas parecidas a otras anteriores. Solo rechaza de oficio las idénticas para los mismos productos o servicios. Si mañana alguien pide una marca similar a la de ustedes, el INPI puede concedérsela, salvo que ustedes se opongan a tiempo. Y para oponerse, primero hay que enterarse.
+
+Ahí es donde podemos darles una mano. Cada semana revisamos todas las marcas nuevas que se publican y las comparamos con las que cuidamos. Si aparece algo idéntico o que pueda generar confusión, les avisamos enseguida para que decidan con tiempo qué hacer.
+
+También les recordamos las fechas que suelen pasarse por alto: la Declaración Jurada de Uso a los 5 años de la concesión y la renovación del registro cada 10 años. Y si cambia algo en la normativa que los afecte, se los contamos.
+
+Somos [NOMBRE DEL ESTUDIO], un equipo de abogados y agentes de la propiedad industrial matriculados ante el INPI. Nos gusta trabajar de cerca con cada cliente, sin vueltas ni letra chica.
+
+Si quieren, armamos una charla corta para contarles cómo funciona y cuánto cuesta, sin ningún compromiso. Pueden responder este mail o escribirnos por WhatsApp.
+
+¡Mucho éxito con {{marca}}!
+
+Un saludo,
+FIRMA
+
+P.D.: Pueden seguir el estado del trámite en el portal del INPI: https://portaltramites.inpi.gob.ar/marcasconsultas/busqueda/?Cod_Funcion=NQA0ADEA"""
+
 CATALOGO = {
     "oposiciones": {
         "grupo": "interno",
@@ -139,10 +165,24 @@ CATALOGO = {
         "cuerpo": CUERPO_PROSPECTO,
         "editable": True,
     },
+    "prospecto_marca_publicada": {
+        "grupo": "prospectos",
+        "nombre": "Marca publicada (vigilancia)",
+        "descripcion": "Felicita al titular cuando su marca sale publicada en el Boletín, explica el cambio de la Resolución INPI 583/2025 y ofrece el servicio de vigilancia. Todavía no se envía nada: se deja configurado.",
+        "cuenta": "prospectos",
+        "remitente": "smarties@registrodemimarca.com.ar",
+        "responder_a": "info@smartiesconsultora.com.ar",
+        "destinatarios": "",
+        "asunto": ASUNTO_MARCA_PUBLICADA,
+        "cuerpo": CUERPO_MARCA_PUBLICADA,
+        "editable": True,
+    },
 }
 
 _RE_EMAIL = re.compile(r"^[^\s<>@,;]+@[^\s<>@,;]+\.[^\s<>@,;]+$")
 _RE_REMITENTE = re.compile(r"^(?:[^<>\r\n]{1,100}\s)?<([^\s<>@,;]+@[^\s<>@,;]+\.[^\s<>@,;]+)>$")
+# Links en el cuerpo de las plantillas (se buscan sobre el texto ya escapado).
+_RE_URL = re.compile(r'https?://[^\s<>"]+[^\s<>".,;:)]')
 _RE_VARIABLE = re.compile(r"\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\}")
 
 
@@ -354,6 +394,7 @@ def render_prospecto(asunto: str, cuerpo: str, datos: dict) -> tuple:
     texto = _sustituir(cuerpo, datos, escapar=False).strip() + "\n\n--\n" + PIE_BAJA
     parrafos = []
     for bloque in _sustituir(html.escape(cuerpo, quote=False), datos, escapar=True).strip().split("\n\n"):
+        bloque = _RE_URL.sub(lambda m: f'<a href="{m.group(0)}" style="color:#1d4ed8">{m.group(0)}</a>', bloque)
         parrafos.append('<p style="margin:0 0 14px">' + bloque.replace("\r", "").replace("\n", "<br>") + "</p>")
     cuerpo_html = (
         '<div style="font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.5;color:#1f2430">'
@@ -374,7 +415,7 @@ def vista_previa(clave: str, cfg: dict, panel_url: str = DEFAULT_PANEL) -> dict:
     """{asunto, html} de ejemplo del mail (para la pestaña Mails)."""
     import mails_plantillas as mp
 
-    if clave == "prospecto_primer_contacto":
+    if CATALOGO[clave].get("editable"):
         asunto, cuerpo, _ = render_prospecto(cfg["asunto"], cfg["cuerpo"], EJEMPLO_PROSPECTO)
         return {"asunto": asunto, "html": cuerpo}
     if clave == "formularios":
