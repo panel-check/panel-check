@@ -138,7 +138,30 @@ def main():
 
     corte = date.today() - timedelta(days=args.dias)
 
-    conn = psycopg2.connect(dsn)
+    def abrir():
+        # keepalives: la corrida dura horas y Railway corta las conexiones inactivas.
+        return psycopg2.connect(dsn, keepalives=1, keepalives_idle=30,
+                                keepalives_interval=10, keepalives_count=5)
+
+    conn = abrir()
+
+    def con_reconexion(fn):
+        """Ejecuta fn() y, si el servidor cortó la conexión (incidente del
+        01/10/2026: cayó a las ~1.440 actas), reconecta y reintenta una vez.
+        Cada acta se guarda con su propio commit, así que no se pierde lo ya revisado."""
+        nonlocal conn
+        try:
+            return fn()
+        except (psycopg2.OperationalError, psycopg2.InterfaceError) as e:
+            print(f"  (conexión a la base cortada: {type(e).__name__}; reconecto y reintento)")
+            try:
+                conn.close()
+            except Exception:
+                pass
+            time.sleep(3)
+            conn = abrir()
+            return fn()
+
     try:
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
             cur.execute("ALTER TABLE marcas ADD COLUMN IF NOT EXISTS revisado_parcial_en TIMESTAMPTZ")
@@ -203,7 +226,7 @@ def main():
                 # commit "vacío" para cerrar la transacción del SELECT inicial
                 # aunque no haya cambios — ver revisar_estado.py para el
                 # motivo (incidente del 29/09/2026 en el manual).
-                conn.commit()
+                con_reconexion(lambda: conn.commit())
                 time.sleep(args.delay)
                 continue
 
@@ -249,41 +272,44 @@ def main():
             else:
                 revisado_en = "now()" if (not tuvo_oposicion or representacion_posterior) else None
 
-            with conn.cursor() as cur:
-                cur.execute(
-                    f"""
-                    UPDATE marcas
-                    SET tuvo_oposicion = %s, detalle_oposicion = %s,
-                        revisado_oposicion_en = {revisado_en or 'revisado_oposicion_en'},
-                        oponente_nombre = %s, oponente_tipo_doc = %s,
-                        oponente_numero_doc = %s, oponente_cuit = %s,
-                        fundamento_oposicion = %s,
-                        actas_marca_oponente = %s, marca_oponente_denominacion = %s,
-                        marca_oponente_numero_registro = %s,
-                        representacion_posterior_oposicion = %s,
-                        detalle_representacion_posterior = %s,
-                        revisado_parcial_en = {"now()" if args.parcial else "revisado_parcial_en"}
-                    WHERE acta = %s
-                    """,
-                    (
-                        tuvo_oposicion, detalle or None,
-                        detalle_rico.get("oponente_nombre"),
-                        detalle_rico.get("oponente_tipo_doc"),
-                        detalle_rico.get("oponente_numero_doc"),
-                        detalle_rico.get("oponente_cuit"),
-                        detalle_rico.get("fundamento_oposicion"),
-                        detalle_rico.get("actas_marca_oponente"),
-                        detalle_rico.get("marca_oponente_denominacion"),
-                        detalle_rico.get("marca_oponente_numero_registro"),
-                        representacion_posterior,
-                        detalle_representacion,
-                        acta,
-                    ),
-                )
-            conn.commit()
+            def guardar():
+                with conn.cursor() as cur:
+                    cur.execute(
+                        f"""
+                        UPDATE marcas
+                        SET tuvo_oposicion = %s, detalle_oposicion = %s,
+                            revisado_oposicion_en = {revisado_en or 'revisado_oposicion_en'},
+                            oponente_nombre = %s, oponente_tipo_doc = %s,
+                            oponente_numero_doc = %s, oponente_cuit = %s,
+                            fundamento_oposicion = %s,
+                            actas_marca_oponente = %s, marca_oponente_denominacion = %s,
+                            marca_oponente_numero_registro = %s,
+                            representacion_posterior_oposicion = %s,
+                            detalle_representacion_posterior = %s,
+                            revisado_parcial_en = {"now()" if args.parcial else "revisado_parcial_en"}
+                        WHERE acta = %s
+                        """,
+                        (
+                            tuvo_oposicion, detalle or None,
+                            detalle_rico.get("oponente_nombre"),
+                            detalle_rico.get("oponente_tipo_doc"),
+                            detalle_rico.get("oponente_numero_doc"),
+                            detalle_rico.get("oponente_cuit"),
+                            detalle_rico.get("fundamento_oposicion"),
+                            detalle_rico.get("actas_marca_oponente"),
+                            detalle_rico.get("marca_oponente_denominacion"),
+                            detalle_rico.get("marca_oponente_numero_registro"),
+                            representacion_posterior,
+                            detalle_representacion,
+                            acta,
+                        ),
+                    )
 
-            if representacion_posterior:
-                pasar_a_con_agente(conn, acta)
+                conn.commit()
+                if representacion_posterior:
+                    pasar_a_con_agente(conn, acta)
+
+            con_reconexion(guardar)
 
             if tuvo_oposicion:
                 con_oposicion += 1
@@ -305,9 +331,12 @@ def main():
             registrar("revisar_oposiciones.yml", {
                 "revisadas": len(pendientes), "con_oposicion": con_oposicion,
                 "sin_oposicion": len(pendientes) - con_oposicion,
-            }, conn)
+            })  # conexión propia: la de la corrida pudo haberse cortado
     finally:
-        conn.close()
+        try:
+            conn.close()
+        except Exception:
+            pass
 
 
 if __name__ == "__main__":
