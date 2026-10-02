@@ -53,14 +53,18 @@ CUENTAS = {
 
 # Variables que se pueden usar en la plantilla de prospectos: {{variable}}.
 VARIABLES_PROSPECTO = {
+    "destinatario": "Para el saludo: nombre de pila si es una persona («Tomás») o «equipo de <Empresa>» si es una empresa",
     "nombre": "Nombre de pila del titular (p. ej. «Tomás»); vacío si es una empresa o no se puede deducir",
     "titular": "Nombre del titular de la solicitud",
     "marca": "Denominación de la marca",
     "acta": "Número de acta",
     "clase": "Clase de la solicitud",
+    "fecha": "Fecha de publicación en el Boletín (dd/mm/aaaa)",
 }
 
 EJEMPLO_PROSPECTO = {
+    "destinatario": "María",
+    "fecha": "15/09/2026",
     "nombre": "María",
     "titular": "GOMEZ MARIA",
     "marca": "Luna Nueva",
@@ -91,33 +95,52 @@ Si te interesa, respondé este mail y lo vemos sin compromiso.
 Saludos,
 Smarties Consultora"""
 
+WHATSAPP_PAMELA = "5491155890784"
 ASUNTO_MARCA_PUBLICADA = "¡Felicitaciones! Su marca {{marca}} ya fue publicada"
-CUERPO_MARCA_PUBLICADA = """Hola, {{titular}}:
+CUERPO_MARCA_PUBLICADA = """Hola, {{destinatario}}:
 
-¡Felicitaciones! Les escribimos porque su marca {{marca}} (Acta N.º {{acta}}, clase {{clase}}) fue publicada en el Boletín de Marcas del INPI. Es un paso importante: significa que la solicitud ya superó el Estudio Fondo IA.
+¡Felicitaciones! La solicitud de su marca {{marca}} fue publicada en el Boletín de Marcas del INPI. Es un paso importante en el camino hacia su registro.
 
-A partir de ahora corren 30 días para que terceros puedan oponerse. Si nadie lo hace, el trámite sigue su curso hacia la concesión.
+## Datos de la publicación
 
-Queríamos contarles algo que mucha gente todavía no sabe y que puede afectar a su marca a futuro.
+* **Marca:** {{marca}}
+* **Acta N.º:** {{acta}}
+* **Clase:** {{clase}}
+* **Fecha de publicación:** {{fecha}}
 
-Desde diciembre de 2025 (Resolución INPI 583/2025), el INPI ya no frena por su cuenta las marcas parecidas a otras anteriores. Solo rechaza de oficio las idénticas para los mismos productos o servicios. Si mañana alguien pide una marca similar a la de ustedes, el INPI puede concedérsela, salvo que ustedes se opongan a tiempo. Y para oponerse, primero hay que enterarse.
+## ¿Cómo sigue el trámite?
 
-Ahí es donde podemos darles una mano. Cada semana revisamos todas las marcas nuevas que se publican y las comparamos con las que cuidamos. Si aparece algo idéntico o que pueda generar confusión, les avisamos enseguida para que decidan con tiempo qué hacer.
+Desde la publicación se abre un plazo de 30 días corridos para que terceros presenten oposiciones. Si no se presentan, la solicitud continúa hacia la concesión.
 
-También les recordamos las fechas que suelen pasarse por alto: la Declaración Jurada de Uso a los 5 años de la concesión y la renovación del registro cada 10 años. Y si cambia algo en la normativa que los afecte, se los contamos.
+## ¿Por qué conviene empezar a vigilar su marca?
 
-Somos [NOMBRE DEL ESTUDIO], un equipo de abogados y agentes de la propiedad industrial matriculados ante el INPI. Nos gusta trabajar de cerca con cada cliente, sin vueltas ni letra chica.
+Desde diciembre de 2025, cambió el alcance del examen que realiza el INPI: las similitudes con marcas anteriores ya no se evalúan de oficio, sino que deben ser planteadas por los interesados.
 
-Si quieren, armamos una charla corta para contarles cómo funciona y cuánto cuesta, sin ningún compromiso. Pueden responder este mail o escribirnos por WhatsApp.
+Esto significa que una solicitud similar a la de ustedes podría avanzar si no se presenta una oposición a tiempo. Para poder actuar, primero hay que detectarla.
+
+## ¿Cómo podemos ayudarlos desde Smarties?
+
+Nuestro servicio de vigilancia incluye:
+
+* **Revisión semanal de nuevas solicitudes:** buscamos marcas que puedan entrar en conflicto con la suya.
+* **Alertas y asesoramiento:** si detectamos un caso relevante, les explicamos el riesgo y las alternativas para actuar.
+* **Recordatorios de vencimientos:** los acompañamos con la Declaración Jurada de Uso durante el sexto año del registro y la renovación cada diez años.
+
+Somos Smarties Consultora, un equipo de abogados y agentes de la propiedad industrial matriculados ante el INPI. Trabajamos de cerca con cada cliente, con información clara y atención personalizada.
+
+Si les interesa conocer cómo funciona el servicio y cuál es su costo, pueden responder este correo o escribirnos por WhatsApp, sin compromiso.
+
+[Quiero conocer el servicio de vigilancia](https://wa.me/""" + WHATSAPP_PAMELA + """?text=Hola, me contacto desde la marca {{marca}}, quiero conocer el servicio de vigilancia. Mi nombre es )
 
 ¡Mucho éxito con {{marca}}!
 
 Un saludo,
-FIRMA
+Pamela Guzzardi
+Agente de la Propiedad Industrial – Mat. INPI 2906
+Smarties Consultora
+Registro de Marcas Nacional e Internacional
+WhatsApp: [+54 9 11 5589-0784](https://wa.me/""" + WHATSAPP_PAMELA + """)"""
 
-P.D.: Pueden seguir el estado del trámite en el portal del INPI: https://portaltramites.inpi.gob.ar/marcasconsultas/busqueda/?Cod_Funcion=NQA0ADEA"""
-
-WHATSAPP_PAMELA = "5491155890784"
 ASUNTO_OPOSICION = "Tu marca {{marca}} recibió una oposición: qué significa y cómo seguir"
 CUERPO_OPOSICION = """Hola {{nombre}}:
 
@@ -461,9 +484,9 @@ def _sustituir(texto: str, datos: dict, escapar: bool, para_url: bool = False) -
             return quote(v, safe="")
         return html.escape(v) if escapar else v
     if not para_url:
-        # Una variable vacía se lleva el espacio de adelante: "Hola {{nombre}}:"
-        # queda "Hola:" y no "Hola :".
-        texto = re.sub(r"[ \t]+(\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\})",
+        # Una variable vacía se lleva el espacio (y la coma) de adelante:
+        # "Hola, {{destinatario}}:" queda "Hola:" y no "Hola, :".
+        texto = re.sub(r",?[ \t]+(\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\})",
                        lambda m: m.group(0) if str(datos.get(m.group(2), "") or "") else "", texto)
     return _RE_VARIABLE.sub(reemplazo, texto)
 
@@ -493,6 +516,7 @@ def _inline_html(crudo: str, datos: dict) -> str:
 
 def _texto_html(crudo: str, datos: dict) -> str:
     t = _sustituir(html.escape(crudo, quote=False), datos, escapar=True)
+    t = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", t)
     return _RE_URL.sub(lambda m: f'<a href="{m.group(0)}" style="color:#1d4ed8">{m.group(0)}</a>', t)
 
 
@@ -508,6 +532,11 @@ def _bloque_html(bloque: str, datos: dict) -> str:
                 f'<a href="{url}" style="display:inline-block;padding:13px 22px;color:#ffffff;text-decoration:none;'
                 f'font-weight:700;font-size:15px;font-family:Arial,Helvetica,sans-serif">{etiqueta}</a>'
                 '</td></tr></table>')
+    # Subtítulo: "## Texto" solo en su párrafo.
+    if len([l for l in lineas if l.strip()]) == 1 and re.match(r"^\s*##\s+", bloque):
+        titulo = _inline_html(re.sub(r"^\s*##\s+", "", bloque.strip()), datos)
+        return (f'<p style="margin:22px 0 8px;font-size:16px;font-weight:700;color:{COLOR_AZUL};'
+                f'padding-bottom:6px;border-bottom:2px solid {COLOR_DORADO};display:inline-block">{titulo}</p>')
     # Lista: todas las líneas empiezan con "* " o "- ".
     if lineas and all(re.match(r"^\s*[*-]\s+", l) for l in lineas if l.strip()):
         items = "".join('<li style="margin:0 0 6px">' + _inline_html(re.sub(r"^\s*[*-]\s+", "", l), datos) + "</li>"
@@ -519,7 +548,9 @@ def _bloque_html(bloque: str, datos: dict) -> str:
 def _texto_plano(cuerpo: str, datos: dict) -> str:
     def link(m):
         return f"{_sustituir(m.group(1), datos, escapar=False)}: {_url_link(m.group(2), datos)}"
-    return _sustituir(_RE_LINK_MD.sub(link, cuerpo), datos, escapar=False)
+    t = _sustituir(_RE_LINK_MD.sub(link, cuerpo), datos, escapar=False)
+    t = re.sub(r"\*\*(.+?)\*\*", r"\1", t)
+    return re.sub(r"(?m)^[ \t]*##[ \t]+(.*)$", lambda m: m.group(1).upper(), t)
 
 
 def render_prospecto(asunto: str, cuerpo: str, datos: dict, encabezado: str = None) -> tuple:
@@ -529,9 +560,11 @@ def render_prospecto(asunto: str, cuerpo: str, datos: dict, encabezado: str = No
     que empiezan con "* " forman una lista, [texto](https://...) es un link y,
     si está solo en su párrafo, un botón."""
     datos = dict(datos or {})
+    import nombres_ar
     if "nombre" not in datos:
-        import nombres_ar
         datos["nombre"] = nombres_ar.primer_nombre(datos.get("titular", ""))
+    if "destinatario" not in datos:
+        datos["destinatario"] = nombres_ar.destinatario(datos.get("titular", ""))
     asunto_final = _sustituir(asunto, datos, escapar=False).replace("\r", " ").replace("\n", " ").strip()
     texto = _texto_plano(cuerpo, datos).strip() + "\n\n--\n" + PIE_BAJA
     parrafos = [_bloque_html(b, datos) for b in re.split(r"\n\s*\n", cuerpo.replace("\r", "").strip()) if b.strip()]
@@ -569,14 +602,18 @@ def datos_de_marca(cur, acta: str):
     """Variables de la plantilla de prospectos con los datos REALES de una
     marca de la base ({titular, marca, acta, clase}), o None si no existe.
     Se usa para la vista previa y el envío de prueba con una marca elegida."""
-    cur.execute("SELECT acta, clase, titular, denominacion, denominacion_inpi FROM marcas WHERE acta = %s",
-                ((acta or "").strip(),))
+    cur.execute("""SELECT m.acta, m.clase, m.titular, m.denominacion, m.denominacion_inpi,
+                          COALESCE(m.fecha_publicacion, b.fecha) AS fecha
+                     FROM marcas m LEFT JOIN boletines b ON b.numero = m.boletin
+                    WHERE m.acta = %s""", ((acta or "").strip(),))
     f = cur.fetchone()
     if not f:
         return None
     import nombres_ar
     return {
         "nombre": nombres_ar.primer_nombre(f["titular"] or ""),
+        "destinatario": nombres_ar.destinatario(f["titular"] or ""),
+        "fecha": f["fecha"].strftime("%d/%m/%Y") if f.get("fecha") else "",
         "titular": f["titular"] or "",
         "marca": f["denominacion_inpi"] or f["denominacion"] or "",
         "acta": f["acta"],

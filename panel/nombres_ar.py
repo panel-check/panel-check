@@ -82,3 +82,38 @@ def primer_nombre(titular: str) -> str:
     if len(palabras) == 2 and palabras[1].isalpha() and len(palabras[1]) > 2:
         return palabras[1].capitalize()
     return ""
+
+
+# Siglas societarias que van en mayúsculas al escribir el nombre de una empresa.
+_SIGLAS = {"SRL", "S.R.L.", "SA", "S.A.", "SAS", "S.A.S.", "SAU", "S.A.U.", "SCA", "S.C.A.", "SH", "S.H.", "LLC", "INC",
+           "INC.", "LTD", "LTD.", "LTDA", "LTDA.", "UTE", "SAIC", "S.A.I.C.", "SACIF", "S.A.C.I.F.", "SACI", "S.A.C.I.",
+           "SE", "S.E.", "CIA", "CIA."}
+_MINUSCULAS = {"DE", "DEL", "LA", "LAS", "LOS", "EL", "Y", "E", "EN", "PARA", "POR", "CON"}
+
+
+def nombre_prolijo(titular: str) -> str:
+    """'SLFRAGANCE SRL' -> 'Slfragance SRL'; 'FABRICA DE PASTAS LA ABUELA SA' ->
+    'Fabrica de Pastas la Abuela SA'."""
+    palabras = " ".join((titular or "").split()).split(" ")
+    out = []
+    for i, w in enumerate(palabras):
+        u = w.upper()
+        if u in _SIGLAS:
+            out.append(u)
+        elif i > 0 and u in _MINUSCULAS:
+            out.append(w.lower())
+        else:
+            out.append(w[:1].upper() + w[1:].lower())
+    return " ".join(out).strip()
+
+
+def destinatario(titular: str) -> str:
+    """Para el saludo «Hola, …:»: el nombre de pila si es una persona
+    ('Tomás'), «equipo de <Empresa>» si es una empresa, o "" si no se puede
+    deducir (y el saludo queda «Hola:»)."""
+    t = " ".join((titular or "").split())
+    if not t:
+        return ""
+    if _EMPRESA.search(t):
+        return "equipo de " + nombre_prolijo(t)
+    return primer_nombre(t)
