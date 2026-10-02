@@ -69,8 +69,9 @@ EJEMPLO_PROSPECTO = {
 }
 
 # Línea de baja: va SIEMPRE al final de los mails a prospectos y no se edita.
-# Encabezado fijo de los mails a prospectos: franja azul con dos líneas
-# doradas y el título en blanco, a todo el ancho del mail. Es HTML (no una
+# Encabezado de los mails a prospectos: franja azul con dos líneas doradas y
+# el título en blanco, a todo el ancho del mail. El título se edita por
+# plantilla en el panel; este es el valor por defecto. Es HTML (no una
 # imagen) para que se vea nítido y no dependa de que se carguen imágenes.
 ENCABEZADO_TITULO = "BOLETÍN DE MARCAS Y PATENTES"
 COLOR_AZUL = "#133465"
@@ -199,6 +200,7 @@ CATALOGO = {
         "remitente": "Smarties <smarties@registrodemimarca.com.ar>",
         "responder_a": "info@smartiesconsultora.com.ar",
         "destinatarios": "",
+        "encabezado": ENCABEZADO_TITULO,
         "asunto": ASUNTO_PROSPECTO,
         "cuerpo": CUERPO_PROSPECTO,
         "editable": True,
@@ -211,6 +213,7 @@ CATALOGO = {
         "remitente": "Smarties <smarties@registrodemimarca.com.ar>",
         "responder_a": "info@smartiesconsultora.com.ar",
         "destinatarios": "",
+        "encabezado": ENCABEZADO_TITULO,
         "asunto": ASUNTO_MARCA_PUBLICADA,
         "cuerpo": CUERPO_MARCA_PUBLICADA,
         "editable": True,
@@ -223,6 +226,7 @@ CATALOGO = {
         "remitente": "Smarties <smarties@registrodemimarca.com.ar>",
         "responder_a": "info@smartiesconsultora.com.ar",
         "destinatarios": "",
+        "encabezado": "NUEVA OPOSICIÓN",
         "asunto": ASUNTO_OPOSICION,
         "cuerpo": CUERPO_OPOSICION,
         "editable": True,
@@ -254,6 +258,7 @@ def crear_tablas(cur):
         )
         """
     )
+    cur.execute("ALTER TABLE mails_config ADD COLUMN IF NOT EXISTS encabezado TEXT")
     cur.execute(
         """
         CREATE TABLE IF NOT EXISTS mails_bajas (
@@ -345,6 +350,10 @@ def validar_config(clave: str, valores: dict) -> dict:
             raise ValueError("Variable inexistente: {{" + sorted(desconocidas)[0] + "}}. "
                              "Disponibles: " + ", ".join("{{" + v + "}}" for v in VARIABLES_PROSPECTO))
         out["asunto"], out["cuerpo"] = asunto, cuerpo
+        encabezado = " ".join((valores.get("encabezado") or "").split())
+        if len(encabezado) > 60:
+            raise ValueError("El encabezado puede tener hasta 60 caracteres")
+        out["encabezado"] = encabezado or cat.get("encabezado") or ENCABEZADO_TITULO
     return out
 
 
@@ -420,6 +429,7 @@ def combinar(clave: str, guardada: dict) -> dict:
     if cat.get("editable"):
         cfg["asunto"] = g.get("asunto") or cat["asunto"]
         cfg["cuerpo"] = g.get("cuerpo") or cat["cuerpo"]
+        cfg["encabezado"] = g.get("encabezado") or cat.get("encabezado") or ENCABEZADO_TITULO
     return cfg
 
 
@@ -512,7 +522,7 @@ def _texto_plano(cuerpo: str, datos: dict) -> str:
     return _sustituir(_RE_LINK_MD.sub(link, cuerpo), datos, escapar=False)
 
 
-def render_prospecto(asunto: str, cuerpo: str, datos: dict) -> tuple:
+def render_prospecto(asunto: str, cuerpo: str, datos: dict, encabezado: str = None) -> tuple:
     """(asunto, html, texto) con las variables reemplazadas, el encabezado fijo
     arriba y la línea de baja obligatoria al final. El cuerpo se escribe como
     texto (no se interpreta HTML): los saltos de línea se respetan, las líneas
@@ -533,7 +543,7 @@ def render_prospecto(asunto: str, cuerpo: str, datos: dict) -> tuple:
         + linea
         + '<tr><td align="center" style="padding:16px 4px;color:#ffffff;'
           "font-family:Montserrat,'Helvetica Neue',Arial,Helvetica,sans-serif;font-size:22px;line-height:1.25;"
-          f'font-weight:700;letter-spacing:1px;text-align:center">{html.escape(ENCABEZADO_TITULO)}</td></tr>'
+          f'font-weight:700;letter-spacing:1px;text-align:center">{html.escape(encabezado or ENCABEZADO_TITULO)}</td></tr>'
         + linea
         + "</table></td></tr>"
     )
@@ -605,7 +615,7 @@ def vista_previa(clave: str, cfg: dict, panel_url: str = DEFAULT_PANEL, datos: d
     import mails_plantillas as mp
 
     if CATALOGO[clave].get("editable"):
-        asunto, cuerpo, _ = render_prospecto(cfg["asunto"], cfg["cuerpo"], datos or EJEMPLO_PROSPECTO)
+        asunto, cuerpo, _ = render_prospecto(cfg["asunto"], cfg["cuerpo"], datos or EJEMPLO_PROSPECTO, cfg.get("encabezado"))
         return {"asunto": asunto, "html": cuerpo}
     if clave == "formularios":
         import formularios_core as fc

@@ -221,6 +221,8 @@ function pintarDetalle() {
 
   const plantilla = m.editable ? `
     <h3>Plantilla del mail</h3>
+    <div class="campo"><label for="f-encabezado">Encabezado (título de la franja azul de arriba)</label>
+      <input type="text" id="f-encabezado" ${dis} maxlength="60" value="${esc(c.encabezado || "")}" /></div>
     <div class="campo"><label for="f-asunto">Asunto</label><input type="text" id="f-asunto" ${dis} value="${esc(c.asunto)}" /></div>
     <div class="campo"><label for="f-cuerpo">Cuerpo</label>
       <textarea id="f-cuerpo" ${dis}>${esc(c.cuerpo)}</textarea>
@@ -293,7 +295,7 @@ function pintarDetalle() {
   document.getElementById("b-guardar").addEventListener("click", guardar);
   document.getElementById("b-restablecer").addEventListener("click", restablecer);
   if (m.editable) {
-    ["f-asunto", "f-cuerpo"].forEach(id => document.getElementById(id).addEventListener("input", () => {
+    ["f-encabezado", "f-asunto", "f-cuerpo"].forEach(id => document.getElementById(id).addEventListener("input", () => {
       clearTimeout(timerPrevia); timerPrevia = setTimeout(vistaPrevia, 350);
     }));
     document.querySelectorAll(".variables code").forEach(el => el.addEventListener("click", () => {
@@ -370,7 +372,7 @@ function leerForm() {
   const v = (id) => { const el = document.getElementById(id); return el ? el.value : undefined; };
   const body = { cuenta: v("f-cuenta"), remitente: v("f-from"), responder_a: v("f-reply") ?? m.config.responder_a };
   if (m.grupo === "interno") body.destinatarios = v("f-dest");
-  if (m.editable) { body.asunto = v("f-asunto"); body.cuerpo = v("f-cuerpo"); }
+  if (m.editable) { body.encabezado = v("f-encabezado"); body.asunto = v("f-asunto"); body.cuerpo = v("f-cuerpo"); }
   return body;
 }
 
@@ -381,7 +383,8 @@ function mostrarMsg(texto, ok) {
 
 async function vistaPrevia() {
   const m = datos.mails.find(x => x.clave === actual);
-  const body = m.editable ? { asunto: document.getElementById("f-asunto").value, cuerpo: document.getElementById("f-cuerpo").value,
+  const body = m.editable ? { encabezado: document.getElementById("f-encabezado").value,
+                               asunto: document.getElementById("f-asunto").value, cuerpo: document.getElementById("f-cuerpo").value,
                                acta: marcaTest ? marcaTest.acta : null } : {};
   const claveAlPedir = actual;
   try {

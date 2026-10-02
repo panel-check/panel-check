@@ -31,6 +31,7 @@ class ConfigMail(BaseModel):
     destinatarios: Optional[str] = None
     asunto: Optional[str] = None
     cuerpo: Optional[str] = None
+    encabezado: Optional[str] = None
     acta: Optional[str] = None
 
 
@@ -157,15 +158,15 @@ def crear_router(verificar_login, verificar_admin, conexion) -> APIRouter:
         with conexion() as conn, conn.cursor() as cur:
             cur.execute(
                 """
-                INSERT INTO mails_config (clave, cuenta, remitente, responder_a, destinatarios, asunto, cuerpo, actualizado_en, actualizado_por)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, now(), %s)
+                INSERT INTO mails_config (clave, cuenta, remitente, responder_a, destinatarios, asunto, cuerpo, encabezado, actualizado_en, actualizado_por)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, now(), %s)
                 ON CONFLICT (clave) DO UPDATE SET cuenta = EXCLUDED.cuenta, remitente = EXCLUDED.remitente,
                     responder_a = EXCLUDED.responder_a, destinatarios = EXCLUDED.destinatarios,
-                    asunto = EXCLUDED.asunto, cuerpo = EXCLUDED.cuerpo,
+                    asunto = EXCLUDED.asunto, cuerpo = EXCLUDED.cuerpo, encabezado = EXCLUDED.encabezado,
                     actualizado_en = now(), actualizado_por = EXCLUDED.actualizado_por
                 """,
                 (clave, v["cuenta"], v["remitente"], v["responder_a"], v["destinatarios"],
-                 v.get("asunto"), v.get("cuerpo"), admin),
+                 v.get("asunto"), v.get("cuerpo"), v.get("encabezado"), admin),
             )
             conn.commit()
         return {"ok": True}
@@ -192,6 +193,8 @@ def crear_router(verificar_login, verificar_admin, conexion) -> APIRouter:
             if desconocidas:
                 raise HTTPException(status_code=400, detail="Variable inexistente: {{" + sorted(desconocidas)[0] + "}}")
             cfg["asunto"], cfg["cuerpo"] = asunto, cuerpo
+            if body.encabezado is not None:
+                cfg["encabezado"] = " ".join(body.encabezado.split())[:60] or mc.CATALOGO[clave].get("encabezado")
         return mc.vista_previa(clave, cfg, _panel_url(), _datos_marca(body.acta) if mc.CATALOGO[clave].get("editable") else None)
 
     @router.post("/api/mails/{clave}/test")
@@ -217,7 +220,7 @@ def crear_router(verificar_login, verificar_admin, conexion) -> APIRouter:
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
         datos = _datos_marca(body.acta) or mc.EJEMPLO_PROSPECTO
-        asunto, cuerpo_html, texto = mc.render_prospecto(v["asunto"], v["cuerpo"], datos)
+        asunto, cuerpo_html, texto = mc.render_prospecto(v["asunto"], v["cuerpo"], datos, v.get("encabezado"))
         try:
             id_resend = mc.enviar_test(v["cuenta"], v["remitente"], v["responder_a"], para, asunto, cuerpo_html, texto)
         except ValueError as e:
