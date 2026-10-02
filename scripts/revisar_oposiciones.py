@@ -4,6 +4,12 @@ reales (sin agente/apoderado) ya publicados en el boletín, si en su Grilla
 Digital apareció una oposición de tercero o una vista de oficio de INPI
 durante la ventana de 30 días para oponerse.
 
+Cuando en una revisión aparece un apoderado/gestor posterior a la oposición
+(representacion_posterior_oposicion), el lead pasa a es_lead = false con carácter
+"Apoderado/gestor (se sumó tras la oposición)": deja de ser un posible cliente, sale
+de la lista de leads y ya no se vuelve a revisar. Al arrancar, cada corrida también
+corrige los leads que ya tenían ese dato de antes.
+
 Esquema de revisión (días contados desde fecha_publicacion de ESE expediente):
   - HITOS: a los 10, 23 y 33 días se hace una revisión de cada lead. Muchas
     oposiciones llegan antes de los 30 días y conviene saberlo con tiempo.
@@ -89,6 +95,24 @@ SQL_PENDIENTES = f"""
 """
 
 
+CARACTER_APODERADO = "Apoderado/gestor (se sumó tras la oposición)"
+
+# Un lead cuyo titular ya sumó un apoderado/gestor después de la oposición deja
+# de ser un posible cliente: pasa a es_lead = false con ese carácter (se ve en
+# la columna Lead, igual que "con agente"), sale de la lista de leads y de todas
+# las revisiones. El score se recalcula con la misma regla que
+# validar_leads.calcular_lead_score para es_lead = false.
+SQL_PASAR_A_APODERADO = """
+    UPDATE marcas
+    SET es_lead = false,
+        caracter = '""" + CARACTER_APODERADO + """',
+        lead_score = (CASE WHEN TRIM(COALESCE(matricula_agente, '')) IN ('', 'Part.') THEN 50 ELSE 0 END)
+                     - 100 + (CASE WHEN COALESCE(email, '') <> '' THEN 20 ELSE 0 END),
+        actualizado_en = now()
+    WHERE es_lead IS TRUE AND representacion_posterior_oposicion IS TRUE
+"""
+
+
 def hito_por_edad(edad: int) -> int:
     """Cuántos hitos (1-3) ya cumplió un lead con esta antigüedad en días."""
     return sum(1 for h in HITOS if edad >= h)
@@ -125,6 +149,11 @@ def main():
                 WHERE opo_chequeos IS NULL AND es_lead = true
                 """
             )
+            # Corrección de los leads que ya tenían un apoderado/gestor posterior a
+            # la oposición (detectado antes de que esto cambiara el estado).
+            cur.execute(SQL_PASAR_A_APODERADO)
+            if cur.rowcount:
+                print(f"Leads que pasaron a 'apoderado/gestor' (dejan de ser leads y de revisarse): {cur.rowcount}")
         conn.commit()
 
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
@@ -138,6 +167,7 @@ def main():
 
         s = crear_sesion()
         con_oposicion = 0
+        pasados_a_apoderado = 0
         revisadas = 0
         sin_consulta = 0
         for i, fila in enumerate(pendientes, 1):
@@ -242,6 +272,10 @@ def main():
                         acta,
                     ),
                 )
+            if representacion_posterior:
+                with conn.cursor() as cur:
+                    cur.execute(SQL_PASAR_A_APODERADO + " AND acta = %s", (acta,))
+                pasados_a_apoderado += 1
             conn.commit()
 
             if tuvo_oposicion:
@@ -250,7 +284,7 @@ def main():
                 # personales de terceros (nombre, CUIT/DNI, fundamento) que no
                 # deben quedar en los logs de Actions (repo público). Sí se
                 # siguen guardando en la base (UPDATE de arriba), sin cambios.
-                extra = " (ya con apoderado/gestor posterior)" if representacion_posterior else ""
+                extra = " (apoderado/gestor posterior: deja de ser lead)" if representacion_posterior else ""
                 print(f"  [{i}/{len(pendientes)}] acta {acta}: CON OPOSICIÓN/VISTA{extra}")
             else:
                 print(f"  [{i}/{len(pendientes)}] acta {acta}: sin oposición")
@@ -263,6 +297,7 @@ def main():
             "revisadas": revisadas - sin_consulta, "con_oposicion": con_oposicion,
             "sin_oposicion": revisadas - sin_consulta - con_oposicion,
             "pendientes_al_arrancar": len(pendientes),
+            "pasados_a_apoderado": pasados_a_apoderado,
         }, conn)
     finally:
         conn.close()
