@@ -25,6 +25,11 @@
   .mail-lead table.hist { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 6px; }
   .mail-lead table.hist td, .mail-lead table.hist th { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--borde); }
   .mail-lead table.hist th { font-size: 11px; text-transform: uppercase; color: var(--gris); }
+  .mail-lead .seg { display: inline-block; font-size: 11px; font-weight: 600; border-radius: 10px; padding: 2px 8px; margin: 1px 4px 1px 0; background: #f2f4f7; color: #475467; white-space: nowrap; }
+  .mail-lead .seg.ok { background: #e7f6ec; color: #067647; }
+  .mail-lead .seg.abierto { background: #eef4ff; color: #1d4ed8; }
+  .mail-lead .seg.clic { background: #fef3c7; color: #92400e; }
+  .mail-lead .seg.mal { background: #fee4e2; color: #b42318; }
 </style>
 </head>
 <body>
@@ -246,16 +251,38 @@ async function mlEnviar() {
   btn.disabled = false;
 }
 
+function mlFecha(iso) { return iso ? new Date(iso).toLocaleString("es-AR", { dateStyle: "short", timeStyle: "short" }) : ""; }
+function mlNombreLink(u) {
+  try {
+    const h = new URL(u).hostname.replace(/^www\./, "");
+    if (/wa\.me$|whatsapp/.test(h)) return "WhatsApp";
+    if (/smartiesconsultora/.test(h)) return "web de Smarties";
+    if (/inpi\.gob\.ar/.test(h)) return "portal del INPI";
+    return h;
+  } catch (e) { return u; }
+}
+function mlSeguimiento(s) {
+  if (!s) return '<span class="seg" title="Todavía no llegó ningún aviso de Resend sobre este mail">Enviado</span>';
+  const out = [];
+  if (s.rebotado) out.push('<span class="seg mal" title="La dirección no existe o no recibe: pasó a la lista de bajas">Rebotó</span>');
+  if (s.spam) out.push('<span class="seg mal" title="Lo marcó como spam: pasó a la lista de bajas">Marcado como spam</span>');
+  if (s.fallido) out.push('<span class="seg mal">No se pudo enviar</span>');
+  if (s.entregado && !s.rebotado) out.push('<span class="seg ok">Entregado</span>');
+  if (s.aperturas) out.push(`<span class="seg abierto" title="Última apertura: ${mlEsc(mlFecha(s.ultima_apertura))}. Ojo: iPhone/Apple Mail puede marcarlo abierto solo.">Abierto${s.aperturas > 1 ? " ×" + s.aperturas : ""}</span>`);
+  if (s.clics) out.push(`<span class="seg clic" title="Último clic: ${mlEsc(mlFecha(s.ultimo_clic))}">Clic: ${mlEsc([...new Set(s.links.map(mlNombreLink))].join(", ") || "link")}${s.clics > 1 ? " ×" + s.clics : ""}</span>`);
+  return out.join("") || '<span class="seg">Enviado</span>';
+}
+
 async function mlHistorial() {
   const cont = document.getElementById("ml-historial");
   if (!mlFilas.length) { cont.innerHTML = ""; return; }
   try {
     const envios = await api(`/api/mails/envios?actas=${encodeURIComponent(mlFilas.map(r => r.acta).join(","))}`);
-    cont.innerHTML = envios.length ? `<table class="hist"><thead><tr><th>Fecha</th><th>Plantilla</th><th>Marca</th><th>Para</th><th>Por</th></tr></thead><tbody>${
+    cont.innerHTML = envios.length ? `<table class="hist"><thead><tr><th>Fecha</th><th>Plantilla</th><th>Marca</th><th>Para</th><th>Por</th><th>Seguimiento</th></tr></thead><tbody>${
       envios.map(e => { const r = mlFilas.find(x => x.acta === e.acta);
         return `<tr><td>${mlEsc(new Date(e.enviado_en).toLocaleString("es-AR", { dateStyle: "short", timeStyle: "short" }))}</td>
           <td>${mlEsc(e.plantilla)}</td><td>${mlEsc(r ? mlNombreMarca(r) : "")} <span class="nota">acta ${mlEsc(e.acta)}</span></td>
-          <td>${mlEsc(e.para)}</td><td>${mlEsc(e.enviado_por || "")}</td></tr>`; }).join("")
+          <td>${mlEsc(e.para)}</td><td>${mlEsc(e.enviado_por || "")}</td><td>${mlSeguimiento(e.seguimiento)}</td></tr>`; }).join("")
     }</tbody></table>` : '<p class="nota" style="margin-top:8px">Todavía no se le mandó ningún mail desde el panel.</p>';
   } catch (e) { cont.innerHTML = ""; }
 }

@@ -298,6 +298,22 @@ def crear_tablas(cur):
         """
     )
     cur.execute("CREATE INDEX IF NOT EXISTS idx_mails_envios_acta ON mails_envios(acta, enviado_en DESC)")
+    # Lo que pasa con cada mail después de salir (avisos de Resend por webhook):
+    # entregado, abierto, clic, rebotado, spam...
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS mails_eventos (
+            id         SERIAL PRIMARY KEY,
+            evento_id  TEXT UNIQUE,
+            resend_id  TEXT NOT NULL,
+            tipo       TEXT NOT NULL,
+            link       TEXT,
+            ocurrido_en TIMESTAMPTZ NOT NULL DEFAULT now(),
+            recibido_en TIMESTAMPTZ NOT NULL DEFAULT now()
+        )
+        """
+    )
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_mails_eventos_resend ON mails_eventos(resend_id)")
     cur.execute(
         """
         CREATE TABLE IF NOT EXISTS mails_bajas (
@@ -659,6 +675,115 @@ def enviar(cuenta: str, remitente: str, responder_a: str, para: list, asunto: st
     if r.status_code >= 300:
         raise ValueError(f"Resend rechazó el envío ({r.status_code}): {r.text[:300]}")
     return r.json().get("id") or ""
+
+
+# ── Avisos de Resend (webhook) ────────────────────────────────────────────
+TIPOS_EVENTO = {
+    "email.sent": "enviado",
+    "email.delivered": "entregado",
+    "email.delivery_delayed": "demorado",
+    "email.opened": "abierto",
+    "email.clicked": "clic",
+    "email.bounced": "rebotado",
+    "email.complained": "spam",
+    "email.failed": "fallido",
+    "email.suppressed": "suprimido",
+}
+
+
+def verificar_firma_webhook(cuerpo: bytes, cabeceras, secretos: list, ahora: float = None) -> bool:
+    """Firma de Resend (formato Svix): base64(HMAC-SHA256(secreto, "id.timestamp.cuerpo"))
+    en svix-signature ("v1,<firma> v1,<otra>"). Rechaza avisos de más de 5
+    minutos (para que no se puedan reenviar viejos)."""
+    import base64
+    import hashlib
+    import hmac
+    import time
+    msg_id = cabeceras.get("svix-id") or cabeceras.get("webhook-id")
+    ts = cabeceras.get("svix-timestamp") or cabeceras.get("webhook-timestamp")
+    firmas = cabeceras.get("svix-signature") or cabeceras.get("webhook-signature") or ""
+    if not (msg_id and ts and firmas):
+        return False
+    try:
+        if abs((ahora or time.time()) - int(ts)) > 300:
+            return False
+    except ValueError:
+        return False
+    contenido = f"{msg_id}.{ts}.".encode() + cuerpo
+    recibidas = [f.split(",", 1)[1] for f in firmas.split() if "," in f]
+    for secreto in secretos:
+        clave = secreto.strip()
+        if clave.startswith("whsec_"):
+            clave = clave[len("whsec_"):]
+        try:
+            clave_bytes = base64.b64decode(clave)
+        except Exception:  # noqa: BLE001
+            continue
+        esperada = base64.b64encode(hmac.new(clave_bytes, contenido, hashlib.sha256).digest()).decode()
+        if any(hmac.compare_digest(esperada, r) for r in recibidas):
+            return True
+    return False
+
+
+def guardar_evento(cur, evento_id: str, payload: dict):
+    """Guarda un aviso de Resend. Si es un rebote o una queja de spam, ese
+    mail pasa a la lista de bajas. Devuelve el tipo (o None si no interesa)."""
+    tipo = TIPOS_EVENTO.get(payload.get("type"))
+    data = payload.get("data") or {}
+    resend_id = data.get("email_id")
+    if not tipo or not resend_id:
+        return None
+    link = ((data.get("click") or {}).get("link")) if tipo == "clic" else None
+    ocurrido = payload.get("created_at") or data.get("created_at")
+    cur.execute(
+        "INSERT INTO mails_eventos (evento_id, resend_id, tipo, link, ocurrido_en) "
+        "VALUES (%s, %s, %s, %s, COALESCE(%s::timestamptz, now())) ON CONFLICT (evento_id) DO NOTHING",
+        (evento_id, resend_id, tipo, link, ocurrido),
+    )
+    if tipo in ("rebotado", "spam"):
+        motivo = "Rebotó (la dirección no existe o no recibe)" if tipo == "rebotado" else "Marcó el mail como spam"
+        for destino in (data.get("to") or []):
+            cur.execute(
+                "INSERT INTO mails_bajas (email, motivo, creada_por) VALUES (%s, %s, 'automático (Resend)') "
+                "ON CONFLICT (email) DO NOTHING",
+                (str(destino).strip().lower(), motivo),
+            )
+    return tipo
+
+
+def resumen_eventos(cur, resend_ids: list) -> dict:
+    """{resend_id: {entregado, rebotado, spam, aperturas, ultima_apertura, clics, ultimo_clic, links}}"""
+    ids = [i for i in resend_ids if i]
+    if not ids:
+        return {}
+    cur.execute(
+        "SELECT resend_id, tipo, link, ocurrido_en FROM mails_eventos WHERE resend_id = ANY(%s) ORDER BY ocurrido_en",
+        (ids,),
+    )
+    out = {}
+    for f in cur.fetchall():
+        r = out.setdefault(f["resend_id"], {"entregado": False, "rebotado": False, "spam": False, "fallido": False,
+                                             "aperturas": 0, "ultima_apertura": None,
+                                             "clics": 0, "ultimo_clic": None, "links": []})
+        t = f["tipo"]
+        cuando = f["ocurrido_en"].isoformat() if f["ocurrido_en"] else None
+        if t == "entregado":
+            r["entregado"] = True
+        elif t == "rebotado":
+            r["rebotado"] = True
+        elif t == "spam":
+            r["spam"] = True
+        elif t in ("fallido", "suprimido"):
+            r["fallido"] = True
+        elif t == "abierto":
+            r["aperturas"] += 1
+            r["ultima_apertura"] = cuando
+        elif t == "clic":
+            r["clics"] += 1
+            r["ultimo_clic"] = cuando
+            if f["link"] and f["link"] not in r["links"]:
+                r["links"].append(f["link"])
+    return out
 
 
 def esta_de_baja(cur, email: str) -> bool:

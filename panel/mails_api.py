@@ -10,7 +10,9 @@ cambios y tocar la lista de bajas, además, administrador.
   GET    /api/mails/marcas-test?q=          buscar una marca real para probar las plantillas de prospectos
   POST   /api/mails/{clave}/test            mandar una PRUEBA a los mails que se escriban (nunca al de la marca)
   POST   /api/mails/{clave}/enviar          mandar la plantilla (tal como está guardada) a un lead, a mano
-  GET    /api/mails/envios?actas=a,b        historial de mails mandados a esas actas
+  GET    /api/mails/envios?actas=a,b        historial de mails mandados a esas actas (con aperturas y clics)
+  POST   /api/publico/resend-webhook        avisos de Resend (entregado, abierto, clic, rebote, spam). Sin
+                                            sesión: se valida la firma con RESEND_WEBHOOK_SECRET.
   GET    /api/mails/bajas                   lista de bajas (no se les escribe más)
   POST   /api/mails/bajas                   agregar una baja
   DELETE /api/mails/bajas/{email}           quitar una baja
@@ -20,7 +22,10 @@ import os
 from typing import Optional
 
 import psycopg2.extras
-from fastapi import APIRouter, Depends, HTTPException
+import json
+
+from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 import mails_core as mc
@@ -155,6 +160,25 @@ def crear_router(verificar_login, verificar_admin, conexion, registrar_en_crm=No
             raise HTTPException(status_code=404, detail=f"No existe la marca con acta {acta}")
         return d
 
+    # ── Avisos de Resend (webhook) ──────────────────────────────────────
+    @router.post("/api/publico/resend-webhook", include_in_schema=False)
+    async def resend_webhook(request: Request):
+        secretos = [x for x in (os.environ.get("RESEND_WEBHOOK_SECRET") or "").split(",") if x.strip()]
+        if not secretos:
+            return JSONResponse({"detail": "Webhook sin configurar"}, status_code=503)
+        cuerpo = await request.body()
+        if len(cuerpo) > 200_000 or not mc.verificar_firma_webhook(cuerpo, request.headers, secretos):
+            return JSONResponse({"detail": "Firma inválida"}, status_code=401)
+        try:
+            payload = json.loads(cuerpo)
+        except ValueError:
+            return JSONResponse({"detail": "JSON inválido"}, status_code=400)
+        evento_id = request.headers.get("svix-id") or request.headers.get("webhook-id")
+        with conexion() as conn, rcur(conn) as cur:
+            tipo = mc.guardar_evento(cur, evento_id, payload)
+            conn.commit()
+        return {"ok": True, "tipo": tipo}
+
     # ── Envío manual a un lead ──────────────────────────────────────────
     @router.get("/api/mails/envios")
     def listar_envios(actas: str = "", _: str = Depends(verificar_login)):
@@ -163,10 +187,12 @@ def crear_router(verificar_login, verificar_admin, conexion, registrar_en_crm=No
             return []
         with conexion() as conn, rcur(conn) as cur:
             cur.execute(
-                "SELECT id, clave_mail, acta, para, asunto, enviado_por, enviado_en FROM mails_envios "
+                "SELECT id, clave_mail, acta, para, asunto, resend_id, enviado_por, enviado_en FROM mails_envios "
                 "WHERE acta = ANY(%s) ORDER BY enviado_en DESC LIMIT 200", (lista,))
             filas = cur.fetchall()
+            eventos = mc.resumen_eventos(cur, [f["resend_id"] for f in filas])
         for f in filas:
+            f["seguimiento"] = eventos.get(f.pop("resend_id"))
             f["enviado_en"] = f["enviado_en"].isoformat()
             f["plantilla"] = mc.CATALOGO.get(f["clave_mail"], {}).get("nombre", f["clave_mail"])
         return filas
