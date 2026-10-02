@@ -369,6 +369,12 @@ def _correr_alters_panel(cur):
     cur.execute(
         "ALTER TABLE marcas ADD COLUMN IF NOT EXISTS detalle_representacion_posterior TEXT"
     )
+    # Oposición marcada como "ya atendida" a mano desde la ficha del lead: deja
+    # de mostrarse como pendiente de ofrecer ayuda, de avisarse por mail y de
+    # revisarse de nuevo.
+    cur.execute("ALTER TABLE marcas ADD COLUMN IF NOT EXISTS oposicion_atendida BOOLEAN")
+    cur.execute("ALTER TABLE marcas ADD COLUMN IF NOT EXISTS oposicion_atendida_en TIMESTAMPTZ")
+    cur.execute("ALTER TABLE marcas ADD COLUMN IF NOT EXISTS oposicion_atendida_por TEXT")
     # Escaneo directo de números de acta secuenciales (adelanta el contacto
     # semanas antes del boletín) -- ver scripts/escanear_actas_nuevas.py.
     cur.execute(
@@ -421,6 +427,7 @@ COLUMNAS_MARCA = """
     fundamento_oposicion, actas_marca_oponente, marca_oponente_denominacion,
     marca_oponente_numero_registro,
     representacion_posterior_oposicion, detalle_representacion_posterior,
+    oposicion_atendida, oposicion_atendida_en, oposicion_atendida_por,
     estado_tramite, fecha_concesion, numero_disposicion, fecha_vencimiento_marca,
     fuente
 """
@@ -1266,6 +1273,37 @@ def ver_titular(clave: str, _: str = Depends(verificar_login)):
     }
 
 
+class OposicionAtendida(BaseModel):
+    actas: list[str]
+    atendida: bool = True
+
+
+@app.post("/api/marcas/oposicion-atendida")
+def marcar_oposicion_atendida(datos: OposicionAtendida, usuario: str = Depends(verificar_login)):
+    """Marca (o desmarca) como "ya atendida" la oposición/vista de esas actas.
+    Una oposición atendida deja de contar como "sin apoderado": desaparece la
+    alerta de ofrecer ayuda, de la agenda del CRM y del mail de avisos, y
+    revisar_oposiciones.py deja de volver a mirarla. La oposición en sí sigue
+    visible (es un dato real del expediente)."""
+    if not datos.actas:
+        raise HTTPException(status_code=400, detail="Falta indicar las actas")
+    with conexion() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE marcas
+                SET oposicion_atendida = %s,
+                    oposicion_atendida_en = CASE WHEN %s THEN now() ELSE NULL END,
+                    oposicion_atendida_por = CASE WHEN %s THEN %s ELSE NULL END
+                WHERE acta = ANY(%s) AND tuvo_oposicion IS TRUE
+                """,
+                (datos.atendida, datos.atendida, datos.atendida, usuario, datos.actas),
+            )
+            cambiadas = cur.rowcount
+        conn.commit()
+    return {"ok": True, "marcas": cambiadas}
+
+
 @app.post("/api/marcas/{acta}/contactado")
 def marcar_contactado(acta: str, valor: bool = True, usuario: str = Depends(verificar_login)):
     """Marca/desmarca un acta como contactada. Además acompaña al CRM: si el
@@ -1935,6 +1973,7 @@ def _sql_leads(con_filtro_lead: bool = True, filtrar_actas: bool = False) -> str
             SELECT m.acta, m.titular, m.cuit, m.email, m.es_lead, m.actualizado_en, m.clase,
                    m.denominacion_inpi, m.denominacion, m.lead_score, m.tuvo_oposicion,
                    m.representacion_posterior_oposicion, m.revisado_oposicion_en, m.boletin,
+                   m.oposicion_atendida,
                    m.estado_tramite, m.creado_en, m.fecha_publicacion, m.fecha_presentacion,
                    COALESCE(cc.clave, {CLAVE_RESPALDO_SQL}) AS clave
             FROM marcas m
@@ -1955,7 +1994,9 @@ def _sql_leads(con_filtro_lead: bool = True, filtrar_actas: bool = False) -> str
                 bool_or(es_lead IS TRUE) AS es_lead,
                 bool_or(es_lead IS FALSE) AS tiene_marcas_con_agente,
                 bool_or(tuvo_oposicion IS TRUE) AS con_oposicion,
-                bool_or(tuvo_oposicion IS TRUE AND representacion_posterior_oposicion IS NOT TRUE) AS oposicion_sin_apoderado,
+                bool_or(tuvo_oposicion IS TRUE AND representacion_posterior_oposicion IS NOT TRUE
+                        AND oposicion_atendida IS NOT TRUE) AS oposicion_sin_apoderado,
+                bool_or(tuvo_oposicion IS TRUE AND oposicion_atendida IS TRUE) AS oposicion_atendida,
                 max(revisado_oposicion_en) FILTER (WHERE tuvo_oposicion IS TRUE) AS oposicion_detectada_en,
                 bool_or(boletin IS NULL) AS pre_boletin,
                 bool_or(estado_tramite = 'Concedida') AS alguna_concedida,
@@ -2161,10 +2202,15 @@ def _plazos_de_marcas(filas, hoy=None) -> list:
         if r.get("tuvo_oposicion"):
             detectada = r.get("oposicion_detectada_en") or r.get("revisado_oposicion_en")
             fecha = detectada.date() if detectada else hoy
-            detalle = "Ya se sumó un apoderado/gestor" if r.get("representacion_posterior_oposicion") else \
-                "El plazo para responder corre desde la notificación: confirmar en el expediente"
+            resuelta = bool(r.get("representacion_posterior_oposicion") or r.get("oposicion_atendida"))
+            if r.get("representacion_posterior_oposicion"):
+                detalle = "Ya se sumó un apoderado/gestor"
+            elif r.get("oposicion_atendida"):
+                detalle = "Marcada como atendida: no hace falta ofrecer ayuda"
+            else:
+                detalle = "El plazo para responder corre desde la notificación: confirmar en el expediente"
             agregar(r, "oposicion_recibida", "Recibió una oposición / vista", fecha, detalle)
-            plazos[-1]["urgencia"] = "urgente" if not r.get("representacion_posterior_oposicion") else "proximo"
+            plazos[-1]["urgencia"] = "proximo" if resuelta else "urgente"
         conc = r.get("fecha_concesion")
         if conc:
             desde = _sumar_anios(conc, 5)

@@ -60,6 +60,10 @@ ALTER TABLE marcas ADD COLUMN IF NOT EXISTS revisado_oposicion_en TIMESTAMPTZ;
 ALTER TABLE marcas ADD COLUMN IF NOT EXISTS opo_chequeos INTEGER;            -- hitos cumplidos (0-3)
 ALTER TABLE marcas ADD COLUMN IF NOT EXISTS opo_ultimo_chequeo_en TIMESTAMPTZ;
 ALTER TABLE marcas ADD COLUMN IF NOT EXISTS oposicion_detectada_en TIMESTAMPTZ; -- primera vez que se vio
+-- Oposición marcada a mano como "ya atendida" (botón en la ficha del lead)
+ALTER TABLE marcas ADD COLUMN IF NOT EXISTS oposicion_atendida BOOLEAN;
+ALTER TABLE marcas ADD COLUMN IF NOT EXISTS oposicion_atendida_en TIMESTAMPTZ;
+ALTER TABLE marcas ADD COLUMN IF NOT EXISTS oposicion_atendida_por TEXT;
 
 -- Agregado para el seguimiento del ciclo de vida de la marca ya concedida
 -- (ver scripts/revisar_estado.py): permite ofrecer vigilancia marcaria,
