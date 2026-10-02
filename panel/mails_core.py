@@ -218,7 +218,7 @@ CATALOGO = {
     "prospecto_primer_contacto": {
         "grupo": "prospectos",
         "nombre": "Primer contacto a un lead",
-        "descripcion": "Mail para presentarse a un solicitante que presentó su marca sin agente. Todavía no se envía nada: se deja configurado.",
+        "descripcion": "Mail para presentarse a un solicitante que presentó su marca sin agente. Se manda a mano desde la ficha de cada lead (no hay envío automático).",
         "cuenta": "prospectos",
         "remitente": "Smarties <smarties@registrodemimarca.com.ar>",
         "responder_a": "info@smartiesconsultora.com.ar",
@@ -231,7 +231,7 @@ CATALOGO = {
     "prospecto_marca_publicada": {
         "grupo": "prospectos",
         "nombre": "Marca publicada (vigilancia)",
-        "descripcion": "Felicita al titular cuando su marca sale publicada en el Boletín, explica el cambio de la Resolución INPI 583/2025 y ofrece el servicio de vigilancia. Todavía no se envía nada: se deja configurado.",
+        "descripcion": "Felicita al titular cuando su marca sale publicada en el Boletín, explica el cambio de la Resolución INPI 583/2025 y ofrece el servicio de vigilancia. Se manda a mano desde la ficha de cada lead (no hay envío automático).",
         "cuenta": "prospectos",
         "remitente": "Smarties <smarties@registrodemimarca.com.ar>",
         "responder_a": "info@smartiesconsultora.com.ar",
@@ -244,7 +244,7 @@ CATALOGO = {
     "prospecto_oposicion": {
         "grupo": "prospectos",
         "nombre": "Recibió una oposición",
-        "descripcion": "Mail de Pamela a un solicitante sin agente cuya marca recibió una oposición: explica qué significa y ofrece ayuda, con botón a su WhatsApp. Todavía no se envía nada: se deja configurado.",
+        "descripcion": "Mail de Pamela a un solicitante sin agente cuya marca recibió una oposición: explica qué significa y ofrece ayuda, con botón a su WhatsApp. Se manda a mano desde la ficha de cada lead (no hay envío automático).",
         "cuenta": "prospectos",
         "remitente": "Smarties <smarties@registrodemimarca.com.ar>",
         "responder_a": "info@smartiesconsultora.com.ar",
@@ -282,6 +282,22 @@ def crear_tablas(cur):
         """
     )
     cur.execute("ALTER TABLE mails_config ADD COLUMN IF NOT EXISTS encabezado TEXT")
+    # Mails a prospectos mandados a mano desde la ficha de un lead.
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS mails_envios (
+            id           SERIAL PRIMARY KEY,
+            clave_mail   TEXT NOT NULL,
+            acta         TEXT NOT NULL,
+            para         TEXT NOT NULL,
+            asunto       TEXT,
+            resend_id    TEXT,
+            enviado_por  TEXT,
+            enviado_en   TIMESTAMPTZ NOT NULL DEFAULT now()
+        )
+        """
+    )
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_mails_envios_acta ON mails_envios(acta, enviado_en DESC)")
     cur.execute(
         """
         CREATE TABLE IF NOT EXISTS mails_bajas (
@@ -624,11 +640,17 @@ def datos_de_marca(cur, acta: str):
 def enviar_test(cuenta: str, remitente: str, responder_a: str, para: list, asunto: str, html_cuerpo: str, texto: str) -> str:
     """Manda un mail de PRUEBA a las direcciones que se eligieron a mano en el
     panel (nunca al email de la marca). Devuelve el id de Resend."""
+    return enviar(cuenta, remitente, responder_a, para, "[TEST] " + asunto, html_cuerpo, texto)
+
+
+def enviar(cuenta: str, remitente: str, responder_a: str, para: list, asunto: str, html_cuerpo: str, texto: str) -> str:
+    """Manda un mail por la cuenta de Resend indicada. Devuelve el id de Resend
+    o levanta ValueError con un mensaje claro."""
     env_key = CUENTAS[cuenta]["env"]
     api_key = os.environ.get(env_key)
     if not api_key:
-        raise ValueError(f"La variable {env_key} no está cargada en el servidor del panel (Railway): sin esa clave no se puede mandar la prueba.")
-    payload = {"from": remitente, "to": para, "subject": "[TEST] " + asunto, "html": html_cuerpo, "text": texto}
+        raise ValueError(f"La variable {env_key} no está cargada en el servidor del panel (Railway): sin esa clave no se pueden mandar mails.")
+    payload = {"from": remitente, "to": para, "subject": asunto, "html": html_cuerpo, "text": texto}
     if responder_a:
         payload["reply_to"] = responder_a
     r = requests.post("https://api.resend.com/emails",

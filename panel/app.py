@@ -2691,7 +2691,26 @@ app.include_router(cartera_api.crear_router(
 app.include_router(formularios_api.crear_router(verificar_login, conexion))
 
 # Pestaña "Mails": cuenta de Resend, remitente, reply-to y plantillas de cada mail.
-app.include_router(mails_api.crear_router(verificar_login, _auth.verificar_admin, conexion))
+def _crm_registrar_mail(cur, acta: str, usuario: str, texto: str):
+    """Deja un mail mandado desde el panel como gestión «Mail» del titular en
+    el CRM y marca el acta como contactada; si el lead estaba en «nuevo», pasa
+    a «contactado» (mismo criterio que registrar una gestión a mano)."""
+    cur.execute("UPDATE marcas SET contactado = true, contactado_en = COALESCE(contactado_en, now()) WHERE acta = %s", (acta,))
+    _asegurar_claves(cur)
+    cur.execute(f"WITH {_cte_marcas_con_clave(filtrar_actas=True)} SELECT clave FROM mk", ([acta],))
+    fila = cur.fetchone()
+    clave = fila and (fila["clave"] if isinstance(fila, dict) else fila[0])
+    if not clave:
+        return
+    _registrar_actividad(cur, clave, usuario, "email", texto)
+    cur.execute("SELECT etapa FROM crm_leads WHERE clave = %s", (clave,))
+    f = cur.fetchone()
+    etapa = (f["etapa"] if isinstance(f, dict) else f[0]) if f else "nuevo"
+    if etapa == "nuevo":
+        _aplicar_cambios_crm(cur, clave, {"etapa": "contactado"}, usuario, motivo_auto="automático al mandar un mail desde el panel")
+
+
+app.include_router(mails_api.crear_router(verificar_login, _auth.verificar_admin, conexion, _crm_registrar_mail))
 
 
 class ArchivosSinCache(StaticFiles):

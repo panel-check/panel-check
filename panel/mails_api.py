@@ -9,6 +9,8 @@ cambios y tocar la lista de bajas, además, administrador.
                                             con "acta", usa los datos reales de esa marca)
   GET    /api/mails/marcas-test?q=          buscar una marca real para probar las plantillas de prospectos
   POST   /api/mails/{clave}/test            mandar una PRUEBA a los mails que se escriban (nunca al de la marca)
+  POST   /api/mails/{clave}/enviar          mandar la plantilla (tal como está guardada) a un lead, a mano
+  GET    /api/mails/envios?actas=a,b        historial de mails mandados a esas actas
   GET    /api/mails/bajas                   lista de bajas (no se les escribe más)
   POST   /api/mails/bajas                   agregar una baja
   DELETE /api/mails/bajas/{email}           quitar una baja
@@ -39,12 +41,20 @@ class EnvioTest(ConfigMail):
     para: str = ""
 
 
+class EnvioLead(BaseModel):
+    acta: str
+    para: str
+    confirmar_repetido: bool = False
+
+
 class BajaNueva(BaseModel):
     email: str
     motivo: Optional[str] = None
 
 
-def crear_router(verificar_login, verificar_admin, conexion) -> APIRouter:
+def crear_router(verificar_login, verificar_admin, conexion, registrar_en_crm=None) -> APIRouter:
+    """registrar_en_crm(cur, acta, usuario, texto): opcional, lo pasa app.py
+    para dejar el envío como gestión «Mail» en el CRM del titular."""
     router = APIRouter()
 
     def rcur(conn):
@@ -144,6 +154,69 @@ def crear_router(verificar_login, verificar_admin, conexion) -> APIRouter:
         if not d:
             raise HTTPException(status_code=404, detail=f"No existe la marca con acta {acta}")
         return d
+
+    # ── Envío manual a un lead ──────────────────────────────────────────
+    @router.get("/api/mails/envios")
+    def listar_envios(actas: str = "", _: str = Depends(verificar_login)):
+        lista = [a.strip() for a in actas.split(",") if a.strip()][:500]
+        if not lista:
+            return []
+        with conexion() as conn, rcur(conn) as cur:
+            cur.execute(
+                "SELECT id, clave_mail, acta, para, asunto, enviado_por, enviado_en FROM mails_envios "
+                "WHERE acta = ANY(%s) ORDER BY enviado_en DESC LIMIT 200", (lista,))
+            filas = cur.fetchall()
+        for f in filas:
+            f["enviado_en"] = f["enviado_en"].isoformat()
+            f["plantilla"] = mc.CATALOGO.get(f["clave_mail"], {}).get("nombre", f["clave_mail"])
+        return filas
+
+    @router.post("/api/mails/{clave}/enviar")
+    def enviar_a_lead(clave: str, body: EnvioLead, usuario: str = Depends(verificar_login)):
+        """Manda la plantilla de prospectos, tal como está GUARDADA, con los
+        datos reales de la marca, al mail indicado. No manda nada si ese mail
+        está en la lista de bajas; si ya se le mandó esa plantilla a esa acta,
+        pide confirmación (409) antes de repetir."""
+        cat = mc.CATALOGO.get(clave)
+        if not cat or not cat.get("editable") or cat["grupo"] != "prospectos":
+            raise HTTPException(status_code=400, detail="Solo se pueden mandar plantillas de prospectos")
+        para = mc.lista_de_emails(body.para)
+        if len(para) != 1 or not mc._RE_EMAIL.match(para[0]):
+            raise HTTPException(status_code=400, detail="Escribí un único mail válido de destino")
+        destino = para[0].lower()
+        with conexion() as conn, rcur(conn) as cur:
+            datos = mc.datos_de_marca(cur, body.acta)
+            if not datos:
+                raise HTTPException(status_code=404, detail=f"No existe la marca con acta {body.acta}")
+            if mc.esta_de_baja(cur, destino):
+                raise HTTPException(status_code=400, detail=f"{destino} está en la lista de bajas: no se le escribe más.")
+            cur.execute("SELECT enviado_en, enviado_por FROM mails_envios WHERE clave_mail = %s AND acta = %s "
+                        "ORDER BY enviado_en DESC LIMIT 1", (clave, body.acta))
+            previo = cur.fetchone()
+            cfg = mc.combinar(clave, _guardadas(cur).get(clave))
+        if previo and not body.confirmar_repetido:
+            cuando = previo["enviado_en"].astimezone().strftime("%d/%m/%Y %H:%M")
+            raise HTTPException(status_code=409, detail=f"Esta plantilla ya se le mandó a esta marca el {cuando}"
+                                                         f"{' (por ' + previo['enviado_por'] + ')' if previo.get('enviado_por') else ''}.")
+        asunto, cuerpo_html, texto = mc.render_prospecto(cfg["asunto"], cfg["cuerpo"], datos, cfg.get("encabezado"))
+        try:
+            id_resend = mc.enviar(cfg["cuenta"], cfg["remitente"], cfg["responder_a"], [destino], asunto, cuerpo_html, texto)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        with conexion() as conn, rcur(conn) as cur:
+            cur.execute("INSERT INTO mails_envios (clave_mail, acta, para, asunto, resend_id, enviado_por) "
+                        "VALUES (%s, %s, %s, %s, %s, %s)", (clave, body.acta, destino, asunto, id_resend, usuario))
+            conn.commit()
+            if registrar_en_crm:
+                try:
+                    registrar_en_crm(cur, body.acta, usuario,
+                                     f"Mail enviado desde el panel: «{cat['nombre']}» a {destino} "
+                                     f"(acta {body.acta}). Asunto: {asunto}")
+                    conn.commit()
+                except Exception as e:  # noqa: BLE001 — el mail ya salió; el CRM no debe hacerlo fallar
+                    conn.rollback()
+                    print(f"[mails] no se pudo registrar el envío en el CRM: {e}")
+        return {"ok": True, "id": id_resend, "para": destino, "asunto": asunto}
 
     # ── Configuración de cada mail ──────────────────────────────────────
     @router.post("/api/mails/{clave}")

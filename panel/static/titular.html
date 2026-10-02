@@ -7,6 +7,25 @@
 <link rel="stylesheet" href="/static/comun.css" />
 <script src="/static/sesion.js" defer></script>
 <script src="/static/menu.js" defer></script>
+<style>
+  .mail-lead .fila-mail { display: grid; grid-template-columns: 1fr 1.4fr 1fr; gap: 10px; margin-bottom: 10px; }
+  @media (max-width: 760px) { .mail-lead .fila-mail { grid-template-columns: 1fr; } }
+  .mail-lead label { display: block; font-size: 12px; font-weight: 600; color: #344054; margin-bottom: 4px; }
+  .mail-lead select, .mail-lead input[type=text] { width: 100%; padding: 7px 9px; border: 1px solid var(--borde-control); border-radius: 8px; font: inherit; font-size: 14px; background: #fff; box-sizing: border-box; }
+  .mail-lead .previa-asunto { font-size: 13px; margin: 4px 0 6px; }
+  .mail-lead iframe { width: 100%; height: 520px; border: 1px solid var(--borde); border-radius: 8px; background: #eef1f5; }
+  .mail-lead .acciones { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 10px; }
+  .mail-lead button.enviar { background: var(--azul); color: #fff; border: 0; border-radius: 8px; padding: 9px 16px; font: inherit; font-weight: 600; cursor: pointer; }
+  .mail-lead button.enviar:disabled { opacity: .5; cursor: not-allowed; }
+  .mail-lead button.plegar { background: none; border: 0; color: var(--azul); font: inherit; font-size: 13px; cursor: pointer; padding: 0; }
+  .mail-lead .msg { font-size: 13px; }
+  .mail-lead .msg.ok { color: var(--verde); }
+  .mail-lead .msg.err { color: var(--rojo); }
+  .mail-lead .nota { font-size: 12px; color: var(--gris); }
+  .mail-lead table.hist { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 6px; }
+  .mail-lead table.hist td, .mail-lead table.hist th { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--borde); }
+  .mail-lead table.hist th { font-size: 11px; text-transform: uppercase; color: var(--gris); }
+</style>
 </head>
 <body>
 
@@ -37,6 +56,24 @@
 </header>
 
 <div class="ficha-titular" id="ficha-titular"></div>
+
+<div class="crm-box mail-lead" id="mail-box" hidden>
+  <div class="crm-box-titulo">✉️ Mandar mail</div>
+  <div class="fila-mail">
+    <div><label for="ml-plantilla">Plantilla</label><select id="ml-plantilla"></select></div>
+    <div><label for="ml-marca">Marca</label><select id="ml-marca"></select></div>
+    <div><label for="ml-para">Para</label><input type="text" id="ml-para" placeholder="mail del lead" /></div>
+  </div>
+  <div class="nota">Sale la plantilla tal como está guardada en <a href="/mails">Mails</a>, con los datos reales de la marca elegida, desde la cuenta de prospectos.</div>
+  <div class="previa-asunto"><strong>Asunto:</strong> <span id="ml-asunto">—</span></div>
+  <button type="button" class="plegar" id="ml-plegar">Ver el mail ▾</button>
+  <iframe id="ml-previa" sandbox title="Vista previa del mail" hidden></iframe>
+  <div class="acciones">
+    <button type="button" class="enviar" id="ml-enviar">Enviar mail</button>
+    <span class="msg" id="ml-msg"></span>
+  </div>
+  <div id="ml-historial"></div>
+</div>
 
 <div class="crm-box" id="crm-box" hidden>
   <div class="crm-box-titulo">📋 Seguimiento comercial (CRM)</div>
@@ -121,6 +158,7 @@ async function cargar({ conCRM = true } = {}) {
       ? data.rows.map(filaHtml).join("")
       : '<tr><td colspan="12" class="vacio">Sin marcas para este titular.</td></tr>';
     cargarContadoresComentarios(data.rows.map(r => r.acta));
+    if (conCRM) mlIniciar(data.rows);
 
     // Bloque del CRM: la ficha del lead (etapa, asignado, gestiones, plazos).
     // Si el titular todavía no tiene una clave estable (sin CUIT ni nombre
@@ -139,6 +177,115 @@ async function cargar({ conCRM = true } = {}) {
     document.getElementById("titulo-titular").textContent = "No encontrado";
     tbody.innerHTML = `<tr><td colspan="12" class="vacio">No se pudo cargar (${e.message}).</td></tr>`;
   }
+}
+
+// ── Mandar mail al lead ──
+let mlFilas = [];
+let mlPlantillas = [];
+let mlTimer = null;
+
+const mlEsc = (v) => _escapeHtml(v == null ? "" : String(v));
+function mlNombreMarca(r) { return r.denominacion_inpi || r.denominacion || sinNombre(r.tipo); }
+function mlEsOposicion(r) { return r.tuvo_oposicion === true; }
+
+function mlElegirMarcaPorDefecto() {
+  const clave = document.getElementById("ml-plantilla").value;
+  const conMail = mlFilas.filter(r => r.email);
+  let r = null;
+  if (clave === "prospecto_oposicion") r = conMail.find(mlEsOposicion) || mlFilas.find(mlEsOposicion);
+  r = r || conMail[0] || mlFilas[0];
+  if (r) document.getElementById("ml-marca").value = r.acta;
+  mlAlCambiarMarca();
+}
+
+function mlAlCambiarMarca() {
+  const r = mlFilas.find(x => x.acta === document.getElementById("ml-marca").value);
+  document.getElementById("ml-para").value = (r && r.email) ? r.email.toLowerCase() : "";
+  mlPrevia();
+}
+
+async function mlPrevia() {
+  const clave = document.getElementById("ml-plantilla").value;
+  const acta = document.getElementById("ml-marca").value;
+  if (!clave || !acta) return;
+  try {
+    const r = await apiJson(`/api/mails/${encodeURIComponent(clave)}/vista-previa`, "POST", { acta });
+    if (clave !== document.getElementById("ml-plantilla").value || acta !== document.getElementById("ml-marca").value) return;
+    document.getElementById("ml-asunto").textContent = r.asunto;
+    document.getElementById("ml-previa").srcdoc = r.html;
+  } catch (e) {
+    document.getElementById("ml-asunto").textContent = "—";
+    mlMsg(e.message, false);
+  }
+}
+
+function mlMsg(t, ok) { const el = document.getElementById("ml-msg"); el.textContent = t; el.className = "msg " + (ok ? "ok" : "err"); }
+
+async function mlEnviar() {
+  const clave = document.getElementById("ml-plantilla").value;
+  const acta = document.getElementById("ml-marca").value;
+  const para = document.getElementById("ml-para").value.trim();
+  const plantilla = mlPlantillas.find(p => p.clave === clave);
+  const r = mlFilas.find(x => x.acta === acta);
+  if (!para) { mlMsg("Falta el mail de destino.", false); return; }
+  if (!confirm(`¿Mandar «${plantilla ? plantilla.nombre : clave}» de la marca ${r ? mlNombreMarca(r) : acta} a ${para}?\n\nEste mail le llega al lead (no es una prueba).`)) return;
+  const btn = document.getElementById("ml-enviar");
+  btn.disabled = true; mlMsg("Enviando…", true);
+  const mandar = (confirmar_repetido) => apiJson(`/api/mails/${encodeURIComponent(clave)}/enviar`, "POST", { acta, para, confirmar_repetido });
+  try {
+    let res;
+    try { res = await mandar(false); }
+    catch (e) {
+      if (!/ya se le mandó/.test(e.message) || !confirm(e.message + "\n\n¿Mandarla igual?")) throw e;
+      res = await mandar(true);
+    }
+    mlMsg(`Enviado a ${res.para} ✓`, true);
+    mlHistorial();
+    cargar({ conCRM: true });
+  } catch (e) { mlMsg(e.message, false); }
+  btn.disabled = false;
+}
+
+async function mlHistorial() {
+  const cont = document.getElementById("ml-historial");
+  if (!mlFilas.length) { cont.innerHTML = ""; return; }
+  try {
+    const envios = await api(`/api/mails/envios?actas=${encodeURIComponent(mlFilas.map(r => r.acta).join(","))}`);
+    cont.innerHTML = envios.length ? `<table class="hist"><thead><tr><th>Fecha</th><th>Plantilla</th><th>Marca</th><th>Para</th><th>Por</th></tr></thead><tbody>${
+      envios.map(e => { const r = mlFilas.find(x => x.acta === e.acta);
+        return `<tr><td>${mlEsc(new Date(e.enviado_en).toLocaleString("es-AR", { dateStyle: "short", timeStyle: "short" }))}</td>
+          <td>${mlEsc(e.plantilla)}</td><td>${mlEsc(r ? mlNombreMarca(r) : "")} <span class="nota">acta ${mlEsc(e.acta)}</span></td>
+          <td>${mlEsc(e.para)}</td><td>${mlEsc(e.enviado_por || "")}</td></tr>`; }).join("")
+    }</tbody></table>` : '<p class="nota" style="margin-top:8px">Todavía no se le mandó ningún mail desde el panel.</p>';
+  } catch (e) { cont.innerHTML = ""; }
+}
+
+async function mlIniciar(filas) {
+  mlFilas = filas;
+  const box = document.getElementById("mail-box");
+  try {
+    if (!mlPlantillas.length) {
+      const datos = await api("/api/mails");
+      mlPlantillas = datos.mails.filter(m => m.grupo === "prospectos" && m.editable);
+      const sel = document.getElementById("ml-plantilla");
+      sel.innerHTML = mlPlantillas.map(m => `<option value="${mlEsc(m.clave)}">${mlEsc(m.nombre)}</option>`).join("");
+      if (mlFilas.some(mlEsOposicion) && mlPlantillas.some(m => m.clave === "prospecto_oposicion")) sel.value = "prospecto_oposicion";
+      sel.addEventListener("change", mlElegirMarcaPorDefecto);
+      document.getElementById("ml-marca").addEventListener("change", mlAlCambiarMarca);
+      document.getElementById("ml-enviar").addEventListener("click", mlEnviar);
+      document.getElementById("ml-plegar").addEventListener("click", () => {
+        const f = document.getElementById("ml-previa"); f.hidden = !f.hidden;
+        document.getElementById("ml-plegar").textContent = f.hidden ? "Ver el mail ▾" : "Ocultar el mail ▴";
+      });
+    }
+    const actual = document.getElementById("ml-marca").value;
+    document.getElementById("ml-marca").innerHTML = mlFilas.map(r =>
+      `<option value="${mlEsc(r.acta)}">${mlEsc(mlNombreMarca(r))} · acta ${mlEsc(r.acta)} · clase ${mlEsc(r.clase ?? "—")}${mlEsOposicion(r) ? " · con oposición/vista" : ""}${r.email ? "" : " · sin mail"}</option>`).join("");
+    box.hidden = !mlPlantillas.length || !mlFilas.length;
+    if (actual && mlFilas.some(r => r.acta === actual)) { document.getElementById("ml-marca").value = actual; mlPrevia(); }
+    else mlElegirMarcaPorDefecto();
+    mlHistorial();
+  } catch (e) { box.hidden = true; }
 }
 
 cargar();
