@@ -50,6 +50,7 @@ reales.
 
 import argparse
 import os
+import re
 import sys
 import time
 import traceback
@@ -172,12 +173,74 @@ def _guardar_solicitud_escaneada(conn, acta: str, info: dict):
         print(f"  acta {acta}: no se pudo guardar en solicitudes_escaneadas ({type(e).__name__})")
 
 
+def _importar_actas_especiales(conn, actas: list[str]):
+    """Importa actas puntuales (caso especial) con el mismo análisis del escaneo,
+    sin mover el puntero y sin exigir que sean lead ni que tengan email."""
+    s = crear_sesion()
+    fallidas = []
+    for acta in actas:
+        if not acta.isdigit():
+            print(f"::error::acta {acta!r} no es un número válido, se omite")
+            fallidas.append(acta)
+            continue
+        existe, _texto = existe_expediente(s, acta)
+        if existe is None:
+            time.sleep(30)
+            existe, _texto = existe_expediente(s, acta)
+        if not existe:
+            motivo = "bloqueada por el WAF de INPI" if existe is None else "no existe en INPI"
+            print(f"::error::acta {acta}: {motivo}, no se importa")
+            fallidas.append(acta)
+            continue
+        info = revisar_acta(s, acta)
+        _guardar_solicitud_escaneada(conn, acta, info)
+        score = calcular_lead_score({
+            "matricula_agente": "", "es_lead": info.get("es_lead") is True, "email": info.get("email") or "",
+        })
+        _guardar_lead(conn, acta, info, score)
+        # _guardar_lead no pisa filas existentes: en un import manual sí queremos
+        # refrescar lo que se haya podido leer.
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE marcas SET
+                    clase = COALESCE(%s, clase), tipo = COALESCE(%s, tipo),
+                    denominacion = COALESCE(%s, denominacion),
+                    fecha_presentacion = COALESCE(%s, fecha_presentacion),
+                    titular = COALESCE(%s, titular), cuit = COALESCE(%s, cuit),
+                    caracter = %s, es_lead = %s,
+                    email = COALESCE(%s, email), email_apoderado = COALESCE(%s, email_apoderado),
+                    lead_score = %s, motivo_sin_email = %s, actualizado_en = now()
+                WHERE acta = %s
+                """,
+                (
+                    info.get("clase"), info.get("tipo_formulario"), info.get("denominacion_formulario"),
+                    info.get("fecha_presentacion_formulario"), info.get("titular_formulario"), info.get("cuit"),
+                    info.get("caracter") or None, info.get("es_lead"),
+                    info.get("email") or None, info.get("email_apoderado") or None,
+                    score, info.get("motivo_sin_email") or None, acta,
+                ),
+            )
+        conn.commit()
+        print(f"::notice::acta {acta} importada: es_lead={info.get('es_lead')} caracter={info.get('caracter') or '-'} "
+              f"denominacion={info.get('denominacion_formulario')!r} titular={info.get('titular_formulario')!r} "
+              f"email={'sí' if info.get('email') else 'no'}")
+        time.sleep(1.5)
+    if fallidas:
+        sys.exit(f"No se pudieron importar: {', '.join(fallidas)}")
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--tope", type=int, default=300, help="máximo de números de acta a probar en esta corrida")
     ap.add_argument("--consecutivos-para-frenar", type=int, default=8,
                      help="si esta cantidad de actas seguidas no existe todavía, se corta la corrida")
     ap.add_argument("--delay", type=float, default=1.5, help="segundos entre acta y acta")
+    ap.add_argument("--actas", default="",
+                     help="CASO ESPECIAL: lista de números de acta separados por coma o espacio "
+                          "(ej. 4798469,4798470) que se importan puntualmente, sin tocar el puntero del "
+                          "escaneo. Se guardan siempre en `marcas` (fuente 'escaneo_directo'), sean o no "
+                          "leads, y se pisan los datos si ya existían.")
     ap.add_argument("--desde", type=int, default=4797000,
                      help="punto de partida SOLO si es la primera corrida (todavía no hay fila en "
                           "escaneo_actas) -- default: 4797000 (CHATTY, pedido explícito del usuario "
@@ -197,6 +260,9 @@ def main():
         except Exception as e:
             conn.rollback()
             print(f"aviso: no se pudieron crear las tablas de la cartera ({type(e).__name__})")
+        if args.actas.strip():
+            _importar_actas_especiales(conn, [a for a in re.split(r"[,\s]+", args.actas) if a])
+            return
         ultima_confirmada = _leer_puntero(conn, args.desde)
         print(f"Último acta confirmada: {ultima_confirmada}. Probando hasta {args.tope} números siguientes...")
 
