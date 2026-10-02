@@ -9,7 +9,11 @@
   .contenido { max-width: 1080px; margin: 24px auto 60px; padding: 0 20px; }
   .env-filtros { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
   .env-filtros input, .env-filtros select { padding: 8px 10px; border: 1px solid var(--borde-control); border-radius: 8px; font: inherit; font-size: 14px; background: #fff; }
-  .env-filtros input { flex: 1; min-width: 220px; }
+  .env-filtros input[type=text] { flex: 1; min-width: 220px; }
+  .toggle-internos { display: flex; align-items: center; gap: 6px; font-size: 14px; color: #344054; cursor: pointer; user-select: none; }
+  .toggle-internos input { width: 16px; height: 16px; margin: 0; cursor: pointer; }
+  .toggle-internos .sub { font-size: 12px; color: var(--gris); }
+  .estado.interno { background: #f4f3ff; color: #5925dc; }
   .tabla-env { width: 100%; border-collapse: collapse; background: #fff; border: 1px solid var(--borde); border-radius: 10px; overflow: hidden; font-size: 14px; }
   .tabla-env th { text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--gris); padding: 10px 12px; background: #f9fafb; border-bottom: 1px solid var(--borde); }
   .tabla-env td { padding: 10px 12px; border-bottom: 1px solid var(--borde); vertical-align: top; }
@@ -143,8 +147,9 @@
   </div>
 
   <div id="tab-enviados">
-    <p class="intro">Todos los mails que salieron de la cuenta de <strong>prospectos</strong> de Resend (del panel o de cualquier otro lado),
-      del más nuevo al más viejo. Los que se mandaron desde la ficha de un lead muestran además la plantilla y quién lo mandó.</p>
+    <p class="intro">Los mails que se les mandaron a los <strong>leads</strong> (cuenta de prospectos de Resend, desde el panel o desde
+      cualquier otro lado), del más nuevo al más viejo. Los avisos al equipo y las pruebas quedan ocultos: se ven tildando
+      <em>Mostrar mails internos</em>.</p>
     <div id="env-aviso"></div>
     <div class="env-filtros">
       <input type="text" id="env-buscar" placeholder="Buscar por mail, asunto, marca o titular" />
@@ -155,12 +160,14 @@
         <option value="clic">Con clic</option>
         <option value="mal">Rebotó / spam / falló</option>
       </select>
+      <select id="env-tipo"><option value="">Todos los tipos</option></select>
       <select id="env-origen">
         <option value="">Todos los orígenes</option>
         <option value="panel">Mandados desde el panel</option>
         <option value="otro">Mandados desde otro lado</option>
       </select>
       <button type="button" class="secundario" id="env-recargar">↻ Actualizar</button>
+      <label class="toggle-internos"><input type="checkbox" id="env-internos" /> Mostrar mails internos <span class="sub">(avisos al equipo y pruebas)</span></label>
     </div>
     <div class="env-scroll"><div id="env-tabla">Cargando…</div></div>
     <div class="barra-acciones"><button type="button" class="secundario" id="env-mas" hidden>Cargar más</button><span class="msg" id="env-msg"></span></div>
@@ -469,7 +476,8 @@ async function restablecer() {
 
 // ── Enviados ──
 let envItems = [];
-let envSiguiente = null;
+let envSiguiente = {};
+let envTipos = [];
 const ESTADOS_RESEND = {
   sent: ["Enviado", ""], queued: ["En cola", ""], scheduled: ["Programado", ""], delivered: ["Entregado", "entregado"],
   delivery_delayed: ["Demorado", ""], opened: ["Abierto", "abierto"], clicked: ["Clic", "clic"],
@@ -513,8 +521,12 @@ function pintarEnviados() {
   const q = document.getElementById("env-buscar").value.trim().toLowerCase();
   const est = document.getElementById("env-estado").value;
   const org = document.getElementById("env-origen").value;
+  const tipo = document.getElementById("env-tipo").value;
+  const internos = document.getElementById("env-internos").checked;
   const filas = envItems.filter(it => {
-    if (q && ![it.para, it.asunto, it.marca, it.titular, it.plantilla].some(v => (v || "").toLowerCase().includes(q))) return false;
+    if (!internos && it.interno) return false;
+    if (tipo && it.tipo !== tipo) return false;
+    if (q && ![it.para, it.asunto, it.marca, it.titular, it.plantilla, nombreTipo(it.tipo)].some(v => (v || "").toLowerCase().includes(q))) return false;
     const c = claseEstado(it);
     if (est === "entregado" && !["entregado", "abierto", "clic"].includes(c)) return false;
     if (est === "abierto" && !["abierto", "clic"].includes(c)) return false;
@@ -525,32 +537,57 @@ function pintarEnviados() {
     return true;
   });
   document.getElementById("env-tabla").innerHTML = filas.length ? `<table class="tabla-env"><thead><tr>
-      <th>Para</th><th>Estado</th><th>Asunto</th><th>Lead</th><th>Origen</th><th>Enviado</th></tr></thead><tbody>${
+      <th>Para</th><th>Estado</th><th>Asunto</th><th>Lead</th><th>Tipo</th><th>Enviado</th></tr></thead><tbody>${
     filas.map(it => `<tr>
       <td>${esc(it.para)}</td>
       <td>${etiquetasEstado(it)}</td>
       <td class="asunto">${esc(it.asunto || "")}</td>
       <td>${it.clave_titular ? `<a href="/titular/${encodeURIComponent(it.clave_titular)}">${esc(it.marca || it.titular || "ver lead")}</a>` : "—"}
         ${it.acta ? `<div class="sub">acta ${esc(it.acta)}${it.titular ? " · " + esc(it.titular) : ""}</div>` : ""}</td>
-      <td>${it.desde_panel ? `Panel<div class="sub">${esc(it.plantilla || "")}${it.enviado_por ? " · " + esc(it.enviado_por) : ""}</div>` : '<span class="sub">Otro lado</span>'}</td>
+      <td>${it.interno ? '<span class="estado interno">Interno</span><br>' : ""}${esc(nombreTipo(it.tipo))}
+        <div class="sub">${it.desde_panel ? "Panel" + (it.enviado_por ? " · " + esc(it.enviado_por) : "")
+          : it.tipo === "test" ? "Prueba desde Mails" : it.interno ? "Aviso automático" : "Otro lado"}</div></td>
       <td title="${esc(fechaCorta(it.enviado_en))}">${esc(hace(it.enviado_en))}</td></tr>`).join("")
   }</tbody></table>` : `<p class="vacio">${envItems.length ? "Ningún mail coincide con el filtro." : "Todavía no salió ningún mail de la cuenta de prospectos."}</p>`;
-  document.getElementById("env-mas").hidden = !envSiguiente;
+  document.getElementById("env-mas").hidden = !Object.keys(envSiguiente).length;
+}
+function nombreTipo(clave) { const t = envTipos.find(x => x.clave === clave); return t ? t.nombre : (clave || "Otro"); }
+function pintarOpcionesTipo() {
+  const sel = document.getElementById("env-tipo"), actual = sel.value;
+  const internos = document.getElementById("env-internos").checked;
+  const visibles = envTipos.filter(t => internos || !t.interno);
+  sel.innerHTML = '<option value="">Todos los tipos</option>' + visibles.map(t =>
+    `<option value="${esc(t.clave)}">${esc(t.nombre)}${t.interno ? " (interno)" : ""}</option>`).join("");
+  sel.value = visibles.some(t => t.clave === actual) ? actual : "";
 }
 async function cargarEnviados(mas = false) {
   const msg = document.getElementById("env-msg");
+  const internos = document.getElementById("env-internos").checked;
   msg.textContent = "Cargando…"; msg.className = "msg ok";
+  const params = new URLSearchParams();
+  if (internos) params.set("internos", "true");
+  if (mas) {
+    const cuentas = Object.keys(envSiguiente);
+    if (envSiguiente.prospectos) params.set("despues_prospectos", envSiguiente.prospectos);
+    if (envSiguiente.interna) params.set("despues_interna", envSiguiente.interna);
+    if (cuentas.length === 1) params.set("solo", cuentas[0]);
+  }
   try {
-    const r = await api(`/api/mails/enviados${mas && envSiguiente ? "?despues_de=" + encodeURIComponent(envSiguiente) : ""}`);
-    envItems = mas ? envItems.concat(r.items) : r.items;
-    envSiguiente = r.siguiente;
-    document.getElementById("env-aviso").innerHTML = r.aviso
-      ? `<div class="aviso-env">${esc(r.aviso)}<br>Mientras tanto se muestran solo los mails mandados desde el panel.</div>` : "";
+    const r = await api(`/api/mails/enviados?${params}`);
+    envTipos = r.tipos || envTipos;
+    const vistos = new Set(mas ? envItems.map(x => x.id) : []);
+    envItems = (mas ? envItems.concat(r.items.filter(x => !vistos.has(x.id))) : r.items)
+      .sort((a, b) => (b.enviado_en || "").localeCompare(a.enviado_en || ""));
+    envSiguiente = r.siguiente || {};
+    document.getElementById("env-aviso").innerHTML = (r.avisos || []).length
+      ? `<div class="aviso-env">${r.avisos.map(esc).join("<br>")}</div>` : "";
     msg.textContent = "";
+    pintarOpcionesTipo();
     pintarEnviados();
   } catch (e) { msg.textContent = e.message; msg.className = "msg err"; if (!mas) document.getElementById("env-tabla").innerHTML = ""; }
 }
-["env-buscar", "env-estado", "env-origen"].forEach(id => document.getElementById(id).addEventListener("input", pintarEnviados));
+["env-buscar", "env-estado", "env-origen", "env-tipo"].forEach(id => document.getElementById(id).addEventListener("input", pintarEnviados));
+document.getElementById("env-internos").addEventListener("change", () => { pintarOpcionesTipo(); cargarEnviados(false); });
 document.getElementById("env-recargar").addEventListener("click", () => cargarEnviados(false));
 document.getElementById("env-mas").addEventListener("click", () => cargarEnviados(true));
 

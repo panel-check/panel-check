@@ -786,6 +786,42 @@ def resumen_eventos(cur, resend_ids: list) -> dict:
     return out
 
 
+# ── Tipo de cada mail (para el filtro de la pestaña Enviados) ─────────────
+# Los avisos internos se reconocen por el asunto que arma cada script.
+_ASUNTOS_INTERNOS = [
+    ("oposiciones", re.compile(r"con oposición o vista nueva", re.I)),
+    ("cartera", re.compile(r"^Cartera y vigilancia", re.I)),
+    ("formularios", re.compile(r"Formulario recibido", re.I)),
+    ("bloqueo", re.compile(r"INPI está bloqueando", re.I)),
+]
+
+
+def tipos_de_mail() -> list:
+    """Opciones del filtro por tipo: sale del catálogo, así una plantilla
+    nueva aparece sola. Más «Prueba (test)» y «Otro»."""
+    out = [{"clave": k, "nombre": c["nombre"], "interno": c["grupo"] != "prospectos"} for k, c in CATALOGO.items()]
+    out.append({"clave": "test", "nombre": "Prueba (test)", "interno": True})
+    out.append({"clave": "otro", "nombre": "Otro", "interno": False})
+    return out
+
+
+def tipo_por_asunto(asunto: str, cuenta: str) -> str:
+    """Para los mails que no se mandaron desde la ficha de un lead."""
+    a = asunto or ""
+    if a.startswith("[TEST]"):
+        return "test"
+    for clave, rx in _ASUNTOS_INTERNOS:
+        if rx.search(a):
+            return clave
+    if cuenta == "prospectos":
+        # Mails a leads mandados por fuera del panel: se adivina por el asunto.
+        if re.search(r"oposici", a, re.I):
+            return "prospecto_oposicion"
+        if re.search(r"publicad", a, re.I):
+            return "prospecto_marca_publicada"
+    return "otro"
+
+
 def listar_resend(cuenta: str, limite: int = 50, despues_de: str = None) -> dict:
     """Mails enviados por esa cuenta de Resend, del más nuevo al más viejo:
     {"data": [...], "has_more": bool}. Levanta ValueError con un mensaje claro
