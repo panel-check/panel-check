@@ -7,6 +7,26 @@
 <link rel="stylesheet" href="/static/comun.css" />
 <style>
   .contenido { max-width: 1080px; margin: 24px auto 60px; padding: 0 20px; }
+  .env-filtros { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
+  .env-filtros input, .env-filtros select { padding: 8px 10px; border: 1px solid var(--borde-control); border-radius: 8px; font: inherit; font-size: 14px; background: #fff; }
+  .env-filtros input { flex: 1; min-width: 220px; }
+  .tabla-env { width: 100%; border-collapse: collapse; background: #fff; border: 1px solid var(--borde); border-radius: 10px; overflow: hidden; font-size: 14px; }
+  .tabla-env th { text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--gris); padding: 10px 12px; background: #f9fafb; border-bottom: 1px solid var(--borde); }
+  .tabla-env td { padding: 10px 12px; border-bottom: 1px solid var(--borde); vertical-align: top; }
+  .tabla-env tr:last-child td { border-bottom: 0; }
+  .tabla-env .sub { font-size: 12px; color: var(--gris); }
+  .tabla-env { table-layout: fixed; min-width: 860px; }
+  .tabla-env td, .tabla-env th { white-space: normal; overflow-wrap: anywhere; }
+  .tabla-env th:nth-child(1) { width: 19%; } .tabla-env th:nth-child(2) { width: 20%; } .tabla-env th:nth-child(3) { width: 27%; }
+  .tabla-env th:nth-child(4) { width: 15%; } .tabla-env th:nth-child(5) { width: 11%; } .tabla-env th:nth-child(6) { width: 8%; }
+  .tabla-env td a { color: var(--azul); }
+  .env-scroll { overflow-x: auto; }
+  .estado { display: inline-block; font-size: 12px; font-weight: 600; border-radius: 10px; padding: 3px 9px; background: #f2f4f7; color: #475467; white-space: nowrap; margin: 1px 4px 1px 0; }
+  .estado.entregado { background: #e7f6ec; color: #067647; }
+  .estado.abierto { background: #eef4ff; color: #1d4ed8; }
+  .estado.clic { background: #fef3c7; color: #92400e; }
+  .estado.mal { background: #fee4e2; color: #b42318; }
+  .aviso-env { background: #fffaeb; border: 1px solid #fedf89; color: #93370d; border-radius: 8px; padding: 10px 12px; font-size: 13px; margin-bottom: 12px; }
   .tabs-mails { display: flex; gap: 4px; border-bottom: 1px solid var(--borde); margin-bottom: 18px; }
   .tabs-mails button {
     background: none; border: none; border-bottom: 2px solid transparent; padding: 10px 14px;
@@ -117,11 +137,36 @@
 
 <div class="contenido">
   <div class="tabs-mails" id="tabs">
-    <button type="button" data-tab="mails" class="activo">Mails y plantillas</button>
+    <button type="button" data-tab="enviados" class="activo">Enviados</button>
+    <button type="button" data-tab="mails">Mails y plantillas</button>
     <button type="button" data-tab="bajas">Bajas</button>
   </div>
 
-  <div id="tab-mails">
+  <div id="tab-enviados">
+    <p class="intro">Todos los mails que salieron de la cuenta de <strong>prospectos</strong> de Resend (del panel o de cualquier otro lado),
+      del más nuevo al más viejo. Los que se mandaron desde la ficha de un lead muestran además la plantilla y quién lo mandó.</p>
+    <div id="env-aviso"></div>
+    <div class="env-filtros">
+      <input type="text" id="env-buscar" placeholder="Buscar por mail, asunto, marca o titular" />
+      <select id="env-estado">
+        <option value="">Todos los estados</option>
+        <option value="entregado">Entregado</option>
+        <option value="abierto">Abierto</option>
+        <option value="clic">Con clic</option>
+        <option value="mal">Rebotó / spam / falló</option>
+      </select>
+      <select id="env-origen">
+        <option value="">Todos los orígenes</option>
+        <option value="panel">Mandados desde el panel</option>
+        <option value="otro">Mandados desde otro lado</option>
+      </select>
+      <button type="button" class="secundario" id="env-recargar">↻ Actualizar</button>
+    </div>
+    <div class="env-scroll"><div id="env-tabla">Cargando…</div></div>
+    <div class="barra-acciones"><button type="button" class="secundario" id="env-mas" hidden>Cargar más</button><span class="msg" id="env-msg"></span></div>
+  </div>
+
+  <div id="tab-mails" hidden>
     <p class="intro">Acá se configura de qué cuenta de Resend sale cada mail, con qué remitente y a dónde llegan las respuestas.
       Los avisos internos arman su contenido solos con datos en vivo (la vista previa usa datos de ejemplo); las plantillas de
       prospectos se editan acá mismo y se pueden probar con los datos reales de una marca, mandándose un test a ustedes. Las claves de Resend no se guardan en el panel: viven como variables de entorno.</p>
@@ -422,6 +467,93 @@ async function restablecer() {
   } catch (e) { mostrarMsg(e.message, false); }
 }
 
+// ── Enviados ──
+let envItems = [];
+let envSiguiente = null;
+const ESTADOS_RESEND = {
+  sent: ["Enviado", ""], queued: ["En cola", ""], scheduled: ["Programado", ""], delivered: ["Entregado", "entregado"],
+  delivery_delayed: ["Demorado", ""], opened: ["Abierto", "abierto"], clicked: ["Clic", "clic"],
+  bounced: ["Rebotó", "mal"], complained: ["Spam", "mal"], failed: ["Falló", "mal"], suppressed: ["Suprimido", "mal"], canceled: ["Cancelado", ""],
+};
+function nombreLink(u) {
+  try { const h = new URL(u).hostname.replace(/^www\./, "");
+    if (/wa\.me$|whatsapp/.test(h)) return "WhatsApp"; if (/smartiesconsultora/.test(h)) return "web de Smarties";
+    if (/inpi\.gob\.ar/.test(h)) return "portal del INPI"; return h; } catch (e) { return u; }
+}
+function claseEstado(it) {
+  const s = it.seguimiento || {};
+  if (s.rebotado || s.spam || s.fallido || ["bounced", "complained", "failed", "suppressed"].includes(it.estado)) return "mal";
+  if (s.clics || it.estado === "clicked") return "clic";
+  if (s.aperturas || it.estado === "opened") return "abierto";
+  if (s.entregado || it.estado === "delivered") return "entregado";
+  return "";
+}
+function etiquetasEstado(it) {
+  const s = it.seguimiento;
+  if (!s) { const [t, c] = ESTADOS_RESEND[it.estado] || ["Enviado", ""]; return `<span class="estado ${c}">${esc(t)}</span>`; }
+  const out = [];
+  if (s.rebotado) out.push('<span class="estado mal">Rebotó</span>');
+  if (s.spam) out.push('<span class="estado mal">Spam</span>');
+  if (s.fallido) out.push('<span class="estado mal">Falló</span>');
+  if (s.entregado && !s.rebotado) out.push('<span class="estado entregado">Entregado</span>');
+  if (s.aperturas) out.push(`<span class="estado abierto" title="Última: ${esc(fechaCorta(s.ultima_apertura))}">Abierto${s.aperturas > 1 ? " ×" + s.aperturas : ""}</span>`);
+  if (s.clics) out.push(`<span class="estado clic" title="Último: ${esc(fechaCorta(s.ultimo_clic))}">Clic: ${esc([...new Set(s.links.map(nombreLink))].join(", ") || "link")}</span>`);
+  if (!out.length) { const [t, c] = ESTADOS_RESEND[it.estado] || ["Enviado", ""]; out.push(`<span class="estado ${c}">${esc(t)}</span>`); }
+  return out.join("");
+}
+function hace(iso) {
+  if (!iso) return "";
+  const d = new Date(iso), seg = (Date.now() - d) / 1000;
+  if (seg < 60) return "recién";
+  if (seg < 3600) return `hace ${Math.floor(seg / 60)} min`;
+  if (seg < 86400) return `hace ${Math.floor(seg / 3600)} h`;
+  return fechaCorta(iso);
+}
+function pintarEnviados() {
+  const q = document.getElementById("env-buscar").value.trim().toLowerCase();
+  const est = document.getElementById("env-estado").value;
+  const org = document.getElementById("env-origen").value;
+  const filas = envItems.filter(it => {
+    if (q && ![it.para, it.asunto, it.marca, it.titular, it.plantilla].some(v => (v || "").toLowerCase().includes(q))) return false;
+    const c = claseEstado(it);
+    if (est === "entregado" && !["entregado", "abierto", "clic"].includes(c)) return false;
+    if (est === "abierto" && !["abierto", "clic"].includes(c)) return false;
+    if (est === "clic" && c !== "clic") return false;
+    if (est === "mal" && c !== "mal") return false;
+    if (org === "panel" && !it.desde_panel) return false;
+    if (org === "otro" && it.desde_panel) return false;
+    return true;
+  });
+  document.getElementById("env-tabla").innerHTML = filas.length ? `<table class="tabla-env"><thead><tr>
+      <th>Para</th><th>Estado</th><th>Asunto</th><th>Lead</th><th>Origen</th><th>Enviado</th></tr></thead><tbody>${
+    filas.map(it => `<tr>
+      <td>${esc(it.para)}</td>
+      <td>${etiquetasEstado(it)}</td>
+      <td class="asunto">${esc(it.asunto || "")}</td>
+      <td>${it.clave_titular ? `<a href="/titular/${encodeURIComponent(it.clave_titular)}">${esc(it.marca || it.titular || "ver lead")}</a>` : "—"}
+        ${it.acta ? `<div class="sub">acta ${esc(it.acta)}${it.titular ? " · " + esc(it.titular) : ""}</div>` : ""}</td>
+      <td>${it.desde_panel ? `Panel<div class="sub">${esc(it.plantilla || "")}${it.enviado_por ? " · " + esc(it.enviado_por) : ""}</div>` : '<span class="sub">Otro lado</span>'}</td>
+      <td title="${esc(fechaCorta(it.enviado_en))}">${esc(hace(it.enviado_en))}</td></tr>`).join("")
+  }</tbody></table>` : `<p class="vacio">${envItems.length ? "Ningún mail coincide con el filtro." : "Todavía no salió ningún mail de la cuenta de prospectos."}</p>`;
+  document.getElementById("env-mas").hidden = !envSiguiente;
+}
+async function cargarEnviados(mas = false) {
+  const msg = document.getElementById("env-msg");
+  msg.textContent = "Cargando…"; msg.className = "msg ok";
+  try {
+    const r = await api(`/api/mails/enviados${mas && envSiguiente ? "?despues_de=" + encodeURIComponent(envSiguiente) : ""}`);
+    envItems = mas ? envItems.concat(r.items) : r.items;
+    envSiguiente = r.siguiente;
+    document.getElementById("env-aviso").innerHTML = r.aviso
+      ? `<div class="aviso-env">${esc(r.aviso)}<br>Mientras tanto se muestran solo los mails mandados desde el panel.</div>` : "";
+    msg.textContent = "";
+    pintarEnviados();
+  } catch (e) { msg.textContent = e.message; msg.className = "msg err"; if (!mas) document.getElementById("env-tabla").innerHTML = ""; }
+}
+["env-buscar", "env-estado", "env-origen"].forEach(id => document.getElementById(id).addEventListener("input", pintarEnviados));
+document.getElementById("env-recargar").addEventListener("click", () => cargarEnviados(false));
+document.getElementById("env-mas").addEventListener("click", () => cargarEnviados(true));
+
 // ── Bajas ──
 async function cargarBajas() {
   const cont = document.getElementById("bajas-lista");
@@ -458,12 +590,15 @@ document.getElementById("baja-agregar").addEventListener("click", async () => {
 
 document.querySelectorAll("#tabs button").forEach(b => b.addEventListener("click", () => {
   document.querySelectorAll("#tabs button").forEach(x => x.classList.toggle("activo", x === b));
+  document.getElementById("tab-enviados").hidden = b.dataset.tab !== "enviados";
   document.getElementById("tab-mails").hidden = b.dataset.tab !== "mails";
   document.getElementById("tab-bajas").hidden = b.dataset.tab !== "bajas";
   if (b.dataset.tab === "bajas") cargarBajas();
+  if (b.dataset.tab === "enviados") cargarEnviados(false);
 }));
 
 cargar();
+cargarEnviados(false);
 </script>
 </body>
 </html>

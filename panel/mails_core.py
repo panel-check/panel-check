@@ -786,6 +786,32 @@ def resumen_eventos(cur, resend_ids: list) -> dict:
     return out
 
 
+def listar_resend(cuenta: str, limite: int = 50, despues_de: str = None) -> dict:
+    """Mails enviados por esa cuenta de Resend, del más nuevo al más viejo:
+    {"data": [...], "has_more": bool}. Levanta ValueError con un mensaje claro
+    si no se puede (sin clave, clave solo de envío, Resend caído)."""
+    env_key = CUENTAS[cuenta]["env"]
+    api_key = os.environ.get(env_key)
+    if not api_key:
+        raise ValueError(f"La variable {env_key} no está cargada en el servidor del panel.")
+    params = {"limit": max(1, min(100, int(limite)))}
+    if despues_de:
+        params["after"] = despues_de
+    try:
+        r = requests.get("https://api.resend.com/emails", params=params,
+                         headers={"Authorization": f"Bearer {api_key}"}, timeout=20)
+    except requests.RequestException as e:
+        raise ValueError(f"No se pudo consultar Resend: {e}")
+    if r.status_code in (401, 403):
+        raise ValueError("La clave de Resend de esta cuenta solo permite enviar (no listar). Para ver acá todos los mails, "
+                         "en Resend → API Keys creá una con «Full access» y reemplazá la variable "
+                         f"{env_key} en Railway y en GitHub.")
+    if r.status_code >= 300:
+        raise ValueError(f"Resend respondió {r.status_code}: {r.text[:200]}")
+    j = r.json()
+    return {"data": j.get("data") or [], "has_more": bool(j.get("has_more"))}
+
+
 def esta_de_baja(cur, email: str) -> bool:
     cur.execute("SELECT 1 FROM mails_bajas WHERE email = %s", ((email or "").strip().lower(),))
     return cur.fetchone() is not None

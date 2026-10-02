@@ -10,6 +10,8 @@ cambios y tocar la lista de bajas, además, administrador.
   GET    /api/mails/marcas-test?q=          buscar una marca real para probar las plantillas de prospectos
   POST   /api/mails/{clave}/test            mandar una PRUEBA a los mails que se escriban (nunca al de la marca)
   POST   /api/mails/{clave}/enviar          mandar la plantilla (tal como está guardada) a un lead, a mano
+  GET    /api/mails/enviados?despues_de=    todos los mails de la cuenta de prospectos (de Resend), cruzados con
+                                            el registro del panel (plantilla, lead, quién lo mandó, seguimiento)
   GET    /api/mails/envios?actas=a,b        historial de mails mandados a esas actas (con aperturas y clics)
   POST   /api/publico/resend-webhook        avisos de Resend (entregado, abierto, clic, rebote, spam). Sin
                                             sesión: se valida la firma con RESEND_WEBHOOK_SECRET.
@@ -178,6 +180,71 @@ def crear_router(verificar_login, verificar_admin, conexion, registrar_en_crm=No
             tipo = mc.guardar_evento(cur, evento_id, payload)
             conn.commit()
         return {"ok": True, "tipo": tipo}
+
+    # ── Enviados (pestaña por defecto de Mails) ─────────────────────────
+    _SQL_CLAVE = ("COALESCE((SELECT cc.clave FROM crm_claves cc WHERE cc.acta = m.acta), NULLIF(trim(m.cuit), ''), "
+                  "upper(regexp_replace(trim(m.titular), '\\s+', ' ', 'g')))")
+
+    @router.get("/api/mails/enviados")
+    def listar_enviados(despues_de: str = "", _: str = Depends(verificar_login)):
+        aviso = None
+        try:
+            r = mc.listar_resend("prospectos", 50, despues_de or None)
+            lista, hay_mas, fuente = r["data"], r["has_more"], "resend"
+        except ValueError as e:
+            aviso, lista, hay_mas, fuente = str(e), [], False, "panel"
+        with conexion() as conn, rcur(conn) as cur:
+            if fuente == "resend":
+                ids = [x.get("id") for x in lista if x.get("id")]
+                cur.execute(
+                    f"""SELECT e.resend_id, e.clave_mail, e.acta, e.enviado_por, m.titular,
+                               COALESCE(NULLIF(m.denominacion_inpi, ''), m.denominacion) AS marca, {_SQL_CLAVE} AS clave_titular
+                          FROM mails_envios e LEFT JOIN marcas m ON m.acta = e.acta
+                         WHERE e.resend_id = ANY(%s)""", (ids,))
+                del_panel = {f["resend_id"]: f for f in cur.fetchall()}
+                # Mails que no salieron del panel: se busca el lead por el mail de destino.
+                destinos = list({(x.get("to") or [""])[0].lower() for x in lista if x.get("id") not in del_panel})
+                por_mail = {}
+                if destinos:
+                    cur.execute(
+                        f"""SELECT DISTINCT ON (lower(m.email)) lower(m.email) AS email, m.acta, m.titular,
+                                   COALESCE(NULLIF(m.denominacion_inpi, ''), m.denominacion) AS marca, {_SQL_CLAVE} AS clave_titular
+                              FROM marcas m WHERE lower(m.email) = ANY(%s)
+                             ORDER BY lower(m.email), m.fecha_presentacion DESC NULLS LAST""", (destinos,))
+                    por_mail = {f["email"]: f for f in cur.fetchall()}
+                eventos = mc.resumen_eventos(cur, ids)
+                items = []
+                for x in lista:
+                    para = (x.get("to") or [""])[0]
+                    p = del_panel.get(x.get("id"))
+                    lead = p or por_mail.get(para.lower())
+                    items.append({
+                        "id": x.get("id"), "para": para, "asunto": x.get("subject"), "enviado_en": x.get("created_at"),
+                        "estado": x.get("last_event"), "desde_panel": bool(p),
+                        "plantilla": mc.CATALOGO.get(p["clave_mail"], {}).get("nombre") if p else None,
+                        "enviado_por": p["enviado_por"] if p else None,
+                        "acta": lead["acta"] if lead else None, "marca": lead["marca"] if lead else None,
+                        "titular": lead["titular"] if lead else None,
+                        "clave_titular": lead["clave_titular"] if lead else None,
+                        "seguimiento": eventos.get(x.get("id")),
+                    })
+            else:
+                cur.execute(
+                    f"""SELECT e.resend_id AS id, e.para, e.asunto, e.enviado_en, e.clave_mail, e.acta, e.enviado_por,
+                               m.titular, COALESCE(NULLIF(m.denominacion_inpi, ''), m.denominacion) AS marca, {_SQL_CLAVE} AS clave_titular
+                          FROM mails_envios e LEFT JOIN marcas m ON m.acta = e.acta
+                         ORDER BY e.enviado_en DESC LIMIT 200""")
+                filas = cur.fetchall()
+                eventos = mc.resumen_eventos(cur, [f["id"] for f in filas])
+                items = [{
+                    "id": f["id"], "para": f["para"], "asunto": f["asunto"], "enviado_en": f["enviado_en"].isoformat(),
+                    "estado": None, "desde_panel": True,
+                    "plantilla": mc.CATALOGO.get(f["clave_mail"], {}).get("nombre", f["clave_mail"]),
+                    "enviado_por": f["enviado_por"], "acta": f["acta"], "marca": f["marca"], "titular": f["titular"],
+                    "clave_titular": f["clave_titular"], "seguimiento": eventos.get(f["id"]),
+                } for f in filas]
+        return {"fuente": fuente, "aviso": aviso, "items": items, "hay_mas": hay_mas,
+                "siguiente": items[-1]["id"] if hay_mas and items else None}
 
     # ── Envío manual a un lead ──────────────────────────────────────────
     @router.get("/api/mails/envios")
