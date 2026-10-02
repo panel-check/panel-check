@@ -314,6 +314,20 @@ def crear_tablas(cur):
         """
     )
     cur.execute("CREATE INDEX IF NOT EXISTS idx_mails_eventos_resend ON mails_eventos(resend_id)")
+    # Links de los mails a prospectos que pasan por el panel (/r/<token>) para
+    # contar los clics (WhatsApp, web...) sin depender de Resend.
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS mails_links (
+            token        TEXT PRIMARY KEY,
+            envio_token  TEXT NOT NULL,
+            url          TEXT NOT NULL,
+            creado_en    TIMESTAMPTZ NOT NULL DEFAULT now()
+        )
+        """
+    )
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_mails_links_envio ON mails_links(envio_token)")
+    cur.execute("ALTER TABLE mails_envios ADD COLUMN IF NOT EXISTS token TEXT")
     cur.execute(
         """
         CREATE TABLE IF NOT EXISTS mails_bajas (
@@ -615,7 +629,6 @@ def render_prospecto(asunto: str, cuerpo: str, datos: dict, encabezado: str = No
     cuerpo_html = (
         '<!doctype html><html><head><meta charset="utf-8">'
         '<meta name="viewport" content="width=device-width,initial-scale=1">'
-        '<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@700&display=swap" rel="stylesheet">'
         '</head><body style="margin:0;padding:0;background:#eef1f5">'
         '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#eef1f5">'
         '<tr><td align="center" style="padding:24px 0">'
@@ -779,6 +792,8 @@ def resumen_eventos(cur, resend_ids: list) -> dict:
             r["aperturas"] += 1
             r["ultima_apertura"] = cuando
         elif t == "clic":
+            if f["link"] and "/r/" in f["link"] and "panel." in f["link"]:
+                continue  # clic que también reportó Resend sobre un link del panel: ya está contado
             r["clics"] += 1
             r["ultimo_clic"] = cuando
             if f["link"] and f["link"] not in r["links"]:
@@ -820,6 +835,63 @@ def tipo_por_asunto(asunto: str, cuenta: str) -> str:
         if re.search(r"publicad", a, re.I):
             return "prospecto_marca_publicada"
     return "otro"
+
+
+# ── Links con seguimiento propio (/r/<token>) ─────────────────────────────
+_RE_HREF = re.compile(r'(<a\b[^>]*?\bhref=")([^"]+)(")', re.I)
+# Visitas automáticas (antivirus, vistas previas de links): no cuentan como clic.
+RE_BOT = re.compile(r"bot|spider|crawl|preview|scanner|safelinks|proofpoint|mimecast|barracuda|python|curl|wget|"
+                    r"headless|facebookexternalhit|whatsapp|slack|discord|telegram|skype", re.I)
+
+
+def nuevo_token() -> str:
+    import secrets
+    return secrets.token_urlsafe(9)
+
+
+def rastrear_links(cur, html_cuerpo: str, texto: str, envio_token: str, panel_url: str) -> tuple:
+    """Cambia cada link http(s) del mail por <panel>/r/<token> (que anota el
+    clic y redirige al destino real) y guarda a dónde va cada uno. Así todos
+    los links son del mismo dominio que el remitente y los clics a WhatsApp
+    quedan registrados. Devuelve (html, texto) con los links cambiados."""
+    base = panel_url.rstrip("/")
+    por_url = {}
+
+    def token_de(url):
+        if url not in por_url:
+            t = nuevo_token()
+            cur.execute("INSERT INTO mails_links (token, envio_token, url) VALUES (%s, %s, %s)", (t, envio_token, url))
+            por_url[url] = f"{base}/r/{t}"
+        return por_url[url]
+
+    def cambiar(m):
+        url = html.unescape(m.group(2))
+        if not re.match(r"https?://", url, re.I) or url.startswith(base + "/r/"):
+            return m.group(0)
+        return m.group(1) + html.escape(token_de(url)) + m.group(3)
+
+    html_nuevo = _RE_HREF.sub(cambiar, html_cuerpo)
+    for url in sorted(por_url, key=len, reverse=True):
+        texto = texto.replace(url, por_url[url])
+    return html_nuevo, texto
+
+
+def registrar_clic(cur, token: str, user_agent: str):
+    """Anota el clic (si no parece una visita automática) y devuelve la URL
+    real a la que hay que redirigir, o None si el token no existe."""
+    cur.execute(
+        """SELECT l.url, e.resend_id, l.envio_token FROM mails_links l
+             LEFT JOIN mails_envios e ON e.token = l.envio_token
+            WHERE l.token = %s""", (token,))
+    f = cur.fetchone()
+    if not f:
+        return None
+    url = f["url"] if isinstance(f, dict) else f[0]
+    resend_id = (f["resend_id"] if isinstance(f, dict) else f[1]) or ("sin-envio:" + (f["envio_token"] if isinstance(f, dict) else f[2]))
+    if not RE_BOT.search(user_agent or ""):
+        cur.execute("INSERT INTO mails_eventos (evento_id, resend_id, tipo, link) VALUES (NULL, %s, 'clic', %s)",
+                    (resend_id, url))
+    return url
 
 
 def listar_resend(cuenta: str, limite: int = 50, despues_de: str = None) -> dict:

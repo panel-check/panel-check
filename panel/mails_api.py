@@ -27,7 +27,7 @@ import psycopg2.extras
 import json
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from pydantic import BaseModel
 
 import mails_core as mc
@@ -161,6 +161,28 @@ def crear_router(verificar_login, verificar_admin, conexion, registrar_en_crm=No
         if not d:
             raise HTTPException(status_code=404, detail=f"No existe la marca con acta {acta}")
         return d
+
+    # ── Links de los mails: anotar el clic y redirigir ──────────────────
+    @router.get("/r/{token}", include_in_schema=False)
+    def redirigir_link(token: str, request: Request):
+        """Público (lo abre el lead desde el mail). Si el token no existe, va a la
+        web de Smarties en vez de dar error."""
+        destino = None
+        if 6 <= len(token) <= 40:
+            try:
+                with conexion() as conn, rcur(conn) as cur:
+                    destino = mc.registrar_clic(cur, token, request.headers.get("user-agent", ""))
+                    conn.commit()
+            except Exception as e:  # noqa: BLE001 — si falla la base, igual se redirige
+                print(f"[mails] no se pudo registrar el clic {token}: {e}")
+                with conexion() as conn, rcur(conn) as cur:
+                    cur.execute("SELECT url FROM mails_links WHERE token = %s", (token,))
+                    f = cur.fetchone()
+                    destino = f["url"] if f else None
+        r = RedirectResponse(destino or "https://www.smartiesconsultora.com.ar", status_code=302)
+        r.headers["Cache-Control"] = "no-store"
+        r.headers["X-Robots-Tag"] = "noindex"
+        return r
 
     # ── Avisos de Resend (webhook) ──────────────────────────────────────
     @router.post("/api/publico/resend-webhook", include_in_schema=False)
@@ -315,13 +337,17 @@ def crear_router(verificar_login, verificar_admin, conexion, registrar_en_crm=No
             raise HTTPException(status_code=409, detail=f"Esta plantilla ya se le mandó a esta marca el {cuando}"
                                                          f"{' (por ' + previo['enviado_por'] + ')' if previo.get('enviado_por') else ''}.")
         asunto, cuerpo_html, texto = mc.render_prospecto(cfg["asunto"], cfg["cuerpo"], datos, cfg.get("encabezado"))
+        envio_token = mc.nuevo_token()
+        with conexion() as conn, rcur(conn) as cur:
+            cuerpo_html, texto = mc.rastrear_links(cur, cuerpo_html, texto, envio_token, _panel_url())
+            conn.commit()
         try:
             id_resend = mc.enviar(cfg["cuenta"], cfg["remitente"], cfg["responder_a"], [destino], asunto, cuerpo_html, texto)
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
         with conexion() as conn, rcur(conn) as cur:
-            cur.execute("INSERT INTO mails_envios (clave_mail, acta, para, asunto, resend_id, enviado_por) "
-                        "VALUES (%s, %s, %s, %s, %s, %s)", (clave, body.acta, destino, asunto, id_resend, usuario))
+            cur.execute("INSERT INTO mails_envios (clave_mail, acta, para, asunto, resend_id, enviado_por, token) "
+                        "VALUES (%s, %s, %s, %s, %s, %s, %s)", (clave, body.acta, destino, asunto, id_resend, usuario, envio_token))
             conn.commit()
             if registrar_en_crm:
                 try:
@@ -410,6 +436,9 @@ def crear_router(verificar_login, verificar_admin, conexion, registrar_en_crm=No
             raise HTTPException(status_code=400, detail=str(e))
         datos = _datos_marca(body.acta) or mc.EJEMPLO_PROSPECTO
         asunto, cuerpo_html, texto = mc.render_prospecto(v["asunto"], v["cuerpo"], datos, v.get("encabezado"))
+        with conexion() as conn, rcur(conn) as cur:
+            cuerpo_html, texto = mc.rastrear_links(cur, cuerpo_html, texto, mc.nuevo_token(), _panel_url())
+            conn.commit()
         try:
             id_resend = mc.enviar_test(v["cuenta"], v["remitente"], v["responder_a"], para, asunto, cuerpo_html, texto)
         except ValueError as e:
