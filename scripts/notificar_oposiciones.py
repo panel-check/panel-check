@@ -48,6 +48,7 @@ SQL_PENDIENTES = """
     WHERE es_lead = true
       AND tuvo_oposicion = true
       AND representacion_posterior_oposicion IS NOT TRUE
+      AND oposicion_atendida IS NOT TRUE
       AND notificado_oposicion_en IS NULL
     ORDER BY fecha_publicacion DESC NULLS LAST, acta
 """
@@ -92,6 +93,7 @@ def main():
     try:
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
             cur.execute("ALTER TABLE marcas ADD COLUMN IF NOT EXISTS notificado_oposicion_en TIMESTAMPTZ")
+            cur.execute("ALTER TABLE marcas ADD COLUMN IF NOT EXISTS oposicion_atendida BOOLEAN")
             conn.commit()
             cur.execute(SQL_PENDIENTES)
             filas = cur.fetchall()

@@ -75,6 +75,7 @@ SQL_PENDIENTES = f"""
         OR (
           tuvo_oposicion IS TRUE
           AND representacion_posterior_oposicion IS NOT TRUE
+          AND oposicion_atendida IS NOT TRUE
           AND fecha_publicacion > CURRENT_DATE - {RECHEQUEO_CADA_3_HASTA}
           AND (
             opo_ultimo_chequeo_en IS NULL
@@ -112,7 +113,7 @@ def main():
     try:
         with conn.cursor() as cur:
             for col, tipo in (("opo_chequeos", "INTEGER"), ("opo_ultimo_chequeo_en", "TIMESTAMPTZ"),
-                              ("oposicion_detectada_en", "TIMESTAMPTZ")):
+                              ("oposicion_detectada_en", "TIMESTAMPTZ"), ("oposicion_atendida", "BOOLEAN")):
                 cur.execute(f"ALTER TABLE marcas ADD COLUMN IF NOT EXISTS {col} {tipo}")
             # Alta inicial de los contadores: los leads que ya fueron revisados
             # con el esquema anterior (una sola revisión, a los 33+ días) cuentan

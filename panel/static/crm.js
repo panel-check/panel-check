@@ -123,7 +123,8 @@ function _crmHtmlFicha(d, { enModal = false } = {}) {
     ? `<a class="link-titular" href="/titular/${encodeURIComponent(d.clave)}" target="${enModal ? "_blank" : "_self"}">Ver todas sus marcas ↗</a>` : "";
 
   const alertas = [];
-  if (l.oposicion_sin_apoderado) alertas.push('<div class="crm-alerta crm-alerta-opo">⚠ Tiene una marca con <strong>oposición o vista</strong> y todavía nadie se presentó como apoderado: es el momento de ofrecer ayuda.</div>');
+  if (l.oposicion_sin_apoderado) alertas.push('<div class="crm-alerta crm-alerta-opo">⚠ Tiene una marca con <strong>oposición o vista</strong> y todavía nadie se presentó como apoderado: es el momento de ofrecer ayuda. <button type="button" class="crm-btn-chico" data-accion="opo-atendida" title="Si ya se trabajó sobre esta oposición y no hace falta ofrecer servicios, deja de mostrarse como pendiente y de avisarse.">✓ Ya está atendida</button></div>');
+  else if (l.oposicion_atendida) alertas.push('<div class="crm-alerta">⚖ Tuvo una oposición, marcada como <strong>atendida</strong>: no hace falta ofrecer ayuda. <button type="button" class="crm-btn-chico" data-accion="opo-reabrir">Deshacer</button></div>');
   else if (l.con_oposicion) alertas.push('<div class="crm-alerta">⚖ Tuvo una oposición, pero ya se sumó un apoderado/gestor.</div>');
   if (l.tiene_marcas_con_agente) alertas.push('<div class="crm-alerta">ℹ Este titular tiene <strong>otras marcas presentadas con agente/apoderado</strong>: puede que ya trabaje con alguien.</div>');
   if (l.pre_boletin) alertas.push('<div class="crm-alerta crm-alerta-info">🆕 Tiene marcas detectadas antes del boletín (todavía no publicadas).</div>');
@@ -242,6 +243,20 @@ function _crmConectarFicha(cont) {
     await crmRenderFicha(cont, datos.clave, opciones);
     if (typeof opciones.alCambiar === "function") await opciones.alCambiar();
   };
+
+  [["opo-atendida", true, "¿Marcar la oposición como ya atendida? Deja de aparecer como pendiente y no se vuelve a avisar."],
+   ["opo-reabrir", false, null]].forEach(([accion, atendida, pregunta]) => {
+    const b = cont.querySelector(`[data-accion="${accion}"]`);
+    if (!b) return;
+    b.addEventListener("click", async () => {
+      if (pregunta && !confirm(pregunta)) return;
+      b.disabled = true;
+      try {
+        await apiJson("/api/marcas/oposicion-atendida", "POST", { actas: l.actas || [], atendida });
+        await recargar();
+      } catch (e) { b.disabled = false; alert(`No se pudo guardar: ${e.message}`); }
+    });
+  });
 
   const btnConvertir = cont.querySelector('[data-accion="convertir"]');
   if (btnConvertir) btnConvertir.addEventListener("click", async () => {
