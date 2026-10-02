@@ -39,6 +39,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."
 import cartera  # noqa: E402
 import inpi_lead  # noqa: E402
 
+import monitor_bloqueo
 from registro import registrar  # noqa: E402
 from validar_leads import crear_sesion  # noqa: E402
 
@@ -106,6 +107,9 @@ def main():
         bloqueo_seguido = 0
         revisadas = 0
         for i, fila in enumerate(pendientes, 1):
+            if monitor_bloqueo.debe_cortar():
+                print("Se corta la corrida por bloqueos seguidos de INPI: el resto sigue en la próxima.")
+                break
             if (time.time() - inicio) / 60 > args.max_minutes:
                 print(f"Se llegó al tope de {args.max_minutes:g} minutos: el resto sigue en la próxima corrida.")
                 break

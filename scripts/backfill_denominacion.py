@@ -42,6 +42,7 @@ import traceback
 import psycopg2
 import psycopg2.extras
 
+import monitor_bloqueo
 from registro import registrar
 
 from validar_leads import (
@@ -53,6 +54,7 @@ from validar_leads import (
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--limit", type=int, default=None, help="máximo de actas a revisar en esta corrida")
+    ap.add_argument("--max-minutes", type=float, default=None, help="tope de tiempo de la corrida; lo que falte queda para la próxima")
     ap.add_argument("--delay", type=float, default=1.5, help="segundos de espera entre actas")
     ap.add_argument("--incluir-no-leads", action="store_true",
                     help="también marcas con apoderado (por defecto solo leads / sin verificar)")
@@ -94,7 +96,14 @@ def main():
     sin_texto_por_tipo: dict[str, list[str]] = {}
     bloqueadas = 0
 
+    inicio_corrida = time.time()
     for i, fila in enumerate(pendientes, 1):
+        if args.max_minutes and (time.time() - inicio_corrida) / 60 >= args.max_minutes:
+            print(f"Se llegó al tope de {args.max_minutes:g} minutos: el resto sigue en la próxima corrida.")
+            break
+        if monitor_bloqueo.debe_cortar():
+            print("Se corta la corrida por bloqueos seguidos de INPI: el resto sigue en la próxima.")
+            break
         acta = fila["acta"]
         try:
             r = _get_con_reintentos(

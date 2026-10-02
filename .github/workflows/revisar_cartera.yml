@@ -2,15 +2,14 @@ name: "Seguimiento de la cartera"
 
 on:
   schedule:
-    # Una vez por día, 10:45 UTC (07:45 ART), lejos de los demás crons contra INPI
-    # (revisar_oposiciones corre a las 10:00 UTC).
-    - cron: "45 10 * * *"
+    # Una vez por día, 01:35 UTC (22:35 ART), después de "Oposiciones y vistas".
+    - cron: "35 1 * * *"
   workflow_dispatch:
     inputs:
       max_minutes:
         description: "Corta la corrida pasado este tiempo (minutos)"
         required: false
-        default: "25"
+        default: "15"
       todas:
         description: "Revisar TODA la cartera, sin mirar cuándo se consultó cada marca (true/false)"
         required: false
@@ -20,7 +19,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: revisar-cartera
+  group: inpi-lane
   cancel-in-progress: false
 
 jobs:
@@ -45,7 +44,7 @@ jobs:
       - name: Revisar en INPI los expedientes de la cartera
         run: |
           cd scripts
-          args="--max-minutes ${{ inputs.max_minutes || '25' }}"
+          args="--max-minutes ${{ inputs.max_minutes || '15' }}"
           if [ "${{ inputs.todas }}" = "true" ]; then args="$args --todas"; fi
           python3 revisar_cartera.py $args
         env:

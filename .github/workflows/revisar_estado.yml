@@ -2,22 +2,34 @@ name: "Concesiones y vencimientos"
 
 on:
   schedule:
-    # Una vez por semana, lunes 11:00 UTC (08:00 ART) — la Resolución de un
-    # expediente demora meses, no hace falta revisar todos los días.
-    - cron: "0 11 * * 1"
+    # Una vez por semana, lunes 07:20 UTC (04:20 ART, turno B) — la Resolución de
+    # un expediente demora meses, no hace falta revisar todos los días.
+    - cron: "20 7 * * 1"
   workflow_dispatch:
     inputs:
       limit:
         description: "Tope de actas a revisar en esta corrida (dejar vacío = todas)"
         required: false
         default: ""
+      max_minutes:
+        description: "Minutos máximos de esta corrida (default 30)"
+        required: false
+        default: "30"
 
 permissions:
   contents: read
 
+# Un solo carril contra INPI: dos procesos que consultan INPI nunca corren a la
+# vez (INPI pidió una sola tanda, máx. 100 conexiones). Si hay uno corriendo, el
+# siguiente espera su turno. GitHub guarda UNA sola corrida en espera por grupo.
+concurrency:
+  group: inpi-lane
+  cancel-in-progress: false
+
 jobs:
   revisar:
     runs-on: ubuntu-latest
+    timeout-minutes: 90
     env:
       # Alarma de bloqueo masivo de INPI (scripts/monitor_bloqueo.py)
       RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
@@ -36,7 +48,7 @@ jobs:
       - name: Revisar RESOLUCIÓN de marcas sin estado firme
         run: |
           cd scripts
-          args=""
+          args="--max-minutes ${{ inputs.max_minutes || '30' }}"
           if [ -n "${{ inputs.limit }}" ]; then args="$args --limit ${{ inputs.limit }}"; fi
           python3 revisar_estado.py $args
         env:

@@ -17,12 +17,22 @@ Imprime a stdout:
     encontró uno pendiente, o
   - la palabra "NINGUNO" si todos los de la lista ya están procesados.
 
+Con --todos (cadena de boletines del pipeline, desde octubre de 2026) imprime
+en cambio un ARRAY JSON con todos los pendientes de la ventana (los --ventana
+boletines más nuevos de la lista, hasta --max), ordenados del más viejo al más
+nuevo; "[]" si no hay ninguno. Así la madrugada del miércoles se procesan los 4
+boletines nuevos de la semana, de a uno. Con --solo-nuevos solo cuenta los que
+tienen número mayor al más alto ya procesado (sirve para esperar la
+publicación sin confundirse con boletines viejos pendientes).
+
 No es para uso interactivo, es para leer desde bash en el workflow.
 
 Uso:
     DATABASE_URL=... python3 elegir_boletin_pendiente.py data/boletines_todos.json
+    DATABASE_URL=... python3 elegir_boletin_pendiente.py data/boletines_todos.json --todos --max 4
 """
 
+import argparse
 import json
 import os
 import sys
@@ -31,10 +41,15 @@ import psycopg2
 
 
 def main():
-    if len(sys.argv) != 2:
-        sys.exit("Uso: elegir_boletin_pendiente.py <archivo_boletines_todos.json>")
+    ap = argparse.ArgumentParser()
+    ap.add_argument("archivo")
+    ap.add_argument("--todos", action="store_true", help="imprime un array con todos los pendientes de la ventana")
+    ap.add_argument("--max", type=int, default=4, help="con --todos: máximo de boletines (se quedan los más nuevos)")
+    ap.add_argument("--ventana", type=int, default=6, help="con --todos: solo se miran los N boletines más nuevos de la lista")
+    ap.add_argument("--solo-nuevos", action="store_true", help="con --todos: solo número mayor al más alto ya procesado")
+    args = ap.parse_args()
 
-    with open(sys.argv[1], encoding="utf-8") as f:
+    with open(args.archivo, encoding="utf-8") as f:
         candidatos = json.load(f)
     if not candidatos:
         sys.exit("El archivo de boletines está vacío")
@@ -52,6 +67,20 @@ def main():
             estados = dict(cur.fetchall())
     finally:
         conn.close()
+
+    if args.todos:
+        procesados = [int(n) for n, e in estados.items() if e == "procesado" and str(n).isdigit()]
+        piso = max(procesados) if procesados else -1
+        pendientes = [
+            c for c in candidatos[: args.ventana]
+            if estados.get(c["numero"], "no_existe") != "procesado"
+            and (not args.solo_nuevos or int(c["numero"]) > piso)
+        ]
+        pendientes = pendientes[: args.max]  # candidatos va del más nuevo al más viejo
+        pendientes.sort(key=lambda b: int(b["numero"]))
+        print(f"{len(pendientes)} boletín(es) pendiente(s): {[c['numero'] for c in pendientes]}", file=sys.stderr)
+        print(json.dumps(pendientes, ensure_ascii=False))
+        return
 
     for candidato in candidatos:
         numero = candidato["numero"]

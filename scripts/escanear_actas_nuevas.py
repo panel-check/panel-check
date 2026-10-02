@@ -40,7 +40,7 @@ salgan en un boletín.
 Uso:
     DATABASE_URL=... python3 escanear_actas_nuevas.py
     DATABASE_URL=... python3 escanear_actas_nuevas.py --desde 4797000
-    DATABASE_URL=... python3 escanear_actas_nuevas.py --tope 300 --consecutivos-para-frenar 8
+    DATABASE_URL=... python3 escanear_actas_nuevas.py --tope 3000 --max-minutes 150 --consecutivos-para-frenar 8
 
 Nota: el heurístico de "no existe todavía" (existe_expediente) es
 best-effort -- no se pudo probar en vivo desde este entorno (INPI está
@@ -60,6 +60,7 @@ import psycopg2.extras
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "panel"))
 import cartera  # noqa: E402  (tablas de la cartera/vigilancia, viven en panel/)
 
+import monitor_bloqueo
 from registro import registrar
 from validar_leads import calcular_lead_score, crear_sesion, existe_expediente, revisar_acta
 
@@ -174,7 +175,10 @@ def _guardar_solicitud_escaneada(conn, acta: str, info: dict):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--tope", type=int, default=300, help="máximo de números de acta a probar en esta corrida")
+    ap.add_argument("--tope", type=int, default=3000,
+                    help="tope de seguridad de números de acta a probar en esta corrida (el límite real es --max-minutes)")
+    ap.add_argument("--max-minutes", type=float, default=None,
+                    help="tope de tiempo de la corrida: el escaneo sigue hasta agotar el tiempo o alcanzar el último número existente")
     ap.add_argument("--consecutivos-para-frenar", type=int, default=8,
                      help="si esta cantidad de actas seguidas no existe todavía, se corta la corrida")
     ap.add_argument("--delay", type=float, default=1.5, help="segundos entre acta y acta")
@@ -211,7 +215,14 @@ def main():
 
         numero = ultima_confirmada
         ultimo_confirmado = ultima_confirmada  # el puntero real a guardar -- solo avanza en un HIT
+        inicio_corrida = time.time()
         while probadas < args.tope:
+            if args.max_minutes and (time.time() - inicio_corrida) / 60 >= args.max_minutes:
+                print(f"Se llegó al tope de {args.max_minutes:g} minutos: se sigue desde el puntero en la próxima corrida.")
+                break
+            if monitor_bloqueo.debe_cortar():
+                print("Se corta la corrida por bloqueos seguidos de INPI.")
+                break
             numero += 1
             probadas += 1
             acta = str(numero)
@@ -219,8 +230,8 @@ def main():
             existe, _texto = existe_expediente(s, acta)
             if existe is None:
                 # Un bloqueo suelto es normal: esperar y reintentar una vez.
-                print(f"  acta {acta}: bloqueado por el WAF, reintento en 30 s")
-                time.sleep(30)
+                # la espera progresiva (5/10/20 s...) ya la hace monitor_bloqueo
+                print(f"  acta {acta}: bloqueado por el WAF, reintento una vez")
                 existe, _texto = existe_expediente(s, acta)
             if existe is None:
                 # WAF bloqueó la consulta -- no sabemos si existe, cortamos
@@ -246,7 +257,7 @@ def main():
             # corrida se corta a mitad, la próxima sigue desde acá.
             _guardar_puntero(conn, ultimo_confirmado)
 
-            info = revisar_acta(s, acta)
+            info = revisar_acta(s, acta, html_previo=_texto)  # reusa la página ya pedida
             _guardar_solicitud_escaneada(conn, acta, info)
             if info["es_lead"] is True and info.get("email"):
                 score = calcular_lead_score({"matricula_agente": "", "es_lead": True, "email": info["email"]})

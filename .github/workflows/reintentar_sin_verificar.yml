@@ -2,34 +2,37 @@ name: "Completar datos faltantes - Sin verificar"
 
 on:
   schedule:
-    # Cada 2 horas (antes cada 30 min), en lotes de 50 (ver "limit" del step
-    # de abajo) — antes corría una sola vez por día procesando TODO el
-    # pendiente de una, lo que además de tardar mucho (864 marcas x 2s =
-    # casi 30 min de un saque) dejaba todo el "reintento" librado a un único
-    # intento diario. En lotes más chicos y frecuentes, una marca bloqueada
-    # por el WAF en un lote tiene más oportunidades de resolverse en el día,
-    # y el progreso se ve bajar de a poco en /crons ("Pendientes ahora") en
-    # vez de solo una vez por día.
-    #
-    # Bajado de cada 30 min a cada 2 horas el 29/09/2026: era, junto con
-    # verificar_despliegue, la mayor parte del consumo de minutos de Actions
-    # (48 corridas/día x varios minutos cada una). Sigue dando 12
-    # oportunidades de reintento por día en vez de 48 — de sobra para un
-    # bloqueo temporal del WAF, que se resuelve en minutos/horas, no días.
-    - cron: "0 0,2,4,6,8,10,12,14,16,18,20,22 * * *"
+    # Una vez por noche, 02:05 UTC (23:05 ART, turno A), con tope de 60 min. No
+    # corre la noche del martes (UTC miércoles): ahí el turno A se recorta para
+    # dejar libre el carril a las 00:05 ART. Cada intento fallido de una acta
+    # duplica la espera hasta el próximo (1, 2, 4... máx. 48 h): ver
+    # reintentos_n en la base.
+    - cron: "5 2 * * 0,1,2,4,5,6"
   workflow_dispatch:
     inputs:
       limit:
         description: "Tope de actas a reintentar en esta corrida (dejar vacío = todas)"
         required: false
-        default: "200"
+        default: "400"
+      max_minutes:
+        description: "Minutos máximos de esta corrida (default 60)"
+        required: false
+        default: "60"
 
 permissions:
   contents: read
 
+# Un solo carril contra INPI: dos procesos que consultan INPI nunca corren a la
+# vez (INPI pidió una sola tanda, máx. 100 conexiones). Si hay uno corriendo, el
+# siguiente espera su turno. GitHub guarda UNA sola corrida en espera por grupo.
+concurrency:
+  group: inpi-lane
+  cancel-in-progress: false
+
 jobs:
   reintentar:
     runs-on: ubuntu-latest
+    timeout-minutes: 120
     env:
       # Alarma de bloqueo masivo de INPI (scripts/monitor_bloqueo.py)
       RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
@@ -62,7 +65,8 @@ jobs:
           # propósito.
           LIMIT="${{ inputs.limit }}"
           args=""
-          if [ -n "$LIMIT" ]; then args="--limit $LIMIT"; else args="--limit 200"; fi
+          if [ -n "$LIMIT" ]; then args="--limit $LIMIT"; else args="--limit 400"; fi
+          args="$args --max-minutes ${{ inputs.max_minutes || '60' }}"
           python3 reintentar_sin_verificar.py $args
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL || secrets.DATABASE_PUBLIC_URL }}

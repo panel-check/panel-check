@@ -301,6 +301,12 @@ def _correr_alters_panel(cur):
     cur.execute(
         "ALTER TABLE marcas ADD COLUMN IF NOT EXISTS revisado_oposicion_en TIMESTAMPTZ"
     )
+    # Esquema de revisión a los 10/23/33 días (ver revisar_oposiciones.py)
+    cur.execute("ALTER TABLE marcas ADD COLUMN IF NOT EXISTS opo_chequeos INTEGER")
+    cur.execute("ALTER TABLE marcas ADD COLUMN IF NOT EXISTS opo_ultimo_chequeo_en TIMESTAMPTZ")
+    cur.execute("ALTER TABLE marcas ADD COLUMN IF NOT EXISTS oposicion_detectada_en TIMESTAMPTZ")
+    cur.execute("ALTER TABLE marcas ADD COLUMN IF NOT EXISTS reintentos_n INTEGER DEFAULT 0")
+    cur.execute("ALTER TABLE marcas ADD COLUMN IF NOT EXISTS reintento_ultimo_en TIMESTAMPTZ")
     # Estado del trámite (Concedida/Denegada/etc.) y fechas de la sección
     # RESOLUCIÓN del expediente — ver revisar_estado.py.
     cur.execute(
@@ -409,7 +415,7 @@ COLUMNAS_MARCA = """
     fecha_presentacion, fecha_publicacion, titular, pais, cuit, matricula_agente,
     caracter, es_lead, email, email_apoderado, lead_score, link,
     contactado, contactado_en, motivo_sin_email,
-    tuvo_oposicion, detalle_oposicion, revisado_oposicion_en,
+    tuvo_oposicion, detalle_oposicion, revisado_oposicion_en, oposicion_detectada_en,
     oponente_nombre, oponente_tipo_doc, oponente_numero_doc, oponente_cuit,
     fundamento_oposicion, actas_marca_oponente, marca_oponente_denominacion,
     marca_oponente_numero_registro,
@@ -440,6 +446,18 @@ GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN")
 # útil de la tarjeta ("leads nuevos hoy"), no el detalle técnico.
 # "cron" tiene que coincidir con el schedule del .yml (UTC); "horario" es el
 # mismo horario en hora Argentina, escrito para humanos.
+# Leads publicados que todavía tienen pendiente alguno de sus hitos de revisión
+# (10, 23 y 33 días). Los ya revisados con el esquema viejo cuentan como hechos.
+_SQL_OPOSICIONES_PENDIENTES = (
+    "SELECT COUNT(*) FROM marcas WHERE es_lead = true AND fecha_publicacion IS NOT NULL "
+    "AND fecha_publicacion <= current_date - 10 AND ("
+    "COALESCE(opo_chequeos, CASE WHEN revisado_oposicion_en IS NOT NULL THEN 3 ELSE 0 END) < 1 "
+    "OR (COALESCE(opo_chequeos, CASE WHEN revisado_oposicion_en IS NOT NULL THEN 3 ELSE 0 END) < 2 "
+    "AND fecha_publicacion <= current_date - 23) "
+    "OR (COALESCE(opo_chequeos, CASE WHEN revisado_oposicion_en IS NOT NULL THEN 3 ELSE 0 END) < 3 "
+    "AND fecha_publicacion <= current_date - 33))"
+)
+
 GRUPOS_AUTOMATIZACIONES = [
     {
         "id": "leads",
@@ -451,7 +469,7 @@ GRUPOS_AUTOMATIZACIONES = [
                 "nombre": "Solicitudes nuevas del día",
                 "descripcion": "Busca en INPI las solicitudes presentadas en los últimos días, antes de que "
                                "salgan en el boletín, para poder contactar al titular semanas antes que nadie.",
-                "horario": "Todos los días, 4, 10 y 16 hs",
+                "horario": "Todos los días: 19:35 y 1:40 hs (escaneo largo) y 10:05 y 16:05 hs (sondeo corto)",
                 "metricas": [
                     {"sql": "SELECT COUNT(*) FROM marcas WHERE fuente = 'escaneo_directo' "
                             "AND creado_en >= date_trunc('day', now() AT TIME ZONE 'America/Argentina/Buenos_Aires') "
@@ -467,14 +485,16 @@ GRUPOS_AUTOMATIZACIONES = [
                      "etiqueta": "última acta encontrada en INPI"},
                 ],
                 "procesos": [
-                    {"workflow_file": "escanear_actas.yml", "cron": "0 7,13,19 * * *"},
+                    {"workflow_file": "escanear_actas.yml",
+                     "cron": ["35 22 * * *", "40 4 * * 0,1,2,4,5,6", "5 13 * * *", "5 19 * * *"]},
                 ],
             },
             {
                 "nombre": "Boletín publicado",
                 "descripcion": "Cuando INPI publica un boletín de Marcas Nuevas, lo importa entero y marca "
-                               "cuáles son leads (sin abogado). Tarda unas 2 horas.",
-                "horario": "Lunes, miércoles, viernes y sábado, 6 hs",
+                               "cuáles son leads (sin abogado). Procesa los boletines nuevos de a uno, desde "
+                               "las 0:05 del miércoles (INPI los publica a las 0:00); cada uno tarda ~1 h 30.",
+                "horario": "Madrugada del miércoles, desde las 0:05 hs (y red de seguridad 1:35 hs los demás días)",
                 "metricas": [
                     {"sql": "SELECT boletin || ' (' || COUNT(*) FILTER (WHERE es_lead) || ' leads)' "
                             "FROM marcas WHERE boletin IS NOT NULL "
@@ -482,7 +502,7 @@ GRUPOS_AUTOMATIZACIONES = [
                      "etiqueta": "último boletín importado", "destacada": True},
                 ],
                 "procesos": [
-                    {"workflow_file": "pipeline.yml", "cron": "0 9 * * 1,3,5,6"},
+                    {"workflow_file": "pipeline.yml", "cron": ["5 3 * * 3", "35 4 * * 0,1,2,4,5,6"]},
                 ],
             },
         ],
@@ -495,30 +515,46 @@ GRUPOS_AUTOMATIZACIONES = [
         "tarjetas": [
             {
                 "nombre": "Oposiciones y vistas",
-                "descripcion": "Cuando vence el plazo de oposición de un lead, revisa si recibió una oposición "
-                               "de un tercero o una vista de INPI, y avisa por mail.",
-                "horario": "Todos los días, 7 hs",
+                "descripcion": "Revisa a cada lead a los 10, 23 y 33 días de su publicación en el boletín "
+                               "(muchas oposiciones llegan antes de los 30 días) y vuelve a mirar seguido los que "
+                               "ya tienen una oposición. El mail de aviso sale a las 7:30.",
+                "horario": "Todos los días, 22 hs",
                 "metricas": [
                     {"sql": "SELECT COUNT(*) FROM marcas WHERE es_lead = true AND tuvo_oposicion = true "
-                            "AND revisado_oposicion_en >= now() - interval '7 days'",
+                            "AND COALESCE(oposicion_detectada_en, revisado_oposicion_en) >= now() - interval '7 days'",
                      "etiqueta": "detectadas en los últimos 7 días", "destacada": True},
                 ],
                 "procesos": [
-                    {"workflow_file": "revisar_oposiciones.yml", "cron": "0 10 * * *"},
+                    {"etiqueta": "Diario", "workflow_file": "revisar_oposiciones.yml", "cron": "0 1 * * *",
+                     "horario": "todos los días, 22 hs",
+                     "pendientes_sql": _SQL_OPOSICIONES_PENDIENTES},
+                    {"etiqueta": "Puesta al día (manual)", "workflow_file": "oposiciones_puesta_al_dia.yml",
+                     "cron": None, "horario": "solo a mano, una vez (2 a 4 hs)",
+                     "pendientes_sql": _SQL_OPOSICIONES_PENDIENTES},
+                ],
+            },
+            {
+                "nombre": "Avisos por mail de la mañana",
+                "descripcion": "Manda a las 7:30, en un solo horario, los mails de oposiciones nuevas, de "
+                               "alertas/plazos/novedades de la cartera y de formularios de clientes pendientes.",
+                "horario": "Todos los días, 7:30 hs",
+                "metricas": [],
+                "procesos": [
+                    {"workflow_file": "avisos_manana.yml", "cron": "30 10 * * *"},
                 ],
             },
             {
                 "nombre": "Concesiones y vencimientos",
                 "descripcion": "Detecta cuándo INPI concede o deniega una marca y guarda la fecha de "
                                "concesión y el vencimiento (para DDJJ y renovaciones).",
-                "horario": "Lunes, 8 hs",
+                "horario": "Lunes, 4:20 hs",
                 "metricas": [
                     {"sql": "SELECT COUNT(*) FROM marcas WHERE es_lead = true "
                             "AND fecha_concesion >= current_date - 30",
                      "etiqueta": "leads concedidos en los últimos 30 días", "destacada": True},
                 ],
                 "procesos": [
-                    {"workflow_file": "revisar_estado.yml", "cron": "0 11 * * 1"},
+                    {"workflow_file": "revisar_estado.yml", "cron": "20 7 * * 1"},
                 ],
             },
         ],
@@ -533,8 +569,8 @@ GRUPOS_AUTOMATIZACIONES = [
                 "nombre": "Vigilancia marcaria",
                 "descripcion": "Compara las solicitudes nuevas (boletines y escaneo de actas) con las marcas de los "
                                "clientes, crea alertas por parecidos y por clientes que presentan con otro agente, "
-                               "suma por matrícula y manda el mail con alertas, plazos y novedades.",
-                "horario": "Todos los días, 5:20, 11:20 y 17:20 hs",
+                               "suma por matrícula. El mail con alertas, plazos y novedades sale a las 7:30.",
+                "horario": "Todos los días, 0:20, 6:20 y 12:20 hs",
                 "metricas": [
                     {"sql": "SELECT COUNT(*) FROM vigilancia_alertas WHERE estado IN ('nueva','monitorear','oponer')",
                      "etiqueta": "alertas abiertas", "destacada": True},
@@ -545,14 +581,14 @@ GRUPOS_AUTOMATIZACIONES = [
                      "etiqueta": "marcas vigiladas"},
                 ],
                 "procesos": [
-                    {"workflow_file": "vigilancia.yml", "cron": "20 8,14,20 * * *"},
+                    {"workflow_file": "vigilancia.yml", "cron": "20 3,9,15 * * *"},
                 ],
             },
             {
                 "nombre": "Seguimiento de la cartera",
                 "descripcion": "Vuelve a leer en INPI los expedientes de las marcas de los clientes (estado, "
                                "concesión, vencimiento, oposiciones, movimientos nuevos) y guarda las novedades.",
-                "horario": "Todos los días, 7:45 hs",
+                "horario": "Todos los días, 22:35 hs",
                 "metricas": [
                     {"sql": "SELECT COUNT(*) FROM cartera_novedades WHERE detectado_en >= now() - interval '7 days'",
                      "etiqueta": "novedades en los últimos 7 días", "destacada": True},
@@ -560,7 +596,7 @@ GRUPOS_AUTOMATIZACIONES = [
                      "etiqueta": "marcas pendientes de consultar"},
                 ],
                 "procesos": [
-                    {"workflow_file": "revisar_cartera.yml", "cron": "45 10 * * *",
+                    {"workflow_file": "revisar_cartera.yml", "cron": "35 1 * * *",
                      "pendientes_sql": "SELECT COUNT(*) FROM cartera_marcas WHERE consultado_en IS NULL"},
                 ],
             },
@@ -576,21 +612,21 @@ GRUPOS_AUTOMATIZACIONES = [
                 "nombre": "Completar datos faltantes",
                 "descripcion": "Vuelve a consultar INPI para las marcas que quedaron a medias (casi siempre "
                                "por un bloqueo puntual): sin verificar, sin email o sin nombre.",
-                "horario": "Varias veces por día, cada uno por separado",
+                "horario": "Una vez por noche, cada uno por separado",
                 "metricas": [],
                 "procesos": [
                     {"etiqueta": "Sin verificar", "workflow_file": "reintentar_sin_verificar.yml",
-                     "cron": "0 0,2,4,6,8,10,12,14,16,18,20,22 * * *",
-                     "horario": "cada 2 horas (horas impares)",
+                     "cron": "5 2 * * 0,1,2,4,5,6",
+                     "horario": "todas las noches menos la del martes, 23:05 hs",
                      "pendientes_sql": "SELECT COUNT(*) FROM marcas WHERE es_lead IS NULL AND TRIM(COALESCE(matricula_agente, '')) IN ('', 'Part.')"},
                     {"etiqueta": "Sin email", "workflow_file": "reintentar_sin_email.yml",
-                     "cron": "0 1,3,5,7,9,11,13,15,17,19,21,23 * * *",
-                     "horario": "cada 2 horas (horas pares)",
+                     "cron": "10 8 * * 0,1,2,4,5,6",
+                     "horario": "madrugadas menos la del miércoles, 5:10 hs",
                      "pendientes_sql": "SELECT COUNT(*) FROM marcas WHERE es_lead = true "
                                        "AND (email IS NULL OR email = '')"},
                     {"etiqueta": "Sin nombre", "workflow_file": "backfill_denominacion.yml",
-                     "cron": "30 9,15,21 * * *",
-                     "horario": "al terminar cada búsqueda de leads, y 6:30, 12:30 y 18:30",
+                     "cron": "50 8 * * 0,1,2,4,5,6",
+                     "horario": "madrugadas menos la del miércoles, 5:50 hs (y al terminar cada escaneo y boletín)",
                      "pendientes_sql": "SELECT COUNT(*) FROM marcas WHERE es_lead IS NOT FALSE "
                                        "AND COALESCE(NULLIF(TRIM(denominacion), ''), "
                                        "NULLIF(TRIM(denominacion_inpi), '')) IS NULL "
@@ -745,7 +781,18 @@ REPORTES_AUTOMATIZACIONES = {
 }
 
 
-def _proxima_ejecucion(expresion_cron: str) -> str:
+def _proxima_ejecucion(expresion_cron) -> str:
+    """Próxima ejecución de uno o varios crons (el más cercano). None si el
+    proceso no tiene horario (solo se dispara a mano)."""
+    if not expresion_cron:
+        return None
+    if isinstance(expresion_cron, (list, tuple)):
+        proximas = [x for x in (_proxima_cron_unico(e) for e in expresion_cron) if x]
+        return min(proximas) if proximas else None
+    return _proxima_cron_unico(expresion_cron)
+
+
+def _proxima_cron_unico(expresion_cron: str) -> str:
     """Próxima vez que corre ese cron (UTC, ISO 8601) a partir de ahora.
 
     Implementado a mano (sin librería) porque solo necesitamos soportar los
@@ -1378,7 +1425,7 @@ def listar_crons(_: str = Depends(verificar_login)):
                     "workflow_file": p["workflow_file"],
                     "horario": p.get("horario"),
                     "tiene_reporte": p["workflow_file"] in REPORTES_AUTOMATIZACIONES,
-                    "proxima_ejecucion": _proxima_ejecucion(p["cron"]),
+                    "proxima_ejecucion": _proxima_ejecucion(p.get("cron")),
                     **_ultima_corrida_workflow(p["workflow_file"]),
                 }
                 if p.get("pendientes_sql"):
@@ -2111,7 +2158,7 @@ def _plazos_de_marcas(filas, hoy=None) -> list:
                     cierre, f"Publicada el {pub.strftime('%d/%m/%Y')} · 30 días corridos",
                 )
         if r.get("tuvo_oposicion"):
-            detectada = r.get("revisado_oposicion_en")
+            detectada = r.get("oposicion_detectada_en") or r.get("revisado_oposicion_en")
             fecha = detectada.date() if detectada else hoy
             detalle = "Ya se sumó un apoderado/gestor" if r.get("representacion_posterior_oposicion") else \
                 "El plazo para responder corre desde la notificación: confirmar en el expediente"

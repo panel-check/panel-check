@@ -2,16 +2,27 @@ name: "Solicitudes nuevas del día (escaneo de actas)"
 
 on:
   schedule:
-    # 3 veces por día, corrido en horas distintas a los demás crons contra
-    # INPI para no acumular consultas al mismo tiempo (ver comentarios en
-    # reintentar_sin_email.yml y reintentar_sin_verificar.yml).
-    - cron: "0 7,13,19 * * *"
+    # Horarios en UTC (Argentina = UTC-3). GitHub arranca los crons ~15 min tarde.
+    # Turno A, 19:35 ART: escaneo largo (150 min; los martes 120, porque a las
+    # 00:05 del miércoles el carril tiene que quedar libre para los boletines).
+    - cron: "35 22 * * *"
+    # Turno B, 01:40 ART: escaneo largo (150 min). NO corre la madrugada del
+    # martes al miércoles (UTC miércoles): ahí el carril es de los boletines.
+    - cron: "40 4 * * 0,1,2,4,5,6"
+    # Sondeo diurno, 10:05 y 16:05 ART: 15 min, solo para no dejar acumular
+    # atraso y que la vigilancia vea lo nuevo del día.
+    - cron: "5 13 * * *"
+    - cron: "5 19 * * *"
   workflow_dispatch:
     inputs:
-      tope:
-        description: "Máximo de números de acta a probar en esta corrida"
+      max_minutes:
+        description: "Minutos máximos de escaneo en esta corrida"
         required: false
-        default: "300"
+        default: "150"
+      tope:
+        description: "Tope de seguridad de números de acta a probar"
+        required: false
+        default: "3000"
       consecutivos_para_frenar:
         description: "Si esta cantidad de actas seguidas no existe todavía, corta la corrida"
         required: false
@@ -24,9 +35,17 @@ on:
 permissions:
   contents: read
 
+# Un solo carril contra INPI: dos procesos que consultan INPI nunca corren a la
+# vez (INPI pidió una sola tanda, máx. 100 conexiones). Si hay uno corriendo, el
+# siguiente espera su turno. GitHub guarda UNA sola corrida en espera por grupo.
+concurrency:
+  group: inpi-lane
+  cancel-in-progress: false
+
 jobs:
   escanear:
     runs-on: ubuntu-latest
+    timeout-minutes: 240
     env:
       # Alarma de bloqueo masivo de INPI (scripts/monitor_bloqueo.py)
       RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
@@ -45,11 +64,23 @@ jobs:
       - name: Probar los siguientes números de acta contra INPI
         run: |
           cd scripts
+          # Presupuesto de tiempo según qué horario disparó la corrida.
+          MAXMIN="${{ inputs.max_minutes }}"
+          if [ -z "$MAXMIN" ]; then
+            case "${{ github.event.schedule }}" in
+              "35 22 * * *") MAXMIN=150; [ "$(date -u +%u)" = "2" ] && MAXMIN=120 ;;  # martes: recortado
+              "40 4 * * 0,1,2,4,5,6") MAXMIN=150 ;;
+              "") MAXMIN=150 ;;  # disparo manual sin indicar minutos
+              *) MAXMIN=15 ;;  # sondeo diurno
+            esac
+          fi
+          echo "Presupuesto de escaneo: $MAXMIN min"
           TOPE="${{ inputs.tope }}"
           CONSECUTIVOS="${{ inputs.consecutivos_para_frenar }}"
           DESDE="${{ inputs.desde }}"
           python3 escanear_actas_nuevas.py \
-            --tope "${TOPE:-300}" \
+            --tope "${TOPE:-3000}" \
+            --max-minutes "$MAXMIN" \
             --consecutivos-para-frenar "${CONSECUTIVOS:-8}" \
             --desde "${DESDE:-4797000}"
         env:
@@ -66,7 +97,7 @@ jobs:
         continue-on-error: true
         run: |
           cd scripts
-          python3 backfill_denominacion.py --limit 60
+          python3 backfill_denominacion.py --limit 60 --max-minutes 10
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL || secrets.DATABASE_PUBLIC_URL }}
           PYTHONUNBUFFERED: "1"

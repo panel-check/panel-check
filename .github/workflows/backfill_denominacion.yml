@@ -2,9 +2,9 @@ name: "Completar datos faltantes - Sin nombre"
 
 on:
   schedule:
-    # 3 veces por día, a y media -- después de cada escaneo de actas
-    # (7,13,19 UTC) y en minutos en que no corre ningún otro proceso contra INPI.
-    - cron: "30 9,15,21 * * *"
+    # Una vez por noche, 08:50 UTC (05:50 ART, turno B), con tope de 20 min. No
+    # corre la madrugada del martes al miércoles (UTC miércoles).
+    - cron: "50 8 * * 0,1,2,4,5,6"
   workflow_dispatch:
     inputs:
       limit:
@@ -19,9 +19,17 @@ on:
 permissions:
   contents: read
 
+# Un solo carril contra INPI: dos procesos que consultan INPI nunca corren a la
+# vez (INPI pidió una sola tanda, máx. 100 conexiones). Si hay uno corriendo, el
+# siguiente espera su turno. GitHub guarda UNA sola corrida en espera por grupo.
+concurrency:
+  group: inpi-lane
+  cancel-in-progress: false
+
 jobs:
   backfill:
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     env:
       # Alarma de bloqueo masivo de INPI (scripts/monitor_bloqueo.py)
       RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
@@ -45,6 +53,7 @@ jobs:
           # corrida programada: tope de 150 para no alargarla
           if [ -z "$LIMIT" ] && [ "${{ github.event_name }}" = "schedule" ]; then LIMIT=150; fi
           if [ -n "$LIMIT" ]; then args="$args --limit $LIMIT"; fi
+          args="$args --max-minutes 20"
           if [ "${{ inputs.incluir_no_leads }}" = "true" ]; then args="$args --incluir-no-leads"; fi
           python3 backfill_denominacion.py $args
         env:

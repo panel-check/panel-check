@@ -1,0 +1,68 @@
+name: "Oposiciones: puesta al día (una sola vez, manual)"
+
+# Solo se dispara a mano ("Run workflow" en GitHub, o "Correr ahora" en el panel).
+# No tiene horario propio.
+#
+# Para qué sirve: cuando se estrenó el esquema de revisión a los 10/23/33 días,
+# quedaron leads ya publicados que nunca pasaron por esos hitos. Esta corrida
+# revisa de una vez a todos los pendientes, con un tope de tiempo grande. Es la
+# misma lógica del proceso diario "Oposiciones y vistas" (revisar_oposiciones.py):
+# cada lead cuenta con el hito que le corresponde por su antigüedad, y lo que no
+# alcance a revisarse (por tiempo o por bloqueos de INPI) queda pendiente y se
+# retoma al volver a correr esta misma tarea, o solo en el proceso diario.
+#
+# Cuándo dispararlo: de noche (entre las 19:35 y las 23:00 ART o desde las 08:00
+# del día siguiente), nunca la madrugada del martes al miércoles ni el miércoles
+# a la mañana (los boletines tienen prioridad). Si hay otro proceso de INPI
+# corriendo, esta tarea espera su turno en el carril. Dura entre 2 y 4 horas
+# según cuántos leads haya (~12 s por lead).
+#
+# Los avisos por mail de las oposiciones que encuentre salen a las 07:30 ART.
+
+on:
+  workflow_dispatch:
+    inputs:
+      max_minutes:
+        description: "Minutos máximos de esta corrida (default 330; GitHub corta a las 6 h)"
+        required: false
+        default: "330"
+      limit:
+        description: "Tope de leads a revisar (dejar vacío = todos los pendientes)"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: inpi-lane
+  cancel-in-progress: false
+
+jobs:
+  revisar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 355
+    env:
+      # Alarma de bloqueo masivo de INPI (scripts/monitor_bloqueo.py)
+      RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+      RESEND_FROM: ${{ secrets.RESEND_FROM }}
+      NOTIFICAR_A: ${{ secrets.NOTIFICAR_A }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Instalar dependencias
+        run: pip install -r requirements.txt
+
+      - name: Revisar la oposición de todos los leads pendientes
+        run: |
+          cd scripts
+          args="--max-minutes ${{ inputs.max_minutes || '330' }}"
+          if [ -n "${{ inputs.limit }}" ]; then args="$args --limit ${{ inputs.limit }}"; fi
+          python3 revisar_oposiciones.py $args
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL || secrets.DATABASE_PUBLIC_URL }}
+          PYTHONUNBUFFERED: "1"

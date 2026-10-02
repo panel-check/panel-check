@@ -70,13 +70,18 @@ def consultar_titular(titular: str, timeout: int = 60, reintentos: int = 2, cuit
             try:
                 root = ET.fromstring(result.stdout)
             except ET.ParseError:
+                if intento < reintentos:
+                    time.sleep(5 * (2 ** intento))
                 continue
             filas = []
             for grilla in root.iter("{http://tempuri.org/}GrillaMarcas"):
                 fila = {child.tag.split("}")[-1]: (child.text or "") for child in grilla}
                 filas.append(fila)
             return filas
-        # si falló (timeout, sin datos), reintenta
+        # si falló (timeout, sin datos), reintenta con espera creciente
+        # (5, 10, 20 s...), como pide INPI ante bloqueos o fallas.
+        if intento < reintentos:
+            time.sleep(5 * (2 ** intento))
     return []
 
 
