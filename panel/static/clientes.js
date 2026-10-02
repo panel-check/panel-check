@@ -202,7 +202,7 @@ function camposClienteHtml(c = {}) {
     <label>Teléfono<input name="telefono" value="${esc(c.telefono || "")}"></label>
     <label>Persona de contacto<input name="contacto" value="${esc(c.contacto || "")}"></label>
     <label>Origen<select name="origen">${origenes}</select></label>
-    <label>Referido por<input name="referido" list="lista-referidos" value="${esc(c.referido || "")}" placeholder="agencia de marketing, diseñador…" maxlength="120" autocomplete="off"></label>
+    <label class="cl-referido">¿Quién es el referido? (se muestra como tag)<input name="referido" list="lista-referidos" value="${esc(c.referido || "")}" placeholder="ej.: KOM, agencia de marketing, diseñador…" maxlength="120" autocomplete="off"></label>
     <datalist id="lista-referidos">${(est.referidos || []).map(r => `<option value="${esc(r)}">`).join("")}</datalist>
     <label>Tipo de persona<select name="tipo_persona"><option value="">—</option>${Object.entries(est.tiposPersona).map(([k, v]) => `<option value="${k}" ${k === c.tipo_persona ? "selected" : ""}>${esc(v)}</option>`).join("")}</select></label>
     <label class="check"><input type="checkbox" name="vigilancia_contratada" ${c.vigilancia_contratada ? "checked" : ""}> Tiene contratada la vigilancia (se le cobra y se le manda el informe)</label>
@@ -218,6 +218,16 @@ const CAMPOS_EXTRA = [
   ["estado_civil", "Estado civil"], ["conyuge_nombre", "Cónyuge (nombre y apellido)"], ["conyuge_dni", "DNI del cónyuge"],
   ["firmante_nombre", "Firmante (persona jurídica)"], ["firmante_cargo", "Cargo del firmante"],
 ];
+
+// Al elegir Origen «Referido» se pide quién es: lleva el cursor al campo del nombre.
+document.addEventListener("change", ev => {
+  const sel = ev.target;
+  if (!sel || sel.name !== "origen" || !sel.form) return;
+  const campo = sel.form.elements.referido;
+  if (!campo) return;
+  campo.closest("label").classList.toggle("destacado", sel.value === "referido" && !campo.value.trim());
+  if (sel.value === "referido" && !campo.value.trim()) campo.focus();
+});
 
 function leerCampos(form, conActivo = false) {
   const f = form.elements;
