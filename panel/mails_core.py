@@ -32,6 +32,7 @@ import sys
 import psycopg2
 import psycopg2.extras
 import requests
+from urllib.parse import quote
 
 DEFAULT_PANEL = "https://panel.registrodemimarca.com.ar"
 DEFAULT_FROM_INTERNO = "Avisos Panel <avisos@quieroregistrarmimarca.com.ar>"
@@ -52,6 +53,7 @@ CUENTAS = {
 
 # Variables que se pueden usar en la plantilla de prospectos: {{variable}}.
 VARIABLES_PROSPECTO = {
+    "nombre": "Nombre de pila del titular (p. ej. «Tomás»); vacío si es una empresa o no se puede deducir",
     "titular": "Nombre del titular de la solicitud",
     "marca": "Denominación de la marca",
     "acta": "Número de acta",
@@ -59,7 +61,8 @@ VARIABLES_PROSPECTO = {
 }
 
 EJEMPLO_PROSPECTO = {
-    "titular": "María Gómez",
+    "nombre": "María",
+    "titular": "GOMEZ MARIA",
     "marca": "Luna Nueva",
     "acta": "4797123",
     "clase": "25",
@@ -112,6 +115,34 @@ Un saludo,
 FIRMA
 
 P.D.: Pueden seguir el estado del trámite en el portal del INPI: https://portaltramites.inpi.gob.ar/marcasconsultas/busqueda/?Cod_Funcion=NQA0ADEA"""
+
+WHATSAPP_PAMELA = "5491155890784"
+ASUNTO_OPOSICION = "Tu marca {{marca}} recibió una oposición: qué significa y cómo seguir"
+CUERPO_OPOSICION = """Hola {{nombre}}:
+
+Mi nombre es Pamela, soy Agente de la Propiedad Industrial. Vi que tu solicitud de marca {{marca}} recibió una oposición y quería acercarte una explicación sencilla para que sepas qué significa y cómo avanzar.
+
+Una oposición se presenta cuando un tercero considera que el registro de tu marca podría afectar sus derechos, por ejemplo, por una posible similitud con una marca anterior.
+
+Esto no significa que tu marca haya sido rechazada. Es necesario analizar los fundamentos de la oposición y el estado del expediente para definir cómo continuar.
+
+Desde Smarties Consultora puedo ayudarte a:
+
+* Revisar la oposición y explicarte sus fundamentos.
+* Evaluar alternativas para negociar con quien la presentó.
+* Gestionar la defensa de tu solicitud y acompañarte durante el trámite.
+
+Si querés avanzar, podés escribirme directamente desde este botón:
+
+[Quiero asesorarme sobre la oposición a mi marca](https://wa.me/""" + WHATSAPP_PAMELA + """?text=Hola Pamela, recibí tu mail sobre la oposición a mi marca {{marca}}, acta {{acta}}, y quiero asesorarme.)
+
+Saludos cordiales,
+Pamela Guzzardi
+Agente de Propiedad Industrial – Mat. INPI 2906
+Smarties Consultora
+Registro de Marcas Nacional e Internacional
+[www.smartiesconsultora.com.ar](https://www.smartiesconsultora.com.ar)
+WhatsApp: [+54 9 11 5589-0784](https://wa.me/""" + WHATSAPP_PAMELA + """)"""
 
 CATALOGO = {
     "oposiciones": {
@@ -182,6 +213,18 @@ CATALOGO = {
         "destinatarios": "",
         "asunto": ASUNTO_MARCA_PUBLICADA,
         "cuerpo": CUERPO_MARCA_PUBLICADA,
+        "editable": True,
+    },
+    "prospecto_oposicion": {
+        "grupo": "prospectos",
+        "nombre": "Recibió una oposición",
+        "descripcion": "Mail de Pamela a un solicitante sin agente cuya marca recibió una oposición: explica qué significa y ofrece ayuda, con botón a su WhatsApp. Todavía no se envía nada: se deja configurado.",
+        "cuenta": "prospectos",
+        "remitente": "Smarties <smarties@registrodemimarca.com.ar>",
+        "responder_a": "info@smartiesconsultora.com.ar",
+        "destinatarios": "",
+        "asunto": ASUNTO_OPOSICION,
+        "cuerpo": CUERPO_OPOSICION,
         "editable": True,
     },
 }
@@ -401,23 +444,85 @@ def preparar(clave: str, dsn=None) -> dict:
 
 
 # ── Plantilla de prospectos ───────────────────────────────────────────────
-def _sustituir(texto: str, datos: dict, escapar: bool) -> str:
+def _sustituir(texto: str, datos: dict, escapar: bool, para_url: bool = False) -> str:
     def reemplazo(m):
-        v = str(datos.get(m.group(1), ""))
+        v = str(datos.get(m.group(1), "") or "")
+        if para_url:
+            return quote(v, safe="")
         return html.escape(v) if escapar else v
+    if not para_url:
+        # Una variable vacía se lleva el espacio de adelante: "Hola {{nombre}}:"
+        # queda "Hola:" y no "Hola :".
+        texto = re.sub(r"[ \t]+(\{\{\s*([A-Za-z_][A-Za-z0-9_]*)\s*\}\})",
+                       lambda m: m.group(0) if str(datos.get(m.group(2), "") or "") else "", texto)
     return _RE_VARIABLE.sub(reemplazo, texto)
+
+
+# [texto](https://...) en el cuerpo: link; solo en su párrafo: botón.
+_RE_LINK_MD = re.compile(r"\[([^\]\n]+)\]\(((?:https?://|mailto:|tel:)[^)\s]*(?:\s[^)\n]*)?)\)")
+
+
+def _url_link(url_cruda: str, datos: dict) -> str:
+    """Variables reemplazadas y codificadas; espacios -> %20."""
+    u = _sustituir(url_cruda.strip(), datos, escapar=False, para_url=True)
+    return quote(u, safe=":/?&=#%+@.,;~-_!*'()")
+
+
+def _inline_html(crudo: str, datos: dict) -> str:
+    partes, pos = [], 0
+    for m in _RE_LINK_MD.finditer(crudo):
+        partes.append(_texto_html(crudo[pos:m.start()], datos))
+        etiqueta = _sustituir(html.escape(m.group(1), quote=False), datos, escapar=True)
+        partes.append(f'<a href="{html.escape(_url_link(m.group(2), datos))}" style="color:#1d4ed8">{etiqueta}</a>')
+        pos = m.end()
+    partes.append(_texto_html(crudo[pos:], datos))
+    return "".join(partes)
+
+
+def _texto_html(crudo: str, datos: dict) -> str:
+    t = _sustituir(html.escape(crudo, quote=False), datos, escapar=True)
+    return _RE_URL.sub(lambda m: f'<a href="{m.group(0)}" style="color:#1d4ed8">{m.group(0)}</a>', t)
+
+
+def _bloque_html(bloque: str, datos: dict) -> str:
+    lineas = [l for l in bloque.replace("\r", "").split("\n")]
+    # Botón: el párrafo es un único link.
+    m = _RE_LINK_MD.fullmatch(bloque.strip())
+    if m:
+        etiqueta = _sustituir(html.escape(m.group(1), quote=False), datos, escapar=True)
+        url = html.escape(_url_link(m.group(2), datos))
+        return ('<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:6px 0 20px">'
+                f'<tr><td style="background:{COLOR_AZUL};border-radius:6px">'
+                f'<a href="{url}" style="display:inline-block;padding:13px 22px;color:#ffffff;text-decoration:none;'
+                f'font-weight:700;font-size:15px;font-family:Arial,Helvetica,sans-serif">{etiqueta}</a>'
+                '</td></tr></table>')
+    # Lista: todas las líneas empiezan con "* " o "- ".
+    if lineas and all(re.match(r"^\s*[*-]\s+", l) for l in lineas if l.strip()):
+        items = "".join('<li style="margin:0 0 6px">' + _inline_html(re.sub(r"^\s*[*-]\s+", "", l), datos) + "</li>"
+                        for l in lineas if l.strip())
+        return f'<ul style="margin:0 0 14px;padding-left:22px">{items}</ul>'
+    return '<p style="margin:0 0 14px">' + "<br>".join(_inline_html(l, datos) for l in lineas) + "</p>"
+
+
+def _texto_plano(cuerpo: str, datos: dict) -> str:
+    def link(m):
+        return f"{_sustituir(m.group(1), datos, escapar=False)}: {_url_link(m.group(2), datos)}"
+    return _sustituir(_RE_LINK_MD.sub(link, cuerpo), datos, escapar=False)
 
 
 def render_prospecto(asunto: str, cuerpo: str, datos: dict) -> tuple:
     """(asunto, html, texto) con las variables reemplazadas, el encabezado fijo
-    arriba y la línea de baja obligatoria al final. El cuerpo se escribe como texto: los saltos de línea
-    se respetan y todo el contenido se escapa (no se interpreta HTML)."""
+    arriba y la línea de baja obligatoria al final. El cuerpo se escribe como
+    texto (no se interpreta HTML): los saltos de línea se respetan, las líneas
+    que empiezan con "* " forman una lista, [texto](https://...) es un link y,
+    si está solo en su párrafo, un botón."""
+    datos = dict(datos or {})
+    if "nombre" not in datos:
+        import nombres_ar
+        datos["nombre"] = nombres_ar.primer_nombre(datos.get("titular", ""))
     asunto_final = _sustituir(asunto, datos, escapar=False).replace("\r", " ").replace("\n", " ").strip()
-    texto = _sustituir(cuerpo, datos, escapar=False).strip() + "\n\n--\n" + PIE_BAJA
-    parrafos = []
-    for bloque in _sustituir(html.escape(cuerpo, quote=False), datos, escapar=True).strip().split("\n\n"):
-        bloque = _RE_URL.sub(lambda m: f'<a href="{m.group(0)}" style="color:#1d4ed8">{m.group(0)}</a>', bloque)
-        parrafos.append('<p style="margin:0 0 14px">' + bloque.replace("\r", "").replace("\n", "<br>") + "</p>")
+    texto = _texto_plano(cuerpo, datos).strip() + "\n\n--\n" + PIE_BAJA
+    parrafos = [_bloque_html(b, datos) for b in re.split(r"\n\s*\n", cuerpo.replace("\r", "").strip()) if b.strip()]
     linea = (f'<tr><td height="3" style="height:3px;background:{COLOR_DORADO};font-size:0;line-height:0;'
              f'mso-line-height-rule:exactly">&nbsp;</td></tr>')
     encabezado = (
@@ -457,7 +562,9 @@ def datos_de_marca(cur, acta: str):
     f = cur.fetchone()
     if not f:
         return None
+    import nombres_ar
     return {
+        "nombre": nombres_ar.primer_nombre(f["titular"] or ""),
         "titular": f["titular"] or "",
         "marca": f["denominacion_inpi"] or f["denominacion"] or "",
         "acta": f["acta"],

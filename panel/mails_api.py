@@ -121,7 +121,7 @@ def crear_router(verificar_login, verificar_admin, conexion) -> APIRouter:
             cur.execute(
                 """
                 SELECT acta, clase, titular, email, COALESCE(NULLIF(denominacion_inpi, ''), denominacion) AS marca,
-                       fecha_publicacion
+                       fecha_publicacion, tuvo_oposicion, detalle_oposicion
                   FROM marcas
                  WHERE acta = %(q)s OR denominacion ILIKE %(l)s OR denominacion_inpi ILIKE %(l)s OR titular ILIKE %(l)s
                  ORDER BY (acta = %(q)s) DESC, creado_en DESC

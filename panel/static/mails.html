@@ -226,6 +226,9 @@ function pintarDetalle() {
       <textarea id="f-cuerpo" ${dis}>${esc(c.cuerpo)}</textarea>
       <div class="variables">${Object.entries(datos.variables).map(([k, d]) =>
         `<code data-var="${esc(k)}" title="${esc(d)} — clic para insertar">{{${esc(k)}}}</code>`).join("")}</div>
+      <div class="ayuda-campo" style="margin-top:6px">Formato: una línea que empieza con <code>* </code> es una viñeta;
+        <code>[texto](https://...)</code> es un link, y si va solo en su párrafo se ve como botón.
+        <code>{{nombre}}</code> es el nombre de pila («Tomás»); si el titular es una empresa queda vacío y «Hola {{nombre}}:» sale «Hola:».</div>
       <div class="pie-baja"><strong>Se agrega siempre al final (no se puede quitar):</strong> ${esc(datos.pie_baja)}</div>
     </div>` : "";
 
@@ -334,7 +337,7 @@ function prepararPrueba() {
         if (input.value.trim() !== q) return;
         res.innerHTML = filas.length ? `<div class="resultados-marca">${filas.map((f, i) => `
           <button type="button" data-i="${i}"><strong>${esc(f.marca || "(sin denominación)")}</strong>
-            <small>· acta ${esc(f.acta)} · clase ${esc(f.clase ?? "—")} · ${esc(f.titular || "—")}</small></button>`).join("")}</div>`
+            <small>· acta ${esc(f.acta)} · clase ${esc(f.clase ?? "—")} · ${esc(f.titular || "—")}${f.tuvo_oposicion ? ` · <strong style="color:var(--rojo)">${esc(/VISTA/i.test(f.detalle_oposicion || "") ? "con vista" : "con oposición")}</strong>` : ""}</small></button>`).join("")}</div>`
           : '<div class="ayuda-campo">No se encontró ninguna marca.</div>';
         res.querySelectorAll("[data-i]").forEach(b => b.addEventListener("click", () => {
           marcaTest = filas[+b.dataset.i];
