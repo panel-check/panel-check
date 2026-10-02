@@ -241,26 +241,26 @@
       <li><span class="badge lead" style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;background:#fde8e8;color:#c0392b;">LEAD</span> — se confirmó contra el expediente de INPI que se presentó sin agente ni gestor.</li>
       <li><span class="badge no-lead" style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;background:#e6f4ea;color:#1a8754;">Apoderado / Gestor Ratificado</span> — tiene agente según el expediente de INPI; no es un lead para prospección.</li>
       <li><span class="badge no-lead" style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;background:#e6f4ea;color:#1a8754;">Agente (matrícula 1234)</span> — el boletín ya la publica con el número de matrícula de un agente, así que no es lead. Estas no se consultan en INPI (no hace falta) y por eso tampoco tienen email.</li>
-      <li><span class="badge sin-dato" style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;background:#eef0f2;color:#6b7280;">sin verificar</span> — es un lead posible (el boletín la trae sin matrícula o con "Part.") que todavía no se pudo confirmar contra INPI, casi siempre porque INPI bloqueó esa consulta puntual. El reintento automático la vuelve a probar cada 2 horas. Solo quedan "sin verificar" las que de verdad falta revisar. Si INPI responde muy lento y la validación de un boletín pasa las 4 horas, el pipeline corta ahí, carga lo verificado y deja el resto como "sin verificar" para ese mismo reintento automático.</li>
+      <li><span class="badge sin-dato" style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;background:#eef0f2;color:#6b7280;">sin verificar</span> — es un lead posible (el boletín la trae sin matrícula o con "Part.") que todavía no se pudo confirmar contra INPI, casi siempre porque INPI bloqueó esa consulta puntual. El reintento automático la vuelve a probar una vez por noche (cada intento fallido duplica la espera hasta el siguiente, hasta un máximo de 48 horas, para no insistirle a INPI). Solo quedan "sin verificar" las que de verdad falta revisar. Si INPI responde muy lento y la validación de un boletín se pasa del tiempo que le toca, el pipeline corta ahí, carga lo verificado y deja el resto como "sin verificar" para ese mismo reintento automático.</li>
     </ul>
 
     <h2>🆕 Pre-boletín</h2>
-    <p>Son marcas encontradas por el <strong>escaneo de actas nuevas</strong>: INPI numera cada solicitud el día que se presenta, y el sistema prueba esos números 3 veces por día, semanas antes de que la marca salga en un boletín. Solo se guardan las que no tienen agente (leads). Como todavía no se publicaron, no tienen número de boletín ni "Fecha Boletín" (esa columna queda vacía); para verlas juntas, elegí <strong>🆕 Pre-boletín</strong> en el filtro Boletín.</p>
+    <p>Son marcas encontradas por el <strong>escaneo de actas nuevas</strong>: INPI numera cada solicitud el día que se presenta, y el sistema prueba esos números todas las noches (y con un sondeo corto de día), semanas antes de que la marca salga en un boletín. Solo se guardan las que no tienen agente (leads). Como todavía no se publicaron, no tienen número de boletín ni "Fecha Boletín" (esa columna queda vacía); para verlas juntas, elegí <strong>🆕 Pre-boletín</strong> en el filtro Boletín.</p>
     <p>Cuando la marca sale en su boletín, deja de ser pre-boletín y se completa con los datos del boletín (ahí recién aparece la Fecha Boletín), sin duplicarse. Las oposiciones se empiezan a revisar recién desde esa publicación.</p>
 
     <h2>"(nombre pendiente)" y "(figurativa, sin texto)"</h2>
     <p>En el boletín, las marcas <strong>Mixtas</strong> y <strong>Figurativas</strong> no traen el nombre escrito (es un logo), y en el escaneo de actas nuevas el nombre tampoco siempre está en el Formulario. El sistema lo busca primero en la ficha del expediente de INPI (sección DATOS GENERALES) y, si no está, en el webservice de INPI por CUIT.</p>
     <ul>
-      <li><strong>(nombre pendiente)</strong> — todavía no se pudo recuperar. Apenas termina el escaneo de actas o el pipeline de boletines que la cargó, se lanza sola la búsqueda de nombre (<strong>Completar datos faltantes → Sin nombre</strong>, en Automatizaciones) para buscarlo en el momento; si tampoco aparece (una marca recién presentada a veces tarda en figurar en el webservice), se reintenta 3 veces por día hasta encontrarlo.</li>
+      <li><strong>(nombre pendiente)</strong> — todavía no se pudo recuperar. Apenas termina el escaneo de actas o el pipeline de boletines que la cargó, se lanza sola la búsqueda de nombre (<strong>Completar datos faltantes → Sin nombre</strong>, en Automatizaciones) para buscarlo en el momento; si tampoco aparece (una marca recién presentada a veces tarda en figurar en el webservice), se reintenta una vez por noche hasta encontrarlo.</li>
       <li><strong>(figurativa, sin texto)</strong> — la marca es solo un dibujo/logo: no tiene nombre en ningún lado. Para verla, abrí el expediente en INPI.</li>
     </ul>
 
     <h2>"Sin email" y el botón Reintentar</h2>
     <p>Cuando un lead no tiene email, pasando el mouse por "sin email" aparece el motivo exacto: bloqueo del WAF de INPI, el expediente no tiene un Formulario en Grilla Digital, no se pudo descargar el PDF, o el Formulario no tenía el campo EMAIL completo.</p>
-    <p>El botón <strong>Reintentar</strong> vuelve a consultar ese expediente puntual contra INPI en vivo (tarda unos segundos) y actualiza caracter, email, CUIT y score si encuentra algo nuevo. No hace falta usarlo siempre: el proceso <strong>Completar datos faltantes → Sin email</strong> (en Mantenimiento) hace lo mismo solo, para todos los leads sin email, cada 2 horas.</p>
+    <p>El botón <strong>Reintentar</strong> vuelve a consultar ese expediente puntual contra INPI en vivo (tarda unos segundos) y actualiza caracter, email, CUIT y score si encuentra algo nuevo. No hace falta usarlo siempre: el proceso <strong>Completar datos faltantes → Sin email</strong> (en Mantenimiento) hace lo mismo solo, para todos los leads sin email, una vez por noche.</p>
 
     <h2>¿Qué pasa si INPI bloquea?</h2>
-    <p>El sitio de INPI a veces rechaza consultas automáticas. Un bloqueo suelto es normal: esa marca queda "sin verificar" o "sin email" y los reintentos automáticos la resuelven más tarde. Si el bloqueo es <strong>masivo</strong> (muchas consultas seguidas rechazadas), llega un mail de aviso y la corrida queda en rojo en GitHub.</p>
+    <p>El sitio de INPI a veces rechaza consultas automáticas. Un bloqueo suelto es normal: esa marca queda "sin verificar" o "sin email" y los reintentos automáticos la resuelven más tarde. Cuando INPI bloquea, el sistema <strong>espera 5, 10, 20, 40 y 80 segundos</strong> antes de volver a intentar (como pidió INPI). Si el bloqueo es <strong>masivo</strong> (5 consultas seguidas rechazadas), ese proceso se <strong>corta solo</strong>, llega un mail de aviso y la corrida queda en rojo en GitHub; lo que faltó se retoma en la próxima corrida.</p>
 
     <h2>Agrupado por titular</h2>
     <p>Cuando un mismo titular tiene varias marcas, se muestra una sola fila con una flecha (<strong>▸ +N</strong>) para desplegar el resto sin saturar la tabla. El click en el nombre del titular abre su ficha completa (<code>/titular/...</code>), con <strong>todas</strong> sus marcas de cualquier boletín, no solo el que se está mirando.</p>
@@ -468,8 +468,8 @@ le asigna un puntaje de prioridad. Después sigue a cada marca a lo largo del ti
           <div class="cuerpo">
             <h3>Escaneo de actas nuevas (antes del boletín)</h3>
             <p>INPI le asigna a cada solicitud un número de acta correlativo <strong>el día que se presenta</strong>,
-              pero la publica en el boletín recién varias semanas después. Por eso, 3 veces por día, el sistema prueba
-              los números de acta siguientes al último que encontró. De cada acta nueva sin agente guarda clase, marca (el nombre sale de la ficha del
+              pero la publica en el boletín recién varias semanas después. Por eso, todas las noches (y con un sondeo corto de día), el sistema prueba
+              los números de acta siguientes al último que encontró, hasta agotar el tiempo de la corrida (150 minutos de noche). De cada acta nueva sin agente guarda clase, marca (el nombre sale de la ficha del
               expediente, así que también las Mixtas quedan con nombre), tipo, titular, CUIT y email, y la muestra en el panel con la etiqueta <strong>🆕 pre-boletín</strong>. Así se
               puede contactar al solicitante semanas antes que nadie. Cuando después sale en su boletín, la misma
               marca se completa con los datos del boletín, sin duplicarse. Las solicitudes <strong>con agente</strong> no van al panel de leads, pero se
@@ -480,8 +480,10 @@ le asigna un puntaje de prioridad. Después sigue a cada marca a lo largo del ti
           <div class="num">1</div>
           <div class="cuerpo">
             <h3>Se busca el boletín nuevo</h3>
-            <p>Automáticamente, 4 veces por semana (lunes, miércoles, viernes y sábado), el sistema revisa si INPI publicó
-              un boletín nuevo de "Marcas Nuevas" y lo descarga.</p>
+            <p>INPI publica los boletines de "Marcas Nuevas" a las 0:00 del miércoles (suelen ser 4 por semana). La madrugada
+              del miércoles, desde las 0:05, el sistema espera la publicación y procesa los boletines nuevos <strong>de a uno, en cadena</strong>,
+              hasta las 8:00 como mucho, para que el miércoles a la mañana ya estén todos cargados. Las demás noches hace una
+              revisión corta por si quedó alguno sin cargar.</p>
           </div>
         </li>
         <li class="paso">
@@ -510,7 +512,7 @@ le asigna un puntaje de prioridad. Después sigue a cada marca a lo largo del ti
             <p>Cuando es posible, se recupera el email del solicitante desde el formulario original, y se le asigna un
               puntaje: cuánto más alto, más prioridad para contactarlo primero. Si en ese momento INPI no respondió
               (le pasa seguido a la Grilla Digital), la marca no se pierde: los reintentos automáticos la vuelven a
-              probar cada 2 horas hasta conseguir el dato.</p>
+              probar una vez por noche hasta conseguir el dato.</p>
           </div>
         </li>
         <li class="paso">
@@ -530,8 +532,10 @@ le asigna un puntaje de prioridad. Después sigue a cada marca a lo largo del ti
             <p>El sistema no se detiene ahí: sigue revisando cada lead con el tiempo, para avisar si aparece una
               <strong>oposición de un tercero</strong> (alguien se opone a la marca) o una <strong>vista de INPI</strong>
               (una observación de oficio, sin que nadie se oponga) — son dos alertas distintas, con su propio badge cada
-              una — y sigue el trámite hasta que INPI lo resuelve. Cuando aparece una oposición o una vista nueva en
-              un lead, llega un <strong>mail de aviso</strong> al equipo (uno por día como máximo, solo si hay novedades).</p>
+              una — y sigue el trámite hasta que INPI lo resuelve. Cada lead se revisa a los <strong>10, 23 y 33 días</strong> de su publicación (muchas oposiciones llegan antes de los 30 días);
+              si aparece una oposición, se vuelve a mirar todos los días hasta el día 33 y cada 3 días hasta el día 60, por si el titular suma un apoderado.
+              Cuando aparece una oposición o una vista nueva en
+              un lead, llega un <strong>mail de aviso</strong> al equipo a las 7:30 (uno por día como máximo, solo si hay novedades).</p>
           </div>
         </li>
         <li class="paso">
@@ -549,7 +553,7 @@ le asigna un puntaje de prioridad. Después sigue a cada marca a lo largo del ti
             <h3>Clientes y vigilancia marcaria</h3>
             <p>Los clientes del estudio se cargan en <strong>Clientes</strong> (por acta, por CUIT, por matrícula o convirtiendo un lead).
               De cada marca de la cartera el sistema lee el expediente en INPI todos los días y guarda las novedades (concesión,
-              oposición o vista, cambio de titular, movimientos). Tres veces por día compara todas las solicitudes nuevas —las de los
+              oposición o vista, cambio de titular, movimientos). Tres veces por día (0:20, 6:20 y 12:20) compara todas las solicitudes nuevas —las de los
               boletines y las que encuentra el escaneo de actas, sin esperar al boletín— con las marcas de la cartera: si alguna se parece,
               crea una <strong>alerta</strong> mientras todavía corre el plazo de oposición; si un cliente presenta una marca con otro agente,
               también. Las alertas y los plazos que se acercan llegan por mail. Se hace para todos los clientes; la vigilancia contratada marca a quién se le cobra.</p>
@@ -560,6 +564,13 @@ le asigna un puntaje de prioridad. Después sigue a cada marca a lo largo del ti
       <div class="seccion-manual">
         <h2>Procesos automáticos</h2>
         <p>Corren solos en GitHub Actions, sin que nadie tenga que hacer nada. Horarios en hora de Argentina.</p>
+        <p><strong>Un solo carril hacia INPI.</strong> INPI pidió limitar las consultas (máximo 100 conexiones, esperas crecientes ante un bloqueo, trabajo masivo de noche). Por eso todos los procesos que consultan INPI comparten un único carril: si uno está corriendo, el siguiente espera su turno y nunca corren dos a la vez. GitHub arranca los horarios con unos 15 minutos de demora y, si hay un proceso corriendo y ya hay otro esperando, descarta el tercero (se retoma en la próxima corrida, porque todos los procesos son repetibles). El día se organiza así:</p>
+        <ul>
+          <li><strong>Turno A, desde las 19:35:</strong> escaneo de actas (hasta 150 min) → oposiciones (22:00) → seguimiento de cartera (22:35) → completar sin verificar (23:05). La noche del martes el turno A se recorta (escaneo de 120 min, sin "sin verificar") para dejar libre el carril a las 0:05.</li>
+          <li><strong>Madrugada del miércoles, 0:05 a 8:00:</strong> solo los boletines, uno por vez. No corre ningún otro proceso de INPI.</li>
+          <li><strong>Turno B, desde la 1:35</strong> (todas las demás noches): revisión de boletín pendiente → escaneo de actas (150 min) → concesiones (lunes) → completar sin email (5:10) → completar sin nombre (5:50).</li>
+          <li><strong>De día:</strong> avisos por mail a las 7:30 y un sondeo corto del escaneo (15 min) a las 10:05 y a las 16:05.</li>
+        </ul>
         <p>La pantalla <strong>Automatizaciones → Crons</strong> los muestra agrupados por lo que hacen para el equipo:</p>
         <ul>
           <li>Arriba, una <strong>franja de estado</strong>: verde si todo funciona; amarilla o roja si algún proceso
@@ -580,63 +591,62 @@ le asigna un puntaje de prioridad. Después sigue a cada marca a lo largo del ti
           <thead><tr><th>Proceso</th><th>Cuándo corre</th><th>Qué hace</th></tr></thead>
           <tbody>
             <tr><th colspan="3" style="background:#f4f6f9;text-align:left;">Conseguir leads</th></tr>
-            <tr><td><strong>Solicitudes nuevas del día</strong><br><small>(antes "Escaneo de actas nuevas")</small></td><td>Todos los días, 4, 10 y 16 hs</td>
-              <td>Prueba los números de acta siguientes al último encontrado (hasta 300 por corrida; corta cuando
-                varios seguidos todavía no existen). Siempre retoma desde la última acta encontrada, aunque la corrida
+            <tr><td><strong>Solicitudes nuevas del día</strong><br><small>(antes "Escaneo de actas nuevas")</small></td><td>Todos los días: 19:35 y 1:40 hs (escaneo largo de 150 min; el martes a la noche 120 y la madrugada del miércoles no corre) y 10:05 y 16:05 hs (sondeo de 15 min)</td>
+              <td>Prueba los números de acta siguientes al último encontrado hasta agotar el tiempo de la corrida (ya no hay un tope de 300; corta antes
+                cuando varios seguidos todavía no existen). Siempre retoma desde la última acta encontrada, aunque la corrida
                 anterior se haya cortado a mitad: nunca vuelve a revisar las que ya pasó. Guarda solo los leads (sin agente), con email si se pudo, como
                 <strong>pre-boletín</strong>. El nombre de la marca (incluidas las Mixtas) lo lee de la ficha del expediente
                 (DATOS GENERALES); si ahí no está, del Formulario o del webservice de INPI por CUIT. Las marcas con abogado
                 no van al panel de leads (las carga el boletín después), pero se guardan aparte con su agente para que la
                 <strong>vigilancia</strong> las compare con las marcas de los clientes.</td></tr>
-            <tr><td><strong>Boletín publicado</strong><br><small>(antes "Pipeline de boletines")</small></td><td>Lunes, miércoles, viernes y sábado, 6 hs</td>
-              <td>Busca el boletín de "Marcas Nuevas" más reciente que todavía no esté importado, lee el PDF, separa
+            <tr><td><strong>Boletín publicado</strong><br><small>(antes "Pipeline de boletines")</small></td><td>Madrugada del miércoles, desde las 0:05 hs (y revisión de seguridad a la 1:35 las demás noches)</td>
+              <td>Espera a que INPI publique (mira el listado cada 10 minutos, hasta 75 min), arma la lista de los boletines de "Marcas Nuevas" nuevos que todavía no estén importados (hasta 4) y los procesa <strong>de a uno</strong>: cada boletín es un trabajo aparte, y si uno falla el siguiente corre igual. A cada uno le toca una parte equitativa del tiempo que queda hasta las 8:00. Para cada boletín: lee el PDF, separa
                 cada solicitud, completa el nombre de las marcas Mixtas/Figurativas (que en el PDF son solo un logo),
                 verifica en INPI cada una sin matrícula de agente (o con "Part."), marca directamente como <em>con agente</em>
-                las que el boletín trae con número de matrícula, y carga todo al panel. Procesa un boletín por
-                corrida; tarda alrededor de 2 horas porque consulta INPI de a una marca, con pausas, para no ser
-                bloqueado.</td></tr>
+                las que el boletín trae con número de matrícula, y carga todo al panel. Cada boletín tarda alrededor de 1 h 30 porque consulta INPI de a una marca, con pausas, para no ser
+                bloqueado. Lo que no alcance a verificarse en el tiempo asignado queda como <em>sin verificar</em> y lo retoma el reintento nocturno. Al terminar todos, completa los nombres pendientes una sola vez.</td></tr>
             <tr><th colspan="3" style="background:#f4f6f9;text-align:left;">Seguir a los leads</th></tr>
-            <tr><td><strong>Oposiciones y vistas</strong><br><small>(antes "Revisión de oposiciones/vistas")</small></td><td>Todos los días, 7 hs</td>
-              <td>Para los leads publicados hace 33 días o más (ya cerró el plazo de 30 días para oponerse), revisa
-                una vez la Grilla Digital: si hay una oposición de un tercero o una vista de INPI la marca en el
-                panel, y manda el <strong>mail de aviso</strong> con las novedades.</td></tr>
-            <tr><td><strong>Concesiones y vencimientos</strong><br><small>(antes "Revisión de estado del trámite")</small></td><td>Lunes, 8 hs</td>
+            <tr><td><strong>Oposiciones y vistas</strong><br><small>(antes "Revisión de oposiciones/vistas")</small></td><td>Todos los días, 22 hs</td>
+              <td>Revisa la Grilla Digital de cada lead a los <strong>10, 23 y 33 días</strong> de su publicación (muchas oposiciones llegan antes de los 30 días): si hay una oposición de un tercero o una vista de INPI la marca en el panel (con la fecha en que se vio por primera vez). Si encontró una oposición y todavía no hay apoderado, la vuelve a mirar todos los días hasta el día 33 y cada 3 días hasta el día 60. Hasta 30 minutos por noche; si no alcanza o INPI bloquea, el resto sigue la noche siguiente. El <strong>mail de aviso</strong> sale a las 7:30.</td></tr>
+            <tr><td><strong>Oposiciones: puesta al día</strong><br><small>(manual, una sola vez)</small></td><td>Solo a mano (▶ Correr ahora o "Run workflow" en GitHub). 2 a 4 horas.</td>
+              <td>Pasa de una vez a todos los leads ya publicados antes de que existiera el esquema 10/23/33 días, con el hito que les corresponde por su antigüedad. Tope de 330 minutos; si no alcanza, se vuelve a correr y retoma donde quedó (también la retoma el proceso diario). <strong>No dispararla</strong> entre las 19:35 del martes y las 8:00 del miércoles: los boletines tienen prioridad. Las oposiciones que encuentre se avisan en el mail de las 7:30.</td></tr>
+            <tr><td><strong>Concesiones y vencimientos</strong><br><small>(antes "Revisión de estado del trámite")</small></td><td>Lunes, 4:20 hs</td>
               <td>Para las marcas que todavía no tienen resolución, revisa si INPI la concedió o denegó, y guarda
                 fecha de concesión, número de disposición y vencimiento.</td></tr>
             <tr><th colspan="3" style="background:#f4f6f9;text-align:left;">Clientes y vigilancia</th></tr>
-            <tr><td><strong>Vigilancia marcaria</strong></td><td>Todos los días, 5:20, 11:20 y 17:20 hs (1 h 20 después de cada escaneo de actas)</td>
+            <tr><td><strong>Vigilancia marcaria</strong></td><td>Todos los días, 0:20, 6:20 y 12:20 hs (después de cada turno de escaneo)</td>
               <td>1) Suma a la cartera las solicitudes presentadas con una matrícula del estudio cuando su CUIT es de un cliente
                 (las demás quedan como propuesta en Clientes → Por matrícula). 2) Compara cada solicitud nueva (boletines y
                 escaneo de actas) contra las marcas vigiladas de los clientes activos —parecido escrito, sonoro, contenida,
                 palabra en común, ajustado por clase— y crea las alertas; avisa también si un cliente presentó una marca con
                 otro agente. Solo alerta solicitudes con el plazo de oposición abierto, y nunca dos veces la misma pareja.
-                3) Recompara las marcas de la cartera cuyo nombre, términos extra o clase cambiaron. 4) Manda el mail de
-                <em>Cartera y vigilancia</em>. No consulta INPI: trabaja sobre la base. La comparación de las solicitudes del
-                boletín de las 6 hs entra en la corrida de las 11:20.</td></tr>
-            <tr><td><strong>Seguimiento de la cartera</strong></td><td>Todos los días, 7:45 hs</td>
+                3) Recompara las marcas de la cartera cuyo nombre, términos extra o clase cambiaron. 4) El mail de
+                <em>Cartera y vigilancia</em> sale a las 7:30 (junto con los otros avisos). No consulta INPI: trabaja sobre la base, por eso no usa el carril de INPI. La comparación de los boletines de la madrugada del miércoles entra en la corrida de las 12:20.</td></tr>
+            <tr><td><strong>Seguimiento de la cartera</strong></td><td>Todos los días, 22:35 hs</td>
               <td>Vuelve a leer en INPI el expediente de cada marca de un cliente activo: primero las recién cargadas o que
                 nunca se pudieron consultar, después las que siguen en trámite (una vez por día) y las concedidas o
                 denegadas (una vez cada 30 días). Guarda estado, concesión, vencimiento, agente, oposiciones y movimientos, y
                 registra como <em>novedad</em> cada cambio (estado, oposición, publicación, titular, movimiento nuevo del
                 expediente). Si INPI bloquea varias consultas seguidas, corta y sigue en la próxima corrida; corta también a los
-                25 minutos.</td></tr>
+                15 minutos.</td></tr>
             <tr><th colspan="3" style="background:#f4f6f9;text-align:left;">Mantenimiento (tarjeta “Completar datos faltantes” y “Panel actualizado”)</th></tr>
-            <tr><td><strong>Completar datos faltantes → Sin verificar</strong><br><small>(antes "Reintento de marcas sin verificar")</small></td><td>Cada 2 horas (horas impares)</td>
+            <tr><td><strong>Completar datos faltantes → Sin verificar</strong><br><small>(antes "Reintento de marcas sin verificar")</small></td><td>Una vez por noche, 23:05 hs (no corre la noche del martes)</td>
               <td>Vuelve a consultar las marcas en las que no se pudo confirmar si tienen agente (columna Lead
                 "sin verificar"), casi siempre por un bloqueo puntual de INPI. Solo consulta leads posibles (sin
                 matrícula o "Part."); si encuentra alguna "sin verificar" que el boletín trae con número de
-                matrícula, la marca como <em>con agente</em> sin consultar INPI.</td></tr>
-            <tr><td><strong>Completar datos faltantes → Sin email</strong><br><small>(antes "Reintento de emails faltantes")</small></td><td>Cada 2 horas (horas pares)</td>
+                matrícula, la marca como <em>con agente</em> sin consultar INPI. Hasta 60 minutos; cada intento fallido de una acta duplica la espera hasta el próximo (1, 2, 4... máx. 48 h).</td></tr>
+            <tr><td><strong>Completar datos faltantes → Sin email</strong><br><small>(antes "Reintento de emails faltantes")</small></td><td>Una vez por noche, 5:10 hs (no corre la madrugada del miércoles)</td>
               <td>Para los leads ya confirmados que quedaron "sin email", vuelve a abrir la Grilla Digital y el
                 Formulario para conseguirlo. Es lo mismo que el botón <strong>Reintentar</strong>, pero en lote. Si a la
-                marca le faltaba el nombre, también lo completa. Al final, en un paso aparte, manda el aviso por mail de los
-                <strong>formularios de clientes</strong> que no se pudieron avisar en el momento (respaldo).</td></tr>
-            <tr><td><strong>Completar datos faltantes → Sin nombre</strong></td><td>Automáticamente al terminar cada escaneo de actas y cada pipeline de boletines; además, todos los días 6:30, 12:30 y 18:30 hs como red de seguridad</td>
+                marca le faltaba el nombre, también lo completa. Hasta 60 minutos; cada intento fallido de una acta duplica la espera hasta el próximo (1, 2, 4... máx. 48 h).</td></tr>
+            <tr><td><strong>Completar datos faltantes → Sin nombre</strong></td><td>Automáticamente al terminar cada escaneo de actas y cada cadena de boletines; además, una vez por noche, 5:50 hs (no corre la madrugada del miércoles)</td>
               <td>Para las marcas que figuran como <em>(nombre pendiente)</em> —Mixtas del escaneo de actas o
                 Mixtas/Figurativas de boletín que el webservice no devolvió— vuelve a leer el nombre de la ficha del
                 expediente y, si no está, del webservice por CUIT. De paso completa tipo y fecha de presentación si
-                faltaban. Nunca pisa un nombre que ya estaba. Hasta 150 marcas por corrida; las figurativas puras
+                faltaban. Nunca pisa un nombre que ya estaba. Hasta 150 marcas y 20 minutos por corrida; las figurativas puras
                 (sin texto) quedan como <em>(figurativa, sin texto)</em> y no se vuelven a consultar.</td></tr>
+            <tr><td><strong>Avisos por mail de la mañana</strong><br><small>(nuevo, junta los mails)</small></td><td>Todos los días, 7:30 hs</td>
+              <td>Manda en un solo horario los avisos que antes salían al final de cada proceso: <em>Oposiciones y vistas</em>, <em>Cartera y vigilancia</em> y el respaldo de <em>Formularios de clientes</em>. No consulta INPI. Cada paso corre aunque otro falle.</td></tr>
             <tr><td><strong>Panel actualizado</strong><br><small>(antes "Verificación del despliegue")</small></td><td>Cada hora</td>
               <td>Controla que el panel que está en línea tenga la última versión del código.</td></tr>
           </tbody>
@@ -653,12 +663,12 @@ le asigna un puntaje de prioridad. Después sigue a cada marca a lo largo del ti
         <div class="tarjetas-panel">
           <div class="tarjeta-mini">
             <h4>⚠ Oposiciones y vistas</h4>
-            <p>Resumen diario con los leads que recibieron una oposición de un tercero o una vista de INPI. Cada lead se
+            <p>Sale todos los días a las 7:30. Resumen con los leads que recibieron una oposición de un tercero o una vista de INPI. Cada lead se
               avisa una sola vez; si no hay novedades, no llega nada. No incluye a los que ya sumaron un apoderado.</p>
           </div>
           <div class="tarjeta-mini">
             <h4>🔎 Cartera y vigilancia</h4>
-            <p>Mail que sale al terminar cada corrida de la vigilancia, <strong>solo si hay algo nuevo</strong>: alertas nuevas de
+            <p>Mail que sale todos los días a las 7:30, <strong>solo si hay algo nuevo</strong>: alertas nuevas de
               parecido de nivel ALTA o MEDIA (las BAJAS quedan solo en el panel), clientes que presentaron una marca con otro agente,
               <strong>plazos que se acercan</strong> (renovación y declaración jurada a 90, 60, 30 y 7 días; cierre del plazo para
               oponerse a una marca parecida a 14, 7 y 3 días; cada umbral se avisa una sola vez) y <strong>novedades de los
@@ -670,7 +680,7 @@ le asigna un puntaje de prioridad. Después sigue a cada marca a lo largo del ti
             <p>Un mail por cada formulario que completa un cliente, con todas las respuestas, los archivos adjuntos (si en total
               pesan hasta 20 MB; si no, se descargan desde la ficha) y un botón a la ficha del cliente. Sale <strong>en el momento</strong>
               si el panel tiene configurada la clave de Resend (<code>RESEND_API_KEY</code> en Railway); si no la tiene o el envío
-              falló, lo manda el respaldo automático en la próxima corrida de <em>Completar datos faltantes → Sin email</em> (cada 2 horas).
+              falló, lo manda el respaldo automático a las 7:30 (junto con los otros avisos de la mañana).
               Cada formulario se avisa una sola vez. Responder el mail le contesta directo al cliente.</p>
           </div>
           <div class="tarjeta-mini">
@@ -704,7 +714,8 @@ le asigna un puntaje de prioridad. Después sigue a cada marca a lo largo del ti
           <div class="tarjeta-mini">
             <h4>🚫 INPI está bloqueando</h4>
             <p>Llega solo si INPI empieza a bloquear en forma <strong>masiva</strong> (5 consultas seguidas bloqueadas,
-              ninguna que responda, o más del 25% bloqueadas) en cualquiera de los procesos. Un bloqueo suelto es
+              ninguna que responda, o más del 25% bloqueadas) en cualquiera de los procesos; en ese caso el proceso se corta solo
+              y retoma en la próxima corrida. Ante cada bloqueo el sistema espera 5, 10, 20, 40 y 80 segundos antes de reintentar. Un bloqueo suelto es
               normal y no avisa. Si el aviso se repite varias corridas seguidas, conviene pausar los procesos un día.</p>
           </div>
         </div>
@@ -715,7 +726,7 @@ le asigna un puntaje de prioridad. Después sigue a cada marca a lo largo del ti
         <table class="tabla-glosario">
           <tbody>
             <tr><th>Reintentar (en la ficha)</th><td>Vuelve a consultar en vivo un expediente puntual y actualiza carácter, email, CUIT y score.</td></tr>
-            <tr><th>Importar boletín</th><td>En <strong>Automatizaciones → Boletines</strong> se ven todos los boletines de marcas nuevas publicados por INPI y cuáles ya están cargados. El botón Importar procesa uno puntual (por ejemplo, del historial) sin esperar al pipeline.</td></tr>
+            <tr><th>Importar boletín</th><td>En <strong>Automatizaciones → Boletines</strong> se ven todos los boletines de marcas nuevas publicados por INPI y cuáles ya están cargados. El botón Importar procesa uno puntual (por ejemplo, del historial) sin esperar al pipeline (espera su turno si hay otro proceso de INPI corriendo).</td></tr>
             <tr><th>CRM de leads</th><td>En <strong>CRM</strong>: mover leads de etapa arrastrando tarjetas, asignarlos, registrar gestiones, agendar seguimientos, cargar teléfono (con botón de WhatsApp), servicio y honorarios. La agenda junta seguimientos, oposiciones sin gestionar y plazos próximos.</td></tr>
             <tr><th>Clientes y vigilancia</th><td>En <strong>Clientes</strong>: cargar clientes y sumarles marcas por acta, por CUIT/titular o por matrícula; convertir un lead del CRM en cliente; decidir cada alerta de vigilancia (monitorear, oponer, oposición presentada, descartar); <strong>Probar un nombre</strong> contra las solicitudes conocidas; ver todos los vencimientos; ajustar la sensibilidad, las clases relacionadas y las palabras genéricas. El botón ↻ de cada marca vuelve a consultar su expediente en INPI en el momento.</td></tr>
             <tr><th>Formularios para clientes</th><td>En <strong>Clientes → 📝 Formularios</strong>: copiar o mandar por WhatsApp el link del formulario de Persona física o jurídica; ver las respuestas que llegaron, abrir o descargar sus archivos, marcarlas como revisadas o borrarlas. Cada formulario enviado crea (o actualiza, si el CUIT ya existe) el cliente con todos sus datos.</td></tr>
@@ -727,6 +738,7 @@ le asigna un puntaje de prioridad. Después sigue a cada marca a lo largo del ti
             <tr><th>Usuarios del panel</th><td>En <strong>Mi cuenta → Usuarios del panel</strong> (solo administradores): crear usuarios con clave temporal, resetear claves, dar o quitar administrador, desactivar/reactivar, y ver los últimos intentos de ingreso.</td></tr>
             <tr><th>Recuperar el acceso</th><td>Si nadie puede entrar (se perdieron todas las claves de administrador): en Railway, servicio <em>Panel Leads</em>, agregar la variable <code>PANEL_RECUPERAR</code> con el valor <code>usuario:claveTemporal</code>. Al redeployar, ese usuario queda activo, administrador y con esa clave (pide cambiarla al entrar). <strong>Después hay que borrar la variable.</strong></td></tr>
             <tr><th>Correr ahora</th><td>En <strong>Automatizaciones → Crons</strong>, cada proceso automático tiene su propio botón para dispararlo a mano (en "Completar datos faltantes", uno por fila).</td></tr>
+            <tr><th>Oposiciones: puesta al día</th><td>En <strong>Automatizaciones → Seguir a los leads → Oposiciones y vistas</strong> (fila «Puesta al día»): ▶ Correr ahora revisa de una vez todos los leads ya publicados que todavía no pasaron por los hitos de 10/23/33 días. Dura 2 a 4 horas; conviene dispararla de noche (no entre el martes a las 19:35 y el miércoles a las 8:00). Si no termina, se vuelve a disparar y sigue donde quedó.</td></tr>
             <tr><th>Agregar marca manualmente</th><td>Carga al panel un acta puntual que no vino por boletín ni por el escaneo (desde GitHub Actions).</td></tr>
             
             <tr><th>Inspeccionar acta</th><td>Diagnóstico: muestra qué devuelve INPI para un acta, para revisar un caso raro (desde GitHub Actions).</td></tr>

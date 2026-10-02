@@ -10,6 +10,11 @@ on:
 permissions:
   contents: read
 
+# Un solo carril contra INPI: si hay otro proceso de INPI corriendo, este espera su turno.
+concurrency:
+  group: inpi-lane
+  cancel-in-progress: false
+
 jobs:
   inspeccionar:
     runs-on: ubuntu-latest

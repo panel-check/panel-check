@@ -2,11 +2,10 @@ name: "Vigilancia marcaria"
 
 on:
   schedule:
-    # 3 veces por día, 1 h 20 después de cada escaneo de actas (07, 13 y 19 UTC):
-    # así compara enseguida las solicitudes recién encontradas. 08:20, 14:20 y
-    # 20:20 UTC = 05:20, 11:20 y 17:20 ART. El boletín del pipeline (09:00 UTC,
-    # lun/mié/vie/sáb, tarda ~2 h) entra en la corrida de las 14:20 UTC.
-    - cron: "20 8,14,20 * * *"
+    # 3 veces por día (UTC): 03:20, 09:20 y 15:20 = 00:20, 06:20 y 12:20 ART, después
+    # de cada turno de escaneo. No consulta INPI (solo compara contra la base), por
+    # eso no usa el carril de INPI. Los mails salen a las 07:30 ART (avisos_manana.yml).
+    - cron: "20 3,9,15 * * *"
   workflow_dispatch:
 
 permissions:
@@ -40,14 +39,4 @@ jobs:
           python3 vigilancia.py
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL || secrets.DATABASE_PUBLIC_URL }}
-          PYTHONUNBUFFERED: "1"
-
-      - name: Avisar por mail (alertas, plazos y novedades)
-        if: success() || failure()
-        run: |
-          cd scripts
-          python3 notificar_cartera.py
-        env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL || secrets.DATABASE_PUBLIC_URL }}
-          PANEL_URL: ${{ secrets.PANEL_URL }}
           PYTHONUNBUFFERED: "1"

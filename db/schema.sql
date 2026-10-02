@@ -42,6 +42,11 @@ ALTER TABLE marcas ADD COLUMN IF NOT EXISTS contactado_en TIMESTAMPTZ;
 -- desde el panel).
 ALTER TABLE marcas ADD COLUMN IF NOT EXISTS motivo_sin_email TEXT;
 
+-- Contador de reintentos (reintentar_sin_email.py / reintentar_sin_verificar.py):
+-- cada intento fallido duplica la espera hasta el próximo (1, 2, 4... máx. 48 h).
+ALTER TABLE marcas ADD COLUMN IF NOT EXISTS reintentos_n INTEGER DEFAULT 0;
+ALTER TABLE marcas ADD COLUMN IF NOT EXISTS reintento_ultimo_en TIMESTAMPTZ;
+
 -- Agregado para el seguimiento de oposiciones/vistas post-publicación
 -- (ver scripts/revisar_oposiciones.py). fecha_publicacion viene de la fila
 -- "Hoja Publicacion" de Grilla Digital — es la fecha real de publicación
@@ -51,6 +56,10 @@ ALTER TABLE marcas ADD COLUMN IF NOT EXISTS fecha_publicacion DATE;
 ALTER TABLE marcas ADD COLUMN IF NOT EXISTS tuvo_oposicion BOOLEAN;
 ALTER TABLE marcas ADD COLUMN IF NOT EXISTS detalle_oposicion TEXT;
 ALTER TABLE marcas ADD COLUMN IF NOT EXISTS revisado_oposicion_en TIMESTAMPTZ;
+-- Esquema de revisión a los 10/23/33 días + rechequeos (revisar_oposiciones.py)
+ALTER TABLE marcas ADD COLUMN IF NOT EXISTS opo_chequeos INTEGER;            -- hitos cumplidos (0-3)
+ALTER TABLE marcas ADD COLUMN IF NOT EXISTS opo_ultimo_chequeo_en TIMESTAMPTZ;
+ALTER TABLE marcas ADD COLUMN IF NOT EXISTS oposicion_detectada_en TIMESTAMPTZ; -- primera vez que se vio
 
 -- Agregado para el seguimiento del ciclo de vida de la marca ya concedida
 -- (ver scripts/revisar_estado.py): permite ofrecer vigilancia marcaria,

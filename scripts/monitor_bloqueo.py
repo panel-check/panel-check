@@ -11,6 +11,16 @@ es normal y lo levantan los reintentos --:
   * deja la corrida en ROJO en GitHub Actions (así además llega el mail
     estándar de GitHub de "workflow failed").
 
+Además de avisar al final, esta capa aplica las pautas que pidió INPI (soporte,
+02/10/2026) para no disparar el firewall:
+  * ESPERA PROGRESIVA (backoff exponencial): tras cada respuesta bloqueada se
+    espera 5 s, 10 s, 20 s, 40 s, 80 s (tope) antes de devolverle el control al
+    proceso -- o sea, antes de la próxima consulta. Una respuesta buena reinicia
+    la cuenta. Nada de reintentos inmediatos en bucle.
+  * CORTE: con BLOQUEOS_SEGUIDOS bloqueos seguidos, debe_cortar() pasa a True.
+    Los procesos lo consultan en cada vuelta de su bucle y terminan prolijo
+    (lo ya hecho queda guardado, el resto se reintenta en la próxima corrida).
+
 Criterios de "masivo" (cualquiera alcanza):
   A) BLOQUEOS_SEGUIDOS o más consultas seguidas bloqueadas
   B) al menos MIN_BLOQUEOS_SIN_OK bloqueos y NINGUNA respuesta OK en la corrida
@@ -20,8 +30,13 @@ Criterios de "masivo" (cualquiera alcanza):
 import atexit
 import os
 import sys
+import time
 
 import requests
+
+# Espera progresiva ante bloqueo (segundos). Pauta de INPI: "pausar 5s, 10s, 20s".
+ESPERAS_BLOQUEO = (5, 10, 20, 40, 80)
+_dormir = time.sleep  # aparte para poder probarlo sin esperar de verdad
 
 BLOQUEOS_SEGUIDOS = 5
 MIN_BLOQUEOS_SIN_OK = 3
@@ -35,7 +50,9 @@ _estado = {"ok": 0, "bloqueadas": 0, "seguidas": 0, "max_seguidas": 0, "instalad
 
 
 def es_bloqueo(r: requests.Response) -> bool:
-    if r.status_code == 403:
+    # 403 = firewall; 429 = límite de consultas; 503 = servidor sobrecargado.
+    # En los tres casos lo correcto es frenar y esperar, no insistir.
+    if r.status_code in (403, 429, 503):
         return True
     ctype = r.headers.get("Content-Type", "").lower()
     if "pdf" in ctype or "octet-stream" in ctype:
@@ -54,10 +71,28 @@ def _hook(r: requests.Response, *args, **kwargs):
         _estado["bloqueadas"] += 1
         _estado["seguidas"] += 1
         _estado["max_seguidas"] = max(_estado["max_seguidas"], _estado["seguidas"])
+        # Espera progresiva ANTES de devolver el control: el proceso no puede
+        # hacer la próxima consulta hasta que pase la espera.
+        espera = ESPERAS_BLOQUEO[min(_estado["seguidas"], len(ESPERAS_BLOQUEO)) - 1]
+        print(f"  INPI bloqueó la consulta ({_estado['seguidas']} seguida(s)): espero {espera} s", file=sys.stderr, flush=True)
+        _dormir(espera)
     else:
         _estado["ok"] += 1
         _estado["seguidas"] = 0
     return r
+
+
+def debe_cortar() -> bool:
+    """True si ya hay BLOQUEOS_SEGUIDOS bloqueos seguidos: el proceso tiene que
+    dejar de consultar y terminar prolijo (al salir, la alarma avisa por mail y
+    deja la corrida en rojo). Se consulta en cada vuelta del bucle principal."""
+    if _estado["seguidas"] >= BLOQUEOS_SEGUIDOS:
+        if not _estado.get("aviso_corte"):
+            _estado["aviso_corte"] = True
+            print(f"::warning::INPI bloqueó {_estado['seguidas']} consultas seguidas: se corta la corrida "
+                  "(lo ya procesado queda guardado; el resto se retoma en la próxima corrida).", flush=True)
+        return True
+    return False
 
 
 def instalar(s: requests.Session) -> None:

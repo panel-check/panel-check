@@ -1,0 +1,59 @@
+name: "Avisos por mail de la mañana"
+
+on:
+  schedule:
+    # Todos los días a las 10:30 UTC (07:30 ART), al abrir el día: reúne en un solo
+    # horario los avisos de lo que pasó durante la noche. No consulta INPI (solo
+    # lee la base y manda mails), por eso no usa el carril de INPI.
+    - cron: "30 10 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: avisos
+  cancel-in-progress: false
+
+jobs:
+  avisar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL || secrets.DATABASE_PUBLIC_URL }}
+      RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+      RESEND_FROM: ${{ secrets.RESEND_FROM }}
+      NOTIFICAR_A: ${{ secrets.NOTIFICAR_A }}
+      PANEL_URL: ${{ secrets.PANEL_URL }}
+      PYTHONUNBUFFERED: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Instalar dependencias
+        run: pip install -r requirements.txt
+
+      - name: Avisar los leads con oposición/vista nueva
+        run: |
+          cd scripts
+          python3 notificar_oposiciones.py
+
+      # Cada paso corre aunque el anterior haya fallado, para que un error en un
+      # mail no deje sin aviso a los otros. Si alguno falla, la corrida queda roja.
+      - name: Avisar alertas, plazos y novedades de la cartera
+        if: always()
+        run: |
+          cd scripts
+          python3 notificar_cartera.py
+
+      # Respaldo del aviso por mail de los formularios para clientes
+      # (Clientes → Formularios): el panel lo manda al instante si tiene
+      # RESEND_API_KEY; si no pudo, sale acá.
+      - name: Avisar formularios de clientes pendientes
+        if: always()
+        run: |
+          cd scripts
+          python3 notificar_formularios.py

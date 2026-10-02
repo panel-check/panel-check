@@ -2,15 +2,17 @@ name: "Oposiciones y vistas"
 
 on:
   schedule:
-    # Todos los días a las 10:00 UTC (07:00 ART) — no depende de cuándo sale
-    # cada boletín, revisa lo que ya cumplió el plazo sin importar el día.
-    - cron: "0 10 * * *"
+    # Todos los días a las 01:00 UTC (22:00 ART), después del escaneo del turno A.
+    # Revisa a cada lead a los 10, 23 y 33 días de su publicación y vuelve a mirar
+    # los que tienen oposición (ver revisar_oposiciones.py). El mail de aviso
+    # sale a las 07:30 ART (avisos_manana.yml).
+    - cron: "0 1 * * *"
   workflow_dispatch:
     inputs:
-      dias:
-        description: "Revisar leads con publicación de al menos N días (default 33)"
+      max_minutes:
+        description: "Minutos máximos de esta corrida (default 30)"
         required: false
-        default: ""
+        default: "30"
       limit:
         description: "Tope de actas a revisar en esta corrida (dejar vacío = todas)"
         required: false
@@ -19,9 +21,17 @@ on:
 permissions:
   contents: read
 
+# Un solo carril contra INPI: dos procesos que consultan INPI nunca corren a la
+# vez (INPI pidió una sola tanda, máx. 100 conexiones). Si hay uno corriendo, el
+# siguiente espera su turno. GitHub guarda UNA sola corrida en espera por grupo.
+concurrency:
+  group: inpi-lane
+  cancel-in-progress: false
+
 jobs:
   revisar:
     runs-on: ubuntu-latest
+    timeout-minutes: 90
     env:
       # Alarma de bloqueo masivo de INPI (scripts/monitor_bloqueo.py)
       RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
@@ -37,28 +47,12 @@ jobs:
       - name: Instalar dependencias
         run: pip install -r requirements.txt
 
-      - name: Revisar Grilla Digital de leads publicados hace >= 33 días
+      - name: Revisar Grilla Digital de los leads en sus hitos de 10, 23 y 33 días
         run: |
           cd scripts
-          args=""
-          if [ -n "${{ inputs.dias }}" ]; then args="$args --dias ${{ inputs.dias }}"; fi
+          args="--max-minutes ${{ inputs.max_minutes || '30' }}"
           if [ -n "${{ inputs.limit }}" ]; then args="$args --limit ${{ inputs.limit }}"; fi
           python3 revisar_oposiciones.py $args
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL || secrets.DATABASE_PUBLIC_URL }}
-          PYTHONUNBUFFERED: "1"
-
-      - name: Avisar por mail los leads con oposición/vista nueva (Resend)
-        # Corre aunque el paso anterior haya fallado a mitad de camino: avisa
-        # lo que sí alcanzó a detectar.
-        if: success() || failure()
-        run: |
-          cd scripts
-          python3 notificar_oposiciones.py
-        env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL || secrets.DATABASE_PUBLIC_URL }}
-          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
-          RESEND_FROM: ${{ secrets.RESEND_FROM }}
-          NOTIFICAR_A: ${{ secrets.NOTIFICAR_A }}
-          PANEL_URL: ${{ secrets.PANEL_URL }}
           PYTHONUNBUFFERED: "1"

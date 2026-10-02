@@ -2,26 +2,124 @@ name: "Boletín publicado (pipeline de boletines)"
 
 on:
   schedule:
-    # Lunes, miércoles, viernes y sábado a las 09:00 UTC (06:00 ART) — 4 veces por semana
-    - cron: "0 9 * * 1,3,5,6"
+    # Horarios en UTC (Argentina = UTC-3). GitHub arranca los crons ~15 min tarde.
+    #
+    # Madrugada del martes al miércoles, 00:05 ART (03:05 UTC miércoles): INPI
+    # publica los boletines de marcas nuevas a las 00:00 del miércoles. El primer
+    # paso espera la publicación (mira el listado cada 10 min) y después procesa
+    # los boletines nuevos de a uno, en cadena, hasta las 08:00 ART como mucho.
+    - cron: "5 3 * * 3"
+    # Red de seguridad, 01:35 ART (04:35 UTC) las demás noches: si quedó algún
+    # boletín reciente sin cargar (falla puntual), lo procesa. Si no hay ninguno,
+    # termina en segundos.
+    - cron: "35 4 * * 0,1,2,4,5,6"
   workflow_dispatch:
     inputs:
       boletin:
-        description: "Número de boletín a procesar manualmente (dejar vacío para autodetectar el último)"
+        description: "Número de boletín a procesar manualmente (dejar vacío para autodetectar los pendientes)"
         required: false
         default: ""
 
 permissions:
   contents: read
 
+# Un solo carril contra INPI (ver escanear_actas.yml). Toda la cadena es UNA
+# corrida de este workflow, así que ningún otro proceso de INPI se mete en el medio.
+concurrency:
+  group: inpi-lane
+  cancel-in-progress: false
+
+env:
+  # Alarma de bloqueo masivo de INPI (scripts/monitor_bloqueo.py)
+  RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+  RESEND_FROM: ${{ secrets.RESEND_FROM }}
+  NOTIFICAR_A: ${{ secrets.NOTIFICAR_A }}
+
 jobs:
-  procesar:
+  planificar:
+    # Arma la lista de boletines a procesar y la hora de corte.
     runs-on: ubuntu-latest
-    env:
-      # Alarma de bloqueo masivo de INPI (scripts/monitor_bloqueo.py)
-      RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
-      RESEND_FROM: ${{ secrets.RESEND_FROM }}
-      NOTIFICAR_A: ${{ secrets.NOTIFICAR_A }}
+    timeout-minutes: 120
+    outputs:
+      lista: ${{ steps.plan.outputs.lista }}
+      hay: ${{ steps.plan.outputs.hay }}
+      limite: ${{ steps.plan.outputs.limite }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Instalar dependencias
+        run: pip install -r requirements.txt
+
+      - name: Esperar la publicación y elegir los boletines pendientes
+        id: plan
+        run: |
+          mkdir -p data
+          ahora=$(date +%s)
+          lista="[]"
+          if [ -n "$BOLETIN" ]; then
+            # Forzado a mano: se procesa ese número aunque ya esté importado.
+            lista=$(python3 -c "import json,sys; n=sys.argv[1]; print(json.dumps([{'numero': n, 'fecha': None, 'pdf_url': f'https://portaltramites.inpi.gob.ar/Uploads/Boletines/{n}_3_.pdf', 'comentario': 'forzado manualmente', 'indice': 0, 'total': 1}]))" "$BOLETIN")
+            limite=$(( ahora + 240 * 60 ))
+            echo "Boletín forzado manualmente: $BOLETIN"
+          else
+            espera_max=0
+            limite=$(( ahora + 150 * 60 ))
+            if [ "$SCHEDULE" = "5 3 * * 3" ]; then
+              espera_max=75   # minutos esperando que INPI publique
+              limite=$(date -u -d "today 11:00" +%s)   # 08:00 ART
+              if [ "$limite" -le "$ahora" ]; then limite=$(( ahora + 120 * 60 )); fi
+            elif [ "$EVENTO" = "workflow_dispatch" ]; then
+              limite=$(( ahora + 450 * 60 ))
+            fi
+            while true; do
+              python3 scripts/listar_boletines.py --out data/boletines_todos.json || echo "No se pudo leer el listado de INPI esta vez."
+              if [ "$espera_max" -eq 0 ]; then break; fi
+              if [ -f data/boletines_todos.json ]; then
+                nuevos=$(python3 scripts/elegir_boletin_pendiente.py data/boletines_todos.json --todos --solo-nuevos --max 6)
+                if [ "$nuevos" != "[]" ]; then break; fi
+              fi
+              if [ $(( $(date +%s) - ahora )) -ge $(( espera_max * 60 )) ]; then
+                echo "Pasaron $espera_max min y INPI no publicó boletines nuevos."
+                break
+              fi
+              echo "Todavía no hay boletines nuevos; vuelvo a mirar en 10 min."
+              sleep 600
+            done
+            if [ -f data/boletines_todos.json ]; then
+              lista=$(python3 scripts/elegir_boletin_pendiente.py data/boletines_todos.json --todos --max 4)
+              lista=$(python3 -c "import json,sys; l=json.loads(sys.argv[1]); [x.update(indice=i, total=len(l)) for i, x in enumerate(l)]; print(json.dumps(l, ensure_ascii=False))" "$lista")
+            fi
+          fi
+          if [ "$lista" = "[]" ]; then hay=false; else hay=true; fi
+          echo "lista=$lista" >> "$GITHUB_OUTPUT"
+          echo "hay=$hay" >> "$GITHUB_OUTPUT"
+          echo "limite=$limite" >> "$GITHUB_OUTPUT"
+          echo "Boletines a procesar: $lista"
+          echo "Hora de corte: $(date -u -d "@$limite" '+%Y-%m-%d %H:%M UTC')"
+          if [ "$hay" = "false" ]; then echo "No hay boletines pendientes: no se procesa nada."; fi
+        env:
+          BOLETIN: ${{ inputs.boletin }}
+          SCHEDULE: ${{ github.event.schedule }}
+          EVENTO: ${{ github.event_name }}
+          PYTHONUNBUFFERED: "1"
+          DATABASE_URL: ${{ secrets.DATABASE_URL || secrets.DATABASE_PUBLIC_URL }}
+
+  procesar:
+    # Un job por boletín, de a uno (max-parallel 1). Si uno falla, el siguiente corre igual.
+    name: "Boletín ${{ matrix.item.numero }}"
+    needs: planificar
+    if: needs.planificar.outputs.hay == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 345
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        item: ${{ fromJSON(needs.planificar.outputs.lista) }}
     steps:
       - uses: actions/checkout@v4
 
@@ -33,49 +131,21 @@ jobs:
         run: |
           pip install -r requirements.txt
 
-      - name: Listar boletines nuevos (o usar el número forzado manualmente)
-        id: listar
+      - name: Preparar el boletín de este job
         run: |
           mkdir -p data
-          if [ -n "${{ inputs.boletin }}" ]; then
-            numero="${{ inputs.boletin }}"
-            echo "[{\"numero\": \"$numero\", \"fecha\": null, \"pdf_url\": \"https://portaltramites.inpi.gob.ar/Uploads/Boletines/${numero}_3_.pdf\", \"comentario\": \"forzado manualmente\"}]" > data/boletines.json
-            echo "Boletín forzado manualmente: $numero (se reprocesa aunque ya esté importado -- es lo que pide un número a mano)"
-            echo "saltar=false" >> "$GITHUB_OUTPUT"
-          else
-            # listar_boletines.py devuelve TODO el historial de "MARCAS NUEVAS" visible en el
-            # listado, no solo el último.
-            python3 scripts/listar_boletines.py --out data/boletines_todos.json
-            # Elegimos el de número más alto que TODAVÍA no esté importado --
-            # no directamente "el más alto", porque si ese ya está cargado no
-            # hay que quedarse de brazos cruzados: puede haber uno anterior
-            # que se haya salteado (falla puntual, corrida vieja, etc.) y
-            # conviene detectarlo igual. Agregado el 30/09/2026 a pedido del
-            # usuario -- antes, si el más nuevo ya estaba importado, el
-            # pipeline no buscaba ningún otro.
-            elegido=$(python3 scripts/elegir_boletin_pendiente.py data/boletines_todos.json)
-            if [ "$elegido" = "NINGUNO" ]; then
-              echo "Todos los boletines de la lista ya están importados -- no hay ninguno nuevo, se salta el resto del pipeline."
-              echo "saltar=true" >> "$GITHUB_OUTPUT"
-            else
-              echo "$elegido" | python3 -c "import json,sys; json.dump([json.loads(sys.stdin.read())], open('data/boletines.json','w'), ensure_ascii=False, indent=2)"
-              echo "saltar=false" >> "$GITHUB_OUTPUT"
-            fi
-          fi
+          python3 -c "import json,os; it=json.loads(os.environ['ITEM']); json.dump([{k: it.get(k) for k in ('numero','fecha','pdf_url','comentario')}], open('data/boletines.json','w'), ensure_ascii=False, indent=2)"
           cat data/boletines.json
         env:
-          PYTHONUNBUFFERED: "1"
-          DATABASE_URL: ${{ secrets.DATABASE_URL || secrets.DATABASE_PUBLIC_URL }}
+          ITEM: ${{ toJSON(matrix.item) }}
 
       - name: Extraer texto de los PDFs (Apify)
-        if: steps.listar.outputs.saltar != 'true'
         run: |
           python3 scripts/extraer_pdf_apify.py --urls-file data/boletines.json --out-dir data/textos
         env:
           APIFY_TOKEN: ${{ secrets.APIFY_TOKEN }}
 
       - name: Parsear boletines
-        if: steps.listar.outputs.saltar != 'true'
         run: |
           python3 scripts/parse_boletin.py --text-dir data/textos --out-dir data/csv
 
@@ -87,7 +157,7 @@ jobs:
         # cualquiera. Para inspeccionar el contenido real sigue estando el
         # artifact "resultados-boletines" (paso de más abajo), que no es
         # público — solo lo puede bajar quien tiene acceso al repo.
-        if: always() && steps.listar.outputs.saltar != 'true'
+        if: always()
         run: |
           shopt -s nullglob
           if [ -f data/textos/_debug_apify_response.json ]; then
@@ -102,7 +172,6 @@ jobs:
           echo "diagnóstico completo (no falla el job)"
 
       - name: Completar Mixtas/Figurativas
-        if: steps.listar.outputs.saltar != 'true'
         run: |
           shopt -s nullglob
           archivos=(data/csv/*.csv)
@@ -115,14 +184,34 @@ jobs:
             python3 scripts/completar_mixtas.py --in "$f" --out "data/csv/${numero}_completo.csv"
           done
 
+      - name: Calcular el tiempo disponible para validar
+        id: presupuesto
+        # Cada boletín recibe una parte equitativa del tiempo que queda hasta la
+        # hora de corte: (corte - ahora) / boletines que faltan (este incluido),
+        # menos ~8 min de carga de cada uno. Entre 15 y 300 min. Lo que no
+        # alcance a verificarse queda "sin verificar" y se retoma solo.
+        run: |
+          ahora=$(date +%s)
+          restantes=$(( TOTAL - INDICE ))
+          min=$(( (LIMITE - ahora) / 60 / restantes - 8 ))
+          if [ "$min" -gt 300 ]; then min=300; fi
+          if [ "$min" -lt 15 ]; then min=15; fi
+          echo "Boletín $(( INDICE + 1 )) de $TOTAL: tiempo para validar = $min min"
+          echo "minutos=$min" >> "$GITHUB_OUTPUT"
+        env:
+          TOTAL: ${{ matrix.item.total }}
+          INDICE: ${{ matrix.item.indice }}
+          LIMITE: ${{ needs.planificar.outputs.limite }}
+
       - name: Validar leads reales (requests, sin navegador) — todas las candidatas del boletín
-        if: steps.listar.outputs.saltar != 'true'
         run: |
           ultimo=$(ls -t data/csv/*_completo.csv | head -1)
-          python3 scripts/validar_leads.py --in "$ultimo" --out "${ultimo%.csv}_leads.csv" --max-minutes 240
+          python3 scripts/validar_leads.py --in "$ultimo" --out "${ultimo%.csv}_leads.csv" --max-minutes ${{ steps.presupuesto.outputs.minutos }}
+        env:
+          PYTHONUNBUFFERED: "1"
+          DATABASE_URL: ${{ secrets.DATABASE_URL || secrets.DATABASE_PUBLIC_URL }}
 
       - name: Cargar a la base (Railway)
-        if: steps.listar.outputs.saltar != 'true'
         run: |
           mkdir -p data
           {
@@ -136,26 +225,11 @@ jobs:
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL || secrets.DATABASE_PUBLIC_URL }}
 
-      - name: Completar nombres que quedaron pendientes (mixta/fig.)
-        # Si el webservice no devolvió el nombre de alguna Mixta/Figurativa de
-        # este boletín, se busca en el momento en la ficha del expediente
-        # (backfill_denominacion.py). Si no quedó ninguna pendiente, termina
-        # al instante sin consultar INPI. No marca el pipeline en rojo si falla:
-        # el proceso programado "Completar nombres" lo vuelve a intentar.
-        if: steps.listar.outputs.saltar != 'true'
-        continue-on-error: true
-        run: |
-          cd scripts
-          python3 backfill_denominacion.py --limit 150
-        env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL || secrets.DATABASE_PUBLIC_URL }}
-          PYTHONUNBUFFERED: "1"
-
       - name: Subir resultados como artifact
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: resultados-boletines
+          name: resultados-boletin-${{ matrix.item.numero }}
           # Solo archivos de diagnóstico sin datos personales. El repo es
           # público y los artifacts de un repo público los puede bajar
           # cualquier usuario de GitHub: los CSV (titulares, CUIT, emails de
@@ -165,11 +239,30 @@ jobs:
             data/*.log
           retention-days: 7
           if-no-files-found: ignore
-          # (antes también subíamos data/ a una rama "debug-run-<id>" nueva en
-          # cada corrida, además del artifact de arriba. Se sacó el 29/09/2026:
-          # esas ramas quedaban para siempre con CSV de titulares/CUIT/emails
-          # de terceros -- un riesgo serio de filtración si el repo se hace
-          # público en algún momento, y redundante con este artifact, que ya
-          # cumple la misma función de "poder inspeccionar" con vencimiento a
-          # los 30 días. Se borraron las ~29 ramas debug-run-*/debug-html-*
-          # que habían quedado acumuladas.
+
+  cerrar:
+    # Una sola vez al terminar todos los boletines: completa los nombres que
+    # quedaron pendientes (mixtas/figurativas). No marca el pipeline en rojo si falla:
+    # el proceso programado "Completar nombres" lo vuelve a intentar.
+    needs: [planificar, procesar]
+    if: always() && needs.planificar.outputs.hay == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Instalar dependencias
+        run: pip install -r requirements.txt
+
+      - name: Completar nombres que quedaron pendientes (mixta/fig.)
+        continue-on-error: true
+        run: |
+          cd scripts
+          python3 backfill_denominacion.py --limit 150 --max-minutes 20
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL || secrets.DATABASE_PUBLIC_URL }}
+          PYTHONUNBUFFERED: "1"

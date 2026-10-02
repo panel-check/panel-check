@@ -37,6 +37,7 @@ import traceback
 
 import psycopg2
 
+import monitor_bloqueo
 from registro import registrar
 import psycopg2.extras
 
@@ -48,6 +49,7 @@ ESTADOS_FINALES = ("Concedida", "Denegada")
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--limit", type=int, default=None, help="tope de actas a revisar en esta corrida")
+    ap.add_argument("--max-minutes", type=float, default=None, help="tope de tiempo de la corrida; lo que falte queda para la próxima")
     ap.add_argument("--delay", type=float, default=1.5, help="segundos entre acta y acta")
     args = ap.parse_args()
 
@@ -78,7 +80,14 @@ def main():
         sin_resolucion_aun = 0
         bloqueadas = 0
 
+        inicio_corrida = time.time()
         for i, fila in enumerate(pendientes, 1):
+            if args.max_minutes and (time.time() - inicio_corrida) / 60 >= args.max_minutes:
+                print(f"Se llegó al tope de {args.max_minutes:g} minutos: el resto sigue en la próxima corrida.")
+                break
+            if monitor_bloqueo.debe_cortar():
+                print("Se corta la corrida por bloqueos seguidos de INPI: el resto sigue en la próxima.")
+                break
             acta = fila["acta"]
             info = consultar_resolucion(s, acta)
 

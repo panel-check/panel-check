@@ -2,27 +2,36 @@ name: "Completar datos faltantes - Sin email"
 
 on:
   schedule:
-    # Cada 2 horas, corrido con 1 hora de diferencia respecto a
-    # "Reintento de marcas sin verificar" (que corre en las horas pares)
-    # para no pegarle a INPI con las dos cosas al mismo tiempo. Agregado
-    # el 29/09/2026: hasta ahora, un lead que quedaba con
-    # "sin email" (WAF bloqueó puntualmente la Grilla Digital o el PDF del
-    # Formulario) solo se podía reintentar a mano, acta por acta, con el
-    # botón "Reintentar" del panel.
-    - cron: "0 1,3,5,7,9,11,13,15,17,19,21,23 * * *"
+    # Una vez por noche, 08:10 UTC (05:10 ART, turno B), con tope de 60 min. No
+    # corre la madrugada del martes al miércoles (UTC miércoles): ahí el carril
+    # es de los boletines. Cada intento fallido de una acta duplica la espera
+    # hasta el próximo (1, 2, 4... máx. 48 h): ver reintentos_n en la base.
+    - cron: "10 8 * * 0,1,2,4,5,6"
   workflow_dispatch:
     inputs:
       limit:
         description: "Tope de leads a reintentar en esta corrida (dejar vacío = todos)"
         required: false
-        default: "200"
+        default: "300"
+      max_minutes:
+        description: "Minutos máximos de esta corrida (default 60)"
+        required: false
+        default: "60"
 
 permissions:
   contents: read
 
+# Un solo carril contra INPI: dos procesos que consultan INPI nunca corren a la
+# vez (INPI pidió una sola tanda, máx. 100 conexiones). Si hay uno corriendo, el
+# siguiente espera su turno. GitHub guarda UNA sola corrida en espera por grupo.
+concurrency:
+  group: inpi-lane
+  cancel-in-progress: false
+
 jobs:
   reintentar:
     runs-on: ubuntu-latest
+    timeout-minutes: 120
     env:
       # Alarma de bloqueo masivo de INPI (scripts/monitor_bloqueo.py)
       RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
@@ -43,22 +52,9 @@ jobs:
           cd scripts
           LIMIT="${{ inputs.limit }}"
           args=""
-          if [ -n "$LIMIT" ]; then args="--limit $LIMIT"; else args="--limit 200"; fi
+          if [ -n "$LIMIT" ]; then args="--limit $LIMIT"; else args="--limit 300"; fi
+          args="$args --max-minutes ${{ inputs.max_minutes || '60' }}"
           python3 reintentar_sin_email.py $args
-        env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL || secrets.DATABASE_PUBLIC_URL }}
-          PYTHONUNBUFFERED: "1"
-
-      # Respaldo del aviso por mail de los formularios para clientes
-      # (Clientes → Formularios): el panel lo manda al instante si tiene
-      # RESEND_API_KEY; si no pudo, sale acá. Va en un paso aparte para que
-      # un error de mail no marque como fallida la búsqueda de emails.
-      - name: Avisar formularios de clientes pendientes
-        if: always()
-        continue-on-error: true
-        run: |
-          cd scripts
-          python3 notificar_formularios.py
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL || secrets.DATABASE_PUBLIC_URL }}
           PYTHONUNBUFFERED: "1"

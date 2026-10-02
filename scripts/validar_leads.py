@@ -42,6 +42,8 @@ import time
 
 import requests
 
+import monitor_bloqueo
+
 BASE = "https://portaltramites.inpi.gob.ar"
 
 HEADERS = {
@@ -129,14 +131,20 @@ def crear_sesion() -> requests.Session:
     return s
 
 
-def _get_con_reintentos(fn, intentos: int = 3, espera: int = 3):
+def _get_con_reintentos(fn, intentos: int = 3, espera: int = 5):
+    """Reintenta ante errores de red/timeout con ESPERA PROGRESIVA (5 s, 10 s,
+    20 s...), como pidió INPI: nada de reintentos inmediatos en bucle. Los
+    bloqueos del WAF (respuesta 200 con "Web Page Blocked", 403, 429 o 503) no
+    llegan acá como excepción: los maneja monitor_bloqueo (espera progresiva en
+    el hook de la sesión + corte con bloqueos seguidos)."""
     ultimo_error = None
     for i in range(intentos):
         try:
             return fn()
         except requests.RequestException as e:
             ultimo_error = e
-            time.sleep(espera)
+            if i < intentos - 1:  # no esperar después del último intento
+                time.sleep(espera * (2 ** i))
     raise ultimo_error
 
 
@@ -811,13 +819,18 @@ def _agente_de_bloque(bloque_gestion: str) -> dict:
     return {"agente": agente, "matricula_agente": matricula}
 
 
-def revisar_acta(s: requests.Session, acta: str, timeout: int = 30) -> dict:
+def revisar_acta(s: requests.Session, acta: str, timeout: int = 30, html_previo: str | None = None) -> dict:
     """Devuelve {caracter, es_lead, email, email_apoderado, motivo_sin_email,
     fecha_publicacion, tuvo_oposicion, detalle_oposicion, estado_tramite,
     fecha_concesion, numero_disposicion, fecha_vencimiento_marca}. Si algo
     falla, devuelve es_lead=None para marcarlo como "no se pudo verificar"
     (en vez de asumir por defecto que es lead). motivo_sin_email queda
-    vacío cuando sí hay email o cuando no aplica (tiene apoderado)."""
+    vacío cuando sí hay email o cuando no aplica (tiene apoderado).
+
+    html_previo: si el que llama ya pidió la página del expediente
+    (/MarcasConsultas/Resultado) -- como hace el escaneo de actas con
+    existe_expediente --, se pasa acá y NO se vuelve a pedir a INPI (antes cada
+    acta encontrada por el escaneo costaba una consulta de más)."""
     resultado = {
         "caracter": None, "es_lead": None, "email": "", "email_apoderado": "",
         "motivo_sin_email": "", "fecha_publicacion": None,
@@ -838,21 +851,25 @@ def revisar_acta(s: requests.Session, acta: str, timeout: int = 30) -> dict:
         "agente_inpi": "", "matricula_agente_inpi": "",
     }
     try:
-        r = _get_con_reintentos(
-            lambda: s.post(
-                f"{BASE}/MarcasConsultas/Resultado",
-                headers={"Referer": f"{BASE}/MarcasConsultas/Grilla"},
-                data={"acta": acta},
-                timeout=timeout,
+        if html_previo is not None:
+            texto_pagina = html_previo
+        else:
+            r = _get_con_reintentos(
+                lambda: s.post(
+                    f"{BASE}/MarcasConsultas/Resultado",
+                    headers={"Referer": f"{BASE}/MarcasConsultas/Grilla"},
+                    data={"acta": acta},
+                    timeout=timeout,
+                )
             )
-        )
-        if "Web Page Blocked" in r.text or "Attack ID" in r.text:
+            texto_pagina = r.text
+        if "Web Page Blocked" in texto_pagina or "Attack ID" in texto_pagina:
             print(f"  acta {acta}: bloqueado por el WAF de INPI (no se pudo verificar)", file=sys.stderr)
             resultado["motivo_sin_email"] = "bloqueado por el WAF de INPI al consultar el expediente"
             return resultado
 
-        m_gestion = RE_GESTION.search(r.text)
-        bloque_gestion = m_gestion.group(1) if m_gestion else r.text  # fallback: buscar en toda la página
+        m_gestion = RE_GESTION.search(texto_pagina)
+        bloque_gestion = m_gestion.group(1) if m_gestion else texto_pagina  # fallback: buscar en toda la página
 
         m_caracter = RE_CARACTER_SPAN.search(bloque_gestion)
         if m_caracter:
@@ -870,7 +887,7 @@ def revisar_acta(s: requests.Session, acta: str, timeout: int = 30) -> dict:
         # no deben pisar la matrícula que ya venía del boletín
         resultado["agente_inpi"], resultado["matricula_agente_inpi"] = _ag["agente"], _ag["matricula_agente"]
 
-        m_cuit = RE_CUIT_SPAN.search(r.text)
+        m_cuit = RE_CUIT_SPAN.search(texto_pagina)
         if m_cuit:
             cuit_encontrado = re.sub(r"[^\d]", "", m_cuit.group(1))
             if len(cuit_encontrado) in (10, 11):
@@ -878,27 +895,27 @@ def revisar_acta(s: requests.Session, acta: str, timeout: int = 30) -> dict:
         # si no matchea o no parece un CUIT válido, no seteamos la clave: así
         # row.update(info) no pisa un cuit que ya venía de completar_mixtas.py
 
-        m_clase = RE_CLASE_SPAN.search(r.text)
+        m_clase = RE_CLASE_SPAN.search(texto_pagina)
         if m_clase:
             resultado["clase"] = int(m_clase.group(1))
 
         # Titular: primero de esta misma página (dato estructurado, más
         # confiable que el texto del PDF). El Formulario queda de respaldo.
-        resultado["titular_formulario"] = titular_de_pagina(r.text)
+        resultado["titular_formulario"] = titular_de_pagina(texto_pagina)
 
         # Denominación / tipo / fecha de presentación: también de esta
         # página (DATOS GENERALES), para leads y no-leads, con o sin email.
         # Antes salían SOLO del Formulario y SOLO si ese Formulario traía
         # EMAIL -> las marcas del escaneo directo sin email (o con un
         # Formulario sin DENOMINACION) quedaban como "(mixta/fig.)".
-        dg = datos_generales_de_pagina(r.text)
+        dg = datos_generales_de_pagina(texto_pagina)
         resultado["denominacion_formulario"] = dg["denominacion"]
         resultado["tipo_formulario"] = dg["tipo"]
         resultado["fecha_presentacion_formulario"] = dg["fecha_presentacion"]
 
         # RESOLUCIÓN está en esta misma página, para leads y no-leads por
         # igual — se guarda siempre, sin costo de un request extra.
-        resultado.update(parsear_resolucion(r.text))
+        resultado.update(parsear_resolucion(texto_pagina))
 
         if not resultado["es_lead"]:
             return resultado  # ya tiene apoderado/gestor, no hace falta el email
@@ -1067,13 +1084,16 @@ def main():
     s = crear_sesion()
     inicio = time.time()
     for i, row in enumerate(candidatas, 1):
-        if args.max_minutes and (time.time() - inicio) / 60 >= args.max_minutes:
+        sin_tiempo = bool(args.max_minutes) and (time.time() - inicio) / 60 >= args.max_minutes
+        if sin_tiempo or monitor_bloqueo.debe_cortar():
             pendientes = candidatas[i - 1:]
+            motivo = ("se agotó el tiempo de la corrida" if sin_tiempo
+                      else "INPI bloqueó consultas seguidas y se cortó la corrida")
             for r in pendientes:
-                r["motivo_sin_email"] = "sin verificar: se agotó el tiempo de la corrida (se reintenta sola)"
+                r["motivo_sin_email"] = f"sin verificar: {motivo} (se reintenta sola)"
                 r["lead_score"] = calcular_lead_score(r)
-            print(f"\nAVISO: se agotó el presupuesto de {args.max_minutes:g} min; quedan {len(pendientes)} "
-                  f"de {len(candidatas)} actas sin verificar (las retoma reintentar_sin_verificar).", flush=True)
+            print(f"\nAVISO: {motivo}; quedan {len(pendientes)} de {len(candidatas)} actas sin verificar "
+                  "(las retoma reintentar_sin_verificar).", flush=True)
             break
         info = revisar_acta(s, row["acta"])
         # Si INPI no devolvió la clase (bloqueo/error), no pisar la que ya

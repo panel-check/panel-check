@@ -27,6 +27,7 @@ import traceback
 
 import psycopg2
 
+import monitor_bloqueo
 from registro import registrar
 import psycopg2.extras
 
@@ -47,6 +48,7 @@ MARCAR_CON_AGENTE_SQL = """
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--limit", type=int, default=None, help="tope de actas a reintentar en esta corrida")
+    ap.add_argument("--max-minutes", type=float, default=None, help="tope de tiempo de la corrida; lo que falte queda para la próxima")
     ap.add_argument("--delay", type=float, default=2.0, help="segundos entre acta y acta")
     args = ap.parse_args()
 
@@ -67,13 +69,25 @@ def main():
             print(f"Marcadas 'con agente' por matrícula del boletín: {cur.rowcount}")
         conn.commit()
 
+        with conn.cursor() as cur:
+            # Contador de intentos: cada vez que una acta sigue sin resolverse,
+            # la espera hasta el próximo intento se duplica (1, 2, 4... hasta 48 h)
+            # para no insistir contra INPI con las mismas actas.
+            cur.execute("ALTER TABLE marcas ADD COLUMN IF NOT EXISTS reintentos_n INTEGER DEFAULT 0")
+            cur.execute("ALTER TABLE marcas ADD COLUMN IF NOT EXISTS reintento_ultimo_en TIMESTAMPTZ")
+        conn.commit()
+
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
             cur.execute(
                 """
                 SELECT acta, matricula_agente FROM marcas
                 WHERE es_lead IS NULL
                   AND TRIM(COALESCE(matricula_agente, '')) IN ('', 'Part.')
-                ORDER BY fecha_presentacion
+                  AND (reintento_ultimo_en IS NULL
+                       OR reintento_ultimo_en < now() - LEAST(
+                            interval '1 hour' * power(2, LEAST(COALESCE(reintentos_n, 0), 10)),
+                            interval '48 hours'))
+                ORDER BY COALESCE(reintentos_n, 0), fecha_presentacion
                 """
             )
             pendientes = cur.fetchall()
@@ -87,7 +101,14 @@ def main():
         resueltas_lead = 0
         siguen_sin_verificar = 0
 
+        inicio_corrida = time.time()
         for i, fila in enumerate(pendientes, 1):
+            if args.max_minutes and (time.time() - inicio_corrida) / 60 >= args.max_minutes:
+                print(f"Se llegó al tope de {args.max_minutes:g} minutos: el resto sigue en la próxima corrida.")
+                break
+            if monitor_bloqueo.debe_cortar():
+                print("Se corta la corrida por bloqueos seguidos de INPI: el resto sigue en la próxima.")
+                break
             acta = fila["acta"]
             info = revisar_acta(s, acta)
 
@@ -96,6 +117,10 @@ def main():
                 siguen_sin_verificar += 1
                 print(f"  [{i}/{len(pendientes)}] acta {acta}: sigue sin poder verificarse "
                       f"({info.get('motivo_sin_email') or 'sin detalle'})")
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "UPDATE marcas SET reintentos_n = COALESCE(reintentos_n, 0) + 1, "
+                        "reintento_ultimo_en = now() WHERE acta = %s", (acta,))
                 # commit "vacío" para cerrar la transacción del SELECT inicial
                 # aunque no haya cambios — ver revisar_estado.py para el
                 # motivo (incidente del 29/09/2026 en el manual).
