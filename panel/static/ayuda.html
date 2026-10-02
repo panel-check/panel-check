@@ -166,6 +166,22 @@
     header, .tabs, .imprimir { display: none !important; }
     #tab-manual { display: block !important; }
   }
+
+  /* Manual: agenda semanal por día */
+  .dias-tabs { display: flex; flex-wrap: wrap; gap: 6px; margin: 12px 0 10px; }
+  .dia-btn { appearance: none; border: 1px solid var(--borde); background: #fff; border-radius: 16px; padding: 6px 14px; font-size: 13px; font-weight: 600; color: var(--gris); cursor: pointer; }
+  .dia-btn:hover { color: var(--azul); border-color: var(--azul); }
+  .dia-btn.activo { background: var(--azul); border-color: var(--azul); color: #fff; }
+  .dia-btn.hoy::after { content: " •"; }
+  .agenda-dia { list-style: none; margin: 0; padding: 0; border-left: 2px solid var(--borde); }
+  .agenda-dia li { display: flex; gap: 12px; padding: 8px 0 8px 14px; position: relative; font-size: 13px; line-height: 1.45; }
+  .agenda-dia li::before { content: ""; position: absolute; left: -6px; top: 14px; width: 10px; height: 10px; border-radius: 50%; background: var(--azul); }
+  .agenda-dia li.sin-inpi::before { background: #9aa3b2; }
+  .agenda-dia li.especial::before { background: #d4a017; }
+  .agenda-dia .hora { flex: 0 0 52px; font-weight: 700; color: #1f2430; font-variant-numeric: tabular-nums; }
+  .agenda-dia .que strong { display: block; }
+  .agenda-dia .que span { color: var(--gris); }
+  .agenda-nota { font-size: 12px; color: var(--gris); margin: 10px 0 0; }
 </style>
 <script src="/static/sesion.js" defer></script>
 <script src="/static/menu.js" defer></script>
@@ -565,12 +581,12 @@ le asigna un puntaje de prioridad. Después sigue a cada marca a lo largo del ti
         <h2>Procesos automáticos</h2>
         <p>Corren solos en GitHub Actions, sin que nadie tenga que hacer nada. Horarios en hora de Argentina.</p>
         <p><strong>Un solo carril hacia INPI.</strong> INPI pidió limitar las consultas (máximo 100 conexiones, esperas crecientes ante un bloqueo, trabajo masivo de noche). Por eso todos los procesos que consultan INPI comparten un único carril: si uno está corriendo, el siguiente espera su turno y nunca corren dos a la vez. GitHub arranca los horarios con unos 15 minutos de demora y, si hay un proceso corriendo y ya hay otro esperando, descarta el tercero (se retoma en la próxima corrida, porque todos los procesos son repetibles). El día se organiza así:</p>
-        <ul>
-          <li><strong>Turno A, desde las 19:35:</strong> escaneo de actas (hasta 150 min) → oposiciones (22:00) → seguimiento de cartera (22:35) → completar sin verificar (23:05). La noche del martes el turno A se recorta (escaneo de 120 min, sin "sin verificar") para dejar libre el carril a las 0:05.</li>
-          <li><strong>Madrugada del miércoles, 0:05 a 8:00:</strong> solo los boletines, uno por vez. No corre ningún otro proceso de INPI.</li>
-          <li><strong>Turno B, desde la 1:35</strong> (todas las demás noches): revisión de boletín pendiente → escaneo de actas (150 min) → concesiones (lunes) → completar sin email (5:10) → completar sin nombre (5:50).</li>
-          <li><strong>De día:</strong> avisos por mail a las 7:30 y un sondeo corto del escaneo (15 min) a las 10:05 y a las 16:05.</li>
-        </ul>
+        <h3 style="font-size:14px;color:#1f2430;margin:16px 0 0;">Qué corre cada día, hora por hora</h3>
+        <p style="font-size:12px;color:#6b7280;margin:4px 0 0;">Elegí un día. Punto azul: consulta INPI (usa el carril). Punto gris: no consulta INPI. Punto dorado: especial de ese día. Las horas son las programadas; GitHub suele arrancar unos 15 minutos después.</p>
+        <div class="dias-tabs" id="dias-tabs"></div>
+        <ul class="agenda-dia" id="agenda-dia"></ul>
+        <p class="agenda-nota" id="agenda-nota"></p>
+        <p class="agenda-nota">Además, todos los días a cada hora en punto: <em>Panel actualizado</em> (controla que el panel tenga la última versión). Y a mano, cuando quieras: <em>Oposiciones: puesta al día</em> (de noche, nunca entre el martes 19:35 y el miércoles 8:00).</p>
         <p>La pantalla <strong>Automatizaciones → Crons</strong> los muestra agrupados por lo que hacen para el equipo:</p>
         <ul>
           <li>Arriba, una <strong>franja de estado</strong>: verde si todo funciona; amarilla o roja si algún proceso
@@ -895,6 +911,55 @@ if (hashInicial && !["#manual", "#ayuda"].includes(hashInicial)) {
   const destino = document.getElementById(hashInicial.slice(1));
   if (destino) destino.scrollIntoView();
 }
+
+// ---- Manual: agenda por día (hora Argentina). dias: 0=Dom ... 6=Sáb ----
+(function () {
+  const TODOS = [0, 1, 2, 3, 4, 5, 6], SIN_MIE = [0, 1, 2, 4, 5, 6];
+  const NOMBRES = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"];
+  const EV = [
+    { h: "00:05", dias: [3], t: "Boletines nuevos, de a uno", d: "Espera que INPI publique (sale a las 0:00), y procesa los boletines nuevos en cadena: cada uno recibe una parte del tiempo que queda hasta las 8:00. Es lo único de INPI que corre esta madrugada.", tipo: "especial" },
+    { h: "00:20", dias: TODOS, t: "Vigilancia marcaria", d: "Compara las solicitudes nuevas con las marcas de los clientes y crea alertas.", tipo: "sin-inpi" },
+    { h: "01:35", dias: SIN_MIE, t: "Revisión de boletín pendiente", d: "Red de seguridad: si quedó algún boletín reciente sin cargar, lo procesa. Si no hay, termina en segundos.", tipo: "" },
+    { h: "01:40", dias: SIN_MIE, t: "Escaneo de actas (turno B)", d: "Hasta 150 minutos probando los números de acta siguientes al último encontrado.", tipo: "" },
+    { h: "04:20", dias: [1], t: "Concesiones y vencimientos", d: "Revisa si INPI concedió o denegó marcas sin resolución (hasta 30 min).", tipo: "especial" },
+    { h: "05:10", dias: SIN_MIE, t: "Completar: sin email", d: "Reintenta conseguir el email de los leads que lo tienen pendiente (hasta 60 min).", tipo: "" },
+    { h: "05:50", dias: SIN_MIE, t: "Completar: sin nombre", d: "Busca el nombre de las marcas Mixtas/Figurativas pendientes (hasta 20 min).", tipo: "" },
+    { h: "06:20", dias: TODOS, t: "Vigilancia marcaria", d: "Segunda pasada del día.", tipo: "sin-inpi" },
+    { h: "07:30", dias: TODOS, t: "Avisos por mail", d: "Oposiciones y vistas nuevas, cartera y vigilancia, y formularios de clientes.", tipo: "sin-inpi" },
+    { h: "08:00", dias: [3], t: "Tope de la cadena de boletines", d: "Aunque algún boletín no haya terminado de verificar sus leads, queda cargado; lo que falta se retoma de noche.", tipo: "especial" },
+    { h: "10:05", dias: TODOS, t: "Sondeo del escaneo de actas", d: "15 minutos para que no se acumule atraso durante el día.", tipo: "" },
+    { h: "12:20", dias: TODOS, t: "Vigilancia marcaria", d: "Tercera pasada del día.", tipo: "sin-inpi" },
+    { h: "16:05", dias: TODOS, t: "Sondeo del escaneo de actas", d: "15 minutos.", tipo: "" },
+    { h: "19:35", dias: [0, 1, 3, 4, 5, 6], t: "Escaneo de actas (turno A)", d: "Hasta 150 minutos.", tipo: "" },
+    { h: "19:35", dias: [2], t: "Escaneo de actas (turno A, recortado)", d: "120 minutos, para dejar libre el carril a las 0:05 del miércoles.", tipo: "especial" },
+    { h: "22:00", dias: TODOS, t: "Oposiciones y vistas", d: "Revisa a los leads en sus hitos de 10, 23 y 33 días, y rechequea los que tienen oposición (hasta 30 min).", tipo: "" },
+    { h: "22:35", dias: TODOS, t: "Seguimiento de la cartera", d: "Vuelve a leer en INPI los expedientes de las marcas de clientes (hasta 15 min).", tipo: "" },
+    { h: "23:05", dias: [0, 1, 3, 4, 5, 6], t: "Completar: sin verificar", d: "Reintenta confirmar las marcas que quedaron sin verificar (hasta 60 min).", tipo: "" },
+  ];
+  const NOTAS = {
+    2: "El martes a la noche el carril se despeja a propósito: no corre «sin verificar» y el escaneo se acorta, para que los boletines arranquen a las 0:05 sin cola.",
+    3: "El miércoles de madrugada no corren el turno B ni los «Completar»: la prioridad es tener todos los boletines cargados a las 8:00.",
+    1: "El lunes, además, se revisan las concesiones y vencimientos.",
+  };
+  const tabs = document.getElementById("dias-tabs"), lista = document.getElementById("agenda-dia"), nota = document.getElementById("agenda-nota");
+  if (!tabs) return;
+  const hoy = new Date(new Date().toLocaleString("en-US", { timeZone: "America/Argentina/Buenos_Aires" })).getDay();
+  function mostrar(d) {
+    tabs.querySelectorAll(".dia-btn").forEach(b => b.classList.toggle("activo", +b.dataset.d === d));
+    lista.innerHTML = EV.filter(e => e.dias.includes(d)).sort((a, b) => a.h.localeCompare(b.h)).map(e =>
+      `<li class="${e.tipo}"><span class="hora">${e.h}</span><span class="que"><strong>${e.t}</strong><span>${e.d}</span></span></li>`).join("");
+    nota.textContent = NOTAS[d] || "";
+  }
+  [1, 2, 3, 4, 5, 6, 0].forEach(d => {
+    const b = document.createElement("button");
+    b.type = "button"; b.dataset.d = d;
+    b.className = "dia-btn" + (d === hoy ? " hoy" : "");
+    b.textContent = NOMBRES[d];
+    b.addEventListener("click", () => mostrar(d));
+    tabs.appendChild(b);
+  });
+  mostrar(hoy);
+})();
 </script>
 
 </body>
