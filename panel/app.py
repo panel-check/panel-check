@@ -971,12 +971,14 @@ def listar_marcas(
         # (fechaPublicacionOFallback en comun.js): fecha_publicacion cuando
         # ya se verificó, si no fecha_presentacion — filtrar solo por
         # fecha_publicacion dejaría afuera filas que el panel sí muestra
-        # como dentro del rango, por el fallback.
+        # como dentro del rango, por el fallback. Las marcas pre-boletín
+        # (boletin IS NULL) no tienen "Fecha Boletín" y quedan fuera del rango.
+        fecha_boletin_sql = "(CASE WHEN boletin IS NULL THEN NULL ELSE COALESCE(fecha_publicacion, fecha_presentacion) END)"
         if fecha_desde:
-            condiciones.append("COALESCE(fecha_publicacion, fecha_presentacion) >= %s")
+            condiciones.append(f"{fecha_boletin_sql} >= %s")
             valores.append(fecha_desde)
         if fecha_hasta:
-            condiciones.append("COALESCE(fecha_publicacion, fecha_presentacion) <= %s")
+            condiciones.append(f"{fecha_boletin_sql} <= %s")
             valores.append(fecha_hasta)
     if tiene_email is not None:
         # Filtro "Avanzado": marcas a las que todavía no se les encontró

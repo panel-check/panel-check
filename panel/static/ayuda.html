@@ -245,8 +245,8 @@
     </ul>
 
     <h2>🆕 Pre-boletín</h2>
-    <p>Son marcas encontradas por el <strong>escaneo de actas nuevas</strong>: INPI numera cada solicitud el día que se presenta, y el sistema prueba esos números 3 veces por día, semanas antes de que la marca salga en un boletín. Solo se guardan las que no tienen agente (leads). Como todavía no se publicaron, no tienen número de boletín; para verlas juntas, elegí <strong>🆕 Pre-boletín</strong> en el filtro Boletín.</p>
-    <p>Cuando la marca sale en su boletín, deja de ser pre-boletín y se completa con los datos del boletín, sin duplicarse. Las oposiciones se empiezan a revisar recién desde esa publicación.</p>
+    <p>Son marcas encontradas por el <strong>escaneo de actas nuevas</strong>: INPI numera cada solicitud el día que se presenta, y el sistema prueba esos números 3 veces por día, semanas antes de que la marca salga en un boletín. Solo se guardan las que no tienen agente (leads). Como todavía no se publicaron, no tienen número de boletín ni "Fecha Boletín" (esa columna queda vacía); para verlas juntas, elegí <strong>🆕 Pre-boletín</strong> en el filtro Boletín.</p>
+    <p>Cuando la marca sale en su boletín, deja de ser pre-boletín y se completa con los datos del boletín (ahí recién aparece la Fecha Boletín), sin duplicarse. Las oposiciones se empiezan a revisar recién desde esa publicación.</p>
 
     <h2>"(nombre pendiente)" y "(figurativa, sin texto)"</h2>
     <p>En el boletín, las marcas <strong>Mixtas</strong> y <strong>Figurativas</strong> no traen el nombre escrito (es un logo), y en el escaneo de actas nuevas el nombre tampoco siempre está en el Formulario. El sistema lo busca primero en la ficha del expediente de INPI (sección DATOS GENERALES) y, si no está, en el webservice de INPI por CUIT.</p>
@@ -304,7 +304,7 @@
     <p>Importante: solo cuenta una vista/oposición fechada en o después de la publicación vigente en el boletín. Una vista vieja, de una presentación anterior ya resuelta, no se muestra — no es una alerta nueva.</p>
 
     <h2>Estado del trámite y fechas</h2>
-    <p>Cuando INPI ya resolvió una marca, aparece el badge <strong>✓ CONCEDIDA</strong> (o DENEGADA) en el detalle por titular, con la fecha de concesión y de vencimiento en el tooltip. La columna "Fecha Boletín" es siempre la fecha de publicación (la que cuenta para el plazo de oposición); "Fecha Concedida" es un dato aparte, que solo se completa una vez que INPI resuelve.</p>
+    <p>Cuando INPI ya resolvió una marca, aparece el badge <strong>✓ CONCEDIDA</strong> (o DENEGADA) en el detalle por titular, con la fecha de concesión y de vencimiento en el tooltip. La columna "Fecha Boletín" es la fecha de publicación (la que cuenta para el plazo de oposición) y <strong>queda vacía en las marcas pre-boletín</strong>: la fecha aparece recién cuando la marca sale en un boletín y se actualiza; "Fecha Concedida" es un dato aparte, que solo se completa una vez que INPI resuelve.</p>
 
     <h2>Contactado</h2>
     <p>Es un estado propio del panel — el pipeline que carga los boletines nunca lo toca. Queda con la fecha en que se marcó. Ahora va de la mano con el <strong>CRM</strong>:</p>

@@ -264,6 +264,10 @@ function badgeEstadoTramite(row, mostrarSinDato = false) {
 }
 
 function fechaPublicacionOFallback(r) {
+  // Pre-boletín (todavía sin número de boletín): la marca no se publicó, así
+  // que "Fecha Boletín" queda vacía. La fecha recién aparece cuando la marca
+  // sale en un boletín y la fila se actualiza.
+  if (!r.boletin) return "";
   // Preferimos fecha_publicacion (la real, de "Hoja Publicacion" en Grilla
   // Digital) — solo la tienen los leads ya verificados. Para el resto (sin
   // verificar, o con agente) no se scrapea Grilla Digital, así que mostramos
