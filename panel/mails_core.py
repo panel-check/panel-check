@@ -134,7 +134,7 @@ Desde Smarties Consultora puedo ayudarte a:
 
 Si querés avanzar, podés escribirme directamente desde este botón:
 
-[Quiero asesorarme sobre la oposición a mi marca](https://wa.me/""" + WHATSAPP_PAMELA + """?text=Hola Pamela, recibí tu mail sobre la oposición a mi marca {{marca}}, acta {{acta}}, y quiero asesorarme.)
+[Quiero asesorarme sobre la oposición a mi marca](https://wa.me/""" + WHATSAPP_PAMELA + """?text=Hola, me contacto desde la marca {{marca}}, mi nombre es )
 
 Saludos cordiales,
 Pamela Guzzardi
