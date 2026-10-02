@@ -353,6 +353,9 @@ ALTER TABLE clientes ADD COLUMN IF NOT EXISTS conyuge_dni TEXT;
 ALTER TABLE clientes ADD COLUMN IF NOT EXISTS firmante_nombre TEXT;
 ALTER TABLE clientes ADD COLUMN IF NOT EXISTS firmante_cargo TEXT;
 
+-- Referido: quién refirió al cliente (agencia de marketing, diseñador, etc.), se muestra como tag
+ALTER TABLE clientes ADD COLUMN IF NOT EXISTS referido TEXT;
+
 CREATE TABLE IF NOT EXISTS formularios_respuestas (
     id                SERIAL PRIMARY KEY,
     formulario        TEXT NOT NULL,           -- persona-fisica | persona-juridica

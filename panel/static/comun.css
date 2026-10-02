@@ -958,6 +958,7 @@ tr.crm-fila:hover { background: var(--azul-claro); }
 .cl-tag.aviso { background: #fff3cd; color: #92720d; }
 .cl-tag.mal { background: #fdecea; color: var(--rojo); }
 .cl-tag.azul { background: var(--azul-claro); color: var(--azul); }
+.cl-tag.ref { background: #f1e8fb; color: #6b3fa0; }
 .modal-caja.modal-cliente { max-width: 980px; width: 100%; }
 .cl-ficha h3 { margin: 0 0 4px; font-size: 18px; }
 .cl-ficha h4 { margin: 20px 0 8px; font-size: 13px; color: #374151; text-transform: uppercase; letter-spacing: .04em; }

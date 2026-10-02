@@ -50,6 +50,7 @@ class ClienteNuevo(BaseModel):
     conyuge_dni: Optional[str] = None
     firmante_nombre: Optional[str] = None
     firmante_cargo: Optional[str] = None
+    referido: Optional[str] = None
 
 
 class ClienteCambios(BaseModel):
@@ -75,6 +76,7 @@ class ClienteCambios(BaseModel):
     conyuge_dni: Optional[str] = None
     firmante_nombre: Optional[str] = None
     firmante_cargo: Optional[str] = None
+    referido: Optional[str] = None
 
 
 class ActaNueva(BaseModel):
@@ -176,17 +178,31 @@ def crear_router(verificar_login, conexion, crm) -> APIRouter:
     def rcur(conn):
         return conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
+    def _referidos(cur):
+        """Nombres de referido ya usados (para autocompletar y filtrar), sin repetir por mayúsculas."""
+        cur.execute("SELECT referido, COUNT(*) AS clientes FROM clientes WHERE COALESCE(referido, '') <> '' "
+                    "GROUP BY referido ORDER BY lower(referido)")
+        vistos, out = set(), []
+        for f in cur.fetchall():
+            if f["referido"].lower() not in vistos:
+                vistos.add(f["referido"].lower()); out.append(f["referido"])
+        return out
+
     # ── Todas las marcas de la cartera (vista plana) ──────────────────
     @router.get("/api/cartera/marcas")
     def listar_marcas_cartera(q: str = "", cliente_id: Optional[int] = None, estado: str = "",
                               clase: Optional[int] = None, con_oposicion: bool = False, sin_vigilar: bool = False,
-                              alertas: bool = False, vence_dias: Optional[int] = None,
+                              alertas: bool = False, vence_dias: Optional[int] = None, referido: str = "",
                               _: str = Depends(verificar_login)):
         cond, val = ["c.activo"], []
         if q.strip():
             like = f"%{q.strip()}%"
-            cond.append("(cm.acta = %s OR cm.denominacion ILIKE %s OR cm.titular ILIKE %s OR c.nombre ILIKE %s OR cm.terminos_vigilancia ILIKE %s)")
-            val += [q.strip(), like, like, like, like]
+            cond.append("(cm.acta = %s OR cm.denominacion ILIKE %s OR cm.titular ILIKE %s OR c.nombre ILIKE %s OR cm.terminos_vigilancia ILIKE %s OR c.referido ILIKE %s)")
+            val += [q.strip(), like, like, like, like, like]
+        if referido == "__sin__":
+            cond.append("COALESCE(c.referido, '') = ''")
+        elif referido.strip():
+            cond.append("lower(c.referido) = lower(%s)"); val.append(referido.strip())
         if cliente_id:
             cond.append("cm.cliente_id = %s"); val.append(cliente_id)
         if clase:
@@ -212,7 +228,7 @@ def crear_router(verificar_login, conexion, crm) -> APIRouter:
             with rcur(conn) as cur:
                 cur.execute(
                     f"""
-                    SELECT cm.acta, cm.cliente_id, c.nombre AS cliente_nombre, cm.denominacion, cm.tipo, cm.clase,
+                    SELECT cm.acta, cm.cliente_id, c.nombre AS cliente_nombre, c.referido AS cliente_referido, cm.denominacion, cm.tipo, cm.clase,
                            cm.titular, cm.estado_tramite, cm.fecha_presentacion, cm.fecha_concesion,
                            cm.fecha_vencimiento_marca, cm.tuvo_oposicion, cm.agente, cm.matricula_agente,
                            cm.vigilar, cm.vigilar_todas_clases, cm.terminos_vigilancia, cm.consultado_en,
@@ -226,7 +242,8 @@ def crear_router(verificar_login, conexion, crm) -> APIRouter:
                     """,
                     val,
                 )
-                return {"marcas": cur.fetchall()}
+                marcas = cur.fetchall()
+                return {"marcas": marcas, "referidos": _referidos(cur)}
 
     # ── Resumen (chips de arriba) ─────────────────────────────────────
     @router.get("/api/cartera/resumen")
@@ -259,7 +276,7 @@ def crear_router(verificar_login, conexion, crm) -> APIRouter:
 
     # ── Clientes ──────────────────────────────────────────────────────
     @router.get("/api/clientes")
-    def listar_clientes(q: str = "", activos: bool = True, _: str = Depends(verificar_login)):
+    def listar_clientes(q: str = "", activos: bool = True, referido: str = "", _: str = Depends(verificar_login)):
         cond, val = [], []
         if activos:
             cond.append("c.activo")
@@ -268,6 +285,13 @@ def crear_router(verificar_login, conexion, crm) -> APIRouter:
                         "SELECT 1 FROM cartera_marcas m WHERE m.cliente_id = c.id AND (m.acta = %s OR m.denominacion ILIKE %s)))")
             like = f"%{q.strip()}%"
             val += [like, like, like, q.strip(), like]
+        if q.strip():
+            cond[-1] = cond[-1][:-1] + " OR c.referido ILIKE %s)"
+            val.append(like)
+        if referido == "__sin__":
+            cond.append("COALESCE(c.referido, '') = ''")
+        elif referido.strip():
+            cond.append("lower(c.referido) = lower(%s)"); val.append(referido.strip())
         donde = ("WHERE " + " AND ".join(cond)) if cond else ""
         with nueva_conexion() as conn:
             with rcur(conn) as cur:
@@ -288,7 +312,8 @@ def crear_router(verificar_login, conexion, crm) -> APIRouter:
                     """,
                     val,
                 )
-                return {"clientes": cur.fetchall(), "origenes": cartera.ORIGENES_CLIENTE}
+                clientes = cur.fetchall()
+                return {"clientes": clientes, "origenes": cartera.ORIGENES_CLIENTE, "referidos": _referidos(cur)}
 
     def _campos_cliente(body, parcial=False):
         enviados = body.model_fields_set if parcial else None
@@ -309,7 +334,7 @@ def crear_router(verificar_login, conexion, crm) -> APIRouter:
             if email and "@" not in email:
                 raise HTTPException(status_code=400, detail="El email no parece válido")
             out["email"] = email
-        for k, largo in (("telefono", 60), ("contacto", 200), ("notas", 4000)) + tuple(
+        for k, largo in (("telefono", 60), ("contacto", 200), ("notas", 4000), ("referido", 120)) + tuple(
                 (c, 300) for c in formularios_core.COLUMNAS_CLIENTE_NUEVAS if c != "tipo_persona"):
             if hay(k):
                 out[k] = _limpio(getattr(body, k), largo)
@@ -434,6 +459,7 @@ def crear_router(verificar_login, conexion, crm) -> APIRouter:
                 )
                 novedades = cur.fetchall()
                 alertas = _alertas(cur, {"cliente_id": cliente_id}, limite=200)
+                referidos = _referidos(cur)
                 formularios = formularios_api.respuestas_de(cur, "cliente_id = %s", (cliente_id,))
                 cur.execute("SELECT id, datos, generado_por, generado_en FROM poderes_generados WHERE cliente_id = %s "
                             "ORDER BY generado_en DESC LIMIT 20", (cliente_id,))
@@ -447,7 +473,7 @@ def crear_router(verificar_login, conexion, crm) -> APIRouter:
         plazos.sort(key=lambda p: p["fecha"])
         return {"cliente": cliente, "marcas": marcas, "novedades": novedades, "alertas": alertas,
                 "plazos": plazos, "formularios": formularios, "poderes": poderes_cli, "tipos_persona": formularios_core.TIPO_LEGIBLE,
-                "origenes": cartera.ORIGENES_CLIENTE, "estados_alerta": cartera.ESTADOS_ALERTA}
+                "origenes": cartera.ORIGENES_CLIENTE, "estados_alerta": cartera.ESTADOS_ALERTA, "referidos": referidos}
 
     @router.put("/api/clientes/{cliente_id}")
     def actualizar_cliente(cliente_id: int, body: ClienteCambios, usuario: str = Depends(verificar_login)):

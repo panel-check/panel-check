@@ -24,6 +24,16 @@ function tagNivel(n) {
   return `<span class="cl-tag ${clase}">${esc((n || "").toUpperCase())}</span>`;
 }
 
+function llenarSelectReferidos(sel, lista, actual) {
+  sel.innerHTML = '<option value="">Todos</option><option value="__sin__">Sin referido</option>' +
+    lista.map(r => `<option value="${esc(r)}">${esc(r)}</option>`).join("");
+  sel.value = [...sel.options].some(o => o.value === actual) ? actual : "";
+}
+
+function tagReferido(r) {
+  return r ? `<span class="cl-tag ref" title="Referido por ${esc(r)}">🤝 ${esc(r)}</span>` : "";
+}
+
 function tagEstadoMarca(m) {
   if (m.estado_tramite === "Concedida") return '<span class="cl-tag ok">Concedida</span>';
   if (m.estado_tramite === "Denegada") return '<span class="cl-tag mal">Denegada</span>';
@@ -78,6 +88,7 @@ async function pintarClientes() {
       <div class="cl-vista">
         <div class="cl-barra">
           <label>Buscar<input type="search" id="cl-q" placeholder="cliente, CUIT, email, marca o acta…" style="min-width:280px"></label>
+          <label>Referido<select id="cl-referido"><option value="">Todos</option></select></label>
           <label class="check" style="flex-direction:row;align-items:center;gap:6px"><input type="checkbox" id="cl-inactivos"> Incluir inactivos</label>
           <button type="button" class="cl-btn" id="cl-nuevo">+ Nuevo cliente</button>
         </div>
@@ -86,13 +97,16 @@ async function pintarClientes() {
     let t;
     $("cl-q").addEventListener("input", () => { clearTimeout(t); t = setTimeout(pintarClientes, 250); });
     $("cl-inactivos").addEventListener("change", pintarClientes);
+    $("cl-referido").addEventListener("change", pintarClientes);
     $("cl-nuevo").addEventListener("click", () => abrirModalNuevoCliente());
   }
   const q = $("cl-q").value.trim();
   const tabla = $("cl-tabla");
   try {
-    const r = await api(`/api/clientes?q=${encodeURIComponent(q)}&activos=${$("cl-inactivos").checked ? "false" : "true"}`);
-    est.clientes = r.clientes; est.origenes = r.origenes;
+    const ref = $("cl-referido").value;
+    const r = await api(`/api/clientes?q=${encodeURIComponent(q)}&activos=${$("cl-inactivos").checked ? "false" : "true"}&referido=${encodeURIComponent(ref)}`);
+    est.clientes = r.clientes; est.origenes = r.origenes; est.referidos = r.referidos || [];
+    llenarSelectReferidos($("cl-referido"), est.referidos, ref);
     if (!r.clientes.length) {
       tabla.innerHTML = `<p class="vacio">${q ? "Ningún cliente coincide con la búsqueda." : "Todavía no cargaste clientes. Usá «+ Nuevo cliente», o convertí un lead desde su ficha del CRM."}</p>`;
       return;
@@ -100,7 +114,7 @@ async function pintarClientes() {
     tabla.innerHTML = `<table class="cl-tabla"><thead><tr>
         <th>Cliente</th><th>CUIT</th><th>Marcas</th><th>Vigilancia</th><th>Alertas</th><th>Próx. vencimiento</th><th>Origen</th></tr></thead><tbody>
       ${r.clientes.map(c => `<tr class="cl-click ${c.activo ? "" : "cl-inactivo"}" data-id="${c.id}">
-        <td><strong>${esc(c.nombre)}</strong>${c.activo ? "" : ' <span class="cl-tag">inactivo</span>'}<br><small class="crm-gris">${esc(c.email || "")}</small></td>
+        <td><strong>${esc(c.nombre)}</strong>${c.activo ? "" : ' <span class="cl-tag">inactivo</span>'}${c.referido ? " " + tagReferido(c.referido) : ""}<br><small class="crm-gris">${esc(c.email || "")}</small></td>
         <td>${esc(c.cuit || "—")}</td>
         <td>${c.marcas}${c.con_oposicion ? ` <span class="cl-tag aviso" title="Marcas con oposición o vista">⚖ ${c.con_oposicion}</span>` : ""}${c.sin_consultar ? ` <span class="cl-tag" title="Pendientes de consultar en INPI">⏳ ${c.sin_consultar}</span>` : ""}</td>
         <td>${c.vigilancia_contratada ? '<span class="cl-tag ok">Contratada</span>' : '<span class="cl-tag">Interna</span>'}</td>
@@ -125,6 +139,7 @@ async function pintarMarcas() {
         <div class="cl-barra">
           <label>Buscar<input type="search" id="mk-q" placeholder="marca, acta, titular o cliente…" style="min-width:240px"></label>
           <label>Cliente<select id="mk-cliente"><option value="">Todos</option>${est.clientes.map(c => `<option value="${c.id}">${esc(c.nombre)}</option>`).join("")}</select></label>
+          <label>Referido<select id="mk-referido"><option value="">Todos</option></select></label>
           <label>Estado<select id="mk-estado"><option value="">Todos</option><option value="en_tramite">En trámite</option><option value="concedida">Concedida</option><option value="denegada">Denegada</option><option value="pendiente">Pendiente de consultar</option></select></label>
           <label>Clase<input type="number" id="mk-clase" min="1" max="45" style="width:80px"></label>
           <label>Vence en<select id="mk-vence"><option value="">—</option><option value="90">90 días</option><option value="180">6 meses</option><option value="365">1 año</option></select></label>
@@ -136,11 +151,12 @@ async function pintarMarcas() {
       </div>`;
     let t;
     $("mk-q").addEventListener("input", () => { clearTimeout(t); t = setTimeout(pintarMarcas, 250); });
-    ["mk-cliente", "mk-estado", "mk-clase", "mk-vence", "mk-opo", "mk-alertas", "mk-sinvig"].forEach(id => $(id).addEventListener("change", pintarMarcas));
+    ["mk-cliente", "mk-referido", "mk-estado", "mk-clase", "mk-vence", "mk-opo", "mk-alertas", "mk-sinvig"].forEach(id => $(id).addEventListener("change", pintarMarcas));
   }
   const p = new URLSearchParams();
   if ($("mk-q").value.trim()) p.set("q", $("mk-q").value.trim());
   if ($("mk-cliente").value) p.set("cliente_id", $("mk-cliente").value);
+  if ($("mk-referido").value) p.set("referido", $("mk-referido").value);
   if ($("mk-estado").value) p.set("estado", $("mk-estado").value);
   if ($("mk-clase").value) p.set("clase", $("mk-clase").value);
   if ($("mk-vence").value) p.set("vence_dias", $("mk-vence").value);
@@ -150,6 +166,7 @@ async function pintarMarcas() {
   const tabla = $("mk-tabla");
   try {
     const r = await api(`/api/cartera/marcas?${p}`);
+    llenarSelectReferidos($("mk-referido"), r.referidos || [], $("mk-referido").value);
     if (!r.marcas.length) { tabla.innerHTML = '<p class="vacio">No hay marcas con estos filtros.</p>'; return; }
     tabla.innerHTML = `<div style="overflow-x:auto"><table class="cl-tabla"><thead><tr>
         <th>Marca</th><th>Clase</th><th>Acta</th><th>Cliente</th><th>Estado</th><th>Vence</th><th>Agente</th><th>Vigilancia</th></tr></thead><tbody>
@@ -159,7 +176,7 @@ async function pintarMarcas() {
           ${m.tuvo_oposicion && !["Concedida", "Denegada"].includes(m.estado_tramite) ? '<br><span class="cl-tag aviso">⚖ oposición / vista</span>' : ""}</td>
         <td>${esc(m.clase ?? "")}</td>
         <td><a class="link-acta" href="javascript:void(0)" data-abrir="${esc(m.acta)}">${esc(m.acta)} ↗</a></td>
-        <td>${esc(m.cliente_nombre)}</td>
+        <td>${esc(m.cliente_nombre)}${m.cliente_referido ? "<br>" + tagReferido(m.cliente_referido) : ""}</td>
         <td>${tagEstadoMarca(m)}</td>
         <td>${m.fecha_vencimiento_marca ? crmFecha(m.fecha_vencimiento_marca) : "—"}</td>
         <td><small>${esc(m.agente || (m.matricula_agente ? "matrícula " + m.matricula_agente : "—"))}</small></td>
@@ -185,6 +202,8 @@ function camposClienteHtml(c = {}) {
     <label>Teléfono<input name="telefono" value="${esc(c.telefono || "")}"></label>
     <label>Persona de contacto<input name="contacto" value="${esc(c.contacto || "")}"></label>
     <label>Origen<select name="origen">${origenes}</select></label>
+    <label>Referido por<input name="referido" list="lista-referidos" value="${esc(c.referido || "")}" placeholder="agencia de marketing, diseñador…" maxlength="120" autocomplete="off"></label>
+    <datalist id="lista-referidos">${(est.referidos || []).map(r => `<option value="${esc(r)}">`).join("")}</datalist>
     <label>Tipo de persona<select name="tipo_persona"><option value="">—</option>${Object.entries(est.tiposPersona).map(([k, v]) => `<option value="${k}" ${k === c.tipo_persona ? "selected" : ""}>${esc(v)}</option>`).join("")}</select></label>
     <label class="check"><input type="checkbox" name="vigilancia_contratada" ${c.vigilancia_contratada ? "checked" : ""}> Tiene contratada la vigilancia (se le cobra y se le manda el informe)</label>
     <details class="cl-mas ancho" ${CAMPOS_EXTRA.some(([k]) => c[k]) ? "open" : ""}><summary>Datos para el trámite (DNI, domicilio, estado civil…)</summary>
@@ -206,6 +225,7 @@ function leerCampos(form, conActivo = false) {
     nombre: f.nombre.value.trim(), cuit: f.cuit.value.trim() || null, email: f.email.value.trim() || null,
     telefono: f.telefono.value.trim() || null, contacto: f.contacto.value.trim() || null,
     origen: f.origen.value, notas: f.notas.value.trim() || null,
+    referido: f.referido.value.trim() || null,
     vigilancia_contratada: f.vigilancia_contratada.checked,
     tipo_persona: f.tipo_persona.value || null,
   };
@@ -215,9 +235,9 @@ function leerCampos(form, conActivo = false) {
 }
 
 async function asegurarOrigenes() {
-  if (!Object.keys(est.origenes).length) {
+  if (!Object.keys(est.origenes).length || !est.referidos) {
     const r = await api("/api/clientes?activos=true");
-    est.origenes = r.origenes;
+    est.origenes = r.origenes; est.referidos = r.referidos || [];
   }
 }
 
@@ -252,7 +272,7 @@ async function abrirCliente(id) {
   try {
     d = await api(`/api/clientes/${id}`);
   } catch (e) { cont.innerHTML = `<p class="crm-error">No se pudo cargar el cliente (${esc(e.message)}).</p>`; return; }
-  est.origenes = d.origenes; est.estadosAlerta = d.estados_alerta;
+  est.origenes = d.origenes; est.estadosAlerta = d.estados_alerta; est.referidos = d.referidos || [];
   if (d.tipos_persona) est.tiposPersona = d.tipos_persona;
   const c = d.cliente;
   const scroll = cont.parentElement.scrollTop;
@@ -262,7 +282,7 @@ async function abrirCliente(id) {
     ${d.marcas.map(m => `<tr data-acta="${esc(m.acta)}">
       <td><a class="link-acta" href="javascript:void(0)" data-abrir="${esc(m.acta)}">${esc(m.acta)} ↗</a></td>
       <td><strong>${esc(m.denominacion || (m.tipo === "F" ? "(figurativa, sin texto)" : "(pendiente)"))}</strong><br><small class="crm-gris">${esc(tipoLegible(m.tipo))}${m.fecha_presentacion ? " · presentada " + crmFecha(m.fecha_presentacion) : ""}${m.fecha_vencimiento_marca ? " · vence " + crmFecha(m.fecha_vencimiento_marca) : ""}</small>
-        ${m.tuvo_oposicion ? '<br><span class="cl-tag aviso">⚖ oposición / vista</span>' : ""}${m.ultimo_movimiento ? `<br><small class="crm-gris">Últ. mov.: ${esc(m.ultimo_movimiento)}${m.ultimo_movimiento_fecha ? " (" + crmFecha(m.ultimo_movimiento_fecha) + ")" : ""}</small>` : ""}
+        ${c.referido ? "<br>" + tagReferido(c.referido) : ""}${m.tuvo_oposicion ? '<br><span class="cl-tag aviso">⚖ oposición / vista</span>' : ""}${m.ultimo_movimiento ? `<br><small class="crm-gris">Últ. mov.: ${esc(m.ultimo_movimiento)}${m.ultimo_movimiento_fecha ? " (" + crmFecha(m.ultimo_movimiento_fecha) + ")" : ""}</small>` : ""}
         ${m.error_consulta ? `<br><small class="crm-error" style="padding:0">${esc(m.error_consulta)}</small>` : ""}</td>
       <td>${esc(m.clase ?? "")}</td>
       <td>${tagEstadoMarca(m)}</td>
@@ -288,7 +308,7 @@ async function abrirCliente(id) {
 
   cont.innerHTML = `
     <div class="cl-ficha">
-      <h3>${esc(c.nombre)} ${c.vigilancia_contratada ? '<span class="cl-tag ok">Vigilancia contratada</span>' : '<span class="cl-tag">Vigilancia interna</span>'}${c.activo ? "" : ' <span class="cl-tag">inactivo</span>'}</h3>
+      <h3>${esc(c.nombre)} ${c.vigilancia_contratada ? '<span class="cl-tag ok">Vigilancia contratada</span>' : '<span class="cl-tag">Vigilancia interna</span>'}${c.activo ? "" : ' <span class="cl-tag">inactivo</span>'}${c.referido ? " " + tagReferido(c.referido) : ""}</h3>
       <div class="crm-gris">Cargado el ${crmFecha(c.alta_en)}${c.alta_por ? " por " + esc(c.alta_por) : ""}${c.clave_crm ? ` · <a href="/titular/${encodeURIComponent(c.clave_crm)}" target="_blank">ver como lead ↗</a>` : ""}</div>
 
       <form class="cl-form" id="form-cliente">${camposClienteHtml(c)}

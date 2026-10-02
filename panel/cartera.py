@@ -121,6 +121,8 @@ def crear_tablas(cur):
         )
         """
     )
+    # Quién nos refirió al cliente (agencia de marketing, diseñador, etc.): se ve como tag.
+    cur.execute("ALTER TABLE clientes ADD COLUMN IF NOT EXISTS referido TEXT")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_clientes_cuit ON clientes(cuit)")
     cur.execute(
         "CREATE UNIQUE INDEX IF NOT EXISTS idx_clientes_clave_crm ON clientes(clave_crm) "
