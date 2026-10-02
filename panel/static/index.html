@@ -486,7 +486,7 @@ function filaHtml(r, { flecha = false, oculta = false, idGrupo = null, cantidadR
       <td>${r.clase ?? ""}${celdaOtrasClases(r)}</td>
       <td class="denominacion" title="${r.denominacion_inpi || r.denominacion || ""}">${r.denominacion_inpi || r.denominacion || `<em>${sinNombre(r.tipo)}</em>`}</td>
       <td class="titular" title="${r.titular || ""}">${celdaTitular}</td>
-      <td>${badgeLead(r)} ${crmSlot(claveTitular(r))} ${badgePreBoletin(r)} ${badgeOposicion(r)} ${badgeEstadoTramite(r)}</td>
+      <td>${badgeLead(r)} ${crmSlot(claveTitular(r))} ${badgePreBoletin(r)} ${badgeOposicion(r)} ${badgeRevisionOposicion(r)} ${badgeEstadoTramite(r)}</td>
       <td class="celda-email">${celdaEmailIcono(r)}</td>
       <td>${fechaPublicacionOFallback(r)}</td>
       <td>${fmtFecha(r.fecha_concesion) || "—"}</td>

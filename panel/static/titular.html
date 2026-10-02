@@ -132,7 +132,7 @@ function filaHtml(r) {
       <td>${r.clase ?? ""}</td>
       <td>${tipoLegible(r.tipo)}</td>
       <td class="denominacion" title="${r.denominacion_inpi || r.denominacion || ""}">${r.denominacion_inpi || r.denominacion || `<em>${sinNombre(r.tipo)}</em>`}</td>
-      <td>${badgeLead(r)} ${badgeOposicion(r)}</td>
+      <td>${badgeLead(r)} ${badgeOposicion(r)} ${badgeRevisionOposicion(r)}</td>
       <td>${celdaEmail(r)}</td>
       <td>${fechaPublicacionOFallback(r)}</td>
       <td>${fmtFecha(r.fecha_concesion) || "—"}</td>
