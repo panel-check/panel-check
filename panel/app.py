@@ -416,6 +416,7 @@ COLUMNAS_MARCA = """
     caracter, es_lead, email, email_apoderado, lead_score, link,
     contactado, contactado_en, motivo_sin_email,
     tuvo_oposicion, detalle_oposicion, revisado_oposicion_en, oposicion_detectada_en,
+    opo_chequeos, opo_ultimo_chequeo_en,
     oponente_nombre, oponente_tipo_doc, oponente_numero_doc, oponente_cuit,
     fundamento_oposicion, actas_marca_oponente, marca_oponente_denominacion,
     marca_oponente_numero_registro,

@@ -60,6 +60,22 @@ function badgeBoletin(row) {
 // cada vez que se renderiza una fila con badgeOposicion.
 window._filasOposicion = window._filasOposicion || {};
 
+// Cuándo se revisó por última vez la oposición de este lead (la revisa
+// scripts/revisar_oposiciones.py a los 10, 23 y 33 días de la publicación).
+// Chip gris chico, solo para leads ya revisados al menos una vez.
+function badgeRevisionOposicion(row) {
+  if (!row.es_lead || !row.opo_ultimo_chequeo_en) return "";
+  const d = new Date(row.opo_ultimo_chequeo_en);
+  if (isNaN(d)) return "";
+  const opciones = { timeZone: "America/Argentina/Buenos_Aires", day: "2-digit", month: "2-digit" };
+  const corta = d.toLocaleDateString("es-AR", opciones);
+  const larga = d.toLocaleDateString("es-AR", { ...opciones, year: "numeric" });
+  const hito = Math.min(row.opo_chequeos ?? 0, 3);
+  const detalle = `Oposición revisada por última vez el ${larga} · revisión ${hito} de 3 (a los 10, 23 y 33 días de la publicación)`
+    + (row.tuvo_oposicion === true ? " · con oposición: se sigue mirando" : "");
+  return `<span class="tooltip badge sin-dato">🔎 ${corta}<span class="globo">${detalle}</span></span>`;
+}
+
 function badgeOposicion(row) {
   // tuvo_oposicion se completa recién ~33 días después de la publicación
   // (scripts/revisar_oposiciones.py), y solo para leads reales. Antes de eso
