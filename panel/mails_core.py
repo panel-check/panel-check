@@ -464,7 +464,9 @@ _RE_LINK_MD = re.compile(r"\[([^\]\n]+)\]\(((?:https?://|mailto:|tel:)[^)\s]*(?:
 
 def _url_link(url_cruda: str, datos: dict) -> str:
     """Variables reemplazadas y codificadas; espacios -> %20."""
-    u = _sustituir(url_cruda.strip(), datos, escapar=False, para_url=True)
+    # Solo se recorta adelante: un espacio final sirve (p. ej. «mi nombre es »
+    # en WhatsApp deja el cursor listo para escribir).
+    u = _sustituir(url_cruda.lstrip(), datos, escapar=False, para_url=True)
     return quote(u, safe=":/?&=#%+@.,;~-_!*'()")
 
 
