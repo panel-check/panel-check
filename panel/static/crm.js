@@ -181,12 +181,13 @@ function _crmHtmlCabecera(d, opciones = {}) {
     : null;
   if (marcaOpo) {
     const nombreMarca = marcaOpo.denominacion_inpi || marcaOpo.denominacion || marcaOpo.acta;
-    botones.push(`<button type="button" class="crm-btn-gestor" data-accion="ver-acta-opo" data-acta="${crmEsc(marcaOpo.acta)}" title="Abre el expediente en el portal de INPI (ahí está el botón GRILLA DIGITAL con el historial del acta)">🔎 Ver acta ${crmEsc(marcaOpo.acta)} en INPI</button>`);
+    botones.push(`<button type="button" class="crm-btn-gestor" data-accion="ver-acta-opo" data-acta-opo="${crmEsc(marcaOpo.acta)}" title="Abre el expediente en el portal de INPI (ahí está el botón GRILLA DIGITAL con el historial del acta)">🔎 Ver acta ${crmEsc(marcaOpo.acta)} en INPI</button>`);
+    botones.push(`<button type="button" class="crm-btn-gestor" data-accion="ver-grilla-opo" data-acta-opo="${crmEsc(marcaOpo.acta)}" title="Abre directo la Grilla Digital del acta (archivos del expediente: formularios, oposiciones, publicación...)">🗂 Ver Grilla Digital</button>`);
     if (typeof opciones.mailOposicion === "function") {
       const ayudaMail = marcaOpo.email
         ? `Manda el mail «Recibió una oposición» de la marca ${nombreMarca} a ${marcaOpo.email} (pide confirmación antes de enviar)`
         : "Esta marca no tiene mail: se completa en la pestaña Mail";
-      botones.push(`<button type="button" class="crm-btn-primario" data-accion="mail-oposicion" data-acta="${crmEsc(marcaOpo.acta)}" title="${crmEsc(ayudaMail)}">✉ Enviar mail de oposición</button><span class="crm-gris" id="estado-mail-opo"></span>`);
+      botones.push(`<button type="button" class="crm-btn-primario" data-accion="mail-oposicion" data-acta-opo="${crmEsc(marcaOpo.acta)}" title="${crmEsc(ayudaMail)}">✉ Enviar mail de oposición</button><span class="crm-gris" id="estado-mail-opo"></span>`);
     }
   }
   if (!d.cliente && d.lead) botones.push(`<button type="button" class="${marcaOpo ? "crm-btn-gestor" : "crm-btn-primario"}" data-accion="convertir" title="Pasa sus marcas a la cartera (con vigilancia) y marca el lead como «Cliente».">Convertir en cliente</button>`);
@@ -334,11 +335,13 @@ function _crmConectarFicha(cont) {
 
   // Atajos del lead con oposición: ver el expediente en INPI y mandar el mail de oposición.
   const btnVerActa = uno('[data-accion="ver-acta-opo"]');
-  if (btnVerActa) btnVerActa.addEventListener("click", () => abrirActa(btnVerActa.dataset.acta));
+  if (btnVerActa) btnVerActa.addEventListener("click", () => abrirActa(btnVerActa.dataset.actaOpo));
+  const btnVerGrilla = uno('[data-accion="ver-grilla-opo"]');
+  if (btnVerGrilla) btnVerGrilla.addEventListener("click", () => abrirGrilla(btnVerGrilla.dataset.actaOpo));
   const btnMailOpo = uno('[data-accion="mail-oposicion"]');
   if (btnMailOpo) btnMailOpo.addEventListener("click", async () => {
     btnMailOpo.disabled = true;
-    try { await opciones.mailOposicion(btnMailOpo.dataset.acta); }
+    try { await opciones.mailOposicion(btnMailOpo.dataset.actaOpo); }
     finally { btnMailOpo.disabled = false; }
   });
 

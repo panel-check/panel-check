@@ -380,6 +380,24 @@ function abrirActa(acta) {
   form.remove();
 }
 
+// Va directo a la Grilla Digital del acta (la tabla de archivos del expediente: formularios,
+// oposiciones, hoja de publicación...), sin pasar por la ficha del expediente. Es el mismo POST
+// que hace el botón GRILLA DIGITAL del portal ("fname" = "1-<acta>", ver validar_leads.py).
+function abrirGrilla(acta) {
+  const form = document.createElement("form");
+  form.method = "POST";
+  form.action = "https://portaltramites.inpi.gob.ar/Home/GrillaDigital";
+  form.target = "_blank";
+  const input = document.createElement("input");
+  input.type = "hidden";
+  input.name = "fname";
+  input.value = `1-${acta}`;
+  form.appendChild(input);
+  document.body.appendChild(form);
+  form.submit();
+  form.remove();
+}
+
 async function marcarContactado(acta, valorActual) {
   const nuevo = !valorActual;
   await api(`/api/marcas/${encodeURIComponent(acta)}/contactado?valor=${nuevo}`, { method: "POST" });
