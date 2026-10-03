@@ -641,3 +641,14 @@ async function actualizarContadorComentarios() {
   } catch (_) {}
 }
 document.addEventListener("DOMContentLoaded", actualizarContadorComentarios);
+
+/* Al abrir la ficha de un titular desde una lista (panel de leads), se guarda el
+ * orden de los titulares que se veían para que la ficha ofrezca «Anterior /
+ * Siguiente» y se pueda recorrer la cola sin volver a la lista (ver titular.html).
+ * Vive en sessionStorage: solo en esta pestaña del navegador. */
+document.addEventListener("click", (ev) => {
+  const a = ev.target.closest && ev.target.closest('a.link-titular[href^="/titular/"]');
+  if (!a || location.pathname.startsWith("/titular/")) return;
+  const links = [...new Set([...document.querySelectorAll('a.link-titular[href^="/titular/"]')].map(x => x.getAttribute("href")))];
+  try { sessionStorage.setItem("colaTitulares", JSON.stringify({ links, desde: location.pathname + location.search })); } catch (_) { /* sin cola: no es crítico */ }
+});

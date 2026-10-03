@@ -147,14 +147,15 @@ def main():
                     cuit = COALESCE(EXCLUDED.cuit, marcas.cuit),
                     matricula_agente = EXCLUDED.matricula_agente,
                     -- Un lead que ya pasó a "apoderado/gestor" tras una oposición
-                    -- (revisar_oposiciones.py) no vuelve a ser lead si se reimporta el boletín.
-                    caracter = CASE WHEN marcas.representacion_posterior_oposicion IS TRUE
+                    -- (revisar_oposiciones.py), o que se marcó a mano como "tiene gestor"
+                    -- desde la ficha, no vuelve a ser lead si se reimporta el boletín.
+                    caracter = CASE WHEN (marcas.representacion_posterior_oposicion IS TRUE OR marcas.con_gestor_manual IS TRUE)
                                     THEN marcas.caracter ELSE EXCLUDED.caracter END,
-                    es_lead = CASE WHEN marcas.representacion_posterior_oposicion IS TRUE
+                    es_lead = CASE WHEN (marcas.representacion_posterior_oposicion IS TRUE OR marcas.con_gestor_manual IS TRUE)
                                    THEN marcas.es_lead ELSE EXCLUDED.es_lead END,
                     email = EXCLUDED.email,
                     email_apoderado = EXCLUDED.email_apoderado,
-                    lead_score = CASE WHEN marcas.representacion_posterior_oposicion IS TRUE
+                    lead_score = CASE WHEN (marcas.representacion_posterior_oposicion IS TRUE OR marcas.con_gestor_manual IS TRUE)
                                       THEN marcas.lead_score ELSE EXCLUDED.lead_score END,
                     motivo_sin_email = EXCLUDED.motivo_sin_email,
                     -- fecha_publicacion tampoco se pisa con NULL: no cambia con

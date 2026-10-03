@@ -65,6 +65,16 @@ ALTER TABLE marcas ADD COLUMN IF NOT EXISTS oposicion_atendida BOOLEAN;
 ALTER TABLE marcas ADD COLUMN IF NOT EXISTS oposicion_atendida_en TIMESTAMPTZ;
 ALTER TABLE marcas ADD COLUMN IF NOT EXISTS oposicion_atendida_por TEXT;
 
+-- Lead marcado a mano como "tiene gestor/apoderado" (botón en la ficha del lead).
+-- Pasa a es_lead = false (sale de los leads) y se guardan el carácter y el score
+-- anteriores para poder deshacerlo. cargar_db.py no lo revierte al reimportar.
+ALTER TABLE marcas ADD COLUMN IF NOT EXISTS con_gestor_manual BOOLEAN;
+ALTER TABLE marcas ADD COLUMN IF NOT EXISTS con_gestor_manual_en TIMESTAMPTZ;
+ALTER TABLE marcas ADD COLUMN IF NOT EXISTS con_gestor_manual_por TEXT;
+ALTER TABLE marcas ADD COLUMN IF NOT EXISTS gestor_nombre TEXT;
+ALTER TABLE marcas ADD COLUMN IF NOT EXISTS caracter_previo TEXT;
+ALTER TABLE marcas ADD COLUMN IF NOT EXISTS lead_score_previo INTEGER;
+
 -- Agregado para el seguimiento del ciclo de vida de la marca ya concedida
 -- (ver scripts/revisar_estado.py): permite ofrecer vigilancia marcaria,
 -- avisar de la declaración jurada de uso (a los 5 años) y de la renovación

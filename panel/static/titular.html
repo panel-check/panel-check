@@ -62,51 +62,72 @@
 
 <div class="ficha-titular" id="ficha-titular"></div>
 
-<div class="crm-box mail-lead" id="mail-box" hidden>
-  <div class="crm-box-titulo">✉️ Mandar mail</div>
-  <div class="fila-mail">
-    <div><label for="ml-plantilla">Plantilla</label><select id="ml-plantilla"></select></div>
-    <div><label for="ml-marca">Marca</label><select id="ml-marca"></select></div>
-    <div><label for="ml-para">Para</label><input type="text" id="ml-para" placeholder="mail del lead" /></div>
-  </div>
-  <div class="nota">Sale la plantilla tal como está guardada en <a href="/mails">Mails</a>, con los datos reales de la marca elegida, desde la cuenta de prospectos.</div>
-  <div class="previa-asunto"><strong>Asunto:</strong> <span id="ml-asunto">—</span></div>
-  <button type="button" class="plegar" id="ml-plegar">Ver el mail ▾</button>
-  <iframe id="ml-previa" sandbox title="Vista previa del mail" hidden></iframe>
-  <div class="acciones">
-    <button type="button" class="enviar" id="ml-enviar">Enviar mail</button>
-    <span class="msg" id="ml-msg"></span>
-  </div>
-  <div id="ml-historial"></div>
-</div>
+<div id="zona-lead">
+  <!-- Siempre a la vista: etapa, aviso de oposición y los dos resultados posibles del lead -->
+  <div class="crm-box crm-ficha crm-cabecera" id="lead-cab" hidden></div>
 
-<div class="crm-box" id="crm-box" hidden>
-  <div class="crm-box-titulo">📋 Seguimiento comercial (CRM)</div>
-  <div id="crm-ficha"></div>
-</div>
+  <div class="pestanas" id="pestanas" role="tablist" aria-label="Secciones de la ficha">
+    <button type="button" role="tab" id="pest-marca" data-tab="marca" aria-controls="tab-marca" aria-selected="true" class="activa">Marca</button>
+    <button type="button" role="tab" id="pest-mail" data-tab="mail" aria-controls="tab-mail" aria-selected="false">Mail<span class="pest-badge" id="pb-mail" hidden></span></button>
+    <button type="button" role="tab" id="pest-plazos" data-tab="plazos" aria-controls="tab-plazos" aria-selected="false">Plazos y fechas<span class="pest-badge" id="pb-plazos" hidden></span></button>
+    <button type="button" role="tab" id="pest-crm" data-tab="crm" aria-controls="tab-crm" aria-selected="false">CRM<span class="pest-badge" id="pb-crm" hidden></span></button>
+  </div>
 
-<div class="contenedor-tabla">
-<table>
-  <thead>
-    <tr>
-      <th>Score</th>
-      <th>Boletín</th>
-      <th>Acta</th>
-      <th>Clase</th>
-      <th>Tipo</th>
-      <th>Marca</th>
-      <th>Lead</th>
-      <th>Email</th>
-      <th>Fecha Boletín</th>
-      <th>Fecha Concedida</th>
-      <th>Estado</th>
-      <th></th>
-    </tr>
-  </thead>
-  <tbody id="tbody">
-    <tr><td colspan="12" class="vacio">Cargando...</td></tr>
-  </tbody>
-</table>
+  <section class="pestana-panel" id="tab-marca" role="tabpanel" aria-labelledby="pest-marca">
+    <div class="contenedor-tabla">
+    <table>
+      <thead>
+        <tr>
+          <th>Score</th>
+          <th>Boletín</th>
+          <th>Acta</th>
+          <th>Clase</th>
+          <th>Tipo</th>
+          <th>Marca</th>
+          <th>Lead</th>
+          <th>Email</th>
+          <th>Fecha Boletín</th>
+          <th>Fecha Concedida</th>
+          <th>Estado</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody id="tbody">
+        <tr><td colspan="12" class="vacio">Cargando...</td></tr>
+      </tbody>
+    </table>
+    </div>
+  </section>
+
+  <section class="pestana-panel" id="tab-mail" role="tabpanel" aria-labelledby="pest-mail" hidden>
+    <div class="crm-box mail-lead" id="mail-box" hidden>
+      <div class="crm-box-titulo">✉️ Mandar mail</div>
+      <div class="fila-mail">
+        <div><label for="ml-plantilla">Plantilla</label><select id="ml-plantilla"></select></div>
+        <div><label for="ml-marca">Marca</label><select id="ml-marca"></select></div>
+        <div><label for="ml-para">Para</label><input type="text" id="ml-para" placeholder="mail del lead" /></div>
+      </div>
+      <div class="nota">Sale la plantilla tal como está guardada en <a href="/mails">Mails</a>, con los datos reales de la marca elegida, desde la cuenta de prospectos.</div>
+      <div class="nota nota-gestor" id="ml-aviso-gestor" hidden>⚠ Este titular ya tiene gestor/apoderado: en general no conviene escribirle.</div>
+      <div class="previa-asunto"><strong>Asunto:</strong> <span id="ml-asunto">—</span></div>
+      <button type="button" class="plegar" id="ml-plegar">Ver el mail ▾</button>
+      <iframe id="ml-previa" sandbox title="Vista previa del mail" hidden></iframe>
+      <div class="acciones">
+        <button type="button" class="enviar" id="ml-enviar">Enviar mail</button>
+        <span class="msg" id="ml-msg"></span>
+      </div>
+      <div id="ml-historial"></div>
+    </div>
+    <p class="nota pestana-vacia" id="mail-vacio" hidden>No hay plantillas de prospectos o marcas desde las que mandar un mail.</p>
+  </section>
+
+  <section class="pestana-panel" id="tab-plazos" role="tabpanel" aria-labelledby="pest-plazos" hidden>
+    <div class="crm-box crm-ficha" id="lead-plazos"></div>
+  </section>
+
+  <section class="pestana-panel" id="tab-crm" role="tabpanel" aria-labelledby="pest-crm" hidden>
+    <div class="crm-box crm-ficha" id="lead-gestion"></div>
+  </section>
 </div>
 
 <script src="/static/comun.js"></script>
@@ -158,30 +179,111 @@ async function cargar({ conCRM = true } = {}) {
       <span class="dato">Marcas: <strong>${data.rows.length}</strong></span>
       <span class="dato">Contactadas: <strong>${contactadas} / ${data.rows.length}</strong></span>
     `;
+    pintarColaNavegacion();
 
     tbody.innerHTML = data.rows.length
       ? data.rows.map(filaHtml).join("")
       : '<tr><td colspan="12" class="vacio">Sin marcas para este titular.</td></tr>';
     cargarContadoresComentarios(data.rows.map(r => r.acta));
-    if (conCRM) mlIniciar(data.rows);
+    mlIniciar(data.rows);  // siempre: si se marcó «tiene gestor» cambia el aviso del mail
 
-    // Bloque del CRM: la ficha del lead (etapa, asignado, gestiones, plazos).
-    // Si el titular todavía no tiene una clave estable (sin CUIT ni nombre
-    // usable), no se puede seguir en el CRM.
-    const box = document.getElementById("crm-box");
+    // Ficha del lead (CRM): la cabecera queda siempre a la vista y plazos /
+    // gestión viven en sus pestañas. Si el titular todavía no tiene una clave
+    // estable (sin CUIT ni nombre usable), no se puede seguir en el CRM.
     if (conCRM) {
-      box.hidden = false;
-      const cont = document.getElementById("crm-ficha");
-      if (data.clave_crm) {
-        crmRenderFicha(cont, data.clave_crm, { enModal: false, alCambiar: () => cargar({ conCRM: false }) });
+      const cab = document.getElementById("lead-cab");
+      const hayCRM = !!data.clave_crm;
+      document.getElementById("pest-plazos").hidden = !hayCRM;
+      document.getElementById("pest-crm").hidden = !hayCRM;
+      cab.hidden = false;
+      if (hayCRM) {
+        crmRenderFicha(document.getElementById("zona-lead"), data.clave_crm, {
+          enModal: false,
+          partes: { cabecera: "#lead-cab", plazos: "#lead-plazos", gestion: "#lead-gestion" },
+          alCambiar: () => cargar({ conCRM: false }),
+          alRenderizar: pintarBadgesPestanas,
+        });
       } else {
-        cont.innerHTML = '<p class="crm-gris">Este titular todavía no tiene CUIT ni un nombre identificable, así que no se puede seguir en el CRM desde esta ficha. Cada una de sus marcas aparece por separado en el <a href="/crm">CRM</a>.</p>';
+        cab.innerHTML = '<p class="crm-gris">Este titular todavía no tiene CUIT ni un nombre identificable, así que no se puede seguir en el CRM desde esta ficha. Cada una de sus marcas aparece por separado en el <a href="/crm">CRM</a>.</p>';
+        if (["plazos", "crm"].includes(pestanaActual)) abrirPestana("marca");
       }
     }
   } catch (e) {
     document.getElementById("titulo-titular").textContent = "No encontrado";
     tbody.innerHTML = `<tr><td colspan="12" class="vacio">No se pudo cargar (${e.message}).</td></tr>`;
   }
+}
+
+// ── Anterior / Siguiente ──
+// Si la ficha se abrió desde la lista de leads (comun.js guardó el orden que se
+// veía), se puede recorrer la cola sin volver a la lista.
+function pintarColaNavegacion() {
+  let cola = null;
+  try { cola = JSON.parse(sessionStorage.getItem("colaTitulares") || "null"); } catch (_) { return; }
+  if (!cola || !Array.isArray(cola.links)) return;
+  const actual = decodeURIComponent(location.pathname);
+  const i = cola.links.findIndex(h => decodeURIComponent(h) === actual);
+  if (i < 0) return;
+  const enlace = (href, txt) => href ? `<a href="${href}">${txt}</a>` : `<span class="cola-off">${txt}</span>`;
+  const nav = document.createElement("span");
+  nav.className = "cola-nav";
+  nav.innerHTML = `${enlace(cola.links[i - 1], "← Anterior")}
+    <span title="Lugar en la lista desde la que abriste esta ficha">${i + 1} de ${cola.links.length}</span>
+    ${enlace(cola.links[i + 1], "Siguiente →")}
+    ${cola.desde ? `<a href="${cola.desde}">Volver a la lista</a>` : ""}`;
+  document.getElementById("ficha-titular").appendChild(nav);
+}
+
+// ── Pestañas de la ficha ──
+// Siempre abre en «Marca». El hash (#mail, #plazos, #crm) permite linkear a una.
+const PESTANAS = ["marca", "mail", "plazos", "crm"];
+let pestanaActual = "marca";
+
+function abrirPestana(id) {
+  if (!PESTANAS.includes(id) || document.getElementById("pest-" + id).hidden) id = "marca";
+  pestanaActual = id;
+  PESTANAS.forEach(t => {
+    const activa = t === id;
+    document.getElementById("tab-" + t).hidden = !activa;
+    const b = document.getElementById("pest-" + t);
+    b.classList.toggle("activa", activa);
+    b.setAttribute("aria-selected", activa ? "true" : "false");
+    b.tabIndex = activa ? 0 : -1;
+  });
+  try { history.replaceState(null, "", id === "marca" ? location.pathname + location.search : "#" + id); } catch (e) { /* no es crítico */ }
+}
+
+document.getElementById("pestanas").addEventListener("click", (ev) => {
+  const b = ev.target.closest("[data-tab]");
+  if (b) abrirPestana(b.dataset.tab);
+});
+document.getElementById("pestanas").addEventListener("keydown", (ev) => {
+  if (ev.key !== "ArrowRight" && ev.key !== "ArrowLeft") return;
+  const visibles = PESTANAS.filter(t => !document.getElementById("pest-" + t).hidden);
+  const i = visibles.indexOf(pestanaActual);
+  const sig = visibles[(i + (ev.key === "ArrowRight" ? 1 : visibles.length - 1)) % visibles.length];
+  abrirPestana(sig);
+  document.getElementById("pest-" + sig).focus();
+  ev.preventDefault();
+});
+
+// Marca chica al lado del nombre de la pestaña (vacía = no se muestra).
+function pestBadge(id, texto, { rojo = false, titulo = "" } = {}) {
+  const el = document.getElementById(id);
+  el.textContent = texto || "";
+  el.hidden = !texto;
+  el.classList.toggle("rojo", !!rojo);
+  el.title = titulo;
+}
+
+function pintarBadgesPestanas(d) {
+  const urgente = d.plazos.some(p => p.urgencia === "urgente" || (p.tipo === "seguimiento" && p.urgencia === "vencido"));
+  pestBadge("pb-plazos", urgente ? "!" : "", { rojo: true, titulo: "Hay algo urgente o vencido en plazos y fechas" });
+  const seg = d.plazos.find(p => p.tipo === "seguimiento");
+  pestBadge("pb-crm", seg ? crmFecha(seg.fecha).slice(0, 5) : "", {
+    rojo: !!seg && seg.urgencia === "vencido",
+    titulo: seg ? `Próximo seguimiento: ${crmFecha(seg.fecha)}` : "",
+  });
 }
 
 // ── Mandar mail al lead ──
@@ -278,6 +380,7 @@ async function mlHistorial() {
   if (!mlFilas.length) { cont.innerHTML = ""; return; }
   try {
     const envios = await api(`/api/mails/envios?actas=${encodeURIComponent(mlFilas.map(r => r.acta).join(","))}`);
+    pestBadge("pb-mail", envios.length ? String(envios.length) : "", { titulo: `${envios.length} mail(s) enviado(s) desde el panel` });
     cont.innerHTML = envios.length ? `<table class="hist"><thead><tr><th>Fecha</th><th>Plantilla</th><th>Marca</th><th>Para</th><th>Por</th><th>Seguimiento</th></tr></thead><tbody>${
       envios.map(e => { const r = mlFilas.find(x => x.acta === e.acta);
         return `<tr><td>${mlEsc(new Date(e.enviado_en).toLocaleString("es-AR", { dateStyle: "short", timeStyle: "short" }))}</td>
@@ -309,13 +412,16 @@ async function mlIniciar(filas) {
     document.getElementById("ml-marca").innerHTML = mlFilas.map(r =>
       `<option value="${mlEsc(r.acta)}">${mlEsc(mlNombreMarca(r))} · acta ${mlEsc(r.acta)} · clase ${mlEsc(r.clase ?? "—")}${mlEsOposicion(r) ? " · con oposición/vista" : ""}${r.email ? "" : " · sin mail"}</option>`).join("");
     box.hidden = !mlPlantillas.length || !mlFilas.length;
+    document.getElementById("mail-vacio").hidden = !box.hidden;
+    document.getElementById("ml-aviso-gestor").hidden = !(mlFilas.length && mlFilas.every(r => r.es_lead === false));
     if (actual && mlFilas.some(r => r.acta === actual)) { document.getElementById("ml-marca").value = actual; mlPrevia(); }
     else mlElegirMarcaPorDefecto();
     mlHistorial();
-  } catch (e) { box.hidden = true; }
+  } catch (e) { box.hidden = true; document.getElementById("mail-vacio").hidden = false; }
 }
 
 cargar();
+abrirPestana((location.hash || "").slice(1));
 </script>
 
 </body>

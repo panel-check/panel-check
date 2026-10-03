@@ -697,6 +697,10 @@ button.flecha-grupo {
 }
 .ficha-titular .dato { font-size: 13px; color: var(--gris); }
 .ficha-titular .dato strong { color: #1f2430; }
+.cola-nav { margin-left: auto; display: flex; gap: 14px; align-items: baseline; font-size: 13px; color: var(--gris); }
+.cola-nav a { color: var(--azul); text-decoration: none; font-weight: 600; }
+.cola-nav a:hover { text-decoration: underline; }
+.cola-off { opacity: 0.4; }
 
 /* ── Comentarios internos ── */
 .contador-coment {
@@ -907,6 +911,47 @@ tr.crm-fila:hover { background: var(--azul-claro); }
 @media (max-width: 640px) {
   .crm-columna { flex: 0 0 82vw; }
   .crm-box { margin: 10px; padding: 12px; }
+}
+
+/* ── Ficha del titular: cabecera siempre visible + pestañas ─────────── */
+.crm-cabecera { padding: 12px 18px; }
+.crm-cabecera .crm-alerta:last-of-type { margin-bottom: 0; }
+.crm-cab-resumen { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; font-size: 13px; margin-bottom: 8px; }
+.crm-chip-seg { font-size: 12px; font-weight: 600; border-radius: 12px; padding: 2px 10px; background: var(--azul-claro); color: var(--azul); }
+.crm-chip-vencido { background: #fde8e6; color: var(--rojo); }
+.crm-chip-urgente { background: #fff3cd; color: #92400e; }
+.crm-alerta-gestor { background: #f3f0ff; border-color: #d6ccf5; }
+.crm-acciones-resultado { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 8px; }
+.crm-btn-gestor {
+  padding: 7px 16px; border: 1px solid var(--azul); border-radius: 6px; background: #fff; color: var(--azul);
+  font-size: 13px; cursor: pointer; font-weight: 600;
+}
+.crm-btn-gestor:hover { background: var(--azul-claro); }
+.crm-btn-gestor:disabled { opacity: 0.5; cursor: wait; }
+
+.pestanas {
+  display: flex; gap: 2px; margin: 14px 20px 0; border-bottom: 1px solid var(--borde); overflow-x: auto;
+}
+.pestanas button {
+  background: none; border: 0; border-bottom: 3px solid transparent; margin-bottom: -1px; padding: 9px 16px;
+  font: inherit; font-size: 14px; font-weight: 600; color: var(--gris); cursor: pointer; white-space: nowrap;
+  display: inline-flex; align-items: center; gap: 6px;
+}
+.pestanas button:hover { color: var(--azul); }
+.pestanas button.activa { color: var(--azul); border-bottom-color: var(--azul); }
+.pestanas button:focus-visible { outline: none; box-shadow: var(--foco); border-radius: 6px 6px 0 0; }
+.pestanas button[hidden] { display: none; }
+.pest-badge {
+  font-size: 11px; font-weight: 700; line-height: 1; border-radius: 10px; padding: 3px 7px;
+  background: var(--azul-claro); color: var(--azul);
+}
+.pest-badge.rojo { background: var(--rojo); color: #fff; }
+.pest-badge[hidden] { display: none; }
+.pestana-vacia { margin: 14px 20px; }
+.nota-gestor { color: #92400e; margin: 6px 0; }
+@media (max-width: 640px) {
+  .pestanas { margin: 10px 10px 0; }
+  .pestanas button { padding: 9px 12px; font-size: 13px; }
 }
 
 /* Ajustes de la barra de filtros: el campo de fecha alinea su texto a la

@@ -96,48 +96,119 @@ async function crmPintarEtapas() {
 }
 
 /* ── Ficha del lead ───────────────────────────────────────────────────
- * crmRenderFicha(contenedor, clave, {enModal, alCambiar}) arma la ficha
- * completa dentro de `contenedor`. alCambiar() se llama después de cada
- * guardado, para que la página recargue lo suyo (tablero, tabla...). */
+ * crmRenderFicha(contenedor, clave, opciones) arma la ficha del lead.
+ *
+ * Dos modos:
+ *  - Popup del CRM (sin `partes`): todo apilado dentro de `contenedor`:
+ *    cabecera, marcas, plazos y gestión (campos del CRM, registrar, historial).
+ *  - Página del titular (con `partes` = {cabecera, plazos, gestion}, selectores
+ *    relativos a `contenedor`): cada pieza va a su lugar —la cabecera queda
+ *    siempre a la vista y plazos/gestión viven en pestañas— sin tocar el resto
+ *    de lo que hay dentro de `contenedor` (tabla de marcas, mail).
+ *
+ * opciones.alCambiar() se llama después de cada guardado, para que la página
+ * recargue lo suyo; opciones.alRenderizar(datos) después de pintar la ficha. */
 
 async function crmRenderFicha(cont, clave, opciones = {}) {
-  cont.innerHTML = '<p class="crm-cargando">Cargando…</p>';
+  const partes = opciones.partes ? {
+    cabecera: cont.querySelector(opciones.partes.cabecera),
+    plazos: cont.querySelector(opciones.partes.plazos),
+    gestion: cont.querySelector(opciones.partes.gestion),
+  } : null;
+  const mostrar = html => {
+    if (partes) { partes.cabecera.innerHTML = html; partes.plazos.innerHTML = ""; partes.gestion.innerHTML = ""; }
+    else cont.innerHTML = html;
+  };
+  mostrar('<p class="crm-cargando">Cargando…</p>');
   let d;
   try {
     d = await api(`/api/crm/lead?clave=${encodeURIComponent(clave)}`);
   } catch (e) {
-    cont.innerHTML = `<p class="crm-error">No se pudo cargar la ficha del lead (${crmEsc(e.message)}).</p>`;
+    mostrar(`<p class="crm-error">No se pudo cargar la ficha del lead (${crmEsc(e.message)}).</p>`);
     return;
   }
-  cont._crm = { datos: d, opciones };
-  cont.innerHTML = _crmHtmlFicha(d, opciones);
+  const raices = partes ? [partes.cabecera, partes.plazos, partes.gestion] : [cont];
+  cont._crm = { datos: d, opciones, raices };
+  if (partes) {
+    partes.cabecera.innerHTML = _crmHtmlCabecera(d, opciones);
+    partes.plazos.innerHTML = _crmHtmlPlazos(d);
+    partes.gestion.innerHTML = _crmHtmlGestion(d, opciones);
+  } else {
+    cont.innerHTML = `<div class="crm-ficha">${_crmHtmlCabecera(d, opciones)}${_crmHtmlMarcasModal(d)}
+      <h4>Plazos y fechas</h4>${_crmHtmlPlazos(d)}${_crmHtmlGestion(d, opciones)}</div>`;
+  }
   _crmConectarFicha(cont);
+  if (typeof opciones.alRenderizar === "function") opciones.alRenderizar(d);
 }
 
-function _crmHtmlFicha(d, { enModal = false } = {}) {
+/* Cabecera: lo que tiene que verse siempre. En la página del titular (modo
+ * `partes`) el nombre ya está en el título de la página, así que acá va un
+ * resumen (etapa, asignado, próximo seguimiento) en vez del título. */
+function _crmHtmlCabecera(d, { enModal = false, partes = null } = {}) {
   const l = d.lead || {};
   const etapa = l.etapa || "nuevo";
+  const enTitular = !!partes;
   const titulo = l.titular || d.clave;
   const clases = (l.clases || []).slice().sort((a, b) => a - b).join(", ");
-  const linkTit = d.clave && !d.clave.startsWith("ACTA ")
+  const linkTit = !enTitular && d.clave && !d.clave.startsWith("ACTA ")
     ? `<a class="link-titular" href="/titular/${encodeURIComponent(d.clave)}" target="${enModal ? "_blank" : "_self"}">Ver todas sus marcas ↗</a>` : "";
 
   const alertas = [];
-  if (l.oposicion_sin_apoderado) alertas.push('<div class="crm-alerta crm-alerta-opo">⚠ Tiene una marca con <strong>oposición o vista</strong> y todavía nadie se presentó como apoderado: es el momento de ofrecer ayuda. <button type="button" class="crm-btn-chico" data-accion="opo-atendida" title="Si ya se trabajó sobre esta oposición y no hace falta ofrecer servicios, deja de mostrarse como pendiente y de avisarse.">✓ Ya está atendida</button></div>');
+  if (l.oposicion_sin_apoderado) alertas.push('<div class="crm-alerta crm-alerta-opo">⚠ Tiene una marca con <strong>oposición o vista</strong> y todavía nadie se presentó como apoderado: es el momento de ofrecer ayuda.</div>');
   else if (l.oposicion_atendida) alertas.push('<div class="crm-alerta">⚖ Tuvo una oposición, marcada como <strong>atendida</strong>: no hace falta ofrecer ayuda. <button type="button" class="crm-btn-chico" data-accion="opo-reabrir">Deshacer</button></div>');
-  else if (l.con_oposicion) alertas.push('<div class="crm-alerta">⚖ Tuvo una oposición, pero ya se sumó un apoderado/gestor.</div>');
-  if (l.tiene_marcas_con_agente) alertas.push('<div class="crm-alerta">ℹ Este titular tiene <strong>otras marcas presentadas con agente/apoderado</strong>: puede que ya trabaje con alguien.</div>');
+  else if (l.con_oposicion && !l.con_gestor_manual) alertas.push('<div class="crm-alerta">⚖ Tuvo una oposición, pero ya se sumó un apoderado/gestor.</div>');
+  if (l.con_gestor_manual) {
+    const quien = [l.con_gestor_manual_por ? `por ${crmEsc(l.con_gestor_manual_por)}` : "", l.con_gestor_manual_en ? `el ${crmFecha(l.con_gestor_manual_en)}` : ""].filter(Boolean).join(" ");
+    alertas.push(`<div class="crm-alerta crm-alerta-gestor">🧑‍⚖️ <strong>Tiene gestor/apoderado</strong>${l.gestor_nombre ? ` (${crmEsc(l.gestor_nombre)})` : ""} — marcado a mano ${quien}. Ya no es lead: salió de la lista de leads. <button type="button" class="crm-btn-chico" data-accion="sin-gestor">Deshacer</button></div>`);
+  }
+  if (l.tiene_marcas_con_agente && !l.con_gestor_manual) alertas.push('<div class="crm-alerta">ℹ Este titular tiene <strong>otras marcas presentadas con agente/apoderado</strong>: puede que ya trabaje con alguien.</div>');
   if (l.pre_boletin) alertas.push('<div class="crm-alerta crm-alerta-info">🆕 Tiene marcas detectadas antes del boletín (todavía no publicadas).</div>');
 
-  const opcionesEtapa = d.etapas.map(e => `<option value="${e.id}" ${e.id === etapa ? "selected" : ""}>${crmEsc(e.nombre)}</option>`).join("");
-  const opcionesAsig = `<option value="">Sin asignar</option>` + d.usuarios.map(u =>
-    `<option value="${crmEsc(u)}" ${u === l.asignado ? "selected" : ""}>${crmEsc(u)}${u === d.usuario ? " (yo)" : ""}</option>`).join("");
-  const wa = crmLinkWhatsApp(l.telefono);
-  const email = l.email
-    ? `<a href="mailto:${crmEsc(l.email)}">${crmEsc(l.email)}</a>`
-    : '<span class="crm-gris">sin email todavía</span>';
+  const cli = d.cliente
+    ? `<div class="crm-alerta crm-alerta-info">✅ Ya es cliente: <a href="/clientes?cliente=${d.cliente.id}" target="_blank"><strong>${crmEsc(d.cliente.nombre)}</strong> ↗</a>${d.cliente.vigilancia_contratada ? " · vigilancia contratada" : ""}</div>`
+    : "";
 
-  const plazos = d.plazos.length
+  // Las dos formas en que termina un lead: se convirtió en cliente, o resultó
+  // que ya tiene gestor/apoderado (deja de ser lead y pasa a «con agente»).
+  const botones = [];
+  if (!d.cliente && d.lead) botones.push('<button type="button" class="crm-btn-primario" data-accion="convertir" title="Pasa sus marcas a la cartera (con vigilancia) y marca el lead como «Cliente».">Convertir en cliente</button>');
+  if (!d.cliente && l.es_lead) botones.push('<button type="button" class="crm-btn-gestor" data-accion="con-gestor" title="Si el titular ya trabaja con un gestor/apoderado: deja de ser lead y pasa a «con agente». Se puede deshacer.">Tiene gestor/apoderado</button>');
+  const acciones = botones.length ? `<div class="crm-acciones-resultado">${botones.join("")}</div>` : "";
+
+  let cab;
+  if (enTitular) {
+    const seg = d.plazos.find(p => p.tipo === "seguimiento");
+    cab = `<div class="crm-cab-resumen">${crmBadgeEtapa(etapa)}
+        ${l.asignado ? `${crmIniciales(l.asignado)} <span>${crmEsc(l.asignado)}</span>` : '<span class="crm-gris">Sin asignar</span>'}
+        ${seg ? `<span class="crm-chip-seg crm-chip-${crmEsc(seg.urgencia)}">Seguimiento ${crmFecha(seg.fecha)} · ${crmEsc(crmUrgencia(seg))}</span>` : ""}
+        ${l.modificado_por ? `<span class="crm-gris">últ. cambio: ${crmEsc(l.modificado_por)} ${fmtFechaHora(l.modificado_en)}</span>` : ""}
+      </div>`;
+  } else {
+    cab = `<div class="crm-ficha-cab">
+        <h3>${crmEsc(titulo)} ${crmBadgeEtapa(etapa)}</h3>
+        <div class="crm-gris">${l.cuit ? `CUIT ${crmEsc(l.cuit)} · ` : ""}${l.cant_marcas || d.marcas.length} marca(s)${clases ? ` · clase ${crmEsc(clases)}` : ""}
+          ${l.modificado_por ? ` · últ. cambio: ${crmEsc(l.modificado_por)} ${fmtFechaHora(l.modificado_en)}` : ""} ${linkTit}</div>
+      </div>`;
+  }
+  return `${cab}${alertas.join("")}${cli}${acciones}`;
+}
+
+function _crmHtmlMarcasModal(d) {
+  return `
+    <h4>Marcas (${d.marcas.length})</h4>
+    <table class="crm-tabla-marcas"><tbody>
+      ${d.marcas.map(m => `<tr>
+        <td><a class="link-acta" href="javascript:void(0)" data-acta="${crmEsc(m.acta)}">${crmEsc(m.acta)} ↗</a></td>
+        <td>${crmEsc(m.denominacion_inpi || m.denominacion || sinNombre(m.tipo))}</td>
+        <td>Clase ${crmEsc(m.clase)}</td>
+        <td>${crmEsc(tipoLegible(m.tipo))}</td>
+        <td>${badgeLead(m)} ${badgeEstadoTramite(m, true)}</td>
+      </tr>`).join("")}
+    </tbody></table>`;
+}
+
+function _crmHtmlPlazos(d) {
+  return d.plazos.length
     ? `<ul class="crm-plazos">${d.plazos.map(p => `
         <li class="crm-plazo crm-urg-${p.urgencia}">
           <span class="crm-plazo-fecha">${crmFecha(p.fecha)}<small>${crmUrgencia(p)}</small></span>
@@ -147,7 +218,19 @@ function _crmHtmlFicha(d, { enModal = false } = {}) {
         </li>`).join("")}</ul>
        <p class="crm-nota">Fechas orientativas calculadas por el sistema: confirmar siempre en el expediente.</p>`
     : '<p class="crm-gris">Sin plazos a la vista.</p>';
+}
 
+/* Gestión comercial: campos del CRM, registrar una gestión e historial. */
+function _crmHtmlGestion(d, { enModal = false } = {}) {
+  const l = d.lead || {};
+  const etapa = l.etapa || "nuevo";
+  const opcionesEtapa = d.etapas.map(e => `<option value="${e.id}" ${e.id === etapa ? "selected" : ""}>${crmEsc(e.nombre)}</option>`).join("");
+  const opcionesAsig = `<option value="">Sin asignar</option>` + d.usuarios.map(u =>
+    `<option value="${crmEsc(u)}" ${u === l.asignado ? "selected" : ""}>${crmEsc(u)}${u === d.usuario ? " (yo)" : ""}</option>`).join("");
+  const wa = crmLinkWhatsApp(l.telefono);
+  const email = l.email
+    ? `<a href="mailto:${crmEsc(l.email)}">${crmEsc(l.email)}</a>`
+    : '<span class="crm-gris">sin email todavía</span>';
   const opcionesTipo = d.tipos_actividad.map(t => `<option value="${t.id}">${crmEsc(t.nombre)}</option>`).join("");
 
   const items = [
@@ -167,30 +250,7 @@ function _crmHtmlFicha(d, { enModal = false } = {}) {
         </div>`).join("")
     : '<p class="crm-gris">Todavía no hay gestiones registradas.</p>';
 
-  const marcas = enModal ? `
-    <h4>Marcas (${d.marcas.length})</h4>
-    <table class="crm-tabla-marcas"><tbody>
-      ${d.marcas.map(m => `<tr>
-        <td><a class="link-acta" href="javascript:void(0)" data-acta="${crmEsc(m.acta)}">${crmEsc(m.acta)} ↗</a></td>
-        <td>${crmEsc(m.denominacion_inpi || m.denominacion || sinNombre(m.tipo))}</td>
-        <td>Clase ${crmEsc(m.clase)}</td>
-        <td>${crmEsc(tipoLegible(m.tipo))}</td>
-        <td>${badgeLead(m)} ${badgeEstadoTramite(m, true)}</td>
-      </tr>`).join("")}
-    </tbody></table>` : "";
-
-  const cli = d.cliente
-    ? `<div class="crm-alerta crm-alerta-info">✅ Ya es cliente: <a href="/clientes?cliente=${d.cliente.id}" target="_blank"><strong>${crmEsc(d.cliente.nombre)}</strong> ↗</a>${d.cliente.vigilancia_contratada ? " · vigilancia contratada" : ""}</div>`
-    : (d.lead ? '<div class="crm-alerta crm-alerta-info">¿Se convirtió en cliente? <button type="button" class="crm-btn-primario" data-accion="convertir">Convertir en cliente</button> <span class="crm-gris">Pasa sus marcas a la cartera (con vigilancia) y marca el lead como «Cliente».</span></div>' : "");
-
   return `
-    <div class="crm-ficha">
-      <div class="crm-ficha-cab">
-        <h3>${crmEsc(titulo)} ${crmBadgeEtapa(etapa)}</h3>
-        <div class="crm-gris">${l.cuit ? `CUIT ${crmEsc(l.cuit)} · ` : ""}${l.cant_marcas || d.marcas.length} marca(s)${clases ? ` · clase ${crmEsc(clases)}` : ""}
-          ${l.modificado_por ? ` · últ. cambio: ${crmEsc(l.modificado_por)} ${fmtFechaHora(l.modificado_en)}` : ""} ${linkTit}</div>
-      </div>
-      ${alertas.join("")}${cli}
       <div class="crm-grid">
         <label>Etapa<select name="etapa">${opcionesEtapa}</select></label>
         <label>Asignado a<select name="asignado">${opcionesAsig}</select></label>
@@ -205,9 +265,6 @@ function _crmHtmlFicha(d, { enModal = false } = {}) {
       </div>
       <div class="crm-guardar"><button type="button" class="crm-btn-primario" data-accion="guardar">Guardar cambios</button> <span class="crm-estado"></span></div>
 
-      <h4>Plazos y fechas</h4>
-      ${plazos}
-
       <h4>Registrar una gestión</h4>
       <form class="crm-form-actividad">
         <div class="crm-fila-campo">
@@ -220,45 +277,69 @@ function _crmHtmlFicha(d, { enModal = false } = {}) {
       </form>
 
       <h4>Historial</h4>
-      <div class="crm-historial">${historial}</div>
-      ${marcas}
-    </div>`;
+      <div class="crm-historial">${historial}</div>`;
 }
 
-function _crmActualizarCamposPorEtapa(cont) {
-  const etapa = cont.querySelector('select[name="etapa"]').value;
-  cont.querySelectorAll(".crm-solo-descartado").forEach(el => { el.hidden = etapa !== "descartado"; });
-  cont.querySelectorAll(".crm-solo-cliente").forEach(el => { el.hidden = etapa !== "cliente"; });
+function _crmActualizarCamposPorEtapa({ uno, todos }) {
+  const etapa = uno('select[name="etapa"]').value;
+  todos(".crm-solo-descartado").forEach(el => { el.hidden = etapa !== "descartado"; });
+  todos(".crm-solo-cliente").forEach(el => { el.hidden = etapa !== "cliente"; });
 }
 
 function _crmConectarFicha(cont) {
-  const { datos, opciones } = cont._crm;
+  const { datos, opciones, raices } = cont._crm;
   const l = datos.lead || {};
-  _crmActualizarCamposPorEtapa(cont);
-  cont.querySelector('select[name="etapa"]').addEventListener("change", () => _crmActualizarCamposPorEtapa(cont));
+  // La ficha puede estar repartida en varios contenedores (página del titular):
+  // se busca solo dentro de ellos, nunca en el resto de la página.
+  const uno = sel => { for (const r of raices) { const e = r.querySelector(sel); if (e) return e; } return null; };
+  const todos = sel => raices.flatMap(r => [...r.querySelectorAll(sel)]);
+  _crmActualizarCamposPorEtapa({ uno, todos });
+  uno('select[name="etapa"]').addEventListener("change", () => _crmActualizarCamposPorEtapa({ uno, todos }));
 
-  cont.querySelectorAll("[data-acta]").forEach(a => a.addEventListener("click", () => abrirActa(a.dataset.acta)));
+  todos("[data-acta]").forEach(a => a.addEventListener("click", () => abrirActa(a.dataset.acta)));
 
   const recargar = async () => {
     await crmRenderFicha(cont, datos.clave, opciones);
     if (typeof opciones.alCambiar === "function") await opciones.alCambiar();
   };
 
-  [["opo-atendida", true, "¿Marcar la oposición como ya atendida? Deja de aparecer como pendiente y no se vuelve a avisar."],
-   ["opo-reabrir", false, null]].forEach(([accion, atendida, pregunta]) => {
-    const b = cont.querySelector(`[data-accion="${accion}"]`);
-    if (!b) return;
-    b.addEventListener("click", async () => {
-      if (pregunta && !confirm(pregunta)) return;
-      b.disabled = true;
-      try {
-        await apiJson("/api/marcas/oposicion-atendida", "POST", { actas: l.actas || [], atendida });
-        await recargar();
-      } catch (e) { b.disabled = false; alert(`No se pudo guardar: ${e.message}`); }
-    });
+  // Oposición marcada como «atendida» con el botón de versiones anteriores:
+  // el botón ya no se ofrece, pero lo que ya estaba marcado se puede deshacer.
+  const btnReabrir = uno('[data-accion="opo-reabrir"]');
+  if (btnReabrir) btnReabrir.addEventListener("click", async () => {
+    btnReabrir.disabled = true;
+    try {
+      await apiJson("/api/marcas/oposicion-atendida", "POST", { actas: l.actas || [], atendida: false });
+      await recargar();
+    } catch (e) { btnReabrir.disabled = false; alert(`No se pudo guardar: ${e.message}`); }
   });
 
-  const btnConvertir = cont.querySelector('[data-accion="convertir"]');
+  // Tiene gestor/apoderado: deja de ser lead y pasa a «con agente».
+  const btnGestor = uno('[data-accion="con-gestor"]');
+  if (btnGestor) btnGestor.addEventListener("click", async () => {
+    const nombre = prompt(
+      "Marcar que este titular ya tiene gestor/apoderado.\n\n"
+      + "Deja de ser lead y pasa a «con agente»: sale de la lista de leads y no se le vuelve a avisar. Se puede deshacer.\n\n"
+      + "¿Quién es el gestor/apoderado? (opcional: podés dejarlo vacío)", "");
+    if (nombre === null) return;  // canceló
+    btnGestor.disabled = true;
+    try {
+      await apiJson(`/api/crm/con-gestor?clave=${encodeURIComponent(datos.clave)}`, "POST", { con_gestor: true, nombre: nombre.trim() || null });
+      await recargar();
+    } catch (e) { btnGestor.disabled = false; alert(`No se pudo marcar: ${e.message}`); }
+  });
+
+  const btnSinGestor = uno('[data-accion="sin-gestor"]');
+  if (btnSinGestor) btnSinGestor.addEventListener("click", async () => {
+    if (!confirm("¿Deshacer «tiene gestor/apoderado»? Vuelve a ser lead y a aparecer en la lista de leads.")) return;
+    btnSinGestor.disabled = true;
+    try {
+      await apiJson(`/api/crm/con-gestor?clave=${encodeURIComponent(datos.clave)}`, "POST", { con_gestor: false });
+      await recargar();
+    } catch (e) { btnSinGestor.disabled = false; alert(`No se pudo deshacer: ${e.message}`); }
+  });
+
+  const btnConvertir = uno('[data-accion="convertir"]');
   if (btnConvertir) btnConvertir.addEventListener("click", async () => {
     if (!confirm("¿Convertir este lead en cliente? Sus marcas pasan a la cartera y se empiezan a vigilar.")) return;
     btnConvertir.disabled = true;
@@ -269,10 +350,10 @@ function _crmConectarFicha(cont) {
     } catch (e) { btnConvertir.disabled = false; alert(`No se pudo convertir: ${e.message}`); }
   });
 
-  cont.querySelector('[data-accion="guardar"]').addEventListener("click", async (ev) => {
+  uno('[data-accion="guardar"]').addEventListener("click", async (ev) => {
     const boton = ev.currentTarget;
-    const estado = cont.querySelector(".crm-estado");
-    const campo = n => cont.querySelector(`[name="${n}"]`);
+    const estado = uno(".crm-estado");
+    const campo = n => uno(`[name="${n}"]`);
     const valores = {
       etapa: campo("etapa").value,
       asignado: campo("asignado").value || null,
@@ -304,7 +385,7 @@ function _crmConectarFicha(cont) {
     }
   });
 
-  cont.querySelector(".crm-form-actividad").addEventListener("submit", async (ev) => {
+  uno(".crm-form-actividad").addEventListener("submit", async (ev) => {
     ev.preventDefault();
     const form = ev.currentTarget;
     const boton = form.querySelector("button[type=submit]");
@@ -322,7 +403,7 @@ function _crmConectarFicha(cont) {
     }
   });
 
-  cont.querySelectorAll("[data-borrar-actividad]").forEach(b => b.addEventListener("click", async () => {
+  todos("[data-borrar-actividad]").forEach(b => b.addEventListener("click", async () => {
     if (!confirm("¿Borrar esta gestión del historial?")) return;
     try {
       await apiJson(`/api/crm/actividad/${b.dataset.borrarActividad}`, "DELETE");

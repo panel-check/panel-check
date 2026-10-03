@@ -375,6 +375,12 @@ def _correr_alters_panel(cur):
     cur.execute("ALTER TABLE marcas ADD COLUMN IF NOT EXISTS oposicion_atendida BOOLEAN")
     cur.execute("ALTER TABLE marcas ADD COLUMN IF NOT EXISTS oposicion_atendida_en TIMESTAMPTZ")
     cur.execute("ALTER TABLE marcas ADD COLUMN IF NOT EXISTS oposicion_atendida_por TEXT")
+    # Lead marcado a mano como "tiene gestor/apoderado" desde la ficha: sale de los
+    # leads (es_lead = false) y guarda lo anterior para poder deshacerlo.
+    for _col, _tipo in (("con_gestor_manual", "BOOLEAN"), ("con_gestor_manual_en", "TIMESTAMPTZ"),
+                        ("con_gestor_manual_por", "TEXT"), ("gestor_nombre", "TEXT"),
+                        ("caracter_previo", "TEXT"), ("lead_score_previo", "INTEGER")):
+        cur.execute(f"ALTER TABLE marcas ADD COLUMN IF NOT EXISTS {_col} {_tipo}")
     # Escaneo directo de números de acta secuenciales (adelanta el contacto
     # semanas antes del boletín) -- ver scripts/escanear_actas_nuevas.py.
     cur.execute(
@@ -428,6 +434,7 @@ COLUMNAS_MARCA = """
     marca_oponente_numero_registro,
     representacion_posterior_oposicion, detalle_representacion_posterior,
     oposicion_atendida, oposicion_atendida_en, oposicion_atendida_por,
+    con_gestor_manual, con_gestor_manual_en, con_gestor_manual_por, gestor_nombre,
     estado_tramite, fecha_concesion, numero_disposicion, fecha_vencimiento_marca,
     fuente
 """
@@ -1379,8 +1386,11 @@ def reintentar_email(acta: str, _: str = Depends(verificar_login)):
             cur.execute(
                 """
                 UPDATE marcas
-                SET caracter = %s, es_lead = %s, email = %s, email_apoderado = %s,
-                    motivo_sin_email = %s, lead_score = %s,
+                SET caracter = CASE WHEN con_gestor_manual IS TRUE THEN caracter ELSE %s END,
+                    es_lead = CASE WHEN con_gestor_manual IS TRUE THEN es_lead ELSE %s END,
+                    email = %s, email_apoderado = %s,
+                    motivo_sin_email = %s,
+                    lead_score = CASE WHEN con_gestor_manual IS TRUE THEN lead_score ELSE %s END,
                     cuit = COALESCE(%s, cuit),
                     fecha_publicacion = COALESCE(%s, fecha_publicacion),
                     estado_tramite = COALESCE(%s, estado_tramite),
@@ -1974,6 +1984,7 @@ def _sql_leads(con_filtro_lead: bool = True, filtrar_actas: bool = False) -> str
                    m.denominacion_inpi, m.denominacion, m.lead_score, m.tuvo_oposicion,
                    m.representacion_posterior_oposicion, m.revisado_oposicion_en, m.boletin,
                    m.oposicion_atendida,
+                   m.con_gestor_manual, m.con_gestor_manual_en, m.con_gestor_manual_por, m.gestor_nombre,
                    m.estado_tramite, m.creado_en, m.fecha_publicacion, m.fecha_presentacion,
                    COALESCE(cc.clave, {CLAVE_RESPALDO_SQL}) AS clave
             FROM marcas m
@@ -1995,7 +2006,13 @@ def _sql_leads(con_filtro_lead: bool = True, filtrar_actas: bool = False) -> str
                 bool_or(es_lead IS FALSE) AS tiene_marcas_con_agente,
                 bool_or(tuvo_oposicion IS TRUE) AS con_oposicion,
                 bool_or(tuvo_oposicion IS TRUE AND representacion_posterior_oposicion IS NOT TRUE
-                        AND oposicion_atendida IS NOT TRUE) AS oposicion_sin_apoderado,
+                        AND oposicion_atendida IS NOT TRUE
+                        AND con_gestor_manual IS NOT TRUE) AS oposicion_sin_apoderado,
+                bool_or(con_gestor_manual IS TRUE) AS con_gestor_manual,
+                max(con_gestor_manual_en) FILTER (WHERE con_gestor_manual IS TRUE) AS con_gestor_manual_en,
+                (array_agg(con_gestor_manual_por ORDER BY con_gestor_manual_en DESC NULLS LAST)
+                    FILTER (WHERE con_gestor_manual IS TRUE))[1] AS con_gestor_manual_por,
+                max(gestor_nombre) FILTER (WHERE con_gestor_manual IS TRUE) AS gestor_nombre,
                 bool_or(tuvo_oposicion IS TRUE AND oposicion_atendida IS TRUE) AS oposicion_atendida,
                 max(revisado_oposicion_en) FILTER (WHERE tuvo_oposicion IS TRUE) AS oposicion_detectada_en,
                 bool_or(boletin IS NULL) AS pre_boletin,
@@ -2202,14 +2219,17 @@ def _plazos_de_marcas(filas, hoy=None) -> list:
         if r.get("tuvo_oposicion"):
             detectada = r.get("oposicion_detectada_en") or r.get("revisado_oposicion_en")
             fecha = detectada.date() if detectada else hoy
-            resuelta = bool(r.get("representacion_posterior_oposicion") or r.get("oposicion_atendida"))
+            resuelta = bool(r.get("representacion_posterior_oposicion") or r.get("oposicion_atendida")
+                            or r.get("con_gestor_manual"))
             if r.get("representacion_posterior_oposicion"):
                 detalle = "Ya se sumó un apoderado/gestor"
+            elif r.get("con_gestor_manual"):
+                detalle = "Marcado a mano: ya tiene gestor/apoderado"
             elif r.get("oposicion_atendida"):
                 detalle = "Marcada como atendida: no hace falta ofrecer ayuda"
             else:
                 detalle = "El plazo para responder corre desde la notificación: confirmar en el expediente"
-            agregar(r, "oposicion_recibida", "Recibió una oposición / vista", fecha, detalle)
+            agregar(r, "oposicion_recibida", "Oposición / vista detectada", fecha, detalle)
             plazos[-1]["urgencia"] = "proximo" if resuelta else "urgente"
         conc = r.get("fecha_concesion")
         if conc:
@@ -2616,6 +2636,72 @@ def crm_actualizar(body: CrmActualizacion, clave: str = Query(...), usuario: str
             fila = _aplicar_cambios_crm(cur, real, cambios, usuario)
         conn.commit()
     return {"ok": True, "clave": real, "crm": fila}
+
+
+CARACTER_GESTOR_MANUAL = "Gestor/apoderado (marcado a mano)"
+
+
+class ConGestor(BaseModel):
+    con_gestor: bool = True
+    nombre: Optional[str] = None
+
+
+@app.post("/api/crm/con-gestor")
+def crm_con_gestor(body: ConGestor, clave: str = Query(...), usuario: str = Depends(verificar_login)):
+    """Marca (o desmarca) a mano que el titular ya tiene gestor/apoderado.
+    Mismo efecto que cuando el sistema detecta que se sumó uno
+    (revisar_oposiciones.py): sus marcas lead pasan a es_lead = false, salen
+    de la lista de leads y de todas las revisiones, y cargar_db.py no las
+    vuelve a convertir en lead al reimportar el boletín. Se guarda el carácter
+    y el score anteriores para poder deshacerlo. No toca la etapa del CRM."""
+    nombre = (body.nombre or "").strip() or None
+    if nombre and len(nombre) > 200:
+        raise HTTPException(status_code=400, detail="El nombre del gestor es demasiado largo (máx. 200 caracteres)")
+    with conexion() as conn:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            _asegurar_claves(cur)
+            real = _clave_existente(cur, clave)
+            actas = _actas_de_clave(cur, real)
+            if body.con_gestor:
+                cur.execute(
+                    """
+                    UPDATE marcas
+                    SET caracter_previo = caracter, lead_score_previo = lead_score,
+                        con_gestor_manual = true, con_gestor_manual_en = now(),
+                        con_gestor_manual_por = %s, gestor_nombre = %s,
+                        es_lead = false, caracter = %s,
+                        lead_score = (CASE WHEN TRIM(COALESCE(matricula_agente, '')) IN ('', 'Part.') THEN 50 ELSE 0 END)
+                                     - 100 + (CASE WHEN COALESCE(email, '') <> '' THEN 20 ELSE 0 END),
+                        actualizado_en = now()
+                    WHERE acta = ANY(%s) AND es_lead IS TRUE
+                    """,
+                    (usuario, nombre, CARACTER_GESTOR_MANUAL, actas),
+                )
+                if cur.rowcount == 0:
+                    raise HTTPException(status_code=400, detail="Este titular no tiene marcas lead para marcar")
+                texto = "Marcado a mano: tiene gestor/apoderado" + (f" ({nombre})" if nombre else "") \
+                    + ". Deja de ser lead y pasa a «con agente»."
+            else:
+                cur.execute(
+                    """
+                    UPDATE marcas
+                    SET es_lead = true, caracter = caracter_previo,
+                        lead_score = COALESCE(lead_score_previo, lead_score),
+                        caracter_previo = NULL, lead_score_previo = NULL,
+                        con_gestor_manual = NULL, con_gestor_manual_en = NULL,
+                        con_gestor_manual_por = NULL, gestor_nombre = NULL,
+                        actualizado_en = now()
+                    WHERE acta = ANY(%s) AND con_gestor_manual IS TRUE
+                    """,
+                    (actas,),
+                )
+                if cur.rowcount == 0:
+                    raise HTTPException(status_code=400, detail="Este titular no estaba marcado con gestor")
+                texto = "Se deshizo «tiene gestor/apoderado»: vuelve a ser lead."
+            marcas = cur.rowcount
+            _registrar_actividad(cur, real, usuario, "sistema", texto)
+        conn.commit()
+    return {"ok": True, "clave": real, "marcas": marcas}
 
 
 @app.post("/api/crm/actividad")
