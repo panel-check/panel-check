@@ -928,6 +928,7 @@ tr.crm-fila:hover { background: var(--azul-claro); }
 }
 .crm-btn-gestor:hover { background: var(--azul-claro); }
 .crm-btn-gestor:disabled { opacity: 0.5; cursor: wait; }
+.crm-acciones-resultado .crm-gris { font-size: 12px; }
 
 .pestanas {
   display: flex; gap: 2px; margin: 14px 20px 0; border-bottom: 1px solid var(--borde); overflow-x: auto;

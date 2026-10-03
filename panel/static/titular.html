@@ -201,7 +201,8 @@ async function cargar({ conCRM = true } = {}) {
           enModal: false,
           partes: { cabecera: "#lead-cab", plazos: "#lead-plazos", gestion: "#lead-gestion" },
           alCambiar: () => cargar({ conCRM: false }),
-          alRenderizar: pintarBadgesPestanas,
+          mailOposicion: mandarMailOposicion,
+          alRenderizar: (d) => { pintarBadgesPestanas(d); pintarEstadoMailOpo(); },
         });
       } else {
         cab.innerHTML = '<p class="crm-gris">Este titular todavía no tiene CUIT ni un nombre identificable, así que no se puede seguir en el CRM desde esta ficha. Cada una de sus marcas aparece por separado en el <a href="/crm">CRM</a>.</p>';
@@ -290,6 +291,7 @@ function pintarBadgesPestanas(d) {
 let mlFilas = [];
 let mlPlantillas = [];
 let mlTimer = null;
+let mlEnvios = [];
 
 const mlEsc = (v) => _escapeHtml(v == null ? "" : String(v));
 function mlNombreMarca(r) { return r.denominacion_inpi || r.denominacion || sinNombre(r.tipo); }
@@ -328,29 +330,58 @@ async function mlPrevia() {
 
 function mlMsg(t, ok) { const el = document.getElementById("ml-msg"); el.textContent = t; el.className = "msg " + (ok ? "ok" : "err"); }
 
+// Devuelve {estado: "ok" | "error" | "cancelado", texto}: lo usa también el botón
+// «Enviar mail de oposición» de la cabecera, que no ve los mensajes de esta pestaña.
 async function mlEnviar() {
   const clave = document.getElementById("ml-plantilla").value;
   const acta = document.getElementById("ml-marca").value;
   const para = document.getElementById("ml-para").value.trim();
   const plantilla = mlPlantillas.find(p => p.clave === clave);
   const r = mlFilas.find(x => x.acta === acta);
-  if (!para) { mlMsg("Falta el mail de destino.", false); return; }
-  if (!confirm(`¿Mandar «${plantilla ? plantilla.nombre : clave}» de la marca ${r ? mlNombreMarca(r) : acta} a ${para}?\n\nEste mail le llega al lead (no es una prueba).`)) return;
+  if (!para) { mlMsg("Falta el mail de destino.", false); return { estado: "error", texto: "Falta el mail de destino." }; }
+  if (!confirm(`¿Mandar «${plantilla ? plantilla.nombre : clave}» de la marca ${r ? mlNombreMarca(r) : acta} a ${para}?\n\nEste mail le llega al lead (no es una prueba).`)) return { estado: "cancelado", texto: "" };
   const btn = document.getElementById("ml-enviar");
   btn.disabled = true; mlMsg("Enviando…", true);
   const mandar = (confirmar_repetido) => apiJson(`/api/mails/${encodeURIComponent(clave)}/enviar`, "POST", { acta, para, confirmar_repetido });
+  let resultado;
   try {
     let res;
     try { res = await mandar(false); }
     catch (e) {
-      if (!/ya se le mandó/.test(e.message) || !confirm(e.message + "\n\n¿Mandarla igual?")) throw e;
+      if (!/ya se le mandó/.test(e.message)) throw e;
+      if (!confirm(e.message + "\n\n¿Mandarla igual?")) { mlMsg("", true); btn.disabled = false; return { estado: "cancelado", texto: "" }; }
       res = await mandar(true);
     }
     mlMsg(`Enviado a ${res.para} ✓`, true);
     mlHistorial();
     cargar({ conCRM: true });
-  } catch (e) { mlMsg(e.message, false); }
+    resultado = { estado: "ok", texto: `Enviado a ${res.para}` };
+  } catch (e) { mlMsg(e.message, false); resultado = { estado: "error", texto: e.message }; }
   btn.disabled = false;
+  return resultado;
+}
+
+// Botón «Enviar mail de oposición» de la cabecera: deja elegidas la plantilla de
+// oposición y la marca con la oposición, y usa el mismo envío (con su confirmación,
+// la lista de bajas y el aviso de «ya se le mandó») que la pestaña Mail.
+async function mandarMailOposicion(acta) {
+  const hay = mlPlantillas.some(p => p.clave === "prospecto_oposicion");
+  const r = mlFilas.find(x => x.acta === acta);
+  if (!hay || !r) { alert("No se encontró la plantilla «Recibió una oposición» o la marca. Usá la pestaña Mail."); abrirPestana("mail"); return; }
+  if (!r.email) { alert("Esta marca no tiene mail cargado. Completalo en la pestaña Mail (campo «Para»)."); document.getElementById("ml-marca").value = acta; document.getElementById("ml-plantilla").value = "prospecto_oposicion"; mlAlCambiarMarca(); abrirPestana("mail"); return; }
+  document.getElementById("ml-plantilla").value = "prospecto_oposicion";
+  document.getElementById("ml-marca").value = acta;
+  mlAlCambiarMarca();  // completa «Para» con el mail de esa marca y actualiza la vista previa
+  const res = await mlEnviar();
+  if (res.estado === "error") alert(`No se pudo mandar el mail: ${res.texto}`);
+}
+
+// «✓ Ya se le mandó el …» al lado del botón de la cabecera.
+function pintarEstadoMailOpo() {
+  const el = document.getElementById("estado-mail-opo");
+  if (!el) return;
+  const previo = (mlEnvios || []).find(e => e.clave_mail === "prospecto_oposicion");
+  el.textContent = previo ? `✓ Ya se le mandó el ${mlFecha(previo.enviado_en)}${previo.enviado_por ? " (" + previo.enviado_por + ")" : ""}` : "";
 }
 
 function mlFecha(iso) { return iso ? new Date(iso).toLocaleString("es-AR", { dateStyle: "short", timeStyle: "short" }) : ""; }
@@ -380,6 +411,8 @@ async function mlHistorial() {
   if (!mlFilas.length) { cont.innerHTML = ""; return; }
   try {
     const envios = await api(`/api/mails/envios?actas=${encodeURIComponent(mlFilas.map(r => r.acta).join(","))}`);
+    mlEnvios = envios;
+    pintarEstadoMailOpo();
     pestBadge("pb-mail", envios.length ? String(envios.length) : "", { titulo: `${envios.length} mail(s) enviado(s) desde el panel` });
     cont.innerHTML = envios.length ? `<table class="hist"><thead><tr><th>Fecha</th><th>Plantilla</th><th>Marca</th><th>Para</th><th>Por</th><th>Seguimiento</th></tr></thead><tbody>${
       envios.map(e => { const r = mlFilas.find(x => x.acta === e.acta);

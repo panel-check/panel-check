@@ -144,7 +144,8 @@ async function crmRenderFicha(cont, clave, opciones = {}) {
 /* Cabecera: lo que tiene que verse siempre. En la página del titular (modo
  * `partes`) el nombre ya está en el título de la página, así que acá va un
  * resumen (etapa, asignado, próximo seguimiento) en vez del título. */
-function _crmHtmlCabecera(d, { enModal = false, partes = null } = {}) {
+function _crmHtmlCabecera(d, opciones = {}) {
+  const { enModal = false, partes = null } = opciones;
   const l = d.lead || {};
   const etapa = l.etapa || "nuevo";
   const enTitular = !!partes;
@@ -171,7 +172,24 @@ function _crmHtmlCabecera(d, { enModal = false, partes = null } = {}) {
   // Las dos formas en que termina un lead: se convirtió en cliente, o resultó
   // que ya tiene gestor/apoderado (deja de ser lead y pasa a «con agente»).
   const botones = [];
-  if (!d.cliente && d.lead) botones.push('<button type="button" class="crm-btn-primario" data-accion="convertir" title="Pasa sus marcas a la cartera (con vigilancia) y marca el lead como «Cliente».">Convertir en cliente</button>');
+  // Con una oposición/vista todavía sin gestor, lo primero que se hace es mirar el
+  // expediente en INPI y mandar el mail de oposición: se dejan a mano acá. El mail
+  // solo se ofrece donde la página sabe mandarlo (opciones.mailOposicion: ficha del titular).
+  const conOpo = m => m.tuvo_oposicion === true && m.es_lead === true && m.oposicion_atendida !== true;
+  const marcaOpo = (!d.cliente && l.es_lead && l.oposicion_sin_apoderado)
+    ? (d.marcas.find(m => conOpo(m) && m.email) || d.marcas.find(conOpo))
+    : null;
+  if (marcaOpo) {
+    const nombreMarca = marcaOpo.denominacion_inpi || marcaOpo.denominacion || marcaOpo.acta;
+    botones.push(`<button type="button" class="crm-btn-gestor" data-accion="ver-acta-opo" data-acta="${crmEsc(marcaOpo.acta)}" title="Abre el expediente en el portal de INPI (ahí está el botón GRILLA DIGITAL con el historial del acta)">🔎 Ver acta ${crmEsc(marcaOpo.acta)} en INPI</button>`);
+    if (typeof opciones.mailOposicion === "function") {
+      const ayudaMail = marcaOpo.email
+        ? `Manda el mail «Recibió una oposición» de la marca ${nombreMarca} a ${marcaOpo.email} (pide confirmación antes de enviar)`
+        : "Esta marca no tiene mail: se completa en la pestaña Mail";
+      botones.push(`<button type="button" class="crm-btn-primario" data-accion="mail-oposicion" data-acta="${crmEsc(marcaOpo.acta)}" title="${crmEsc(ayudaMail)}">✉ Enviar mail de oposición</button><span class="crm-gris" id="estado-mail-opo"></span>`);
+    }
+  }
+  if (!d.cliente && d.lead) botones.push(`<button type="button" class="${marcaOpo ? "crm-btn-gestor" : "crm-btn-primario"}" data-accion="convertir" title="Pasa sus marcas a la cartera (con vigilancia) y marca el lead como «Cliente».">Convertir en cliente</button>`);
   if (!d.cliente && l.es_lead) botones.push('<button type="button" class="crm-btn-gestor" data-accion="con-gestor" title="Si el titular ya trabaja con un gestor/apoderado: deja de ser lead y pasa a «con agente». Se puede deshacer.">Tiene gestor/apoderado</button>');
   const acciones = botones.length ? `<div class="crm-acciones-resultado">${botones.join("")}</div>` : "";
 
@@ -312,6 +330,16 @@ function _crmConectarFicha(cont) {
       await apiJson("/api/marcas/oposicion-atendida", "POST", { actas: l.actas || [], atendida: false });
       await recargar();
     } catch (e) { btnReabrir.disabled = false; alert(`No se pudo guardar: ${e.message}`); }
+  });
+
+  // Atajos del lead con oposición: ver el expediente en INPI y mandar el mail de oposición.
+  const btnVerActa = uno('[data-accion="ver-acta-opo"]');
+  if (btnVerActa) btnVerActa.addEventListener("click", () => abrirActa(btnVerActa.dataset.acta));
+  const btnMailOpo = uno('[data-accion="mail-oposicion"]');
+  if (btnMailOpo) btnMailOpo.addEventListener("click", async () => {
+    btnMailOpo.disabled = true;
+    try { await opciones.mailOposicion(btnMailOpo.dataset.acta); }
+    finally { btnMailOpo.disabled = false; }
   });
 
   // Tiene gestor/apoderado: deja de ser lead y pasa a «con agente».
