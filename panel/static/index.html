@@ -36,9 +36,12 @@
 </header>
 
 <div class="filtros">
-  <label>Boletín
-    <select id="f-boletin"><option value="">Todos</option></select>
-  </label>
+  <div class="bol-campo" id="bol-picker">Boletín
+    <button type="button" class="bol-btn" id="bol-btn" aria-haspopup="true" aria-expanded="false"><span id="bol-btn-txt">Todos</span></button>
+    <div class="bol-pop" id="bol-pop" hidden></div>
+    <!-- Valor real del filtro (lo usan filtrosActuales, el link compartido y Limpiar). El selector de arriba lo maneja. -->
+    <select id="f-boletin" hidden><option value="">Todos</option></select>
+  </div>
   <label>Clase
     <select id="f-clase"><option value="">Todas</option></select>
   </label>
@@ -188,6 +191,130 @@ window.alRecargar = () => cargar(estado.offset);
 // repinta el popup, sin recargar la tabla).
 window.alCambiarComentarios = actualizarContadorComentarios;
 
+// ── Selector de Boletín ──
+// En vez de una lista plana de todos los boletines, agrupa por mes de
+// publicación (según boletines.fecha). Cuando ya hay boletines de más de un
+// año Y estamos en 2027 o después, suma pestañas por año (automático: no hace
+// falta tocar nada al arrancar 2027). El valor real sigue en <select id="f-boletin">.
+const MESES_ES = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio",
+                  "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
+const bol = { lista: [], tabAnio: null };
+
+function fmtMiles(n) { return Number(n).toLocaleString("es-AR"); }
+
+function iniciarSelectorBoletin(boletines) {
+  // fecha viene como "YYYY-MM-DD" (DATE); se parte a mano para no correrla por zona horaria.
+  bol.lista = boletines.map(b => {
+    const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(b.fecha || "");
+    return { numero: String(b.numero), total: b.total_marcas,
+             anio: m ? Number(m[1]) : null, mes: m ? Number(m[2]) : null, dia: m ? m[3] : null };
+  });
+  const btn = document.getElementById("bol-btn");
+  btn.addEventListener("click", () => {
+    const abierto = document.getElementById("bol-pop").hidden;
+    abierto ? abrirSelectorBoletin() : cerrarSelectorBoletin();
+  });
+  document.addEventListener("click", ev => {
+    if (!document.getElementById("bol-picker").contains(ev.target)) cerrarSelectorBoletin();
+  });
+  document.addEventListener("keydown", ev => { if (ev.key === "Escape") cerrarSelectorBoletin(); });
+  refrescarBotonBoletin();
+}
+
+function cerrarSelectorBoletin() {
+  document.getElementById("bol-pop").hidden = true;
+  document.getElementById("bol-btn").setAttribute("aria-expanded", "false");
+}
+
+function abrirSelectorBoletin() {
+  const sel = document.getElementById("f-boletin").value;
+  const actual = bol.lista.find(b => b.numero === sel);
+  const anios = [...new Set(bol.lista.map(b => b.anio).filter(a => a !== null))].sort((a, b) => b - a);
+  // Pestaña inicial: la del año del boletín elegido, o la del año más reciente.
+  bol.tabAnio = (actual && actual.anio) || anios[0] || null;
+  renderSelectorBoletin();
+  document.getElementById("bol-pop").hidden = false;
+  document.getElementById("bol-btn").setAttribute("aria-expanded", "true");
+}
+
+function elegirBoletin(valor) {
+  const sel = document.getElementById("f-boletin");
+  sel.value = valor;
+  refrescarBotonBoletin();
+  cerrarSelectorBoletin();
+  sel.dispatchEvent(new Event("change")); // dispara cargar(0), igual que cuando era un <select>
+}
+
+// Texto del botón + resaltado "con valor" (se llama también desde marcarFiltrosActivos).
+function refrescarBotonBoletin() {
+  const sel = document.getElementById("f-boletin");
+  const btn = document.getElementById("bol-btn");
+  if (!sel || !btn) return;
+  const v = sel.value;
+  let txt = "Todos";
+  if (v === "pre") txt = sel.options[sel.selectedIndex]?.textContent || "🆕 Pre-boletín";
+  else if (v) {
+    const b = bol.lista.find(x => x.numero === v);
+    txt = b && b.dia ? `${v} · ${b.dia}/${String(b.mes).padStart(2, "0")}/${b.anio}` : v;
+  }
+  document.getElementById("bol-btn-txt").textContent = txt;
+  btn.classList.toggle("con-valor", v !== "");
+}
+
+function renderSelectorBoletin() {
+  const sel = document.getElementById("f-boletin").value;
+  const anios = [...new Set(bol.lista.map(b => b.anio).filter(a => a !== null))].sort((a, b) => b - a);
+  // Pestañas por año: recién desde 2027, y solo si hay más de un año cargado.
+  const usarTabs = new Date().getFullYear() >= 2027 && anios.length > 1;
+
+  const optPre = document.getElementById("f-boletin").querySelector('option[value="pre"]');
+  const txtPre = optPre ? optPre.textContent : "🆕 Pre-boletín";
+  let html = `<button type="button" class="bol-item bol-fijo${sel === "" ? " sel" : ""}" data-v="">Todos</button>
+    <button type="button" class="bol-item bol-fijo${sel === "pre" ? " sel" : ""}" data-v="pre">${_escapeHtml(txtPre)}</button>`;
+
+  if (usarTabs) {
+    html += `<div class="bol-tabs" role="tablist">` + anios.map(a =>
+      `<button type="button" role="tab" class="bol-tab${a === bol.tabAnio ? " activa" : ""}" data-anio="${a}">${a}</button>`
+    ).join("") + `</div>`;
+  }
+
+  // Agrupa por año-mes (los más nuevos primero); los que no tienen fecha van al final.
+  const visibles = bol.lista.filter(b => !usarTabs || b.anio === bol.tabAnio || b.anio === null);
+  const grupos = new Map();
+  [...visibles].sort((a, b) =>
+    ((b.anio ?? 0) * 100 + (b.mes ?? 0)) - ((a.anio ?? 0) * 100 + (a.mes ?? 0)) ||
+    (Number(b.numero) - Number(a.numero))
+  ).forEach(b => {
+    const k = b.anio ? `${b.anio}-${String(b.mes).padStart(2, "0")}` : "sin-fecha";
+    if (!grupos.has(k)) grupos.set(k, []);
+    grupos.get(k).push(b);
+  });
+
+  let primero = true;
+  grupos.forEach((items, k) => {
+    const titulo = k === "sin-fecha" ? "Sin fecha" : `${MESES_ES[items[0].mes - 1]} ${items[0].anio}`;
+    const marcas = items.reduce((s, b) => s + (Number(b.total) || 0), 0);
+    // Abierto: el mes del boletín elegido, o el más reciente si no hay ninguno elegido.
+    const abierto = items.some(b => b.numero === sel) || (primero && !bol.lista.some(b => b.numero === sel && visibles.includes(b)));
+    primero = false;
+    html += `<details class="bol-mes"${abierto ? " open" : ""}>
+      <summary><span>${_escapeHtml(titulo)}</span><small>${items.length} ${items.length === 1 ? "boletín" : "boletines"} · ${fmtMiles(marcas)} marcas</small></summary>
+      ${items.map(b => `<button type="button" class="bol-item${b.numero === sel ? " sel" : ""}" data-v="${_escapeHtml(b.numero)}">
+        <span class="bol-n">${_escapeHtml(b.numero)}</span>
+        <span class="bol-f">${b.dia ? `${b.dia}/${String(b.mes).padStart(2, "0")}` : ""}</span>
+        <span class="bol-t">${b.total ?? "?"}</span></button>`).join("")}
+    </details>`;
+  });
+
+  const pop = document.getElementById("bol-pop");
+  pop.innerHTML = html;
+  pop.querySelectorAll(".bol-item").forEach(el => el.addEventListener("click", () => elegirBoletin(el.dataset.v)));
+  pop.querySelectorAll(".bol-tab").forEach(el => el.addEventListener("click", () => {
+    bol.tabAnio = Number(el.dataset.anio);
+    renderSelectorBoletin();
+  }));
+}
+
 function qs(params) {
   return Object.entries(params)
     .filter(([, v]) => v !== "" && v !== null && v !== undefined)
@@ -204,7 +331,7 @@ async function cargarFiltrosIniciales() {
   optPre.textContent = "🆕 Pre-boletín";
   selB.appendChild(optPre);
   api("/api/pre-boletin/total")
-    .then(r => { optPre.textContent = `🆕 Pre-boletín (${r.total})`; })
+    .then(r => { optPre.textContent = `🆕 Pre-boletín (${r.total})`; refrescarBotonBoletin(); })
     .catch(() => {});
   boletines.forEach(b => {
     const opt = document.createElement("option");
@@ -212,6 +339,7 @@ async function cargarFiltrosIniciales() {
     opt.textContent = `${b.numero} (${b.total_marcas ?? "?"})`;
     selB.appendChild(opt);
   });
+  iniciarSelectorBoletin(boletines);
 
   const clases = await api("/api/clases");
   ["f-clase", "f-multiclase-a", "f-multiclase-b"].forEach(id => {
@@ -366,6 +494,7 @@ function marcarFiltrosActivos() {
   document.querySelectorAll(".filtros select, .filtros input[type=text], .filtros-avanzados select").forEach(el => {
     el.classList.toggle("con-valor", el.value !== "");
   });
+  refrescarBotonBoletin();
   const hayFecha = document.getElementById("f-fecha-desde").value || document.getElementById("f-fecha-hasta").value;
   document.getElementById("campo-rango-fecha").classList.toggle("con-valor", !!hayFecha);
   const cant = IDS_AVANZADOS.filter(id => document.getElementById(id).value !== "").length;
