@@ -11,6 +11,7 @@ Uso:
 import argparse
 import csv
 import os
+import re
 import sys
 
 import psycopg2
@@ -54,6 +55,12 @@ def main():
     if not dsn:
         sys.exit("Falta la variable de entorno DATABASE_URL")
 
+    # INPI informa la fecha como dd/mm/aaaa; la base la guarda como DATE.
+    if args.fecha:
+        m = re.fullmatch(r"(\d{1,2})/(\d{1,2})/(\d{4})", args.fecha.strip())
+        if m:
+            args.fecha = f"{m.group(3)}-{int(m.group(2)):02d}-{int(m.group(1)):02d}"
+
     with open(args.in_path, encoding="utf-8") as f:
         rows = list(csv.DictReader(f))
     if not rows:
@@ -70,6 +77,7 @@ def main():
                 INSERT INTO boletines (numero, fecha, pdf_url, total_marcas, estado)
                 VALUES (%s, %s, %s, %s, 'procesado')
                 ON CONFLICT (numero) DO UPDATE SET
+                    fecha = COALESCE(EXCLUDED.fecha, boletines.fecha),
                     total_marcas = EXCLUDED.total_marcas,
                     estado = 'procesado',
                     procesado_en = now()
