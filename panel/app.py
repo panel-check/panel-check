@@ -1114,14 +1114,59 @@ def listar_marcas(
     return {"total": total, "rows": filas}
 
 
+_cache_fechas_inpi = {"ts": 0.0, "datos": {}}
+
+
+def _fechas_boletines_inpi() -> dict:
+    """{numero: date} según el listado de INPI (la fecha exacta de publicación).
+    Se cachea 6 horas; si INPI no responde devuelve lo último que se tenía."""
+    import time
+    from datetime import date
+    if time.time() - _cache_fechas_inpi["ts"] < 6 * 3600 and _cache_fechas_inpi["datos"]:
+        return _cache_fechas_inpi["datos"]
+    try:
+        datos = {}
+        for b in inpi_lead.listar_boletines_marcas_nuevas():
+            m = re.fullmatch(r"(\d{1,2})/(\d{1,2})/(\d{4})", b.get("fecha") or "")
+            if m:
+                datos[str(b["numero"])] = date(int(m.group(3)), int(m.group(2)), int(m.group(1)))
+        _cache_fechas_inpi.update(ts=time.time(), datos=datos)
+    except Exception:
+        pass
+    return _cache_fechas_inpi["datos"]
+
+
 @app.get("/api/boletines")
 def listar_boletines(_: str = Depends(verificar_login)):
+    """Lista de boletines para el filtro. La fecha sale de la base; si falta
+    (boletines cargados antes de que el pipeline la guardara) se completa con
+    el listado de INPI y, si no, con la fecha de publicación más común de sus
+    marcas, y se guarda para no volver a buscarla."""
     with conexion() as conn:
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
             cur.execute(
-                "SELECT numero, fecha, total_marcas FROM boletines ORDER BY numero DESC"
+                """
+                SELECT b.numero, b.fecha, b.total_marcas,
+                       (SELECT MODE() WITHIN GROUP (ORDER BY m.fecha_publicacion)
+                          FROM marcas m WHERE m.boletin = b.numero
+                           AND m.fecha_publicacion IS NOT NULL) AS fecha_marcas
+                  FROM boletines b ORDER BY b.numero DESC
+                """
             )
-            return cur.fetchall()
+            filas = cur.fetchall()
+            faltan = [f for f in filas if not f["fecha"]]
+            if faltan:
+                de_inpi = _fechas_boletines_inpi()
+                for f in faltan:
+                    nueva = de_inpi.get(str(f["numero"])) or f["fecha_marcas"]
+                    if nueva:
+                        f["fecha"] = nueva
+                        cur.execute("UPDATE boletines SET fecha = %s WHERE numero = %s AND fecha IS NULL",
+                                    (nueva, f["numero"]))
+                conn.commit()
+            for f in filas:
+                f.pop("fecha_marcas", None)
+            return filas
 
 
 @app.get("/api/pre-boletin/total")

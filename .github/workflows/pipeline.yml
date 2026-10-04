@@ -219,7 +219,8 @@ jobs:
             echo "Host en DATABASE_URL: $(python3 -c "import os,urllib.parse as u; p=u.urlparse(os.environ.get('DATABASE_URL','')); print(p.hostname, p.port)" 2>&1)"
             for f in data/csv/*_completo_leads.csv; do
               numero=$(basename "$f" | sed 's/_completo_leads.csv//')
-              python3 scripts/cargar_db.py --in "$f" --boletin "$numero"
+              fecha=$(python3 -c "import json,sys; l=json.load(open('data/boletines.json')); print(next((b.get('fecha') or '' for b in l if str(b.get('numero'))==sys.argv[1]), ''))" "$numero" 2>/dev/null || true)
+              python3 scripts/cargar_db.py --in "$f" --boletin "$numero" ${fecha:+--fecha "$fecha"}
             done
           } > >(tee data/debug_carga_db.log) 2> >(tee -a data/debug_carga_db.log >&2)
         env:
