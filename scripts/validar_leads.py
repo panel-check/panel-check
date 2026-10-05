@@ -185,11 +185,28 @@ def buscar_archivos_grilla(s: requests.Session, acta: str, timeout: int = 30) ->
 TERMINOS_OPOSICION = ("OPO", "VISTA", "OPOSICION", "OPOSICIÓN")
 
 
+def _es_oposicion_de_tercero(fila: dict) -> bool:
+    """True si la fila de Grilla Digital es una OPOSICIÓN real de un tercero
+    (no una "vista" de oficio de INPI). Mismo criterio que usa el panel para
+    distinguirlas (badgeOposicion en comun.js y el filtro "Oposición" de
+    /api/marcas): el texto contiene "OPO"."""
+    indice = (fila.get("Indice") or "").upper()
+    referencia = (fila.get("Referencia") or "").upper()
+    return "OPO" in indice or "OPO" in referencia
+
+
 def buscar_fila_oposicion(archivos: list[dict], fecha_publicacion: str | None = None) -> dict | None:
     """Igual criterio que detectar_oposicion, pero devuelve la fila cruda de
     Grilla Digital (no un string armado) para poder ubicar después, por la
     misma fecha, el PDF Formulario de esa oposición/vista — ver
-    descargar_formulario_oposicion."""
+    descargar_formulario_oposicion.
+
+    Si una marca tiene a la vez una vista y una oposición de un tercero
+    (vigentes, posteriores a la publicación), se devuelve la OPOSICIÓN: es la
+    más urgente y la que el filtro "Solo oposición" del panel tiene que
+    encontrar. Antes se devolvía la primera fila que apareciera, fuera cual
+    fuera. Si solo hay vistas, se devuelve la primera, como siempre."""
+    primera = None
     for a in archivos:
         indice = (a.get("Indice") or "").upper()
         referencia = (a.get("Referencia") or "").upper()
@@ -199,8 +216,11 @@ def buscar_fila_oposicion(archivos: list[dict], fecha_publicacion: str | None = 
             fecha_fila = _parsear_fecha_grilla(a.get("Fecha") or "")
             if not fecha_fila or fecha_fila < fecha_publicacion:
                 continue
-        return a
-    return None
+        if _es_oposicion_de_tercero(a):
+            return a
+        if primera is None:
+            primera = a
+    return primera
 
 
 # Términos que usa INPI en Grilla Digital cuando alguien se suma como

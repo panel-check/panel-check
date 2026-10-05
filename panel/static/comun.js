@@ -9,6 +9,27 @@ async function api(path, opciones = {}) {
   return r.json();
 }
 
+// Aviso corto abajo de la pantalla ("12 marcas marcadas como contactadas").
+// tipo: "ok" (oscuro) o "aviso" (ámbar, cuando algo no se pudo hacer del todo).
+let _timerAviso = null;
+function mostrarAviso(texto, tipo = "ok") {
+  let el = document.getElementById("aviso-panel");
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "aviso-panel";
+    el.className = "aviso-panel";
+    el.setAttribute("role", "status");
+    el.setAttribute("aria-live", "polite");
+    document.body.appendChild(el);
+  }
+  el.textContent = texto;
+  el.classList.toggle("aviso", tipo === "aviso");
+  void el.offsetWidth; // para que la animación arranque aunque ya estuviera visible
+  el.classList.add("visible");
+  clearTimeout(_timerAviso);
+  _timerAviso = setTimeout(() => el.classList.remove("visible"), tipo === "aviso" ? 7000 : 4500);
+}
+
 const TIPOS_MARCA = {
   D: "Denominativa",
   M: "Mixta",
