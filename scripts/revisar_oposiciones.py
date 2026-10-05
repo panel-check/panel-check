@@ -1,21 +1,41 @@
 """
 Paso 6 (corre por separado del pipeline principal) — Reviso, para los leads
-reales (sin agente/apoderado) ya publicados en el boletín, si en su Grilla
-Digital apareció una oposición de tercero o una vista de oficio de INPI
-durante la ventana de 30 días para oponerse.
+reales (sin agente/apoderado) ya publicados en el boletín, si apareció una
+oposición de tercero o una vista de oficio de INPI durante la ventana de 30
+días para oponerse, y EN QUÉ ESTADO ESTÁ, para saber si todavía vale la pena
+ofrecerle ayuda al titular.
 
-Cuando en una revisión aparece un apoderado/gestor posterior a la oposición
-(representacion_posterior_oposicion), el lead pasa a es_lead = false con carácter
-"Apoderado/gestor (se sumó tras la oposición)": deja de ser un posible cliente, sale
-de la lista de leads y ya no se vuelve a revisar. Al arrancar, cada corrida también
-corrige los leads que ya tenían ese dato de antes.
+Estado de la oposición (estado_oposicion; ver oposiciones_expediente.py):
+  SIRVEN (nadie la está trabajando):
+    sin_notificar        presentada pero INPI todavía no se la notificó al titular
+    notificada_en_plazo  notificada, el plazo para contestar está corriendo
+    plazo_vencido        venció el plazo y no hay contestación (riesgo de abandono)
+    vista_pendiente      vista de oficio de INPI sin contestar
+    oposicion_sin_detalle  la Grilla Digital la muestra pero el expediente todavía no
+  NO SIRVEN (ya se está trabajando o ya no hay nada que hacer):
+    contestada           ya hay contestación -> se marca como "atendida" (sale de los
+                         avisos y de los pendientes del panel)
+    levantada            la oposición se levantó / se desistió -> idem
+    con_apoderado        el titular ya tiene agente/gestor según GESTION DEL TRAMITE
+                         -> deja de ser lead (es_lead = false)
+
+Cuando el expediente muestra que el titular sumó un apoderado/gestor, el lead
+pasa a es_lead = false con carácter "Apoderado/gestor (se sumó tras la
+oposición)": deja de ser un posible cliente, sale de la lista de leads y ya no
+se vuelve a revisar. Antes esto se decidía por una fila "Acompaña Poder" de la
+Grilla Digital, pero esa fila puede ser del abogado del OPONENTE; ahora el dato
+definitivo es el AGENTE/CARACTER del titular en el expediente. Una fila de poder
+sin agente del titular queda como "posible apoderado" (oposicion_posible_apoderado)
+y el lead sigue vigente.
 
 Esquema de revisión (días contados desde fecha_publicacion de ESE expediente):
   - HITOS: a los 10, 23 y 33 días se hace una revisión de cada lead. Muchas
     oposiciones llegan antes de los 30 días y conviene saberlo con tiempo.
-  - Si en alguna revisión aparece una oposición y todavía no hay apoderado/
-    gestor posterior, se vuelve a mirar TODOS LOS DÍAS hasta el día 33 y cada
-    3 días hasta el día 60 (por si el titular suma un representante).
+  - Si hay oposición que todavía sirve, se vuelve a mirar TODOS LOS DÍAS hasta el
+    día 33 y cada 3 días hasta el día 60 (el estado cambia: se notifica, vence el
+    plazo, el titular contesta o suma un representante).
+  - Los leads con oposición detectada antes de existir el estado (estado_oposicion
+    vacío) se completan en la próxima corrida, sin importar la antigüedad.
   - Contadores en marcas: opo_chequeos (0-3, hitos cumplidos),
     opo_ultimo_chequeo_en, oposicion_detectada_en (primera vez que se vio).
   - Los leads ya publicados cuando se puso en marcha este esquema se ponen al
@@ -23,19 +43,24 @@ Esquema de revisión (días contados desde fecha_publicacion de ESE expediente):
     ellos cuenta el hito que les corresponde por edad. Si una corrida se corta
     por tiempo o por bloqueos, lo que falta queda pendiente y se retoma solo.
 
-Cómo se detecta: reutiliza la misma llamada a Grilla Digital que ya hacía
-validar_leads.py para buscar el email (Home/GrillaDigital + GrillaDigitales),
-sin pedir nada nuevo a INPI. Ahí:
-  - la fila con Indice == "Hoja Publicacion" da la fecha real de publicación
-    (se guarda en fecha_publicacion en validar_leads.py; acá solo se LEE).
-  - si aparece una fila nueva con "OPO"/"VISTA"/"OPOSICION" en Indice o
-    Referencia (ver TERMINOS_OPOSICION en validar_leads.py), es una
-    oposición de tercero o una vista — ejemplo real confirmado a mano:
-    Indice="Recibo de Ingreso", Referencia="Opo. de Marcas".
+Cómo se detecta: la Grilla Digital (Home/GrillaDigital + GrillaDigitales, la misma
+llamada que ya hacía validar_leads.py para el email) avisa si hay una fila de
+oposición/vista ("Recibo de Ingreso" / "Opo. de Marcas"). Cuando hay una (o es el
+hito de los 33 días, o ya se la venía siguiendo) se pide además el expediente
+(/MarcasConsultas/Resultado), que trae la oposición estructurada: fechas de
+presentación, notificación, vencimiento y levantamiento, agente del oponente,
+vistas/contestaciones y el AGENTE/CARACTER actual del titular.
 
 Uso:
     DATABASE_URL=... python3 revisar_oposiciones.py
     DATABASE_URL=... python3 revisar_oposiciones.py --max-minutes 90 --delay 1.5
+    DATABASE_URL=... python3 revisar_oposiciones.py --reverificar-apoderados [--dry-run]
+
+--reverificar-apoderados: revisa los leads que el sistema había pasado a "con
+apoderado" mirando solo la Grilla Digital y devuelve a lead a los que, según el
+expediente, el titular sigue sin representante (el poder era del oponente). No
+toca a los marcados a mano con "Tiene gestor/apoderado". Con --dry-run solo
+cuenta, no escribe.
 
 Alcance: solo es_lead = true (particulares/empresas sin agente ni apoderado).
 Las que ya tienen agente quedan afuera a propósito.
@@ -51,25 +76,31 @@ import monitor_bloqueo
 from registro import registrar
 import psycopg2.extras
 
+from oposiciones_expediente import (
+    ESTADOS_CERRADOS,
+    clasificar_estado_oposicion,
+    consultar_expediente,
+    titular_con_representante,
+)
 from validar_leads import (
-    _parsear_fecha_grilla,
     buscar_archivos_grilla,
     buscar_fila_oposicion,
-    buscar_fila_representacion_posterior,
     crear_sesion,
     descargar_formulario_oposicion,
-    detectar_oposicion,
 )
 
 
 HITOS = (10, 23, 33)          # días desde la publicación en que se revisa cada lead
-RECHEQUEO_DIARIO_HASTA = 33   # con oposición y sin apoderado: todos los días hasta este día...
+RECHEQUEO_DIARIO_HASTA = 33   # con oposición que sirve: todos los días hasta este día...
 RECHEQUEO_CADA_3_HASTA = 60   # ...y cada 3 días hasta este otro
+
+# Estados que ya no hace falta volver a mirar (ver ESTADOS_CERRADOS)
+_CERRADOS_SQL = ", ".join(f"'{e}'" for e in ESTADOS_CERRADOS)
 
 SQL_PENDIENTES = f"""
     SELECT acta, titular, fecha_publicacion,
            (CURRENT_DATE - fecha_publicacion) AS edad,
-           oponente_nombre
+           oponente_nombre, tuvo_oposicion
     FROM marcas
     WHERE es_lead = true
       AND fecha_publicacion IS NOT NULL
@@ -82,11 +113,18 @@ SQL_PENDIENTES = f"""
           tuvo_oposicion IS TRUE
           AND representacion_posterior_oposicion IS NOT TRUE
           AND oposicion_atendida IS NOT TRUE
-          AND fecha_publicacion > CURRENT_DATE - {RECHEQUEO_CADA_3_HASTA}
+          AND COALESCE(estado_oposicion, '') NOT IN ({_CERRADOS_SQL})
           AND (
-            opo_ultimo_chequeo_en IS NULL
-            OR opo_ultimo_chequeo_en::date <= CURRENT_DATE - (
-                 CASE WHEN fecha_publicacion > CURRENT_DATE - {RECHEQUEO_DIARIO_HASTA} THEN 1 ELSE 3 END)
+            -- oposición detectada antes de que existiera el estado: se completa una vez
+            estado_oposicion IS NULL
+            OR (
+              fecha_publicacion > CURRENT_DATE - {RECHEQUEO_CADA_3_HASTA}
+              AND (
+                opo_ultimo_chequeo_en IS NULL
+                OR opo_ultimo_chequeo_en::date <= CURRENT_DATE - (
+                     CASE WHEN fecha_publicacion > CURRENT_DATE - {RECHEQUEO_DIARIO_HASTA} THEN 1 ELSE 3 END)
+              )
+            )
           )
         )
       )
@@ -112,20 +150,101 @@ SQL_PASAR_A_APODERADO = """
     WHERE es_lead IS TRUE AND representacion_posterior_oposicion IS TRUE
 """
 
+# Inverso de lo anterior, para --reverificar-apoderados: el titular sigue sin
+# representante según el expediente, así que vuelve a ser lead.
+SQL_VOLVER_A_LEAD = """
+    UPDATE marcas
+    SET es_lead = true,
+        caracter = '',
+        representacion_posterior_oposicion = false,
+        detalle_representacion_posterior = NULL,
+        lead_score = (CASE WHEN TRIM(COALESCE(matricula_agente, '')) IN ('', 'Part.') THEN 50 ELSE 0 END)
+                     + 50 + (CASE WHEN COALESCE(email, '') <> '' THEN 20 ELSE 0 END),
+        actualizado_en = now()
+    WHERE acta = %s AND es_lead IS FALSE AND caracter = '""" + CARACTER_APODERADO + """'
+      AND con_gestor_manual IS NOT TRUE
+"""
+
+NUEVAS_COLUMNAS = (
+    ("opo_chequeos", "INTEGER"), ("opo_ultimo_chequeo_en", "TIMESTAMPTZ"),
+    ("oposicion_detectada_en", "TIMESTAMPTZ"), ("oposicion_atendida", "BOOLEAN"),
+    ("oposicion_atendida_en", "TIMESTAMPTZ"), ("oposicion_atendida_por", "TEXT"),
+    # Estado de la oposición, leído del expediente de INPI (oposiciones_expediente.py)
+    ("estado_oposicion", "TEXT"), ("estado_oposicion_detalle", "TEXT"),
+    ("estado_oposicion_en", "TIMESTAMPTZ"), ("oposicion_sirve", "BOOLEAN"),
+    ("oposicion_fecha_presentacion", "DATE"), ("oposicion_fecha_notificacion", "DATE"),
+    ("oposicion_fecha_vencimiento", "DATE"), ("oposicion_fecha_levantamiento", "DATE"),
+    ("oposicion_agente_oponente", "TEXT"), ("oposicion_posible_apoderado", "BOOLEAN"),
+    ("con_gestor_manual", "BOOLEAN"),  # lo crea el panel; lo usa --reverificar-apoderados
+)
+
 
 def hito_por_edad(edad: int) -> int:
     """Cuántos hitos (1-3) ya cumplió un lead con esta antigüedad en días."""
     return sum(1 for h in HITOS if edad >= h)
 
 
+def asegurar_columnas(conn):
+    with conn.cursor() as cur:
+        for col, tipo in NUEVAS_COLUMNAS:
+            cur.execute(f"ALTER TABLE marcas ADD COLUMN IF NOT EXISTS {col} {tipo}")
+    conn.commit()
+
+
+def reverificar_apoderados(conn, args):
+    """Devuelve a lead a los pasados a "con apoderado" por una fila de poder de la
+    Grilla Digital cuando el expediente muestra que el titular sigue sin agente."""
+    with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+        cur.execute(
+            """
+            SELECT acta FROM marcas
+            WHERE es_lead IS FALSE AND caracter = %s AND con_gestor_manual IS NOT TRUE
+            ORDER BY acta
+            """,
+            (CARACTER_APODERADO,),
+        )
+        actas = [r["acta"] for r in cur.fetchall()]
+    print(f"Leads pasados a 'apoderado/gestor' por la Grilla Digital a reverificar: {len(actas)}")
+    s = crear_sesion()
+    volvieron = confirmados = sin_consulta = 0
+    for i, acta in enumerate(actas, 1):
+        if monitor_bloqueo.debe_cortar():
+            print("Se corta por bloqueos seguidos de INPI: el resto queda para otra corrida.")
+            break
+        exp = consultar_expediente(s, acta)
+        if exp.get("bloqueado"):
+            sin_consulta += 1
+            time.sleep(args.delay)
+            continue
+        if titular_con_representante(exp):
+            confirmados += 1
+            print(f"  [{i}/{len(actas)}] acta {acta}: el titular sí tiene representante, queda como está")
+        else:
+            volvieron += 1
+            print(f"  [{i}/{len(actas)}] acta {acta}: el titular sigue sin representante -> vuelve a ser lead")
+            if not args.dry_run:
+                with conn.cursor() as cur:
+                    cur.execute(SQL_VOLVER_A_LEAD, (acta,))
+                    cur.execute(
+                        "UPDATE marcas SET estado_oposicion = NULL, oposicion_posible_apoderado = true, "
+                        "opo_ultimo_chequeo_en = NULL WHERE acta = %s", (acta,))
+                conn.commit()
+        time.sleep(args.delay)
+    print(f"\nVuelven a ser lead: {volvieron}{' (dry-run: no se escribió nada)' if args.dry_run else ''}. "
+          f"Confirmados con representante: {confirmados}. Sin poder consultar: {sin_consulta}.")
+
+
 def main():
-    ap = argparse.ArgumentParser(description=__doc__)
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument(
         "--max-minutes", type=float, default=None,
         help="tope de tiempo de la corrida; lo que falte queda pendiente para la próxima",
     )
     ap.add_argument("--delay", type=float, default=1.5, help="segundos entre acta y acta (freno de mano)")
     ap.add_argument("--limit", type=int, default=None, help="tope de actas a revisar, útil para pruebas")
+    ap.add_argument("--reverificar-apoderados", action="store_true",
+                    help="reverifica los leads pasados a 'con apoderado' solo por la Grilla Digital")
+    ap.add_argument("--dry-run", action="store_true", help="con --reverificar-apoderados: no escribe")
     args = ap.parse_args()
 
     dsn = os.environ.get("DATABASE_URL")
@@ -135,10 +254,12 @@ def main():
     inicio = time.time()
     conn = psycopg2.connect(dsn)
     try:
+        asegurar_columnas(conn)
+        if args.reverificar_apoderados:
+            reverificar_apoderados(conn, args)
+            return
+
         with conn.cursor() as cur:
-            for col, tipo in (("opo_chequeos", "INTEGER"), ("opo_ultimo_chequeo_en", "TIMESTAMPTZ"),
-                              ("oposicion_detectada_en", "TIMESTAMPTZ"), ("oposicion_atendida", "BOOLEAN")):
-                cur.execute(f"ALTER TABLE marcas ADD COLUMN IF NOT EXISTS {col} {tipo}")
             # Alta inicial de los contadores: los leads que ya fueron revisados
             # con el esquema anterior (una sola revisión, a los 33+ días) cuentan
             # con los 3 hitos cumplidos; el resto arranca en 0.
@@ -170,6 +291,7 @@ def main():
         pasados_a_apoderado = 0
         revisadas = 0
         sin_consulta = 0
+        por_estado: dict[str, int] = {}
         for i, fila in enumerate(pendientes, 1):
             if args.max_minutes and (time.time() - inicio) / 60 >= args.max_minutes:
                 print(f"Se llegó al tope de {args.max_minutes:g} minutos: el resto sigue en la próxima corrida.")
@@ -180,6 +302,7 @@ def main():
             revisadas += 1
             edad = int(fila["edad"])
             acta = fila["acta"]
+            fecha_pub = fila["fecha_publicacion"].isoformat()
             archivos = buscar_archivos_grilla(s, acta)
             if not archivos:
                 # bloqueo del WAF u otro fallo de red: no marcamos como revisado,
@@ -193,8 +316,30 @@ def main():
                 time.sleep(args.delay)
                 continue
 
-            fila_opo = buscar_fila_oposicion(archivos, fila["fecha_publicacion"].isoformat())
-            tuvo_oposicion = fila_opo is not None
+            fila_opo = buscar_fila_oposicion(archivos, fecha_pub)
+
+            # El expediente (oposición estructurada + agente actual del titular)
+            # se pide cuando hay algo que clasificar: oposición/vista en la Grilla,
+            # una oposición que ya se venía siguiendo, o el último hito (33 días),
+            # como control cruzado por si la Grilla no la mostró.
+            if fila_opo or fila.get("tuvo_oposicion") or hito_por_edad(edad) >= len(HITOS):
+                exp = consultar_expediente(s, acta)
+                if exp.get("bloqueado"):
+                    sin_consulta += 1
+                    print(f"  [{i}/{len(pendientes)}] acta {acta}: INPI bloqueó la consulta del expediente, reintento en la próxima corrida")
+                    conn.commit()
+                    time.sleep(args.delay)
+                    continue
+                if exp.get("error_lectura"):
+                    print(f"  [{i}/{len(pendientes)}] acta {acta}: aviso: no se pudo leer del todo la tabla de oposiciones del expediente")
+            else:
+                exp = {"oposiciones": [], "vistas": [], "titular_caracter": "",
+                       "titular_agente": "", "titular_matricula": "", "error_lectura": False}
+
+            est = clasificar_estado_oposicion(exp, archivos, fecha_pub)
+            estado = est["estado"]
+            tuvo_oposicion = estado != "sin_oposicion"
+            por_estado[estado] = por_estado.get(estado, 0) + 1
             detalle = (
                 f"{fila_opo.get('Fecha', '')} - {fila_opo.get('Indice', '')} - {fila_opo.get('Referencia', '')}"
                 if fila_opo else ""
@@ -209,30 +354,20 @@ def main():
             if fila_opo and not fila.get("oponente_nombre") and "OPO" in (fila_opo.get("Referencia") or "").upper():
                 detalle_rico = descargar_formulario_oposicion(s, archivos, fila_opo, acta_propia=acta)
 
-            # Si ya hay oposición, buscamos además si DESPUÉS de esa fecha
-            # apareció alguien sumándose como apoderado/gestor ("Acompaña
-            # Poder"/"Ratifica") -- señal de que el titular ya está
-            # trabajando con alguien para responderla, así que deja de ser
-            # un lead frío prioritario. Mientras esto no aparezca, NO
-            # marcamos revisado_oposicion_en (ver el SELECT de arriba): se
-            # sigue reintentando en corridas futuras hasta encontrarlo o
-            # hasta que deje de tener sentido seguir mirando.
-            representacion_posterior = None
-            detalle_representacion = None
-            if tuvo_oposicion:
-                fecha_opo = _parsear_fecha_grilla(fila_opo.get("Fecha") or "")
-                fila_rep = buscar_fila_representacion_posterior(archivos, fecha_opo)
-                representacion_posterior = fila_rep is not None
-                if fila_rep:
-                    detalle_representacion = (
-                        f"{fila_rep.get('Fecha', '')} - {fila_rep.get('Indice', '')} - "
-                        f"{fila_rep.get('Referencia', '')}"
-                    )
+            # El representante del titular se confirma con GESTION DEL TRAMITE del
+            # expediente (no con una fila de poder de la Grilla, que puede ser del
+            # oponente). Si está confirmado, el lead deja de serlo (SQL_PASAR_A_APODERADO).
+            representacion_posterior = est["representacion_confirmada"] if tuvo_oposicion else None
+            detalle_representacion = est["detalle"] if est["representacion_confirmada"] else None
 
             # "revisado_oposicion_en" queda como antes: solo cuando ya no hay nada
-            # más que mirar (sin oposición pasado el día 33, o con apoderado posterior).
-            revisado_en = "now()" if ((not tuvo_oposicion and edad >= HITOS[-1]) or representacion_posterior) else None
+            # más que mirar (sin oposición pasado el día 33, o estado cerrado).
+            cerrada = estado in ESTADOS_CERRADOS
+            revisado_en = "now()" if ((not tuvo_oposicion and edad >= HITOS[-1]) or cerrada) else None
             hito = hito_por_edad(edad)
+            # Contestada / levantada: ya se está trabajando (o ya no hay nada), así que
+            # se marca como "atendida" y sale de los avisos y de los pendientes.
+            auto_atendida = estado in ("contestada", "levantada")
 
             with conn.cursor() as cur:
                 cur.execute(
@@ -253,7 +388,22 @@ def main():
                         marca_oponente_denominacion = COALESCE(%s, marca_oponente_denominacion),
                         marca_oponente_numero_registro = COALESCE(%s, marca_oponente_numero_registro),
                         representacion_posterior_oposicion = %s,
-                        detalle_representacion_posterior = %s
+                        detalle_representacion_posterior = %s,
+                        estado_oposicion = %s,
+                        estado_oposicion_detalle = %s,
+                        estado_oposicion_en = now(),
+                        oposicion_sirve = %s,
+                        oposicion_fecha_presentacion = %s,
+                        oposicion_fecha_notificacion = %s,
+                        oposicion_fecha_vencimiento = %s,
+                        oposicion_fecha_levantamiento = %s,
+                        oposicion_agente_oponente = %s,
+                        oposicion_posible_apoderado = %s,
+                        oposicion_atendida = CASE WHEN %s THEN true ELSE oposicion_atendida END,
+                        oposicion_atendida_en = CASE WHEN %s AND oposicion_atendida IS NOT TRUE THEN now()
+                                                     ELSE oposicion_atendida_en END,
+                        oposicion_atendida_por = CASE WHEN %s AND oposicion_atendida IS NOT TRUE THEN %s
+                                                      ELSE oposicion_atendida_por END
                     WHERE acta = %s
                     """,
                     (
@@ -269,6 +419,13 @@ def main():
                         detalle_rico.get("marca_oponente_numero_registro"),
                         representacion_posterior,
                         detalle_representacion,
+                        estado if tuvo_oposicion else None,
+                        est["detalle"] or None,
+                        est["sirve"],
+                        est["presentacion"], est["notificacion"], est["vencimiento"], est["levantamiento"],
+                        est["agente_oponente"],
+                        est["posible_apoderado"] if tuvo_oposicion else None,
+                        auto_atendida, auto_atendida, auto_atendida, f"sistema: {estado}",
                         acta,
                     ),
                 )
@@ -284,8 +441,8 @@ def main():
                 # personales de terceros (nombre, CUIT/DNI, fundamento) que no
                 # deben quedar en los logs de Actions (repo público). Sí se
                 # siguen guardando en la base (UPDATE de arriba), sin cambios.
-                extra = " (apoderado/gestor posterior: deja de ser lead)" if representacion_posterior else ""
-                print(f"  [{i}/{len(pendientes)}] acta {acta}: CON OPOSICIÓN/VISTA{extra}")
+                extra = " (el titular ya tiene representante: deja de ser lead)" if representacion_posterior else ""
+                print(f"  [{i}/{len(pendientes)}] acta {acta}: OPOSICIÓN/VISTA — {estado}{extra}")
             else:
                 print(f"  [{i}/{len(pendientes)}] acta {acta}: sin oposición")
 
@@ -293,6 +450,8 @@ def main():
 
         print(f"\nRevisadas: {revisadas - sin_consulta} de {len(pendientes)} pendientes "
               f"({sin_consulta} sin poder consultar). Con oposición/vista detectada: {con_oposicion}.")
+        if por_estado:
+            print("Por estado: " + ", ".join(f"{k}={v}" for k, v in sorted(por_estado.items())))
         registrar("revisar_oposiciones.yml", {
             "revisadas": revisadas - sin_consulta, "con_oposicion": con_oposicion,
             "sin_oposicion": revisadas - sin_consulta - con_oposicion,

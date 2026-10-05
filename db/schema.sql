@@ -94,6 +94,23 @@ ALTER TABLE marcas ADD COLUMN IF NOT EXISTS fecha_vencimiento_marca DATE;
 ALTER TABLE marcas ADD COLUMN IF NOT EXISTS representacion_posterior_oposicion BOOLEAN;
 ALTER TABLE marcas ADD COLUMN IF NOT EXISTS detalle_representacion_posterior TEXT;
 
+-- Agregado el 05/10/2026: estado de la oposición leído del expediente de INPI
+-- (tablas OPOSICIONES y VISTAS) -- ver scripts/oposiciones_expediente.py.
+--   estado_oposicion: sin_notificar | notificada_en_plazo | plazo_vencido |
+--     vista_pendiente | oposicion_sin_detalle (el lead SIRVE: nadie la trabaja) |
+--     contestada | levantada | con_apoderado (ya no sirve).
+-- oposicion_agente_oponente es el apoderado del OPONENTE, no del titular.
+ALTER TABLE marcas ADD COLUMN IF NOT EXISTS estado_oposicion TEXT;
+ALTER TABLE marcas ADD COLUMN IF NOT EXISTS estado_oposicion_detalle TEXT;
+ALTER TABLE marcas ADD COLUMN IF NOT EXISTS estado_oposicion_en TIMESTAMPTZ;
+ALTER TABLE marcas ADD COLUMN IF NOT EXISTS oposicion_sirve BOOLEAN;
+ALTER TABLE marcas ADD COLUMN IF NOT EXISTS oposicion_fecha_presentacion DATE;
+ALTER TABLE marcas ADD COLUMN IF NOT EXISTS oposicion_fecha_notificacion DATE;
+ALTER TABLE marcas ADD COLUMN IF NOT EXISTS oposicion_fecha_vencimiento DATE;
+ALTER TABLE marcas ADD COLUMN IF NOT EXISTS oposicion_fecha_levantamiento DATE;
+ALTER TABLE marcas ADD COLUMN IF NOT EXISTS oposicion_agente_oponente TEXT;
+ALTER TABLE marcas ADD COLUMN IF NOT EXISTS oposicion_posible_apoderado BOOLEAN;
+
 -- Agregado el 30/09/2026: aviso por mail (Resend) de leads con oposición/vista
 -- nueva -- ver scripts/notificar_oposiciones.py. Cada lead se avisa una sola vez.
 ALTER TABLE marcas ADD COLUMN IF NOT EXISTS notificado_oposicion_en TIMESTAMPTZ;

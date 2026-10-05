@@ -17,6 +17,11 @@ on:
         description: "Tope de actas a revisar en esta corrida (dejar vacío = todas)"
         required: false
         default: ""
+      reverificar_apoderados:
+        description: "Reverificar los leads descartados solo por un poder de la Grilla Digital (devuelve a lead a los que el expediente muestra sin agente)"
+        type: boolean
+        required: false
+        default: false
 
 permissions:
   contents: read
@@ -52,6 +57,7 @@ jobs:
           cd scripts
           args="--max-minutes ${{ inputs.max_minutes || '30' }}"
           if [ -n "${{ inputs.limit }}" ]; then args="$args --limit ${{ inputs.limit }}"; fi
+          if [ "${{ inputs.reverificar_apoderados }}" = "true" ]; then args="$args --reverificar-apoderados"; fi
           python3 revisar_oposiciones.py $args
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL || secrets.DATABASE_PUBLIC_URL }}

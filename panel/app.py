@@ -388,6 +388,15 @@ def _correr_alters_panel(cur):
     cur.execute("ALTER TABLE marcas ADD COLUMN IF NOT EXISTS oposicion_atendida BOOLEAN")
     cur.execute("ALTER TABLE marcas ADD COLUMN IF NOT EXISTS oposicion_atendida_en TIMESTAMPTZ")
     cur.execute("ALTER TABLE marcas ADD COLUMN IF NOT EXISTS oposicion_atendida_por TEXT")
+    # Estado de la oposición leído del expediente de INPI (scripts/oposiciones_expediente.py):
+    # sin_notificar / notificada_en_plazo / plazo_vencido / vista_pendiente /
+    # oposicion_sin_detalle (sirven) y contestada / levantada / con_apoderado (no sirven).
+    for _col, _tipo in (("estado_oposicion", "TEXT"), ("estado_oposicion_detalle", "TEXT"),
+                        ("estado_oposicion_en", "TIMESTAMPTZ"), ("oposicion_sirve", "BOOLEAN"),
+                        ("oposicion_fecha_presentacion", "DATE"), ("oposicion_fecha_notificacion", "DATE"),
+                        ("oposicion_fecha_vencimiento", "DATE"), ("oposicion_fecha_levantamiento", "DATE"),
+                        ("oposicion_agente_oponente", "TEXT"), ("oposicion_posible_apoderado", "BOOLEAN")):
+        cur.execute(f"ALTER TABLE marcas ADD COLUMN IF NOT EXISTS {_col} {_tipo}")
     # Lead marcado a mano como "tiene gestor/apoderado" desde la ficha: sale de los
     # leads (es_lead = false) y guarda lo anterior para poder deshacerlo.
     for _col, _tipo in (("con_gestor_manual", "BOOLEAN"), ("con_gestor_manual_en", "TIMESTAMPTZ"),
@@ -447,6 +456,10 @@ COLUMNAS_MARCA = """
     marca_oponente_numero_registro,
     representacion_posterior_oposicion, detalle_representacion_posterior,
     oposicion_atendida, oposicion_atendida_en, oposicion_atendida_por,
+    estado_oposicion, estado_oposicion_detalle, oposicion_sirve,
+    oposicion_fecha_presentacion, oposicion_fecha_notificacion,
+    oposicion_fecha_vencimiento, oposicion_fecha_levantamiento,
+    oposicion_agente_oponente, oposicion_posible_apoderado,
     con_gestor_manual, con_gestor_manual_en, con_gestor_manual_por, gestor_nombre,
     estado_tramite, fecha_concesion, numero_disposicion, fecha_vencimiento_marca,
     fuente
