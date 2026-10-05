@@ -176,6 +176,9 @@ NUEVAS_COLUMNAS = (
     ("oposicion_fecha_vencimiento", "DATE"), ("oposicion_fecha_levantamiento", "DATE"),
     ("oposicion_agente_oponente", "TEXT"), ("oposicion_posible_apoderado", "BOOLEAN"),
     ("con_gestor_manual", "BOOLEAN"),  # lo crea el panel; lo usa --reverificar-apoderados
+    # 2 = clasificado con las reglas actuales (contestación solo si es posterior a la
+    # oposición). Las contestadas/levantadas de versiones anteriores se recalculan.
+    ("estado_oposicion_version", "INTEGER"),
 )
 
 
@@ -270,6 +273,25 @@ def main():
                 WHERE opo_chequeos IS NULL AND es_lead = true
                 """
             )
+            # Reparación (05/10/2026): la primera versión daba por "contestada" una
+            # oposición porque el titular había contestado una vista VIEJA
+            # (actas 4688778 y 4726688), o porque leía como contestada una vista
+            # sin contestar (4748835). Lo que se marcó contestada/levantada con esas
+            # reglas se desmarca (solo lo que puso el sistema: lo que marcó una persona
+            # a mano no se toca) y se vuelve a clasificar en esta misma corrida.
+            cur.execute(
+                """
+                UPDATE marcas
+                SET oposicion_atendida    = CASE WHEN oposicion_atendida_por LIKE 'sistema:%' THEN NULL ELSE oposicion_atendida END,
+                    oposicion_atendida_en = CASE WHEN oposicion_atendida_por LIKE 'sistema:%' THEN NULL ELSE oposicion_atendida_en END,
+                    oposicion_atendida_por = CASE WHEN oposicion_atendida_por LIKE 'sistema:%' THEN NULL ELSE oposicion_atendida_por END,
+                    estado_oposicion = NULL, oposicion_sirve = NULL
+                WHERE estado_oposicion IN ('contestada', 'levantada')
+                  AND COALESCE(estado_oposicion_version, 1) < 2
+                """
+            )
+            if cur.rowcount:
+                print(f"Oposiciones 'contestada/levantada' de la versión anterior que se vuelven a clasificar: {cur.rowcount}")
             # Corrección de los leads que ya tenían un apoderado/gestor posterior a
             # la oposición (detectado antes de que esto cambiara el estado).
             cur.execute(SQL_PASAR_A_APODERADO)
@@ -390,6 +412,7 @@ def main():
                         representacion_posterior_oposicion = %s,
                         detalle_representacion_posterior = %s,
                         estado_oposicion = %s,
+                        estado_oposicion_version = 2,
                         estado_oposicion_detalle = %s,
                         estado_oposicion_en = now(),
                         oposicion_sirve = %s,
@@ -407,7 +430,7 @@ def main():
                     WHERE acta = %s
                     """,
                     (
-                        tuvo_oposicion, detalle or None,
+                        tuvo_oposicion, (detalle or None) if tuvo_oposicion else None,
                         hito, tuvo_oposicion,
                         detalle_rico.get("oponente_nombre"),
                         detalle_rico.get("oponente_tipo_doc"),

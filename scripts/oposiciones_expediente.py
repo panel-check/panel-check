@@ -39,11 +39,23 @@ Estados (estado_oposicion), y si el lead "sirve" para ofrecerle ayuda:
     levantada              -- oposición levantada / desistida             no sirve
     con_apoderado          -- el titular ya tiene agente/gestor           no sirve
 
-"Contestada" se detecta por la tabla de vistas/contestaciones del expediente
-o por una fila de Grilla Digital con "CONTEST" posterior a la presentación.
-Esa parte NO se pudo verificar todavía con un caso real (las dos actas
-disponibles todavía no tenían notificación): si aparece un caso con otra
-redacción, agregar el término en TERMINOS_CONTESTACION / TERMINOS_LEVANTAMIENTO.
+Qué cuenta y qué no (casos reales 05/10/2026, actas 4688778, 4726688, 4748835):
+  - La tabla VISTAS del expediente es HISTÓRICA: trae las vistas administrativas
+    de toda la vida del trámite (campos Fecha_Vista, Fecha_Notificacion,
+    Fecha_Vencimiento, Fecha_Contestacion, Tipo). Que el titular haya contestado
+    una vista vieja (antes de la oposición) NO importa: ese trámite ya avanzó.
+  - Lo que importa es la oposición actual: ¿se notificó?, ¿hay plazo?, ¿contestaron
+    ESA oposición? Una contestación solo cuenta si es POSTERIOR a la presentación
+    de la oposición (en la tabla de vistas o como fila "Contest..." en la Grilla).
+  - Una vista de oficio sin contestar (Fecha_Contestacion vacía) sí sirve: es el
+    único caso en que se mira la vista, cuando no hay oposición. Una vista ya
+    contestada no genera alerta.
+  - Una fecha vacía viene como 01/01/0001: nunca es una contestación.
+
+Todavía no se vio una oposición ya contestada en el expediente real: la
+contestación de la OPOSICIÓN se detecta por fecha (posterior a la presentación)
+y puede aparecer con otra redacción. Si aparece un caso real, ajustar
+TERMINOS_CONTESTACION.
 """
 
 import datetime as _dt
@@ -123,23 +135,16 @@ def _normalizar_oposicion(o: dict) -> dict:
 
 
 def _normalizar_vista(v: dict) -> dict:
-    """Los nombres de campo de VISTAS Y NOTIFICACIONES (CONTESTACIÓN, FECHA,
-    FEC NOTIF, TIPO) no están confirmados con un caso real, así que se leen
-    por patrón en vez de por nombre exacto."""
-    fecha = notif = contestacion = None
-    tipo = None
-    for k, val in v.items():
-        kl = k.lower()
-        if "contest" in kl:
-            f = _fecha_valida(val)
-            contestacion = f or (val.strip() if isinstance(val, str) and val.strip() else contestacion)
-        elif "notif" in kl:
-            notif = _fecha_valida(val) or notif
-        elif kl.startswith("fec") and fecha is None:
-            fecha = _fecha_valida(val)
-        elif "tipo" in kl and isinstance(val, str):
-            tipo = val.strip() or tipo
-    return {"fecha": fecha, "notificacion": notif, "contestacion": contestacion, "tipo": tipo}
+    """Campos reales de la tabla VISTAS (acta 4748835, 05/10/2026):
+    Fecha_Vista, Fecha_Notificacion, Fecha_Vencimiento, Fecha_Contestacion
+    (vacía = 01/01/0001), Tipo ("Administrativas"), Cod_VistaExp, Acta."""
+    return {
+        "fecha": _fecha_valida(v.get("Fecha_Vista")),
+        "notificacion": _fecha_valida(v.get("Fecha_Notificacion")),
+        "vencimiento": _fecha_valida(v.get("Fecha_Vencimiento")),
+        "contestacion": _fecha_valida(v.get("Fecha_Contestacion")),
+        "tipo": (v.get("Tipo") or "").strip() or None,
+    }
 
 
 def parsear_expediente(html: str) -> dict:
@@ -206,6 +211,15 @@ def _fmt(iso: str | None) -> str:
     return f"{iso[8:10]}/{iso[5:7]}/{iso[:4]}" if iso else "—"
 
 
+def _vista_vigente(v: dict, fecha_publicacion: str | None) -> bool:
+    """Una vista cuyas fechas son todas anteriores a la publicación vigente ya
+    se resolvió con una presentación anterior: no es una alerta nueva."""
+    if not fecha_publicacion:
+        return True
+    fechas = [f for f in (v["fecha"], v["notificacion"], v["vencimiento"], v["contestacion"]) if f]
+    return bool(fechas) and max(fechas) >= fecha_publicacion
+
+
 def clasificar_estado_oposicion(
     exp: dict, archivos: list[dict], fecha_publicacion: str | None, hoy: _dt.date | None = None,
 ) -> dict:
@@ -223,47 +237,72 @@ def clasificar_estado_oposicion(
             if not (fecha_publicacion and o["presentacion"] and o["presentacion"] < fecha_publicacion)]
     vistas = exp.get("vistas", [])
     fila_grilla = buscar_fila_oposicion(archivos or [], fecha_publicacion)
+    texto_fila = f"{(fila_grilla or {}).get('Indice') or ''} {(fila_grilla or {}).get('Referencia') or ''}".upper()
+    fila_opo_grilla = fila_grilla if fila_grilla and "OPO" in texto_fila else None
+    fila_vista_grilla = fila_grilla if fila_grilla and not fila_opo_grilla else None
 
     base = {"estado": "sin_oposicion", "sirve": None, "detalle": "", "presentacion": None,
             "notificacion": None, "vencimiento": None, "levantamiento": None,
             "agente_oponente": None, "posible_apoderado": False, "representacion_confirmada": False}
-    if not opos and not vistas and not fila_grilla:
-        return base
 
-    desde = min([o["presentacion"] for o in opos if o["presentacion"]] or
-                [_fecha_valida((fila_grilla or {}).get("Fecha") or "") or fecha_publicacion or ""]) or None
+    def contestacion_desde(desde: str | None) -> bool:
+        """¿Hay una contestación POSTERIOR a `desde`? Las anteriores son de un
+        trámite viejo (ej. una vista contestada antes de publicarse) y no cuentan."""
+        if not desde:
+            return False
+        if any(v["contestacion"] and v["contestacion"] >= desde for v in vistas):
+            return True
+        return bool(_filas_grilla_posteriores(archivos, TERMINOS_CONTESTACION, desde))
 
-    # ¿Ya contestó? Tabla de vistas/contestaciones o fila de Grilla posterior.
-    contestada = any(v["contestacion"] for v in vistas) or bool(
-        _filas_grilla_posteriores(archivos, TERMINOS_CONTESTACION, desde))
-    levantada_grilla = bool(_filas_grilla_posteriores(archivos, TERMINOS_LEVANTAMIENTO, desde))
+    o = None
+    extra = {}
+    if opos or fila_opo_grilla:
+        # ---- hay una oposición de tercero: es lo único que se evalúa
+        desde = (min([x["presentacion"] for x in opos if x["presentacion"]], default=None)
+                 or _fecha_valida((fila_opo_grilla or {}).get("Fecha") or "") or fecha_publicacion)
+        contestada = contestacion_desde(desde)
+        levantada_grilla = bool(_filas_grilla_posteriores(archivos, TERMINOS_LEVANTAMIENTO, desde))
 
-    def estado_de(o):
-        if o["levantamiento"] or levantada_grilla:
-            return "levantada"
-        if contestada:
-            return "contestada"
-        if o["vencimiento"]:
-            return "plazo_vencido" if o["vencimiento"] < hoy_iso else "notificada_en_plazo"
-        if o["notificacion"]:
-            return "notificada_en_plazo"
-        return "sin_notificar"
+        def estado_de(x):
+            if x["levantamiento"] or levantada_grilla:
+                return "levantada"
+            if contestada:
+                return "contestada"
+            if x["vencimiento"]:
+                return "plazo_vencido" if x["vencimiento"] < hoy_iso else "notificada_en_plazo"
+            if x["notificacion"]:
+                return "notificada_en_plazo"
+            return "sin_notificar"
 
-    orden = ("notificada_en_plazo", "sin_notificar", "plazo_vencido", "contestada", "levantada")
-    if opos:
-        pares = sorted(((estado_de(o), o) for o in opos), key=lambda p: orden.index(p[0]))
-        estado, o = pares[0]
-    elif fila_grilla and "OPO" in f"{fila_grilla.get('Indice') or ''} {fila_grilla.get('Referencia') or ''}".upper():
-        estado, o = ("contestada" if contestada else "levantada" if levantada_grilla
-                     else "oposicion_sin_detalle"), None
-    else:  # solo una vista de oficio
-        estado, o = ("contestada" if contestada else "vista_pendiente"), None
+        orden = ("notificada_en_plazo", "sin_notificar", "plazo_vencido", "contestada", "levantada")
+        if opos:
+            estado, o = sorted(((estado_de(x), x) for x in opos), key=lambda p: orden.index(p[0]))[0]
+        else:
+            estado = "contestada" if contestada else "levantada" if levantada_grilla else "oposicion_sin_detalle"
+    else:
+        # ---- sin oposición: solo importa una vista de oficio SIN contestar
+        # (la tabla del expediente manda; la fila de la Grilla es el respaldo
+        # cuando el expediente no la lista).
+        pendientes = [v for v in vistas if _vista_vigente(v, fecha_publicacion) and not v["contestacion"]]
+        if pendientes:
+            v = max(pendientes, key=lambda x: (x["notificacion"] or "", x["fecha"] or ""))
+            estado = "vista_pendiente"
+            extra = {"notificacion": v["notificacion"], "vencimiento": v["vencimiento"]}
+        elif not vistas and fila_vista_grilla:
+            desde = _fecha_valida(fila_vista_grilla.get("Fecha") or "") or fecha_publicacion
+            if contestacion_desde(desde):
+                return base
+            estado = "vista_pendiente"
+        else:
+            return base  # sin oposición, y las vistas que hubo ya están contestadas o son viejas
 
-    # Representación del titular: lo definitivo es GESTION DEL TRAMITE.
+    # Representación del titular: lo definitivo es GESTION DEL TRAMITE. Una fila
+    # de poder en la Grilla sola puede ser del abogado del oponente.
     confirmada = titular_con_representante(exp)
     posible = False
     if not confirmada:
-        posible = bool(_filas_grilla_posteriores(archivos, TERMINOS_PODER, desde))
+        posible = bool(_filas_grilla_posteriores(
+            archivos, TERMINOS_PODER, (o or {}).get("presentacion") or fecha_publicacion))
     if confirmada:
         estado = "con_apoderado"
 
@@ -272,18 +311,18 @@ def clasificar_estado_oposicion(
         "estado": estado,
         "sirve": estado in ESTADOS_QUE_SIRVEN,
         "presentacion": o["presentacion"] if o else None,
-        "notificacion": o["notificacion"] if o else None,
-        "vencimiento": o["vencimiento"] if o else None,
+        "notificacion": o["notificacion"] if o else extra.get("notificacion"),
+        "vencimiento": o["vencimiento"] if o else extra.get("vencimiento"),
         "levantamiento": o["levantamiento"] if o else None,
         "agente_oponente": o["agente_oponente"] if o else None,
         "posible_apoderado": posible,
         "representacion_confirmada": confirmada,
     })
-    res["detalle"] = _detalle_legible(res, exp)
+    res["detalle"] = _detalle_legible(res, exp, hoy_iso)
     return res
 
 
-def _detalle_legible(r: dict, exp: dict) -> str:
+def _detalle_legible(r: dict, exp: dict, hoy_iso: str = '') -> str:
     e = r["estado"]
     if e == "sin_notificar":
         t = f"Oposición presentada el {_fmt(r['presentacion'])}; INPI todavía no se la notificó al titular."
@@ -301,7 +340,12 @@ def _detalle_legible(r: dict, exp: dict) -> str:
         t = (f"El titular ya tiene representante ({(exp.get('titular_caracter') or 'agente').strip()}"
              f"{', matrícula ' + exp['titular_matricula'] if exp.get('titular_matricula') else ''}).")
     elif e == "vista_pendiente":
-        t = "Vista de oficio de INPI sin contestación."
+        if r["notificacion"] and r["vencimiento"]:
+            t = (f"Vista de INPI notificada el {_fmt(r['notificacion'])}, sin contestar: el titular tiene hasta el "
+                 f"{_fmt(r['vencimiento'])}." if r["vencimiento"] >= hoy_iso else
+                 f"Vista de INPI notificada el {_fmt(r['notificacion'])}: venció el plazo ({_fmt(r['vencimiento'])}) sin contestar.")
+        else:
+            t = "Vista de oficio de INPI sin contestar."
     elif e == "oposicion_sin_detalle":
         t = "Oposición detectada en Grilla Digital; el expediente todavía no la lista en OPOSICIONES."
     else:

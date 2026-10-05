@@ -66,6 +66,90 @@ class Parseo(unittest.TestCase):
         self.assertFalse(exp["error_lectura"])
 
 
+def vista(contestacion=VACIA, fecha="2026-04-15", notif="2026-04-20", venc="2026-05-22"):
+    """Fila de la tabla VISTAS con los campos reales del expediente."""
+    def f(iso):
+        return VACIA if not iso else "\\/Date(%d)\\/" % ms(iso)
+    if contestacion != VACIA and contestacion:
+        contestacion = f(contestacion)
+    return ('[{"Fecha_Contestacion":"%s","Fecha_Vista":"%s","Fecha_Notificacion":"%s",'
+            '"Fecha_Vencimiento":"%s","Tipo":"Administrativas","Cod_VistaExp":1,"Acta":1}]') % (
+        contestacion, f(fecha), f(notif), f(venc))
+
+
+class CasosReales(unittest.TestCase):
+    """Los tres casos que dio el usuario el 05/10/2026."""
+
+    def test_4688778_vista_vieja_contestada_y_oposicion_sin_notificar(self):
+        # Contestó una vista en abril (antes de publicarse): no importa. La oposición
+        # nueva (presentada el 23/09, sin notificar) NO fue contestada -> sirve.
+        arch = [
+            {"Indice": "Formulario", "Referencia": None, "Fecha": "24/09/2026"},
+            {"Indice": "Recibo de Ingreso", "Referencia": "Opo. de Marcas", "Fecha": "23/09/2026"},
+            {"Indice": "Hoja Publicacion", "Referencia": "11120", "Fecha": "16/09/2026"},
+            {"Indice": "Recibo de Ingreso", "Referencia": "Contestacion de vistas", "Fecha": "27/04/2026"},
+            {"Indice": "Vista de Marcas", "Referencia": None, "Fecha": "15/04/2026"},
+        ]
+        html = pagina(opos=opo(pres=ms("2026-09-23")),
+                      vistas=vista(contestacion="2026-04-27", fecha="2026-04-15", notif="2026-04-22", venc="2026-05-22"),
+                      gestion=GESTION_PARTICULAR)
+        r = clasificar_estado_oposicion(parsear_expediente(html), arch, "2026-09-16", HOY)
+        self.assertEqual(r["estado"], "sin_notificar")
+        self.assertTrue(r["sirve"])
+
+    def test_4726688_igual_con_oponente_sin_agente(self):
+        arch = [
+            {"Indice": "Recibo de Ingreso", "Referencia": "Opo. de Marcas", "Fecha": "17/09/2026"},
+            {"Indice": "Hoja Publicacion", "Referencia": "11117", "Fecha": "16/09/2026"},
+            {"Indice": "Otros", "Referencia": "Contestación de vista de fondo y documentación respaldatoria", "Fecha": "17/06/2026"},
+            {"Indice": "Recibo de Ingreso", "Referencia": "Contestacion de vistas", "Fecha": "17/06/2026"},
+            {"Indice": "Vista de Marcas", "Referencia": None, "Fecha": "11/06/2026"},
+        ]
+        html = pagina(opos=opo(pres=ms("2026-09-17"), agente=0),
+                      vistas=vista(contestacion="2026-06-17", fecha="2026-06-11", notif="2026-06-16", venc="2026-08-01"),
+                      gestion=GESTION_PARTICULAR)
+        r = clasificar_estado_oposicion(parsear_expediente(html), arch, "2026-09-16", HOY)
+        self.assertEqual(r["estado"], "sin_notificar")
+        self.assertTrue(r["sirve"])
+
+    def test_4748835_vista_sin_contestar_no_es_contestada(self):
+        # Fecha_Contestacion vacía (01/01/0001): antes se leyó como "contestada".
+        arch = [
+            {"Indice": "Cédula de Notificación", "Referencia": None, "Fecha": "30/09/2026"},
+            {"Indice": "Vista de Marcas", "Referencia": None, "Fecha": "23/09/2026"},
+            {"Indice": "Hoja Publicacion", "Referencia": "11121", "Fecha": "16/09/2026"},
+        ]
+        html = pagina(vistas=vista(contestacion=VACIA, fecha="2026-09-10", notif="2026-09-30", venc="2026-10-15"),
+                      gestion=GESTION_PARTICULAR)
+        r = clasificar_estado_oposicion(parsear_expediente(html), arch, "2026-09-16", HOY)
+        self.assertEqual(r["estado"], "vista_pendiente")
+        self.assertTrue(r["sirve"])
+        self.assertEqual(r["notificacion"], "2026-09-30")
+        self.assertEqual(r["vencimiento"], "2026-10-15")
+        self.assertIn("hasta el 15/10/2026", r["detalle"])
+
+    def test_vista_ya_contestada_sin_oposicion_no_genera_alerta(self):
+        arch = [{"Indice": "Vista de Marcas", "Referencia": None, "Fecha": "23/09/2026"}]
+        html = pagina(vistas=vista(contestacion="2026-09-28", fecha="2026-09-10", notif="2026-09-24", venc="2026-10-15"),
+                      gestion=GESTION_PARTICULAR)
+        r = clasificar_estado_oposicion(parsear_expediente(html), arch, "2026-09-16", HOY)
+        self.assertEqual(r["estado"], "sin_oposicion")
+
+    def test_vista_vieja_sin_contestar_anterior_a_la_publicacion_se_ignora(self):
+        html = pagina(vistas=vista(contestacion=VACIA, fecha="2026-04-15", notif="2026-04-20", venc="2026-05-22"),
+                      gestion=GESTION_PARTICULAR)
+        r = clasificar_estado_oposicion(parsear_expediente(html), [], "2026-09-16", HOY)
+        self.assertEqual(r["estado"], "sin_oposicion")
+
+    def test_contestacion_posterior_a_la_oposicion_via_tabla_de_vistas(self):
+        html = pagina(opos=opo(pres=ms("2026-09-23")),
+                      vistas=vista(contestacion="2026-10-02", fecha="2026-09-24", notif="2026-09-30", venc="2026-10-30"),
+                      gestion=GESTION_PARTICULAR)
+        r = clasificar_estado_oposicion(parsear_expediente(html), [], "2026-09-16", HOY)
+        self.assertEqual(r["estado"], "contestada")
+        self.assertFalse(r["sirve"])
+
+
 class Estados(unittest.TestCase):
     def test_sin_oposicion(self):
         r = clasificar(pagina(gestion=GESTION_PARTICULAR))
