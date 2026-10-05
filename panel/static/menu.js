@@ -6,7 +6,9 @@
  *  - avisos del chat: cada 30 s mira si hay mensajes nuevos. Si hay, el ícono
  *    cambia (burbuja llena), aparece un círculo rojo con la cantidad, el título
  *    de la pestaña muestra "(n)" y, si el mensaje llegó mientras mirabas el
- *    panel, sale un cartelito con quién escribió y qué dijo.
+ *    panel, sale un cartelito con quién escribió y qué dijo;
+ *  - lupa (🔍) y rayito (⚡), que se agregan solos al principio de la barra:
+ *    búsqueda rápida de una marca y accesos rápidos a búsquedas guardadas.
  * El HTML del menú está en cada página; acá solo se le da el comportamiento. */
 
 (function () {
@@ -432,7 +434,66 @@
     });
   }
 
-  function iniciar() { iniciarAccesos(); iniciarGrupos(); iniciarChat(); }
+  // ── Búsqueda rápida (🔍) ───────────────────────────────────────────────
+  // Lupa al principio de la barra, en todas las pantallas. Al hacer clic se
+  // desliza para el costado y deja escribir un número de acta, CUIT, mail,
+  // nombre de la marca o del titular. Con Enter busca en Leads sobre TODAS las
+  // marcas: Lead y Contactado en "Todos" y el resto de los filtros limpios.
+  // Estando en Leads se aplica sin recargar (aplicarAccesoRapido); desde otra
+  // pantalla lleva a Leads ya con la búsqueda hecha.
+  const LUPA_SVG = '<svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>';
+
+  function iniciarBusqueda() {
+    const nav = document.querySelector(".app-header .nav");
+    if (!nav || document.querySelector(".nav-buscar")) return;
+    const form = document.createElement("form");
+    form.className = "nav-buscar";
+    form.setAttribute("role", "search");
+    form.innerHTML = `
+      <button type="button" class="nav-boton nav-buscar-btn" title="Buscar una marca" aria-label="Buscar una marca" aria-expanded="false">${LUPA_SVG}</button>
+      <input type="search" class="nav-buscar-input" placeholder="Acta, CUIT, mail, marca…" aria-label="Buscar por número de acta, CUIT, mail o nombre de la marca" autocomplete="off" maxlength="120" tabindex="-1" />`;
+    nav.insertBefore(form, nav.firstChild);
+
+    const boton = form.querySelector(".nav-buscar-btn");
+    const campo = form.querySelector(".nav-buscar-input");
+
+    function abrir(abrirla) {
+      form.classList.toggle("abierto", abrirla);
+      boton.setAttribute("aria-expanded", abrirla ? "true" : "false");
+      campo.tabIndex = abrirla ? 0 : -1;
+      if (abrirla) setTimeout(() => campo.focus(), 40);
+      else campo.blur();
+    }
+
+    function buscar() {
+      const texto = campo.value.trim();
+      if (!texto) { abrir(false); return; }
+      const consulta = `q=${encodeURIComponent(texto)}&es_lead=todos&contactado=todos`;
+      if (typeof window.aplicarAccesoRapido === "function") {
+        window.aplicarAccesoRapido(consulta);
+        campo.value = "";
+        abrir(false);
+      } else {
+        location.href = "/?" + consulta;
+      }
+    }
+
+    boton.addEventListener("click", (e) => {
+      e.stopPropagation();
+      if (!form.classList.contains("abierto")) abrir(true);
+      else if (campo.value.trim()) buscar();
+      else abrir(false);
+    });
+    form.addEventListener("submit", (e) => { e.preventDefault(); buscar(); });
+    campo.addEventListener("click", (e) => e.stopPropagation());
+    campo.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") { e.stopPropagation(); campo.value = ""; abrir(false); boton.focus(); }
+    });
+    // Clic afuera: se vuelve a esconder, pero solo si no hay nada escrito.
+    document.addEventListener("click", () => { if (form.classList.contains("abierto") && !campo.value.trim()) abrir(false); });
+  }
+
+  function iniciar() { iniciarAccesos(); iniciarBusqueda(); iniciarGrupos(); iniciarChat(); }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", iniciar);
   else iniciar();
 })();
