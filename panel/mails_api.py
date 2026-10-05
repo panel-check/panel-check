@@ -431,11 +431,13 @@ def crear_router(verificar_login, verificar_admin, conexion, registrar_en_crm=No
             detalle = _datos_presupuesto(cat["adjunto"], ajustes=body.presupuesto, exigir_completo=True)
             datos = {**datos, **pres.variables_mail(detalle)}
             adjuntos = [{"filename": pres.nombre_archivo(detalle), "content": pres.generar_pdf(detalle)}]
-        asunto, cuerpo_html, texto = mc.render_prospecto(cfg["asunto"], cfg["cuerpo"], datos, cfg.get("encabezado"))
+        simple = mc.es_simple(clave)
+        asunto, cuerpo_html, texto = mc.render_prospecto(cfg["asunto"], cfg["cuerpo"], datos, cfg.get("encabezado"), simple=simple)
         envio_token = mc.nuevo_token()
-        with conexion() as conn, rcur(conn) as cur:
-            cuerpo_html, texto = mc.rastrear_links(cur, cuerpo_html, texto, envio_token, _panel_url())
-            conn.commit()
+        if not simple:   # el estilo simple no reescribe links: un mail con links «de rastreo» tiende a ir a Promociones
+            with conexion() as conn, rcur(conn) as cur:
+                cuerpo_html, texto = mc.rastrear_links(cur, cuerpo_html, texto, envio_token, _panel_url())
+                conn.commit()
         try:
             id_resend = mc.enviar(cfg["cuenta"], cfg["remitente"], cfg["responder_a"], [destino], asunto, cuerpo_html, texto, adjuntos)
         except ValueError as e:
@@ -549,10 +551,12 @@ def crear_router(verificar_login, verificar_admin, conexion, registrar_en_crm=No
             det = _datos_presupuesto(mc.CATALOGO[clave]["adjunto"], completos=body.presupuesto or {})
             datos = {**datos, **pres.variables_mail(det)}
             adjuntos = [{"filename": pres.nombre_archivo(det), "content": pres.generar_pdf(det)}]
-        asunto, cuerpo_html, texto = mc.render_prospecto(v["asunto"], v["cuerpo"], datos, v.get("encabezado"))
-        with conexion() as conn, rcur(conn) as cur:
-            cuerpo_html, texto = mc.rastrear_links(cur, cuerpo_html, texto, mc.nuevo_token(), _panel_url())
-            conn.commit()
+        simple = mc.es_simple(clave)
+        asunto, cuerpo_html, texto = mc.render_prospecto(v["asunto"], v["cuerpo"], datos, v.get("encabezado"), simple=simple)
+        if not simple:
+            with conexion() as conn, rcur(conn) as cur:
+                cuerpo_html, texto = mc.rastrear_links(cur, cuerpo_html, texto, mc.nuevo_token(), _panel_url())
+                conn.commit()
         try:
             id_resend = mc.enviar_test(v["cuenta"], v["remitente"], v["responder_a"], para, asunto, cuerpo_html, texto, adjuntos)
         except ValueError as e:
