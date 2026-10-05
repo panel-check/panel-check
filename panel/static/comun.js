@@ -691,3 +691,27 @@ document.addEventListener("click", (ev) => {
   const links = [...new Set([...document.querySelectorAll('a.link-titular[href^="/titular/"]')].map(x => x.getAttribute("href")))];
   try { sessionStorage.setItem("colaTitulares", JSON.stringify({ links, desde: location.pathname + location.search })); } catch (_) { /* sin cola: no es crítico */ }
 });
+
+// Vista previa del PDF de un presupuesto (plantillas de Mails con PDF adjunto): se pide al
+// servidor con los datos que haya en pantalla y se abre en una pestaña nueva. La pestaña se
+// abre antes de esperar la respuesta para que el navegador no la bloquee como ventana emergente.
+async function abrirPdfPresupuesto(clave, presupuesto) {
+  const w = window.open("about:blank", "_blank");
+  try {
+    const r = await fetch(`/api/mails/${encodeURIComponent(clave)}/presupuesto/pdf`, {
+      method: "POST", credentials: "include", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ presupuesto: presupuesto || {} }),
+    });
+    if (r.status === 401 && typeof irAlLogin === "function") irAlLogin();
+    if (!r.ok) {
+      let detalle = `${r.status}`;
+      try { detalle = (await r.json()).detail || detalle; } catch (_) {}
+      throw new Error(detalle);
+    }
+    const url = URL.createObjectURL(await r.blob());
+    if (w) w.location.href = url; else window.open(url, "_blank");
+  } catch (e) {
+    if (w) w.close();
+    throw e;
+  }
+}

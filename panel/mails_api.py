@@ -13,6 +13,10 @@ cambios y tocar la lista de bajas, además, administrador.
   GET    /api/mails/enviados?internos=      mails de la cuenta de prospectos de Resend (y de la interna, con
                                             internos=true), cruzados con el registro del panel y con su tipo
   GET    /api/mails/envios?actas=a,b        historial de mails mandados a esas actas (con aperturas y clics)
+  GET    /api/mails/envios/{id}/adjunto     el PDF del presupuesto que se mandó en ese envío (se arma de nuevo con sus datos)
+  GET    /api/mails/{clave}/presupuesto     datos del presupuesto (montos, vigencia, transferencia) y qué falta cargar
+  POST   /api/mails/{clave}/presupuesto     guardar los datos del presupuesto (administrador)
+  POST   /api/mails/{clave}/presupuesto/pdf PDF de vista previa (con los datos guardados + los que se manden sin guardar)
   POST   /api/publico/resend-webhook        avisos de Resend (entregado, abierto, clic, rebote, spam). Sin
                                             sesión: se valida la firma con RESEND_WEBHOOK_SECRET.
   GET    /api/mails/bajas                   lista de bajas (no se les escribe más)
@@ -25,12 +29,14 @@ from typing import Optional
 
 import psycopg2.extras
 import json
+from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi.responses import JSONResponse, RedirectResponse, Response
 from pydantic import BaseModel
 
 import mails_core as mc
+import presupuestos as pres
 
 
 class ConfigMail(BaseModel):
@@ -42,6 +48,8 @@ class ConfigMail(BaseModel):
     cuerpo: Optional[str] = None
     encabezado: Optional[str] = None
     acta: Optional[str] = None
+    # Solo plantillas con PDF adjunto (presupuestos): ajustes de este envío / vista previa.
+    presupuesto: Optional[dict] = None
 
 
 class EnvioTest(ConfigMail):
@@ -52,6 +60,11 @@ class EnvioLead(BaseModel):
     acta: str
     para: str
     confirmar_repetido: bool = False
+    presupuesto: Optional[dict] = None   # ajustes de este envío: honorarios, tasas, alcance, vigencia_dias
+
+
+class DatosPresupuesto(BaseModel):
+    presupuesto: Optional[dict] = None
 
 
 class BajaNueva(BaseModel):
@@ -87,6 +100,7 @@ def crear_router(verificar_login, verificar_admin, conexion, registrar_en_crm=No
             mails.append({
                 "clave": clave, "grupo": cat["grupo"], "nombre": cat["nombre"], "descripcion": cat["descripcion"],
                 "editable": bool(cat.get("editable")),
+                "adjunto": cat.get("adjunto"),
                 "responder_a_automatico": cat.get("responder_a_automatico"),
                 "config": cfg,
             })
@@ -161,6 +175,67 @@ def crear_router(verificar_login, verificar_admin, conexion, registrar_en_crm=No
         if not d:
             raise HTTPException(status_code=404, detail=f"No existe la marca con acta {acta}")
         return d
+
+    # ── Presupuestos (mails con PDF adjunto) ────────────────────────────
+    def _tipo_presupuesto(clave):
+        """Tipo de presupuesto (p. ej. «registro_marca») si esa plantilla lleva PDF adjunto; si no, 404."""
+        tipo = (mc.CATALOGO.get(clave) or {}).get("adjunto")
+        if not tipo:
+            raise HTTPException(status_code=404, detail="Esta plantilla no lleva un presupuesto adjunto")
+        return tipo
+
+    def _datos_presupuesto(tipo, ajustes=None, completos=None, exigir_completo=False):
+        """Snapshot con el que se arma el PDF: lo guardado en Mails, más `ajustes`
+        (solo lo ajustable por envío) o `completos` (cualquier campo, para la vista
+        previa de la pestaña Mails). Con exigir_completo, falla si falta cargar algo."""
+        with conexion() as conn, rcur(conn) as cur:
+            cfg = pres.leer_config(cur, tipo)
+        try:
+            if completos is not None:
+                cfg = {**cfg, **pres.validar(completos)}
+            else:
+                cfg = pres.con_ajustes(cfg, ajustes)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        if exigir_completo:
+            faltan = pres.faltantes(cfg)
+            if faltan:
+                raise HTTPException(status_code=400, detail="Antes de mandar un presupuesto hay que cargar, en Mails → "
+                                    "«Datos del presupuesto»: " + ", ".join(faltan) + ".")
+        return pres.armar_datos(cfg)
+
+    def _respuesta_pdf(datos, descargar=False):
+        contenido = pres.generar_pdf(datos)
+        nombre = pres.nombre_archivo(datos)
+        return Response(content=contenido, media_type="application/pdf",
+                        headers={"Content-Disposition": f"{'attachment' if descargar else 'inline'}; filename*=UTF-8''{quote(nombre)}",
+                                 "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"})
+
+    @router.get("/api/mails/{clave}/presupuesto")
+    def ver_presupuesto(clave: str, _: str = Depends(verificar_login)):
+        tipo = _tipo_presupuesto(clave)
+        with conexion() as conn, rcur(conn) as cur:
+            cfg = pres.leer_config(cur, tipo)
+        return {"tipo": tipo, "config": cfg, "faltan": pres.faltantes(cfg), "etiquetas": pres.ETIQUETAS,
+                "ajustables": list(pres.AJUSTABLES_POR_ENVIO)}
+
+    @router.post("/api/mails/{clave}/presupuesto")
+    def guardar_presupuesto(clave: str, body: DatosPresupuesto, _: str = Depends(verificar_admin)):
+        tipo = _tipo_presupuesto(clave)
+        try:
+            with conexion() as conn, rcur(conn) as cur:
+                cfg = pres.guardar_config(cur, tipo, body.presupuesto or {})
+                conn.commit()
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        return {"ok": True, "config": cfg, "faltan": pres.faltantes(cfg)}
+
+    @router.post("/api/mails/{clave}/presupuesto/pdf")
+    def pdf_presupuesto(clave: str, body: DatosPresupuesto, _: str = Depends(verificar_login)):
+        """Vista previa del PDF. Acepta cualquier campo del presupuesto (aunque no esté
+        guardado) para probar desde la pestaña Mails; lo que falte de transferencia sale como «—»."""
+        tipo = _tipo_presupuesto(clave)
+        return _respuesta_pdf(_datos_presupuesto(tipo, completos=body.presupuesto or {}))
 
     # ── Links de los mails: anotar el clic y redirigir ──────────────────
     @router.get("/r/{token}", include_in_schema=False)
@@ -299,7 +374,7 @@ def crear_router(verificar_login, verificar_admin, conexion, registrar_en_crm=No
             return []
         with conexion() as conn, rcur(conn) as cur:
             cur.execute(
-                "SELECT id, clave_mail, acta, para, asunto, resend_id, enviado_por, enviado_en FROM mails_envios "
+                "SELECT id, clave_mail, acta, para, asunto, resend_id, enviado_por, enviado_en, detalle FROM mails_envios "
                 "WHERE acta = ANY(%s) ORDER BY enviado_en DESC LIMIT 200", (lista,))
             filas = cur.fetchall()
             eventos = mc.resumen_eventos(cur, [f["resend_id"] for f in filas])
@@ -307,7 +382,21 @@ def crear_router(verificar_login, verificar_admin, conexion, registrar_en_crm=No
             f["seguimiento"] = eventos.get(f.pop("resend_id"))
             f["enviado_en"] = f["enviado_en"].isoformat()
             f["plantilla"] = mc.CATALOGO.get(f["clave_mail"], {}).get("nombre", f["clave_mail"])
+            det = f.pop("detalle", None)
+            # Mails con presupuesto: qué se cotizó y un link para volver a ver el PDF.
+            f["presupuesto"] = {"resumen": pres.resumen(det)} if isinstance(det, dict) and det.get("honorarios") else None
         return filas
+
+    @router.get("/api/mails/envios/{envio_id}/adjunto")
+    def adjunto_de_envio(envio_id: int, _: str = Depends(verificar_login)):
+        """El PDF que se mandó en ese envío, armado de nuevo con los datos guardados (es el mismo)."""
+        with conexion() as conn, rcur(conn) as cur:
+            cur.execute("SELECT detalle FROM mails_envios WHERE id = %s", (envio_id,))
+            f = cur.fetchone()
+        det = f and f.get("detalle")
+        if not isinstance(det, dict) or not det.get("honorarios"):
+            raise HTTPException(status_code=404, detail="Ese envío no tiene un presupuesto adjunto")
+        return _respuesta_pdf(det)
 
     @router.post("/api/mails/{clave}/enviar")
     def enviar_a_lead(clave: str, body: EnvioLead, usuario: str = Depends(verificar_login)):
@@ -336,29 +425,42 @@ def crear_router(verificar_login, verificar_admin, conexion, registrar_en_crm=No
             cuando = previo["enviado_en"].astimezone().strftime("%d/%m/%Y %H:%M")
             raise HTTPException(status_code=409, detail=f"Esta plantilla ya se le mandó a esta marca el {cuando}"
                                                          f"{' (por ' + previo['enviado_por'] + ')' if previo.get('enviado_por') else ''}.")
+        # Presupuesto: se arma el PDF con los datos guardados + los ajustes de este envío.
+        adjuntos, detalle = None, None
+        if cat.get("adjunto"):
+            detalle = _datos_presupuesto(cat["adjunto"], ajustes=body.presupuesto, exigir_completo=True)
+            datos = {**datos, **pres.variables_mail(detalle)}
+            adjuntos = [{"filename": pres.nombre_archivo(detalle), "content": pres.generar_pdf(detalle)}]
         asunto, cuerpo_html, texto = mc.render_prospecto(cfg["asunto"], cfg["cuerpo"], datos, cfg.get("encabezado"))
         envio_token = mc.nuevo_token()
         with conexion() as conn, rcur(conn) as cur:
             cuerpo_html, texto = mc.rastrear_links(cur, cuerpo_html, texto, envio_token, _panel_url())
             conn.commit()
         try:
-            id_resend = mc.enviar(cfg["cuenta"], cfg["remitente"], cfg["responder_a"], [destino], asunto, cuerpo_html, texto)
+            id_resend = mc.enviar(cfg["cuenta"], cfg["remitente"], cfg["responder_a"], [destino], asunto, cuerpo_html, texto, adjuntos)
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
         with conexion() as conn, rcur(conn) as cur:
-            cur.execute("INSERT INTO mails_envios (clave_mail, acta, para, asunto, resend_id, enviado_por, token) "
-                        "VALUES (%s, %s, %s, %s, %s, %s, %s)", (clave, body.acta, destino, asunto, id_resend, usuario, envio_token))
+            cur.execute("INSERT INTO mails_envios (clave_mail, acta, para, asunto, resend_id, enviado_por, token, detalle) "
+                        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
+                        (clave, body.acta, destino, asunto, id_resend, usuario, envio_token,
+                         psycopg2.extras.Json(detalle) if detalle else None))
             conn.commit()
             if registrar_en_crm:
                 try:
-                    registrar_en_crm(cur, body.acta, usuario,
-                                     f"Mail enviado desde el panel: «{cat['nombre']}» a {destino} "
+                    if detalle:
+                        texto_crm = (f"Presupuesto enviado desde el panel: «{cat['nombre']}» a {destino} (acta {body.acta}): "
+                                     f"{pres.resumen(detalle)}. Asunto: {asunto}")
+                    else:
+                        texto_crm = (f"Mail enviado desde el panel: «{cat['nombre']}» a {destino} "
                                      f"(acta {body.acta}). Asunto: {asunto}")
+                    registrar_en_crm(cur, body.acta, usuario, texto_crm)
                     conn.commit()
                 except Exception as e:  # noqa: BLE001 — el mail ya salió; el CRM no debe hacerlo fallar
                     conn.rollback()
                     print(f"[mails] no se pudo registrar el envío en el CRM: {e}")
-        return {"ok": True, "id": id_resend, "para": destino, "asunto": asunto}
+        return {"ok": True, "id": id_resend, "para": destino, "asunto": asunto,
+                "adjunto": adjuntos[0]["filename"] if adjuntos else None}
 
     # ── Configuración de cada mail ──────────────────────────────────────
     @router.post("/api/mails/{clave}")
@@ -410,7 +512,13 @@ def crear_router(verificar_login, verificar_admin, conexion, registrar_en_crm=No
             cfg["asunto"], cfg["cuerpo"] = asunto, cuerpo
             if body.encabezado is not None:
                 cfg["encabezado"] = " ".join(body.encabezado.split())[:60] or mc.CATALOGO[clave].get("encabezado")
-        return mc.vista_previa(clave, cfg, _panel_url(), _datos_marca(body.acta) if mc.CATALOGO[clave].get("editable") else None)
+        datos = _datos_marca(body.acta) if mc.CATALOGO[clave].get("editable") else None
+        tipo_pres = mc.CATALOGO[clave].get("adjunto")
+        if tipo_pres:
+            # Montos y vigencia reales (los guardados + lo que haya escrito en pantalla) en vez de los de ejemplo.
+            det = _datos_presupuesto(tipo_pres, completos=body.presupuesto or {})
+            datos = {**(datos or mc.EJEMPLO_PROSPECTO), **pres.variables_mail(det)}
+        return mc.vista_previa(clave, cfg, _panel_url(), datos)
 
     @router.post("/api/mails/{clave}/test")
     def enviar_test(clave: str, body: EnvioTest, _: str = Depends(verificar_admin)):
@@ -435,12 +543,18 @@ def crear_router(verificar_login, verificar_admin, conexion, registrar_en_crm=No
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
         datos = _datos_marca(body.acta) or mc.EJEMPLO_PROSPECTO
+        adjuntos = None
+        if mc.CATALOGO[clave].get("adjunto"):
+            # La prueba lleva también el PDF, con lo que hay en pantalla (lo que falte de transferencia sale como «—»).
+            det = _datos_presupuesto(mc.CATALOGO[clave]["adjunto"], completos=body.presupuesto or {})
+            datos = {**datos, **pres.variables_mail(det)}
+            adjuntos = [{"filename": pres.nombre_archivo(det), "content": pres.generar_pdf(det)}]
         asunto, cuerpo_html, texto = mc.render_prospecto(v["asunto"], v["cuerpo"], datos, v.get("encabezado"))
         with conexion() as conn, rcur(conn) as cur:
             cuerpo_html, texto = mc.rastrear_links(cur, cuerpo_html, texto, mc.nuevo_token(), _panel_url())
             conn.commit()
         try:
-            id_resend = mc.enviar_test(v["cuenta"], v["remitente"], v["responder_a"], para, asunto, cuerpo_html, texto)
+            id_resend = mc.enviar_test(v["cuenta"], v["remitente"], v["responder_a"], para, asunto, cuerpo_html, texto, adjuntos)
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
         return {"ok": True, "id": id_resend, "para": para, "asunto": "[TEST] " + asunto}

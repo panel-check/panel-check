@@ -60,6 +60,10 @@ VARIABLES_PROSPECTO = {
     "acta": "Número de acta",
     "clase": "Clase de la solicitud",
     "fecha": "Fecha de publicación en el Boletín (dd/mm/aaaa)",
+    "honorarios": "Solo en el mail del presupuesto: honorarios (p. ej. «$180.000»)",
+    "tasas": "Solo en el mail del presupuesto: valor de las tasas oficiales",
+    "total": "Solo en el mail del presupuesto: honorarios + tasas",
+    "vigencia": "Solo en el mail del presupuesto: vigencia (p. ej. «10 días»)",
 }
 
 EJEMPLO_PROSPECTO = {
@@ -70,6 +74,10 @@ EJEMPLO_PROSPECTO = {
     "marca": "Luna Nueva",
     "acta": "4797123",
     "clase": "25",
+    "honorarios": "$180.000",
+    "tasas": "$40.569",
+    "total": "$220.569",
+    "vigencia": "10 días",
 }
 
 # Línea de baja: va SIEMPRE al final de los mails a prospectos y no se edita.
@@ -168,6 +176,31 @@ Registro de Marcas Nacional e Internacional
 [www.smartiesconsultora.com.ar](https://www.smartiesconsultora.com.ar)
 WhatsApp: [+54 9 11 5589-0784](https://wa.me/""" + WHATSAPP_PAMELA + """)"""
 
+ASUNTO_PRESUPUESTO = "Presupuesto de registro de marca – Smarties Consultora"
+CUERPO_PRESUPUESTO = """Hola {{nombre}}:
+
+Mi nombre es Pamela, soy Agente de la Propiedad Industrial. Te adjunto el presupuesto para el registro de tu marca en Argentina.
+
+## Resumen
+
+* **Honorarios:** {{honorarios}} + tasas oficiales
+* **Valor actual de las tasas:** {{tasas}}
+* **Vigencia del presupuesto:** {{vigencia}}
+
+En el PDF están el detalle de lo que incluye el servicio, las condiciones de pago y los datos para la transferencia.
+
+Si querés avanzar o tenés alguna duda, respondé este mail o escribime directamente desde este botón:
+
+[Quiero avanzar con el registro](https://wa.me/""" + WHATSAPP_PAMELA + """?text=Hola, me contacto por el presupuesto de registro de marca, mi nombre es )
+
+Saludos cordiales,
+Pamela Guzzardi
+Agente de Propiedad Industrial – Mat. INPI 2906
+Smarties Consultora
+Registro de Marcas Nacional e Internacional
+[www.smartiesconsultora.com.ar](https://www.smartiesconsultora.com.ar)
+WhatsApp: [+54 9 11 5589-0784](https://wa.me/""" + WHATSAPP_PAMELA + """)"""
+
 CATALOGO = {
     "oposiciones": {
         "grupo": "interno",
@@ -254,6 +287,22 @@ CATALOGO = {
         "cuerpo": CUERPO_OPOSICION,
         "editable": True,
     },
+    "prospecto_presupuesto_registro": {
+        "grupo": "prospectos",
+        "nombre": "Presupuesto de registro de marca",
+        "descripcion": "Mail con el presupuesto de registro de marca en PDF adjunto (honorarios, tasas, condiciones y datos de transferencia). "
+                       "Sale desde el dominio de Smarties. Los montos y datos de transferencia se cargan abajo, en «Datos del presupuesto»; "
+                       "en cada envío se pueden ajustar desde la ficha del lead. Se manda a mano (no hay envío automático).",
+        "cuenta": "prospectos",
+        "remitente": "Smarties Consultora <info@smartiesconsultora.com.ar>",
+        "responder_a": "info@smartiesconsultora.com.ar",
+        "destinatarios": "",
+        "encabezado": "PRESUPUESTO DE REGISTRO DE MARCA",
+        "asunto": ASUNTO_PRESUPUESTO,
+        "cuerpo": CUERPO_PRESUPUESTO,
+        "editable": True,
+        "adjunto": "registro_marca",   # tipo de presupuesto en presupuestos.py: se genera y se adjunta el PDF
+    },
 }
 
 _RE_EMAIL = re.compile(r"^[^\s<>@,;]+@[^\s<>@,;]+\.[^\s<>@,;]+$")
@@ -328,6 +377,8 @@ def crear_tablas(cur):
     )
     cur.execute("CREATE INDEX IF NOT EXISTS idx_mails_links_envio ON mails_links(envio_token)")
     cur.execute("ALTER TABLE mails_envios ADD COLUMN IF NOT EXISTS token TEXT")
+    # Datos con los que se armó el PDF adjunto (presupuestos): permite volver a bajarlo igual.
+    cur.execute("ALTER TABLE mails_envios ADD COLUMN IF NOT EXISTS detalle JSONB")
     cur.execute(
         """
         CREATE TABLE IF NOT EXISTS mails_bajas (
@@ -666,15 +717,18 @@ def datos_de_marca(cur, acta: str):
     }
 
 
-def enviar_test(cuenta: str, remitente: str, responder_a: str, para: list, asunto: str, html_cuerpo: str, texto: str) -> str:
+def enviar_test(cuenta: str, remitente: str, responder_a: str, para: list, asunto: str, html_cuerpo: str, texto: str,
+                adjuntos: list = None) -> str:
     """Manda un mail de PRUEBA a las direcciones que se eligieron a mano en el
     panel (nunca al email de la marca). Devuelve el id de Resend."""
-    return enviar(cuenta, remitente, responder_a, para, "[TEST] " + asunto, html_cuerpo, texto)
+    return enviar(cuenta, remitente, responder_a, para, "[TEST] " + asunto, html_cuerpo, texto, adjuntos)
 
 
-def enviar(cuenta: str, remitente: str, responder_a: str, para: list, asunto: str, html_cuerpo: str, texto: str) -> str:
-    """Manda un mail por la cuenta de Resend indicada. Devuelve el id de Resend
-    o levanta ValueError con un mensaje claro."""
+def enviar(cuenta: str, remitente: str, responder_a: str, para: list, asunto: str, html_cuerpo: str, texto: str,
+           adjuntos: list = None) -> str:
+    """Manda un mail por la cuenta de Resend indicada. `adjuntos` es una lista de
+    {"filename": str, "content": bytes}. Devuelve el id de Resend o levanta
+    ValueError con un mensaje claro."""
     env_key = CUENTAS[cuenta]["env"]
     api_key = os.environ.get(env_key)
     if not api_key:
@@ -682,6 +736,10 @@ def enviar(cuenta: str, remitente: str, responder_a: str, para: list, asunto: st
     payload = {"from": remitente, "to": para, "subject": asunto, "html": html_cuerpo, "text": texto}
     if responder_a:
         payload["reply_to"] = responder_a
+    if adjuntos:
+        import base64
+        payload["attachments"] = [{"filename": a["filename"], "content": base64.b64encode(a["content"]).decode("ascii")}
+                                  for a in adjuntos]
     r = requests.post("https://api.resend.com/emails",
                       headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
                       json=payload, timeout=30)
@@ -834,6 +892,8 @@ def tipo_por_asunto(asunto: str, cuenta: str) -> str:
             return "prospecto_oposicion"
         if re.search(r"publicad", a, re.I):
             return "prospecto_marca_publicada"
+        if re.search(r"presupuesto", a, re.I):
+            return "prospecto_presupuesto_registro"
     return "otro"
 
 
