@@ -110,6 +110,7 @@ ALTER TABLE marcas ADD COLUMN IF NOT EXISTS oposicion_fecha_vencimiento DATE;
 ALTER TABLE marcas ADD COLUMN IF NOT EXISTS oposicion_fecha_levantamiento DATE;
 ALTER TABLE marcas ADD COLUMN IF NOT EXISTS oposicion_agente_oponente TEXT;
 ALTER TABLE marcas ADD COLUMN IF NOT EXISTS oposicion_posible_apoderado BOOLEAN;
+ALTER TABLE marcas ADD COLUMN IF NOT EXISTS estado_oposicion_version INTEGER; -- 2 = reglas actuales
 
 -- Agregado el 30/09/2026: aviso por mail (Resend) de leads con oposición/vista
 -- nueva -- ver scripts/notificar_oposiciones.py. Cada lead se avisa una sola vez.

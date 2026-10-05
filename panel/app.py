@@ -395,7 +395,8 @@ def _correr_alters_panel(cur):
                         ("estado_oposicion_en", "TIMESTAMPTZ"), ("oposicion_sirve", "BOOLEAN"),
                         ("oposicion_fecha_presentacion", "DATE"), ("oposicion_fecha_notificacion", "DATE"),
                         ("oposicion_fecha_vencimiento", "DATE"), ("oposicion_fecha_levantamiento", "DATE"),
-                        ("oposicion_agente_oponente", "TEXT"), ("oposicion_posible_apoderado", "BOOLEAN")):
+                        ("oposicion_agente_oponente", "TEXT"), ("oposicion_posible_apoderado", "BOOLEAN"),
+                        ("estado_oposicion_version", "INTEGER")):
         cur.execute(f"ALTER TABLE marcas ADD COLUMN IF NOT EXISTS {_col} {_tipo}")
     # Lead marcado a mano como "tiene gestor/apoderado" desde la ficha: sale de los
     # leads (es_lead = false) y guarda lo anterior para poder deshacerlo.
