@@ -97,6 +97,32 @@ function badgeRevisionOposicion(row) {
   return `<span class="tooltip badge sin-dato">🔎 ${corta}<span class="globo">${detalle}</span></span>`;
 }
 
+// Estado de la oposición leído del expediente de INPI (scripts/oposiciones_expediente.py).
+// "sirve" = nadie la está trabajando todavía, así que vale la pena ofrecer ayuda.
+const ESTADOS_OPOSICION = {
+  sin_notificar:         { texto: "sin notificar",            clase: "lead",    sirve: true  },
+  notificada_en_plazo:   { texto: "plazo corriendo",          clase: "lead",    sirve: true  },
+  plazo_vencido:         { texto: "plazo vencido",            clase: "lead",    sirve: true  },
+  vista_pendiente:       { texto: "vista sin contestar",      clase: "lead",    sirve: true  },
+  oposicion_sin_detalle: { texto: "recién ingresada",         clase: "lead",    sirve: true  },
+  contestada:            { texto: "ya contestada",            clase: "sin-dato", sirve: false },
+  levantada:             { texto: "levantada",                clase: "sin-dato", sirve: false },
+  con_apoderado:         { texto: "ya tiene apoderado",       clase: "sin-dato", sirve: false },
+};
+
+function chipEstadoOposicion(row) {
+  const e = ESTADOS_OPOSICION[row.estado_oposicion];
+  if (!e) return "";
+  let texto = e.texto;
+  if (row.estado_oposicion === "notificada_en_plazo" && row.oposicion_fecha_vencimiento) {
+    const [a, m, d] = String(row.oposicion_fecha_vencimiento).slice(0, 10).split("-");
+    texto += ` hasta ${d}/${m}`;
+  }
+  const detalle = _escapeHtml(row.estado_oposicion_detalle || "")
+    + (e.sirve ? " · Nadie la está trabajando: sirve para ofrecer ayuda." : " · Ya se está trabajando o no hay nada que hacer: no sirve.");
+  return ` <span class="tooltip badge ${e.clase}">${texto}<span class="globo">${detalle}</span></span>`;
+}
+
 function badgeOposicion(row) {
   // tuvo_oposicion se completa recién ~33 días después de la publicación
   // (scripts/revisar_oposiciones.py), y solo para leads reales. Antes de eso
@@ -116,9 +142,9 @@ function badgeOposicion(row) {
     // legible en un tooltip de hover (ver corrección del 29/09/2026), así
     // que ahora es un botón que abre un popup con el texto completo.
     window._filasOposicion[row.acta] = row;
-    return `<button type="button" class="badge-oposicion" onclick="abrirModalOposicion('${row.acta}')">⚠ Ver oposición</button>`;
+    return `<button type="button" class="badge-oposicion" onclick="abrirModalOposicion('${row.acta}')">⚠ Ver oposición</button>${chipEstadoOposicion(row)}`;
   }
-  return `<span class="tooltip badge-vista">👁 VISTA DE INPI<span class="globo">${detalle || "observación de oficio de INPI detectada en Grilla Digital"}</span></span>`;
+  return `<span class="tooltip badge-vista">👁 VISTA DE INPI<span class="globo">${detalle || "observación de oficio de INPI detectada en Grilla Digital"}</span></span>${chipEstadoOposicion(row)}`;
 }
 
 function _escapeHtml(s) {
@@ -180,11 +206,25 @@ function abrirModalOposicion(acta) {
       `</p>`
     : "";
 
+  // Estado leído del expediente: en qué punto está y si todavía sirve para ofrecer ayuda.
+  const fmtF = (f) => { if (!f) return ""; const [a, m, d] = String(f).slice(0, 10).split("-"); return `${d}/${m}/${a}`; };
+  const est = ESTADOS_OPOSICION[row.estado_oposicion];
+  const fechas = [
+    row.oposicion_fecha_presentacion ? `Presentada: ${fmtF(row.oposicion_fecha_presentacion)}` : "",
+    row.oposicion_fecha_notificacion ? `Notificada al titular: ${fmtF(row.oposicion_fecha_notificacion)}` : "",
+    row.oposicion_fecha_vencimiento ? `Vence el plazo para contestar: ${fmtF(row.oposicion_fecha_vencimiento)}` : "",
+    row.oposicion_fecha_levantamiento ? `Levantada: ${fmtF(row.oposicion_fecha_levantamiento)}` : "",
+  ].filter(Boolean).join(" · ");
+  const estadoHtml = est
+    ? `<p class="mo-estado"><strong>${est.sirve ? "✔ Sirve" : "✖ No sirve"} — ${_escapeHtml(est.texto)}.</strong> ${_escapeHtml(row.estado_oposicion_detalle || "")}` +
+      `${fechas ? `<br><span class="mo-doc">${_escapeHtml(fechas)}</span>` : ""}</p>`
+    : "";
+
   const contenido = document.getElementById("modal-oposicion-contenido");
   let cuerpo;
   if (row.oponente_nombre || row.fundamento_oposicion) {
     cuerpo = `
-      ${badgeRepresentacion}
+      ${estadoHtml}${badgeRepresentacion}
       ${row.oponente_nombre ? `<p class="mo-oponente"><strong>${_escapeHtml(row.oponente_nombre)}</strong>${identificacion ? ` <span class="mo-doc">(${_escapeHtml(identificacion)})</span>` : ""}</p>` : ""}
       ${row.fundamento_oposicion ? `<p class="mo-fundamento">${_escapeHtml(row.fundamento_oposicion)}</p>` : ""}
       <div id="mo-marca-oponente">Buscando la marca del oponente…</div>
@@ -197,7 +237,7 @@ function abrirModalOposicion(acta) {
     // popup vacío.
     const fecha = _fechaDeDetalleCrudo(row.detalle_oposicion);
     cuerpo = `
-      ${badgeRepresentacion}
+      ${estadoHtml}${badgeRepresentacion}
       <p class="mo-fundamento">No se pudo obtener el detalle completo (oponente y fundamento) de esta oposición —
       el trámite no tiene un Formulario propio listado en Grilla Digital, o no se pudo descargar.
       ${fecha ? `Se detectó un ingreso de "Opo. de Marcas" el ${fecha}.` : ""}</p>

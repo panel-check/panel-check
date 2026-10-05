@@ -41,6 +41,9 @@ def armar_html_oposiciones(filas, panel_url):
             if r.get("marca_oponente_denominacion"):
                 oponente += f" (marca {e(r['marca_oponente_denominacion'])})"
             oponente += "</div>"
+        estado = ""
+        if r.get("estado_oposicion_detalle"):
+            estado = f"<div style='color:#b42318;font-size:13px;font-weight:600;margin-top:4px'>{e(r['estado_oposicion_detalle'])}</div>"
         tarjetas.append(f"""
         <tr><td style="padding:14px 16px;border-bottom:1px solid #eaecf0">
           <div style="font-size:12px;font-weight:600;color:{color};text-transform:uppercase;letter-spacing:.04em">{tipo}</div>
@@ -48,6 +51,7 @@ def armar_html_oposiciones(filas, panel_url):
           <div style="color:#475467;font-size:13px">Acta {e(r['acta'])} · Clase {e(r.get('clase'))} · Publicada {e(fecha)}</div>
           <div style="color:#475467;font-size:13px">Titular: {e(r.get('titular'))} · {e(r.get('email'))}</div>
           {oponente}
+          {estado}
           <a href="{html.escape(link)}" style="display:inline-block;margin-top:10px;padding:8px 14px;background:#1d4ed8;color:#ffffff;text-decoration:none;border-radius:6px;font-size:14px;font-weight:600">Ver lead</a>
         </td></tr>""")
     n = len(filas)

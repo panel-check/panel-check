@@ -6,8 +6,10 @@ Corre después de revisar_oposiciones.py, en el mismo workflow diario. Cada
 lead se avisa una sola vez: al enviarse el mail se marca
 notificado_oposicion_en = now(). Si no hay novedades, no se manda nada.
 
-Quedan afuera los que ya sumaron apoderado/gestor después de la oposición
-(representacion_posterior_oposicion = true): ya no son un lead frío.
+Quedan afuera los que ya no sirven: el titular ya tiene apoderado/gestor, o la
+oposición ya fue contestada o levantada (estado_oposicion, ver
+oposiciones_expediente.py). El mail dice en qué estado está cada una (sin
+notificar, plazo corriendo hasta tal fecha, plazo vencido).
 
 Variables de entorno:
     DATABASE_URL     (obligatoria)
@@ -43,12 +45,14 @@ DEFAULT_PANEL = "https://panel.registrodemimarca.com.ar"
 SQL_PENDIENTES = """
     SELECT acta, clase, denominacion, denominacion_inpi, titular, cuit, email,
            fecha_publicacion, detalle_oposicion, oponente_nombre,
-           marca_oponente_denominacion
+           marca_oponente_denominacion, estado_oposicion, estado_oposicion_detalle,
+           oposicion_fecha_vencimiento
     FROM marcas
     WHERE es_lead = true
       AND tuvo_oposicion = true
       AND representacion_posterior_oposicion IS NOT TRUE
       AND oposicion_atendida IS NOT TRUE
+      AND COALESCE(oposicion_sirve, true)
       AND notificado_oposicion_en IS NULL
     ORDER BY fecha_publicacion DESC NULLS LAST, acta
 """
@@ -94,6 +98,9 @@ def main():
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
             cur.execute("ALTER TABLE marcas ADD COLUMN IF NOT EXISTS notificado_oposicion_en TIMESTAMPTZ")
             cur.execute("ALTER TABLE marcas ADD COLUMN IF NOT EXISTS oposicion_atendida BOOLEAN")
+            for col, tipo in (("estado_oposicion", "TEXT"), ("estado_oposicion_detalle", "TEXT"),
+                              ("oposicion_sirve", "BOOLEAN"), ("oposicion_fecha_vencimiento", "DATE")):
+                cur.execute(f"ALTER TABLE marcas ADD COLUMN IF NOT EXISTS {col} {tipo}")
             conn.commit()
             cur.execute(SQL_PENDIENTES)
             filas = cur.fetchall()
