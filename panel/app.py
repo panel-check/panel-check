@@ -1061,10 +1061,14 @@ def _consulta_marcas(f: dict) -> dict:
     if f["clase"] is not None:
         condiciones.append("clase = %s")
         valores.append(f["clase"])
-    if f["es_lead"] is not None:
+    # Cuando se busca por texto (acta, CUIT, marca, titular, mail…) se quiere
+    # encontrar la marca sin importar si es lead o si ya se contactó: la
+    # búsqueda ignora esos dos filtros (el resto de los filtros sí se aplican).
+    hay_busqueda = bool((f["q"] or "").strip())
+    if f["es_lead"] is not None and not hay_busqueda:
         condiciones.append("es_lead = %s")
         valores.append(f["es_lead"])
-    if f["contactado"] is not None:
+    if f["contactado"] is not None and not hay_busqueda:
         condiciones.append("contactado = %s")
         valores.append(f["contactado"])
     if f["tipo_oposicion"] == "oposicion":
