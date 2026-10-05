@@ -294,6 +294,51 @@ function pintarDetalle() {
         + `Los avisos de los procesos automáticos la toman de los secrets de GitHub.</div>`;
   };
 
+  const presupuesto = m.adjunto ? `
+    <div class="caja-mail" id="caja-presu">
+      <h2>Datos del presupuesto</h2>
+      <p class="desc">Es lo que sale en el PDF que se adjunta a este mail. Se guarda aparte de la plantilla de arriba. Al mandarlo desde la ficha de un lead se pueden
+        ajustar los montos, el alcance y la vigencia solo para ese envío.</p>
+      <div id="presu-aviso"></div>
+      <div class="fila-2">
+        <div class="campo"><label for="p-honorarios">Honorarios ($)</label>
+          <input type="text" id="p-honorarios" inputmode="numeric" ${dis} placeholder="180000" /></div>
+        <div class="campo"><label for="p-tasas">Valor de las tasas ($)</label>
+          <input type="text" id="p-tasas" inputmode="numeric" ${dis} placeholder="40569" />
+          <div class="ayuda-campo">Cambia con el valor de la UMAPI: actualizalo cuando cambie.</div></div>
+      </div>
+      <div class="fila-2">
+        <div class="campo"><label for="p-titulo-costo">Costo del título ($)</label>
+          <input type="text" id="p-titulo-costo" inputmode="numeric" ${dis} placeholder="105000" />
+          <div class="ayuda-campo">Se gestiona una vez concedida la marca y tiene costo adicional.</div></div>
+        <div class="campo"><label for="p-vigencia">Vigencia del presupuesto (días)</label>
+          <input type="text" id="p-vigencia" inputmode="numeric" ${dis} placeholder="10" /></div>
+      </div>
+      <div class="fila-2">
+        <div class="campo"><label for="p-alcance">Alcance</label>
+          <input type="text" id="p-alcance" maxlength="80" ${dis} placeholder="1 marca en 1 clase" />
+          <div class="ayuda-campo">Va en «el valor por … es de:».</div></div>
+        <div class="campo"><label for="p-mes">Mes de los valores</label>
+          <input type="text" id="p-mes" maxlength="30" ${dis} placeholder="septiembre 2026" />
+          <div class="ayuda-campo">Va en «(Valor septiembre 2026 $105.000)». Si lo dejás vacío, usa el mes en que se genera el PDF.</div></div>
+      </div>
+      <div class="campo"><label for="p-pago">Forma de pago</label>
+        <input type="text" id="p-pago" maxlength="300" ${dis} /></div>
+      <h3>Datos de transferencia</h3>
+      <div class="fila-2">
+        <div class="campo"><label for="p-alias">Alias</label><input type="text" id="p-alias" maxlength="30" ${dis} autocomplete="off" /></div>
+        <div class="campo"><label for="p-cvu">CVU o CBU (22 números)</label><input type="text" id="p-cvu" inputmode="numeric" maxlength="30" ${dis} autocomplete="off" /></div>
+      </div>
+      <div class="campo"><label for="p-titular-cuenta">Nombre del titular de la cuenta</label>
+        <input type="text" id="p-titular-cuenta" maxlength="80" ${dis} autocomplete="off" /></div>
+      <div class="barra-acciones">
+        <button type="button" class="primario" id="p-guardar" ${dis}>Guardar datos del presupuesto</button>
+        <button type="button" class="secundario" id="p-pdf">Ver el PDF ↗</button>
+        <span class="msg" id="p-msg"></span>
+      </div>
+      <div class="ayuda-campo" style="margin-top:8px">«Ver el PDF» muestra lo que hay escrito en pantalla, aunque no lo hayas guardado.</div>
+    </div>` : "";
+
   document.getElementById("detalle").innerHTML = `
     <div class="caja-mail">
       <h2>${esc(m.nombre)}</h2>
@@ -317,6 +362,7 @@ function pintarDetalle() {
       ${c.actualizado_en ? `<div class="meta-guardado">Última modificación: ${esc(fechaCorta(c.actualizado_en))}${c.actualizado_por ? " por " + esc(c.actualizado_por) : ""}.</div>`
         : '<div class="meta-guardado">Usa los valores por defecto (nada guardado todavía).</div>'}
     </div>
+    ${presupuesto}
     <div class="caja-mail">
       <h2>Vista previa</h2>
       <p class="desc">${interno ? "Con datos de ejemplo. El contenido real se arma solo con los datos del momento."
@@ -335,7 +381,7 @@ function pintarDetalle() {
           <button type="button" class="primario" id="b-test" ${dis}>Enviar test</button>
           <span class="msg" id="msg-test"></span>
         </div>
-        <div class="ayuda-campo">Sale tal como está en pantalla (aunque no esté guardado), con la cuenta y el remitente de arriba y «[TEST]» al principio del asunto.</div>
+        <div class="ayuda-campo">Sale tal como está en pantalla (aunque no esté guardado), con la cuenta y el remitente de arriba y «[TEST]» al principio del asunto.${m.adjunto ? " Lleva también el PDF del presupuesto." : ""}</div>
       </div>` : ""}
       <div class="previa-asunto"><strong>Asunto:</strong> <span id="previa-asunto">…</span> <span class="msg err" id="msg-previa" style="margin-left:8px;"></span></div>
       <iframe class="previa" id="previa" sandbox title="Vista previa del mail"></iframe>
@@ -360,7 +406,70 @@ function pintarDetalle() {
     }));
   }
   if (m.editable) prepararPrueba();
+  if (m.adjunto) prepararPresupuesto();
   vistaPrevia();
+}
+
+// ── Datos del presupuesto (PDF adjunto) ──
+const PRESU_CAMPOS = { honorarios: "p-honorarios", tasas: "p-tasas", titulo_costo: "p-titulo-costo", vigencia_dias: "p-vigencia",
+  alcance: "p-alcance", valores_mes: "p-mes", pago: "p-pago", alias: "p-alias", cvu: "p-cvu", titular_cuenta: "p-titular-cuenta" };
+
+function leerPresupuesto() {
+  const out = {};
+  for (const [campo, id] of Object.entries(PRESU_CAMPOS)) { const el = document.getElementById(id); if (el) out[campo] = el.value; }
+  return out;
+}
+
+function pintarAvisoPresupuesto(faltan) {
+  const el = document.getElementById("presu-aviso");
+  if (!el) return;
+  el.innerHTML = faltan.length
+    ? `<div class="estado-cuenta no" style="margin:0 0 12px">Falta cargar: ${esc(faltan.join(", "))}. Hasta entonces no se pueden mandar presupuestos desde las fichas.</div>`
+    : '<div class="estado-cuenta ok" style="margin:0 0 12px">✓ Está todo cargado para mandar presupuestos.</div>';
+}
+
+async function prepararPresupuesto() {
+  const claveAlPedir = actual;
+  try {
+    const r = await api(`/api/mails/${encodeURIComponent(actual)}/presupuesto`);
+    if (claveAlPedir !== actual) return;
+    for (const [campo, id] of Object.entries(PRESU_CAMPOS)) {
+      const el = document.getElementById(id);
+      if (el) el.value = r.config[campo] == null ? "" : r.config[campo];
+    }
+    pintarAvisoPresupuesto(r.faltan);
+  } catch (e) {
+    const el = document.getElementById("presu-aviso");
+    if (el) el.innerHTML = `<div class="estado-cuenta no">No se pudieron cargar los datos del presupuesto (${esc(e.message)}).</div>`;
+  }
+  if (claveAlPedir !== actual) return;
+  // Lo que se escribe en estos campos se ve enseguida en la vista previa del mail (montos y vigencia).
+  Object.values(PRESU_CAMPOS).forEach(id => document.getElementById(id).addEventListener("input", () => {
+    clearTimeout(timerPrevia); timerPrevia = setTimeout(vistaPrevia, 450);
+  }));
+  document.getElementById("p-guardar").addEventListener("click", guardarPresupuesto);
+  document.getElementById("p-pdf").addEventListener("click", async () => {
+    const msg = document.getElementById("p-msg");
+    try { msg.textContent = ""; await abrirPdfPresupuesto(actual, leerPresupuesto()); }
+    catch (e) { msg.textContent = e.message; msg.className = "msg err"; }
+  });
+}
+
+async function guardarPresupuesto() {
+  const btn = document.getElementById("p-guardar");
+  const msg = document.getElementById("p-msg");
+  btn.disabled = true; msg.textContent = "Guardando…"; msg.className = "msg ok";
+  try {
+    const r = await apiJson(`/api/mails/${encodeURIComponent(actual)}/presupuesto`, "POST", { presupuesto: leerPresupuesto() });
+    for (const [campo, id] of Object.entries(PRESU_CAMPOS)) {
+      const el = document.getElementById(id);
+      if (el) el.value = r.config[campo] == null ? "" : r.config[campo];
+    }
+    pintarAvisoPresupuesto(r.faltan);
+    msg.textContent = "Guardado ✓"; msg.className = "msg ok";
+    vistaPrevia();
+  } catch (e) { msg.textContent = e.message; msg.className = "msg err"; }
+  btn.disabled = false;
 }
 
 function pintarMarcaTest() {
@@ -412,8 +521,9 @@ async function enviarTest() {
   if (!marcaTest && !confirm("No elegiste ninguna marca: la prueba sale con los datos de ejemplo. ¿Mandarla igual?")) return;
   btn.disabled = true; msg.textContent = "Enviando…"; msg.className = "msg ok";
   try {
+    const m = datos.mails.find(x => x.clave === actual);
     const r = await apiJson(`/api/mails/${encodeURIComponent(actual)}/test`, "POST",
-      { ...leerForm(), acta: marcaTest ? marcaTest.acta : null, para });
+      { ...leerForm(), acta: marcaTest ? marcaTest.acta : null, para, ...(m.adjunto ? { presupuesto: leerPresupuesto() } : {}) });
     msg.textContent = `Enviado a ${r.para.join(", ")} ✓`; msg.className = "msg ok";
   } catch (e) { msg.textContent = e.message; msg.className = "msg err"; }
   btn.disabled = false;
@@ -438,6 +548,7 @@ async function vistaPrevia() {
   const body = m.editable ? { encabezado: document.getElementById("f-encabezado").value,
                                asunto: document.getElementById("f-asunto").value, cuerpo: document.getElementById("f-cuerpo").value,
                                acta: marcaTest ? marcaTest.acta : null } : {};
+  if (m.adjunto) body.presupuesto = leerPresupuesto();
   const claveAlPedir = actual;
   try {
     const r = await apiJson(`/api/mails/${encodeURIComponent(actual)}/vista-previa`, "POST", body);
