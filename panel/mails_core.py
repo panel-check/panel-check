@@ -189,9 +189,7 @@ Mi nombre es Pamela, soy Agente de la Propiedad Industrial. Te adjunto el presup
 
 En el PDF están el detalle de lo que incluye el servicio, las condiciones de pago y los datos para la transferencia.
 
-Si querés avanzar o tenés alguna duda, respondé este mail o escribime directamente desde este botón:
-
-[Quiero avanzar con el registro](https://wa.me/""" + WHATSAPP_PAMELA + """?text=Hola, me contacto por el presupuesto de registro de marca, mi nombre es )
+Si querés avanzar o tenés alguna duda, respondé este mail o escribime por [WhatsApp](https://wa.me/""" + WHATSAPP_PAMELA + """?text=Hola, me contacto por el presupuesto de registro de marca, mi nombre es ).
 
 Saludos cordiales,
 Pamela Guzzardi
@@ -291,7 +289,7 @@ CATALOGO = {
         "grupo": "prospectos",
         "nombre": "Presupuesto de registro de marca",
         "descripcion": "Mail con el presupuesto de registro de marca en PDF adjunto (honorarios, tasas, condiciones y datos de transferencia). "
-                       "Sale desde el dominio de Smarties. Los montos y datos de transferencia se cargan abajo, en «Datos del presupuesto»; "
+                       "Sale desde el dominio de Smarties con un formato simple, como escrito a mano (sin encabezado, botón, línea de baja ni seguimiento de links), para que llegue a la bandeja principal. Los montos y datos de transferencia se cargan abajo, en «Datos del presupuesto»; "
                        "en cada envío se pueden ajustar desde la ficha del lead. Se manda a mano (no hay envío automático).",
         "cuenta": "prospectos",
         "remitente": "Smarties Consultora <info@smartiesconsultora.com.ar>",
@@ -301,6 +299,7 @@ CATALOGO = {
         "asunto": ASUNTO_PRESUPUESTO,
         "cuerpo": CUERPO_PRESUPUESTO,
         "editable": True,
+        "estilo": "simple",            # mail «de persona»: sin encabezado, botón, baja ni links con seguimiento
         "adjunto": "registro_marca",   # tipo de presupuesto en presupuestos.py: se genera y se adjunta el PDF
     },
 }
@@ -617,11 +616,11 @@ def _texto_html(crudo: str, datos: dict) -> str:
     return _RE_URL.sub(lambda m: f'<a href="{m.group(0)}" style="color:#1d4ed8">{m.group(0)}</a>', t)
 
 
-def _bloque_html(bloque: str, datos: dict) -> str:
+def _bloque_html(bloque: str, datos: dict, simple: bool = False) -> str:
     lineas = [l for l in bloque.replace("\r", "").split("\n")]
-    # Botón: el párrafo es un único link.
+    # Botón: el párrafo es un único link (en el estilo simple queda como un link común).
     m = _RE_LINK_MD.fullmatch(bloque.strip())
-    if m:
+    if m and not simple:
         etiqueta = _sustituir(html.escape(m.group(1), quote=False), datos, escapar=True)
         url = html.escape(_url_link(m.group(2), datos))
         return ('<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:6px 0 20px">'
@@ -632,6 +631,8 @@ def _bloque_html(bloque: str, datos: dict) -> str:
     # Subtítulo: "## Texto" solo en su párrafo.
     if len([l for l in lineas if l.strip()]) == 1 and re.match(r"^\s*##\s+", bloque):
         titulo = _inline_html(re.sub(r"^\s*##\s+", "", bloque.strip()), datos)
+        if simple:
+            return f'<p style="margin:0 0 6px"><strong>{titulo}</strong></p>'
         return (f'<p style="margin:22px 0 8px;font-size:16px;font-weight:700;color:{COLOR_AZUL};'
                 f'padding-bottom:6px;border-bottom:2px solid {COLOR_DORADO};display:inline-block">{titulo}</p>')
     # Lista: todas las líneas empiezan con "* " o "- ".
@@ -642,20 +643,38 @@ def _bloque_html(bloque: str, datos: dict) -> str:
     return '<p style="margin:0 0 14px">' + "<br>".join(_inline_html(l, datos) for l in lineas) + "</p>"
 
 
-def _texto_plano(cuerpo: str, datos: dict) -> str:
+def es_simple(clave: str) -> bool:
+    """True si esa plantilla sale en estilo simple (sin encabezado, botón, baja
+    ni links con seguimiento)."""
+    return (CATALOGO.get(clave) or {}).get("estilo") == "simple"
+
+
+def _texto_plano(cuerpo: str, datos: dict, simple: bool = False) -> str:
     def link(m):
-        return f"{_sustituir(m.group(1), datos, escapar=False)}: {_url_link(m.group(2), datos)}"
+        etiqueta = _sustituir(m.group(1), datos, escapar=False)
+        url = _url_link(m.group(2), datos)
+        if simple:
+            # «www.sitio.com (https://www.sitio.com)» se reduce a la URL; el resto, «texto (url)».
+            if re.sub(r"^https?://|/$", "", url) == etiqueta.strip():
+                return url
+            return f"{etiqueta} ({url})"
+        return f"{etiqueta}: {url}"
     t = _sustituir(_RE_LINK_MD.sub(link, cuerpo), datos, escapar=False)
     t = re.sub(r"\*\*(.+?)\*\*", r"\1", t)
     return re.sub(r"(?m)^[ \t]*##[ \t]+(.*)$", lambda m: m.group(1).upper(), t)
 
 
-def render_prospecto(asunto: str, cuerpo: str, datos: dict, encabezado: str = None) -> tuple:
+def render_prospecto(asunto: str, cuerpo: str, datos: dict, encabezado: str = None, simple: bool = False) -> tuple:
     """(asunto, html, texto) con las variables reemplazadas, el encabezado fijo
     arriba y la línea de baja obligatoria al final. El cuerpo se escribe como
     texto (no se interpreta HTML): los saltos de línea se respetan, las líneas
     que empiezan con "* " forman una lista, [texto](https://...) es un link y,
-    si está solo en su párrafo, un botón."""
+    si está solo en su párrafo, un botón.
+
+    Con simple=True el mail sale como uno escrito a mano (sin franja de
+    encabezado, sin fondo, sin botón y sin la línea de baja): es el estilo de los
+    presupuestos, para que el correo llegue a la bandeja principal y no a
+    Promociones."""
     datos = dict(datos or {})
     import nombres_ar
     if "nombre" not in datos:
@@ -663,8 +682,15 @@ def render_prospecto(asunto: str, cuerpo: str, datos: dict, encabezado: str = No
     if "destinatario" not in datos:
         datos["destinatario"] = nombres_ar.destinatario(datos.get("titular", ""))
     asunto_final = _sustituir(asunto, datos, escapar=False).replace("\r", " ").replace("\n", " ").strip()
-    texto = _texto_plano(cuerpo, datos).strip() + "\n\n--\n" + PIE_BAJA
-    parrafos = [_bloque_html(b, datos) for b in re.split(r"\n\s*\n", cuerpo.replace("\r", "").strip()) if b.strip()]
+    texto = _texto_plano(cuerpo, datos, simple).strip()
+    if not simple:
+        texto += "\n\n--\n" + PIE_BAJA
+    parrafos = [_bloque_html(b, datos, simple) for b in re.split(r"\n\s*\n", cuerpo.replace("\r", "").strip()) if b.strip()]
+    if simple:
+        cuerpo_html = ('<!doctype html><html><head><meta charset="utf-8"></head>'
+                       '<body style="margin:0;padding:0"><div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;'
+                       'line-height:1.5;color:#222222">' + "".join(parrafos) + "</div></body></html>")
+        return asunto_final, cuerpo_html, texto
     linea = (f'<tr><td height="3" style="height:3px;background:{COLOR_DORADO};font-size:0;line-height:0;'
              f'mso-line-height-rule:exactly">&nbsp;</td></tr>')
     encabezado = (
@@ -993,7 +1019,8 @@ def vista_previa(clave: str, cfg: dict, panel_url: str = DEFAULT_PANEL, datos: d
     import mails_plantillas as mp
 
     if CATALOGO[clave].get("editable"):
-        asunto, cuerpo, _ = render_prospecto(cfg["asunto"], cfg["cuerpo"], datos or EJEMPLO_PROSPECTO, cfg.get("encabezado"))
+        asunto, cuerpo, _ = render_prospecto(cfg["asunto"], cfg["cuerpo"], datos or EJEMPLO_PROSPECTO, cfg.get("encabezado"),
+                                             simple=es_simple(clave))
         return {"asunto": asunto, "html": cuerpo}
     if clave == "formularios":
         import formularios_core as fc
