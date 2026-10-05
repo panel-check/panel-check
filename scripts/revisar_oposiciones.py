@@ -276,9 +276,12 @@ def main():
             # Reparación (05/10/2026): la primera versión daba por "contestada" una
             # oposición porque el titular había contestado una vista VIEJA
             # (actas 4688778 y 4726688), o porque leía como contestada una vista
-            # sin contestar (4748835). Lo que se marcó contestada/levantada con esas
-            # reglas se desmarca (solo lo que puso el sistema: lo que marcó una persona
-            # a mano no se toca) y se vuelve a clasificar en esta misma corrida.
+            # sin contestar (4748835). No se sabe qué otras clasificaciones de esa
+            # versión quedaron mal, así que TODO lo que se clasificó con ella se vuelve
+            # a revisar una vez (estado_oposicion_version < 2), salvo "con_apoderado"
+            # (sale de la lista de leads; para esos está --reverificar-apoderados).
+            # Se desmarca lo que había puesto el sistema como "atendida" (lo que marcó
+            # una persona a mano no se toca) y se reclasifica en esta misma corrida.
             cur.execute(
                 """
                 UPDATE marcas
@@ -286,12 +289,12 @@ def main():
                     oposicion_atendida_en = CASE WHEN oposicion_atendida_por LIKE 'sistema:%' THEN NULL ELSE oposicion_atendida_en END,
                     oposicion_atendida_por = CASE WHEN oposicion_atendida_por LIKE 'sistema:%' THEN NULL ELSE oposicion_atendida_por END,
                     estado_oposicion = NULL, oposicion_sirve = NULL
-                WHERE estado_oposicion IN ('contestada', 'levantada')
+                WHERE estado_oposicion IS NOT NULL AND estado_oposicion <> 'con_apoderado'
                   AND COALESCE(estado_oposicion_version, 1) < 2
                 """
             )
             if cur.rowcount:
-                print(f"Oposiciones 'contestada/levantada' de la versión anterior que se vuelven a clasificar: {cur.rowcount}")
+                print(f"Oposiciones clasificadas con la versión anterior que se vuelven a revisar: {cur.rowcount}")
             # Corrección de los leads que ya tenían un apoderado/gestor posterior a
             # la oposición (detectado antes de que esto cambiara el estado).
             cur.execute(SQL_PASAR_A_APODERADO)
