@@ -211,7 +211,228 @@
     document.addEventListener("visibilitychange", () => { if (!document.hidden) refrescarChat(); });
   }
 
-  function iniciar() { iniciarGrupos(); iniciarChat(); }
+
+  // ── Accesos rápidos (⚡) ───────────────────────────────────────────────
+  // Búsquedas guardadas de la lista de leads. Se pasa el mouse por el rayito
+  // y aparecen: las mías (con cuántas marcas da cada una hoy), las que
+  // compartió el equipo y "Guardar la búsqueda actual". Guardar una búsqueda
+  // = guardar el mismo querystring de filtros que ya muestra la barra de
+  // direcciones de Leads; abrirla es ir a /?<filtros>. Se guardan en el
+  // servidor (/api/accesos-rapidos), personales, con opción de compartir.
+  const RAYO_SVG = '<svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M13 2 4 14h7l-1 8 9-12h-7z"/></svg>';
+  const acc = { grupo: null, menu: null, datos: null, ultima: 0, cargando: false };
+
+  async function apiAcc(ruta, metodo, cuerpo) {
+    const r = await fetch(ruta, {
+      method: metodo || "GET",
+      credentials: "include",
+      headers: cuerpo ? { "Content-Type": "application/json" } : undefined,
+      body: cuerpo ? JSON.stringify(cuerpo) : undefined,
+    });
+    if (r.status === 401 && typeof irAlLogin === "function") irAlLogin();
+    if (!r.ok) {
+      let detalle = `Error ${r.status}`;
+      try { detalle = (await r.json()).detail || detalle; } catch (_) {}
+      throw new Error(detalle);
+    }
+    return r.json();
+  }
+
+  const puedeGuardar = () => typeof window.consultaParaGuardar === "function";
+  const nFmt = (n) => (n === null || n === undefined) ? "–" : Number(n).toLocaleString("es-AR");
+
+  function itemAcceso(a) {
+    const href = "/?" + a.consulta;
+    const dueno = a.mio ? "" : `<span class="acceso-dueno">de ${esc(a.dueno)}</span>`;
+    const compartido = a.mio && a.compartido ? '<span class="acceso-compartido" title="Compartido con el equipo">👥</span>' : "";
+    const botones = a.mio
+      ? `<span class="acceso-acc">
+           <button type="button" class="acceso-btn" data-acc="editar" title="Editar, compartir o actualizar con los filtros actuales" aria-label="Editar ${esc(a.nombre)}">✎</button>
+           <button type="button" class="acceso-btn" data-acc="borrar" title="Borrar" aria-label="Borrar ${esc(a.nombre)}">🗑</button>
+         </span>`
+      : "";
+    return `<div class="acceso" data-id="${a.id}">
+      <a class="acceso-link" href="${esc(href)}" data-consulta="${esc(a.consulta)}" role="menuitem" title="${esc(a.nombre)}">
+        <span class="acceso-nombre">${esc(a.nombre)}${compartido}${dueno}</span>
+        <span class="acceso-cant" data-cant="${a.id}">…</span>
+      </a>${botones}
+    </div>`;
+  }
+
+  function renderAccesos() {
+    const d = acc.datos;
+    if (!d) { acc.menu.innerHTML = '<div class="acceso-vacio">Cargando…</div>'; return; }
+    let html = "";
+    if (d.propios.length) {
+      html += `<div class="acceso-titulo">Mis accesos</div>` + d.propios.map(itemAcceso).join("");
+    } else {
+      html += `<div class="acceso-vacio">Todavía no guardaste ninguna búsqueda. Armá en <strong>Leads</strong> los filtros que usás siempre y guardalos acá para volver con un clic.</div>`;
+    }
+    if (d.compartidos.length) {
+      html += `<div class="acceso-titulo">Del equipo</div>` + d.compartidos.map(itemAcceso).join("");
+    }
+    html += `<div class="acceso-pie">` + (puedeGuardar()
+      ? `<button type="button" class="acceso-guardar" data-acc="guardar">＋ Guardar la búsqueda actual…</button>`
+      : `<div class="acceso-nota">Para guardar una búsqueda, andá a Leads y elegí los filtros.</div>
+         <a class="acceso-ir" href="/">Ir a Leads →</a>`) + `</div>`;
+    acc.menu.innerHTML = html;
+  }
+
+  async function cargarAccesos(forzar) {
+    if (acc.cargando) return;
+    if (!forzar && acc.datos && Date.now() - acc.ultima < 20000) return; // el mouse pasa seguido: no pedir de más
+    acc.cargando = true;
+    try {
+      acc.datos = await apiAcc("/api/accesos-rapidos");
+      acc.ultima = Date.now();
+      renderAccesos();
+      // Las cantidades tardan un poco más (una consulta por búsqueda): llegan después.
+      apiAcc("/api/accesos-rapidos/cantidades").then((c) => {
+        acc.menu.querySelectorAll("[data-cant]").forEach((el) => {
+          const n = c[el.dataset.cant];
+          el.textContent = nFmt(n);
+          el.classList.toggle("hay", typeof n === "number" && n > 0);
+        });
+      }).catch(() => {
+        acc.menu.querySelectorAll("[data-cant]").forEach((el) => { el.textContent = "–"; });
+      });
+    } catch (e) {
+      acc.menu.innerHTML = `<div class="acceso-vacio">No se pudieron cargar los accesos rápidos (${esc(e.message)}).</div>`;
+    } finally {
+      acc.cargando = false;
+    }
+  }
+
+  function cerrarMenuAccesos() {
+    acc.grupo.classList.remove("abierto");
+    acc.grupo.classList.add("sin-hover"); // el mouse sigue encima: sin esto el CSS lo dejaría abierto
+    acc.grupo.querySelector(".nav-boton").setAttribute("aria-expanded", "false");
+  }
+
+  // Ventana para guardar / editar un acceso. `a` = el acceso a editar (o null para uno nuevo).
+  function abrirModalAcceso(a) {
+    let fondo = document.getElementById("modal-acceso");
+    if (!fondo) {
+      fondo = document.createElement("div");
+      fondo.id = "modal-acceso";
+      fondo.className = "modal-fondo";
+      fondo.addEventListener("click", (e) => { if (e.target === fondo) fondo.classList.remove("abierto"); });
+      document.addEventListener("keydown", (e) => { if (e.key === "Escape") fondo.classList.remove("abierto"); });
+      document.body.appendChild(fondo);
+    }
+    const hayFiltros = puedeGuardar();
+    const resumen = hayFiltros && typeof window.describirFiltrosActuales === "function" ? window.describirFiltrosActuales() : [];
+    const textoResumen = resumen.length ? esc(resumen.join(" · ")) : "Sin filtros: todas las marcas";
+    fondo.innerHTML = `
+      <div class="modal-caja modal-acceso" role="dialog" aria-modal="true" aria-label="${a ? "Editar acceso rápido" : "Guardar acceso rápido"}">
+        <button type="button" class="modal-cerrar" aria-label="Cerrar">&times;</button>
+        <h3 class="titulo-coment">⚡ ${a ? "Editar acceso rápido" : "Guardar búsqueda actual"}</h3>
+        <label class="campo">Nombre
+          <input type="text" id="acceso-nombre" maxlength="60" placeholder="Ej.: Oposiciones sin contactar" value="${a ? esc(a.nombre) : ""}" autocomplete="off" />
+        </label>
+        <label class="check">
+          <input type="checkbox" id="acceso-compartir" ${a && a.compartido ? "checked" : ""} />
+          <span>Compartir con el equipo<small>Lo van a ver todos en su ⚡, pero solo vos lo podés cambiar o borrar.</small></span>
+        </label>
+        ${a && hayFiltros ? `<label class="check">
+          <input type="checkbox" id="acceso-actualizar" />
+          <span>Actualizar con los filtros que tengo ahora<small>Si no lo tildás, se mantiene la búsqueda que ya tenía guardada.</small></span>
+        </label>` : ""}
+        ${(!a && hayFiltros) || (a && hayFiltros) ? `<div class="acceso-resumen"><strong>Filtros de ahora:</strong> ${textoResumen}</div>` : ""}
+        <div class="acceso-error" id="acceso-error" hidden></div>
+        <div class="acciones-modal">
+          <button type="button" id="acceso-cancelar">Cancelar</button>
+          <button type="button" class="principal" id="acceso-guardar">${a ? "Guardar cambios" : "Guardar"}</button>
+        </div>
+      </div>`;
+    fondo.classList.add("abierto");
+    const nombre = fondo.querySelector("#acceso-nombre");
+    const error = fondo.querySelector("#acceso-error");
+    const cerrar = () => fondo.classList.remove("abierto");
+    fondo.querySelector(".modal-cerrar").addEventListener("click", cerrar);
+    fondo.querySelector("#acceso-cancelar").addEventListener("click", cerrar);
+    setTimeout(() => { nombre.focus(); nombre.select(); }, 30);
+
+    const guardar = async () => {
+      const btn = fondo.querySelector("#acceso-guardar");
+      error.hidden = true;
+      btn.disabled = true;
+      try {
+        const compartido = fondo.querySelector("#acceso-compartir").checked;
+        if (a) {
+          const cambios = { nombre: nombre.value, compartido };
+          const act = fondo.querySelector("#acceso-actualizar");
+          if (act && act.checked) cambios.consulta = window.consultaParaGuardar();
+          await apiAcc(`/api/accesos-rapidos/${a.id}`, "PUT", cambios);
+        } else {
+          await apiAcc("/api/accesos-rapidos", "POST", { nombre: nombre.value, consulta: window.consultaParaGuardar(), compartido });
+        }
+        cerrar();
+        acc.datos = null;
+        if (typeof window.mostrarAviso === "function") window.mostrarAviso(a ? "Acceso rápido actualizado" : "Acceso rápido guardado ⚡");
+      } catch (e) {
+        error.textContent = e.message;
+        error.hidden = false;
+      } finally {
+        btn.disabled = false;
+      }
+    };
+    fondo.querySelector("#acceso-guardar").addEventListener("click", guardar);
+    nombre.addEventListener("keydown", (e) => { if (e.key === "Enter") guardar(); });
+  }
+
+  async function borrarAcceso(a) {
+    if (!confirm(`¿Borrar el acceso rápido «${a.nombre}»?${a.compartido ? "\nTambién deja de verse para el equipo." : ""}`)) return;
+    try {
+      await apiAcc(`/api/accesos-rapidos/${a.id}`, "DELETE");
+      await cargarAccesos(true);
+    } catch (e) {
+      alert(`No se pudo borrar: ${e.message}`);
+    }
+  }
+
+  function iniciarAccesos() {
+    const nav = document.querySelector(".app-header .nav");
+    if (!nav || document.querySelector(".nav-rayo")) return;
+    const grupo = document.createElement("div");
+    grupo.className = "nav-grupo nav-rayo";
+    grupo.innerHTML = `
+      <button type="button" class="nav-boton" aria-haspopup="true" aria-expanded="false" title="Accesos rápidos" aria-label="Accesos rápidos">${RAYO_SVG}</button>
+      <div class="nav-sub accesos-menu" role="menu"></div>`;
+    nav.insertBefore(grupo, nav.firstChild);
+    acc.grupo = grupo;
+    acc.menu = grupo.querySelector(".accesos-menu");
+    renderAccesos();
+
+    grupo.addEventListener("mouseenter", () => cargarAccesos(false));
+    grupo.addEventListener("mouseleave", () => grupo.classList.remove("sin-hover"));
+    grupo.querySelector(".nav-boton").addEventListener("click", () => { grupo.classList.remove("sin-hover"); cargarAccesos(false); });
+
+    acc.menu.addEventListener("click", (e) => {
+      const btn = e.target.closest("[data-acc]");
+      const fila = e.target.closest(".acceso");
+      const a = fila && acc.datos
+        ? [...acc.datos.propios, ...acc.datos.compartidos].find((x) => String(x.id) === fila.dataset.id)
+        : null;
+      if (btn) {
+        e.preventDefault();
+        e.stopPropagation();
+        if (btn.dataset.acc === "guardar") { cerrarMenuAccesos(); abrirModalAcceso(null); }
+        else if (btn.dataset.acc === "editar" && a) { cerrarMenuAccesos(); abrirModalAcceso(a); }
+        else if (btn.dataset.acc === "borrar" && a) borrarAcceso(a);
+        return;
+      }
+      const link = e.target.closest("a.acceso-link");
+      // Estando en Leads, se aplican los filtros sin recargar la página.
+      if (link && typeof window.aplicarAccesoRapido === "function" && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
+        e.preventDefault();
+        window.aplicarAccesoRapido(link.dataset.consulta);
+        cerrarMenuAccesos();
+      }
+    });
+  }
+
+  function iniciar() { iniciarAccesos(); iniciarGrupos(); iniciarChat(); }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", iniciar);
   else iniciar();
 })();

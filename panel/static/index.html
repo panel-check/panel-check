@@ -4,7 +4,7 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Panel de leads — Kom Marcas Inpi</title>
-<link rel="stylesheet" href="/static/comun.css?v=bol2" />
+<link rel="stylesheet" href="/static/comun.css?v=acc1" />
 <script src="/static/sesion.js" defer></script>
 <script src="/static/menu.js" defer></script>
 </head>
@@ -12,7 +12,6 @@
 
 <header class="app-header">
   <a class="marca" href="/"><span class="marca-logo">®</span><h1 class="marca-nombre">Panel de leads</h1></a>
-  <span class="marca-sub">Marcas autopresentadas, listas para prospección</span>
   <nav class="nav">
     <a href="/" class="activa" aria-current="page" title="Leads"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5h18M3 12h18M3 19h12"/></svg><span class="nav-txt">Leads</span></a>
     <a href="/crm" title="CRM"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="5" height="16" rx="1.5"/><rect x="10" y="4" width="5" height="11" rx="1.5"/><rect x="17" y="4" width="4" height="7" rx="1.5"/></svg><span class="nav-txt">CRM</span></a>
@@ -60,10 +59,12 @@
     </select>
   </label>
   <label>Oposición
-    <select id="f-oposicion">
+    <select id="f-oposicion" title="Oposición: la de un tercero contra la marca. Vista: observación de oficio de INPI.">
       <option value="" selected>Todos</option>
-      <option value="true">Con oposición/vista</option>
-      <option value="false">Sin oposición</option>
+      <option value="con">Con oposición o vista</option>
+      <option value="oposicion">Solo oposición</option>
+      <option value="vista">Solo vista</option>
+      <option value="sin">Sin oposición (revisadas)</option>
     </select>
   </label>
   <div class="rango-fecha" id="rango-fecha">
@@ -71,6 +72,14 @@
       <button type="button" class="campo-rango vacio" id="campo-rango-fecha" onclick="toggleRangoFecha(event)">Todas las fechas</button>
     </label>
     <div class="popover-rango" id="popover-rango-fecha">
+      <div class="atajos-fecha" id="atajos-fecha">
+        <button type="button" data-dias="1" onclick="elegirAtajoFecha(1)">Hoy</button>
+        <button type="button" data-dias="7" onclick="elegirAtajoFecha(7)">Últimos 7 días</button>
+        <button type="button" data-dias="15" onclick="elegirAtajoFecha(15)">Últimos 15 días</button>
+        <button type="button" data-dias="30" onclick="elegirAtajoFecha(30)">Últimos 30 días</button>
+      </div>
+      <input type="hidden" id="f-fecha-dias" value="" />
+      <p class="separador-fecha">o elegí un rango:</p>
       <label>Desde
         <input type="date" id="f-fecha-desde" />
       </label>
@@ -153,10 +162,39 @@
 
 <div class="resumen" id="resumen">Cargando...</div>
 
+<div class="barra-sel" id="barra-sel" hidden>
+  <span class="barra-sel-info" id="barra-sel-info"></span>
+  <button type="button" class="enlace" id="btn-sel-filtro" onclick="seleccionarTodasElFiltro()" hidden></button>
+  <span class="barra-sel-acciones">
+    <span class="menu-sel">
+      <button type="button" class="btn-sel" onclick="toggleMenuSel(event, 'm-contactado')">Contactado ▾</button>
+      <div class="menu-sel-lista" id="m-contactado">
+        <button type="button" onclick="accionContactado(true)">Marcar como contactadas</button>
+        <button type="button" onclick="accionContactado(false)">Marcar como sin contactar</button>
+      </div>
+    </span>
+    <span class="menu-sel">
+      <button type="button" class="btn-sel" onclick="toggleMenuSel(event, 'm-asignar')">Asignar a ▾</button>
+      <div class="menu-sel-lista" id="m-asignar"><button type="button" disabled>Cargando…</button></div>
+    </span>
+    <span class="menu-sel">
+      <button type="button" class="btn-sel" onclick="toggleMenuSel(event, 'm-atendida')" title="Para las marcas seleccionadas que tengan oposición o vista">Oposición atendida ▾</button>
+      <div class="menu-sel-lista" id="m-atendida">
+        <button type="button" onclick="accionAtendida(true)">Marcar como atendida</button>
+        <button type="button" onclick="accionAtendida(false)">Quitar «atendida»</button>
+      </div>
+    </span>
+    <button type="button" class="btn-sel" onclick="accionGestor()" title="Los titulares dejan de ser leads">Tiene gestor/apoderado</button>
+    <button type="button" class="btn-sel" id="btn-sel-exportar" onclick="accionExportar()">Exportar CSV</button>
+    <button type="button" class="btn-sel suave" onclick="limpiarSeleccion()">Quitar selección ✕</button>
+  </span>
+</div>
+
 <div class="contenedor-tabla">
 <table>
   <thead>
     <tr>
+      <th class="col-sel"><input type="checkbox" id="sel-todo" title="Seleccionar todas las marcas de esta página" aria-label="Seleccionar todas las marcas de esta página" /></th>
       <th data-col="lead_score" onclick="ordenarPor('lead_score')">Score</th>
       <th data-col="clase" onclick="ordenarPor('clase')">Clase</th>
       <th>Marca</th>
@@ -169,7 +207,7 @@
     </tr>
   </thead>
   <tbody id="tbody">
-    <tr><td colspan="9" class="vacio">Cargando...</td></tr>
+    <tr><td colspan="10" class="vacio">Cargando...</td></tr>
   </tbody>
 </table>
 </div>
@@ -381,15 +419,23 @@ function filtrosMulticlase() {
   return {};
 }
 
+function opcionOposicion() {
+  return document.getElementById("f-oposicion").value;
+}
+
 function filtrosActuales() {
   return {
     boletin: document.getElementById("f-boletin").value,
     clase: document.getElementById("f-clase").value,
     es_lead: document.getElementById("f-lead").value,
     contactado: document.getElementById("f-contactado").value,
-    tuvo_oposicion: document.getElementById("f-oposicion").value,
+    // El desplegable "Oposición" es uno solo; al servidor le llegan dos datos:
+    // si tuvo oposición/vista (o no) y, si se eligió, de qué tipo.
+    tuvo_oposicion: opcionOposicion() === "sin" ? "false" : (opcionOposicion() ? "true" : ""),
+    tipo_oposicion: ["oposicion", "vista"].includes(opcionOposicion()) ? opcionOposicion() : "",
     fecha_desde: document.getElementById("f-fecha-desde").value,
     fecha_hasta: document.getElementById("f-fecha-hasta").value,
+    fecha_dias: document.getElementById("f-fecha-dias").value,
     tiene_email: document.getElementById("f-tiene-email").value,
     tiene_titular: document.getElementById("f-tiene-titular").value,
     tiene_clase: document.getElementById("f-tiene-clase").value,
@@ -411,6 +457,7 @@ function limpiarFiltros() {
   document.getElementById("f-oposicion").value = "";
   document.getElementById("f-fecha-desde").value = "";
   document.getElementById("f-fecha-hasta").value = "";
+  document.getElementById("f-fecha-dias").value = "";
   document.getElementById("f-tiene-email").value = "";
   document.getElementById("f-tiene-titular").value = "";
   document.getElementById("f-tiene-clase").value = "";
@@ -447,8 +494,13 @@ function formatearFechaCorta(iso) {
 function actualizarEtiquetaRangoFecha() {
   const desde = document.getElementById("f-fecha-desde").value;
   const hasta = document.getElementById("f-fecha-hasta").value;
+  const dias = document.getElementById("f-fecha-dias").value;
   const campo = document.getElementById("campo-rango-fecha");
-  if (!desde && !hasta) {
+  document.querySelectorAll("#atajos-fecha button").forEach(b => b.classList.toggle("activo", b.dataset.dias === dias));
+  if (dias) {
+    campo.textContent = dias === "1" ? "Hoy" : `Últimos ${dias} días`;
+    campo.classList.remove("vacio");
+  } else if (!desde && !hasta) {
     campo.textContent = "Todas las fechas";
     campo.classList.add("vacio");
   } else if (desde && hasta) {
@@ -464,14 +516,28 @@ function actualizarEtiquetaRangoFecha() {
 }
 
 function aplicarRangoFecha() {
+  // Si se escribió un rango a mano, manda el rango (el atajo "últimos N días" se descarta).
+  if (document.getElementById("f-fecha-desde").value || document.getElementById("f-fecha-hasta").value) {
+    document.getElementById("f-fecha-dias").value = "";
+  }
   actualizarEtiquetaRangoFecha();
   document.getElementById("rango-fecha").classList.remove("abierto");
   cargar(0);
 }
 
+// "Hoy" / "Últimos N días": se guardan como N, no como fechas fijas, así un
+// acceso rápido sigue sirviendo mañana (el servidor lo cuenta desde hoy).
+function elegirAtajoFecha(dias) {
+  document.getElementById("f-fecha-dias").value = String(dias);
+  document.getElementById("f-fecha-desde").value = "";
+  document.getElementById("f-fecha-hasta").value = "";
+  aplicarRangoFecha();
+}
+
 function limpiarRangoFecha() {
   document.getElementById("f-fecha-desde").value = "";
   document.getElementById("f-fecha-hasta").value = "";
+  document.getElementById("f-fecha-dias").value = "";
   actualizarEtiquetaRangoFecha();
   document.getElementById("rango-fecha").classList.remove("abierto");
   cargar(0);
@@ -495,7 +561,8 @@ function marcarFiltrosActivos() {
     el.classList.toggle("con-valor", el.value !== "");
   });
   refrescarBotonBoletin();
-  const hayFecha = document.getElementById("f-fecha-desde").value || document.getElementById("f-fecha-hasta").value;
+  const hayFecha = document.getElementById("f-fecha-desde").value || document.getElementById("f-fecha-hasta").value
+    || document.getElementById("f-fecha-dias").value;
   document.getElementById("campo-rango-fecha").classList.toggle("con-valor", !!hayFecha);
   const cant = IDS_AVANZADOS.filter(id => document.getElementById(id).value !== "").length;
   document.getElementById("cant-avanzados").textContent = cant ? String(cant) : "";
@@ -515,8 +582,54 @@ function engancharFiltrosAutomaticos() {
 // sola en cada cargar(), con replaceState para no ensuciar el historial de
 // "atrás/adelante" con cada tecla) — así el link de la barra de direcciones
 // ya sirve para compartir exactamente esta búsqueda, sin un paso aparte.
+// Para la URL (y para los accesos rápidos) "Todos" en Lead y Contactado se
+// escribe como "todos": si no, al abrir el link volverían a los valores de
+// siempre (Solo leads / Sin contactar), porque un filtro vacío no se escribe.
+function paramsURL() {
+  const p = filtrosActuales();
+  if (p.es_lead === "") p.es_lead = "todos";
+  if (p.contactado === "") p.contactado = "todos";
+  return p;
+}
+
+// Lo que guarda un acceso rápido: los filtros de ahora, sin la página.
+window.consultaParaGuardar = function () {
+  const p = paramsURL();
+  delete p.limit;
+  delete p.offset;
+  return qs(p);
+};
+
+// Resumen en palabras de los filtros de ahora (para la ventana de guardar).
+window.describirFiltrosActuales = function () {
+  const partes = [];
+  const texto = id => { const el = document.getElementById(id); return el.options[el.selectedIndex]?.textContent.trim() || ""; };
+  if (document.getElementById("f-boletin").value) partes.push(`Boletín ${document.getElementById("bol-btn-txt").textContent.trim()}`);
+  if (document.getElementById("f-clase").value) partes.push(`Clase ${document.getElementById("f-clase").value}`);
+  if (document.getElementById("f-lead").value) partes.push(texto("f-lead"));
+  if (document.getElementById("f-contactado").value) partes.push(texto("f-contactado"));
+  if (document.getElementById("f-oposicion").value) partes.push(texto("f-oposicion"));
+  if (!document.getElementById("campo-rango-fecha").classList.contains("vacio")) {
+    partes.push(`Fecha boletín: ${document.getElementById("campo-rango-fecha").textContent.trim()}`);
+  }
+  [["f-tiene-email", "Email"], ["f-tiene-titular", "Titular"], ["f-tiene-clase", "Clase asignada"],
+   ["f-estado-marca", "Estado"], ["f-multiclase-modo", "Misma marca en varias clases"]].forEach(([id, rotulo]) => {
+    if (document.getElementById(id).value) partes.push(`${rotulo}: ${texto(id)}`);
+  });
+  const q = document.getElementById("f-q").value.trim();
+  if (q) partes.push(`Búsqueda «${q}»`);
+  return partes;
+};
+
+// Aplica una búsqueda guardada sin recargar la página (la llama el ⚡ de menu.js).
+window.aplicarAccesoRapido = function (consulta) {
+  history.replaceState(null, "", `${location.pathname}?${consulta}`);
+  filtrosDesdeURL();
+  cargar(0);
+};
+
 function actualizarURL() {
-  const qsActual = qs(filtrosActuales());
+  const qsActual = qs(paramsURL());
   const nueva = qsActual ? `${location.pathname}?${qsActual}` : location.pathname;
   history.replaceState(null, "", nueva);
 }
@@ -526,13 +639,25 @@ function actualizarURL() {
 function filtrosDesdeURL() {
   const p = new URLSearchParams(location.search);
   if (!p.toString()) return false;
-  if (p.has("boletin")) document.getElementById("f-boletin").value = p.get("boletin");
-  if (p.has("clase")) document.getElementById("f-clase").value = p.get("clase");
-  document.getElementById("f-lead").value = p.get("es_lead") ?? "true";
-  document.getElementById("f-contactado").value = p.get("contactado") ?? "false";
-  document.getElementById("f-oposicion").value = p.get("tuvo_oposicion") ?? "";
+  // "todos" = filtro vacío a propósito (ver paramsURL); si el parámetro no
+  // viene, Lead y Contactado vuelven a los valores de siempre.
+  const leer = (clave, defecto = "") => {
+    const v = p.get(clave);
+    return v === null ? defecto : (v === "todos" ? "" : v);
+  };
+  document.getElementById("f-boletin").value = leer("boletin");
+  document.getElementById("f-clase").value = leer("clase");
+  document.getElementById("f-lead").value = leer("es_lead", "true");
+  document.getElementById("f-contactado").value = leer("contactado", "false");
+  // Oposición: los links viejos traen solo tuvo_oposicion=true|false.
+  const tipoOpo = p.get("tipo_oposicion");
+  const tuvoOpo = p.get("tuvo_oposicion");
+  document.getElementById("f-oposicion").value =
+    (tipoOpo === "oposicion" || tipoOpo === "vista") ? tipoOpo
+      : tuvoOpo === "true" ? "con" : tuvoOpo === "false" ? "sin" : "";
   document.getElementById("f-fecha-desde").value = p.get("fecha_desde") ?? "";
   document.getElementById("f-fecha-hasta").value = p.get("fecha_hasta") ?? "";
+  document.getElementById("f-fecha-dias").value = /^\d+$/.test(p.get("fecha_dias") ?? "") ? p.get("fecha_dias") : "";
   document.getElementById("f-tiene-email").value = p.get("tiene_email") ?? "";
   document.getElementById("f-tiene-titular").value = p.get("tiene_titular") ?? "";
   document.getElementById("f-tiene-clase").value = p.get("tiene_clase") ?? "";
@@ -544,6 +669,8 @@ function filtrosDesdeURL() {
     document.getElementById("f-multiclase-modo").value = "par";
     document.getElementById("f-multiclase-a").value = p.get("multiclase_a");
     document.getElementById("f-multiclase-b").value = p.get("multiclase_b");
+  } else {
+    document.getElementById("f-multiclase-modo").value = "";
   }
   document.getElementById("f-multiclase-titular").value = p.get("multiclase_titular") ?? "";
   actualizarCamposMulticlase();
@@ -556,7 +683,7 @@ function filtrosDesdeURL() {
   // abierto de entrada — si no, el usuario no se entera de que está filtrado.
   if (p.get("tiene_email") || p.get("tiene_titular") || p.get("tiene_clase") || p.get("estado_marca")
       || p.get("multiclase_min") || p.get("multiclase_a")) {
-    toggleFiltrosAvanzados();
+    if (!document.getElementById("filtros-avanzados").classList.contains("abierto")) toggleFiltrosAvanzados();
   }
   return true;
 }
@@ -609,8 +736,14 @@ function filaHtml(r, { flecha = false, oculta = false, idGrupo = null, cantidadR
     : tituLink;
   const clave = claveTitular(r);
   const hrefTitular = clave ? `/titular/${encodeURIComponent(clave)}` : "javascript:void(0)";
+  // La casilla del titular agrupado selecciona todas sus marcas (también las plegadas);
+  // las demás filas tienen su propia casilla.
+  const celdaSel = flecha
+    ? `<td class="col-sel"><input type="checkbox" class="sel-grupo" data-grupo="${idGrupo}" title="Seleccionar las ${cantidadResto + 1} marcas de este titular" aria-label="Seleccionar las ${cantidadResto + 1} marcas de este titular" /></td>`
+    : `<td class="col-sel"><input type="checkbox" class="sel-fila" data-acta="${r.acta}" aria-label="Seleccionar la marca del acta ${r.acta}" /></td>`;
   return `
-    <tr class="${r.es_lead ? "lead" : ""} ${r.contactado ? "contactado" : ""} ${claseOculta}" ${atributoGrupo}>
+    <tr class="${r.es_lead ? "lead" : ""} ${r.contactado ? "contactado" : ""} ${claseOculta}" ${atributoGrupo} data-acta="${r.acta}">
+      ${celdaSel}
       <td class="score">${r.lead_score ?? ""}</td>
       <td>${r.clase ?? ""}${celdaOtrasClases(r)}</td>
       <td class="denominacion" title="${r.denominacion_inpi || r.denominacion || ""}">${r.denominacion_inpi || r.denominacion || `<em>${sinNombre(r.tipo)}</em>`}</td>
@@ -624,6 +757,244 @@ function filaHtml(r, { flecha = false, oculta = false, idGrupo = null, cantidadR
   `;
 }
 
+// ── Selección masiva ──────────────────────────────────────────────────────
+// Se marcan marcas (por acta) con las casillas; la barra de arriba de la tabla
+// ofrece las acciones. La selección sobrevive al cambiar de página u orden y se
+// borra al cambiar los filtros. "Seleccionar las N que coinciden con el filtro"
+// trae del servidor TODAS las actas del filtro (no solo las 100 de la página).
+const seleccion = { actas: new Set(), todoElFiltro: false, firma: null };
+let gruposPagina = {};  // idGrupo -> actas del titular agrupado (de la página actual)
+let actasPagina = [];   // todas las actas de la página actual
+let usuariosAsignar = null;
+
+// Los filtros sin orden ni página: si cambian, cambia la selección posible.
+function firmaFiltros() {
+  const p = filtrosActuales();
+  ["sort", "order", "limit", "offset"].forEach(k => delete p[k]);
+  return qs(p);
+}
+
+function plural(n, uno, varios) { return `${fmtMiles(n)} ${n === 1 ? uno : varios}`; }
+
+function pintarSeleccion() {
+  const n = seleccion.actas.size;
+  document.querySelectorAll("#tbody input.sel-fila").forEach(cb => {
+    const marcada = seleccion.actas.has(cb.dataset.acta);
+    cb.checked = marcada;
+    cb.closest("tr").classList.toggle("seleccionada", marcada);
+  });
+  document.querySelectorAll("#tbody input.sel-grupo").forEach(cb => {
+    const actas = gruposPagina[cb.dataset.grupo] || [];
+    const cant = actas.filter(a => seleccion.actas.has(a)).length;
+    cb.checked = actas.length > 0 && cant === actas.length;
+    cb.indeterminate = cant > 0 && cant < actas.length;
+    cb.closest("tr").classList.toggle("seleccionada", actas.length > 0 && cant === actas.length);
+  });
+
+  const enPagina = actasPagina.filter(a => seleccion.actas.has(a)).length;
+  const todo = document.getElementById("sel-todo");
+  todo.checked = actasPagina.length > 0 && enPagina === actasPagina.length;
+  todo.indeterminate = enPagina > 0 && enPagina < actasPagina.length;
+
+  const barra = document.getElementById("barra-sel");
+  barra.hidden = n === 0;
+  if (n === 0) return;
+  document.getElementById("barra-sel-info").textContent = seleccion.todoElFiltro
+    ? `Las ${fmtMiles(n)} marcas que coinciden con el filtro están seleccionadas`
+    : `${plural(n, "marca seleccionada", "marcas seleccionadas")}`;
+  // Estilo Gmail: con toda la página marcada se ofrece seleccionar todo lo que da el filtro.
+  const btnFiltro = document.getElementById("btn-sel-filtro");
+  const ofrecer = !seleccion.todoElFiltro && actasPagina.length > 0 && enPagina === actasPagina.length && estado.total > n;
+  btnFiltro.hidden = !ofrecer;
+  if (ofrecer) btnFiltro.textContent = `Seleccionar las ${fmtMiles(estado.total)} marcas que coinciden con el filtro`;
+}
+
+function limpiarSeleccion() {
+  seleccion.actas.clear();
+  seleccion.todoElFiltro = false;
+  pintarSeleccion();
+}
+
+async function seleccionarTodasElFiltro() {
+  const btn = document.getElementById("btn-sel-filtro");
+  btn.disabled = true;
+  try {
+    const p = filtrosActuales();
+    ["sort", "order", "limit", "offset"].forEach(k => delete p[k]);
+    const d = await api(`/api/marcas/actas?${qs(p)}`);
+    seleccion.actas = new Set(d.actas);
+    seleccion.todoElFiltro = true;
+    if (d.truncado) mostrarAviso(`Son más de ${fmtMiles(d.total)} marcas: se seleccionaron solo las primeras ${fmtMiles(d.total)}.`, "aviso");
+  } catch (e) {
+    alert(`No se pudieron seleccionar todas las marcas: ${e.message}`);
+  } finally {
+    btn.disabled = false;
+    pintarSeleccion();
+  }
+}
+
+function engancharSeleccion() {
+  document.getElementById("tbody").addEventListener("change", ev => {
+    const cb = ev.target;
+    if (cb.classList.contains("sel-fila")) {
+      cb.checked ? seleccion.actas.add(cb.dataset.acta) : seleccion.actas.delete(cb.dataset.acta);
+    } else if (cb.classList.contains("sel-grupo")) {
+      (gruposPagina[cb.dataset.grupo] || []).forEach(a => cb.checked ? seleccion.actas.add(a) : seleccion.actas.delete(a));
+    } else {
+      return;
+    }
+    seleccion.todoElFiltro = false; // ya es una selección a mano
+    pintarSeleccion();
+  });
+  document.getElementById("sel-todo").addEventListener("change", ev => {
+    actasPagina.forEach(a => ev.target.checked ? seleccion.actas.add(a) : seleccion.actas.delete(a));
+    seleccion.todoElFiltro = false;
+    pintarSeleccion();
+  });
+  document.addEventListener("click", ev => {
+    if (!ev.target.closest(".menu-sel")) document.querySelectorAll(".menu-sel.abierto").forEach(m => m.classList.remove("abierto"));
+  });
+  document.getElementById("m-asignar").addEventListener("click", ev => {
+    const b = ev.target.closest("button[data-u]");
+    if (b) accionAsignar(b.dataset.u);
+  });
+}
+
+async function toggleMenuSel(ev, id) {
+  ev.stopPropagation();
+  const menu = document.getElementById(id).closest(".menu-sel");
+  const abrir = !menu.classList.contains("abierto");
+  document.querySelectorAll(".menu-sel.abierto").forEach(m => m.classList.remove("abierto"));
+  menu.classList.toggle("abierto", abrir);
+  if (abrir && id === "m-asignar" && !usuariosAsignar) {
+    try {
+      usuariosAsignar = await api("/api/masivo/opciones");
+      const attr = t => String(t).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
+      document.getElementById("m-asignar").innerHTML =
+        `<button type="button" data-u="">Sin asignar</button>` +
+        usuariosAsignar.usuarios.map(u =>
+          `<button type="button" data-u="${attr(u)}">${_escapeHtml(u)}${u === usuariosAsignar.usuario ? " (yo)" : ""}</button>`).join("");
+    } catch (e) {
+      document.getElementById("m-asignar").innerHTML = `<button type="button" disabled>No se pudo cargar (${_escapeHtml(e.message)})</button>`;
+    }
+  }
+}
+
+function barraOcupada(ocupada) {
+  document.querySelectorAll("#barra-sel .btn-sel").forEach(b => { b.disabled = ocupada; });
+}
+
+// Manda la selección a una acción masiva del servidor, avisa el resultado y recarga la tabla.
+async function ejecutarMasivo(ruta, cuerpo, textoResultado) {
+  if (!seleccion.actas.size) return;
+  document.querySelectorAll(".menu-sel.abierto").forEach(m => m.classList.remove("abierto"));
+  barraOcupada(true);
+  try {
+    const r = await apiJson(ruta, "POST", { actas: [...seleccion.actas], ...cuerpo });
+    const aviso = textoResultado(r);
+    limpiarSeleccion();
+    await cargar(estado.offset);
+    mostrarAviso(aviso.texto ?? aviso, aviso.tipo || "ok");
+  } catch (e) {
+    alert(`No se pudo aplicar la acción: ${e.message}`);
+  } finally {
+    barraOcupada(false);
+  }
+}
+
+function accionContactado(valor) {
+  ejecutarMasivo("/api/masivo/contactado", { contactado: valor }, r =>
+    `${plural(r.marcas, "marca marcada", "marcas marcadas")} como ${valor ? "contactadas" : "sin contactar"}` +
+    (r.titulares_crm ? ` · ${plural(r.titulares_crm, "titular cambió", "titulares cambiaron")} de etapa en el CRM` : ""));
+}
+
+function accionAsignar(usuario) {
+  ejecutarMasivo("/api/masivo/asignar", { asignado: usuario }, r =>
+    usuario
+      ? `${plural(r.titulares, "titular asignado", "titulares asignados")} a ${usuario}`
+      : `${plural(r.titulares, "titular quedó", "titulares quedaron")} sin asignar`);
+}
+
+function accionAtendida(valor) {
+  ejecutarMasivo("/api/marcas/oposicion-atendida", { atendida: valor }, r => {
+    if (!r.marcas) return { texto: "Ninguna de las marcas seleccionadas tiene oposición o vista.", tipo: "aviso" };
+    return `${plural(r.marcas, "marca con oposición/vista", "marcas con oposición/vista")} ${valor ? "marcadas como atendidas" : "ya no figuran como atendidas"}`;
+  });
+}
+
+function accionGestor() {
+  const n = seleccion.actas.size;
+  if (!n) return;
+  let fondo = document.getElementById("modal-gestor-masivo");
+  if (!fondo) {
+    fondo = document.createElement("div");
+    fondo.id = "modal-gestor-masivo";
+    fondo.className = "modal-fondo";
+    fondo.addEventListener("click", ev => { if (ev.target === fondo) fondo.classList.remove("abierto"); });
+    document.addEventListener("keydown", ev => { if (ev.key === "Escape") fondo.classList.remove("abierto"); });
+    document.body.appendChild(fondo);
+  }
+  fondo.innerHTML = `
+    <div class="modal-caja modal-acceso modal-gestor-masivo" role="dialog" aria-modal="true" aria-label="Marcar tiene gestor o apoderado">
+      <button type="button" class="modal-cerrar" aria-label="Cerrar">&times;</button>
+      <h3 class="titulo-coment">Marcar «tiene gestor/apoderado»</h3>
+      <p style="margin:0;font-size:13.5px;line-height:1.5;">Vas a marcar a los titulares de <strong>${plural(n, "marca", "marcas")}</strong> como que ya tienen gestor o apoderado.
+        Dejan de ser leads y salen de esta lista. Se puede deshacer desde la ficha de cada titular.</p>
+      <label class="campo">Nombre del gestor (opcional)
+        <input type="text" id="gestor-nombre" maxlength="200" autocomplete="off" />
+      </label>
+      <div class="acciones-modal">
+        <button type="button" id="gestor-cancelar">Cancelar</button>
+        <button type="button" class="principal" id="gestor-confirmar">Marcar</button>
+      </div>
+    </div>`;
+  fondo.classList.add("abierto");
+  const cerrar = () => fondo.classList.remove("abierto");
+  fondo.querySelector(".modal-cerrar").addEventListener("click", cerrar);
+  fondo.querySelector("#gestor-cancelar").addEventListener("click", cerrar);
+  fondo.querySelector("#gestor-confirmar").addEventListener("click", () => {
+    const nombre = fondo.querySelector("#gestor-nombre").value;
+    cerrar();
+    ejecutarMasivo("/api/masivo/con-gestor", { nombre }, r => {
+      const base = `${plural(r.titulares, "titular marcado", "titulares marcados")} con gestor/apoderado`;
+      return r.saltados
+        ? { texto: `${base} · ${plural(r.saltados, "se salteó", "se saltearon")} (sin marcas lead para marcar)`, tipo: "aviso" }
+        : base;
+    });
+  });
+  setTimeout(() => fondo.querySelector("#gestor-nombre").focus(), 30);
+}
+
+async function accionExportar() {
+  const n = seleccion.actas.size;
+  if (!n) return;
+  const btn = document.getElementById("btn-sel-exportar");
+  btn.disabled = true;
+  try {
+    const r = await fetch("/api/masivo/exportar", {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ actas: [...seleccion.actas] }),
+    });
+    if (r.status === 401 && typeof irAlLogin === "function") irAlLogin();
+    if (!r.ok) throw new Error(`${r.status}`);
+    const url = URL.createObjectURL(await r.blob());
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `marcas-seleccionadas-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 2000);
+    mostrarAviso(`CSV descargado con ${plural(n, "marca", "marcas")}`);
+  } catch (e) {
+    alert(`No se pudo exportar: ${e.message}`);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
 function toggleGrupo(idGrupo, boton) {
   const abierto = boton.classList.toggle("abierta");
   boton.textContent = abierto ? "▾" : "▸";
@@ -634,23 +1005,38 @@ function toggleGrupo(idGrupo, boton) {
 
 async function cargar(offset) {
   estado.offset = offset;
-  document.getElementById("tbody").innerHTML = '<tr><td colspan="9" class="vacio">Cargando...</td></tr>';
+  // Si cambiaron los filtros, la selección ya no corresponde a lo que se ve.
+  // (Cambiar de página u orden la conserva: se puede ir juntando marcas.)
+  const firma = firmaFiltros();
+  if (firma !== seleccion.firma) {
+    seleccion.firma = firma;
+    seleccion.actas.clear();
+    seleccion.todoElFiltro = false;
+  }
+  document.getElementById("tbody").innerHTML = '<tr><td colspan="10" class="vacio">Cargando...</td></tr>';
   const params = filtrosActuales();
   actualizarURL();
   marcarFiltrosActivos();
   const data = await api(`/api/marcas?${qs(params)}`);
   estado.total = data.total;
+  // Después de una acción masiva la página puede quedar vacía (p. ej. al marcar
+  // como contactadas con el filtro "Sin contactar"): se vuelve a la última que tenga filas.
+  if (data.rows.length === 0 && data.total > 0 && offset > 0) {
+    return cargar(Math.floor((data.total - 1) / LIMIT) * LIMIT);
+  }
 
   document.querySelectorAll("th[data-col]").forEach(th => {
     th.classList.toggle("activo", th.dataset.col === estado.sort);
   });
 
   const tbody = document.getElementById("tbody");
+  gruposPagina = {};
   if (data.rows.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="9" class="vacio">No hay resultados con estos filtros.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="10" class="vacio">No hay resultados con estos filtros.</td></tr>';
   } else {
     tbody.innerHTML = agruparPorTitular(data.rows).map((grupo, i) => {
       const idGrupo = `g${estado.offset}_${i}`;
+      gruposPagina[idGrupo] = grupo.map(r => r.acta);
       const [principal, ...resto] = grupo;
       const filaPrincipal = filaHtml(principal, {
         flecha: resto.length > 0,
@@ -662,6 +1048,8 @@ async function cargar(offset) {
     }).join("");
   }
 
+  actasPagina = data.rows.map(r => r.acta);
+  pintarSeleccion();
   cargarContadoresComentarios(data.rows.map(r => r.acta));
   crmPintarEtapas();
 
@@ -674,6 +1062,7 @@ async function cargar(offset) {
 (async function init() {
   await cargarFiltrosIniciales();
   engancharFiltrosAutomaticos();
+  engancharSeleccion();
   const vinoDeLink = filtrosDesdeURL();
   if (!vinoDeLink) {
     document.getElementById("f-lead").value = "true";

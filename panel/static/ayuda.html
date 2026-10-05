@@ -297,11 +297,13 @@
     <p>En la ficha del titular y en el CRM, si una marca todavía no tiene CUIT pero el mismo nombre ya aparece con un CUIT (uno solo) en otra de sus marcas, se toma ese CUIT: así la marca "sin verificar" no queda como un titular aparte.</p>
 
     <h2>Barra de arriba y filtros</h2>
-    <p>La barra de arriba es igual en todas las pantallas: <strong>Leads</strong> (este panel), <strong>CRM</strong>, <strong>Clientes</strong>, <strong>Automatizaciones</strong>, <strong>Más</strong> y, al final, el ícono de <strong>Chat</strong>. <strong>Automatizaciones</strong> y <strong>Más</strong> abren un submenú al pasar el mouse (o con un clic, en el celular o la tablet): <em>Automatizaciones</em> tiene <strong>Boletines</strong> y <strong>Crons</strong> (los procesos automáticos); <em>Más</em> tiene <strong>Mails</strong> y <strong>Ayuda</strong>. La pantalla en la que estás queda marcada en celeste (y su grupo también), y el click en "Panel de leads" (a la izquierda) siempre vuelve al panel principal. En pantallas angostas se ven solo los íconos; pasando el mouse aparece el nombre.</p>
+    <p>La barra de arriba es igual en todas las pantallas: el rayito <strong>⚡</strong> de los accesos rápidos (ver más abajo), <strong>Leads</strong> (este panel), <strong>CRM</strong>, <strong>Clientes</strong>, <strong>Automatizaciones</strong>, <strong>Más</strong> y, al final, el ícono de <strong>Chat</strong>. <strong>Automatizaciones</strong> y <strong>Más</strong> abren un submenú al pasar el mouse (o con un clic, en el celular o la tablet): <em>Automatizaciones</em> tiene <strong>Boletines</strong> y <strong>Crons</strong> (los procesos automáticos); <em>Más</em> tiene <strong>Mails</strong> y <strong>Ayuda</strong>. La pantalla en la que estás queda marcada en celeste (y su grupo también), y el click en "Panel de leads" (a la izquierda) siempre vuelve al panel principal. En pantallas angostas se ven solo los íconos; pasando el mouse aparece el nombre.</p>
     <ul>
       <li><strong>Los desplegables filtran solos</strong> apenas se cambia la opción. La búsqueda libre se aplica con <strong>Enter</strong> o con el botón <strong>Filtrar</strong>.</li>
       <li>Los filtros que están recortando resultados se ven <strong>resaltados en celeste</strong>, para saber de un vistazo qué se está filtrando.</li>
       <li><strong>Limpiar</strong> vuelve a los filtros de siempre (Solo leads + Sin contactar).</li>
+      <li><strong>Oposición</strong> tiene cinco opciones: <em>Todos</em>; <em>Con oposición o vista</em> (cualquiera de las dos); <em>Solo oposición</em> (la de un tercero, la más urgente); <em>Solo vista</em> (observación de oficio de INPI, sin oposición de nadie); y <em>Sin oposición (revisadas)</em> (leads que ya se revisaron y no tienen ninguna; los que todavía no se revisaron no aparecen). Si una marca tiene a la vez una vista y una oposición, cuenta como oposición.</li>
+      <li><strong>Fecha Boletín</strong> abre un cuadro con atajos: <em>Hoy</em>, <em>Últimos 7 días</em>, <em>Últimos 15 días</em> y <em>Últimos 30 días</em> (se cuentan desde hoy, cada vez que se usan), o un rango <em>Desde / Hasta</em> a mano. Si se elige un rango a mano, el atajo se descarta.</li>
       <li>El botón <strong>Avanzados</strong> abre una segunda franja con filtros que se usan menos. Si hay filtros avanzados aplicados, el botón muestra cuántos, aunque la franja esté cerrada.</li>
     </ul>
     <p>Filtros avanzados disponibles:</p>
@@ -312,6 +314,33 @@
       <li><strong>Estado de la marca</strong>: pendiente de resolución / concedida / denegada.</li>
       <li><strong>Misma marca en varias clases</strong> (ver abajo).</li>
     </ul>
+
+    <h2 id="accesos-rapidos">⚡ Accesos rápidos (búsquedas guardadas)</h2>
+    <p>Son las búsquedas que hacés siempre, guardadas para volver a ellas con un clic. El <strong>⚡</strong> está en la barra de arriba, antes de <em>Leads</em>, en todas las pantallas. Al pasar el mouse (o con un clic) se abre la lista:</p>
+    <ul>
+      <li><strong>Mis accesos</strong>: los que guardaste vos. Al lado de cada uno aparece, en un globito, <strong>cuántas marcas da hoy</strong> esa búsqueda. Un clic aplica los filtros en Leads (desde otra pantalla te lleva a Leads con los filtros ya puestos).</li>
+      <li><strong>Del equipo</strong>: los que otra persona marcó como compartidos. Los ves y los usás, pero solo quien los guardó los puede cambiar o borrar.</li>
+      <li><strong>＋ Guardar la búsqueda actual…</strong> (solo estando en Leads): primero poné los filtros que querés (Lead, Contactado, Oposición, Fecha Boletín, Avanzados…), después guardalos con un <strong>nombre</strong>. Podés tildar <strong>Compartir con el equipo</strong>; si no, queda personal.</li>
+      <li><strong>✎ Editar</strong> (al pasar el mouse por un acceso propio): cambiar el nombre, compartirlo o dejar de compartirlo, y, tildando <em>Actualizar con los filtros que tengo ahora</em>, reemplazar la búsqueda guardada. <strong>🗑 Borrar</strong> lo elimina (si estaba compartido, deja de verse para el equipo).</li>
+    </ul>
+    <p>Un acceso guarda los filtros y el orden, no la página. Si guardás una búsqueda con <em>Fecha Boletín</em>, conviene usar uno de los atajos (<em>Últimos 7 días</em>, etc.): así el acceso sigue sirviendo mañana. Con fechas elegidas a mano, queda siempre ese rango fijo. Cada persona puede tener hasta 50 accesos.</p>
+
+    <h2 id="seleccion-masiva">☑ Seleccionar varias marcas a la vez</h2>
+    <p>La primera columna de la tabla de Leads tiene casillas. Con ellas se aplica una misma acción a muchas marcas juntas:</p>
+    <ul>
+      <li><strong>Casilla de una fila</strong>: selecciona esa marca. En un titular agrupado (el que dice <em>+2</em>), la casilla selecciona <strong>todas sus marcas</strong>, también las que están plegadas.</li>
+      <li><strong>Casilla del encabezado</strong>: selecciona las marcas de la página (son 100 por página). Cuando hay más resultados, aparece <strong>Seleccionar las N marcas que coinciden con el filtro</strong> para marcar todas, no solo las de la página (hasta 5.000 de una vez).</li>
+      <li>La selección se mantiene al cambiar de página o de orden, y <strong>se borra al cambiar un filtro</strong> (para no actuar sobre algo que ya no se ve). <strong>Quitar selección ✕</strong> la borra a mano.</li>
+    </ul>
+    <p>Con algo seleccionado aparece una barra celeste arriba de la tabla con las acciones:</p>
+    <ul>
+      <li><strong>Contactado ▾</strong>: marcar como contactadas o como sin contactar. Acompaña al CRM igual que de a una: el titular que estaba en <em>Nuevo</em> pasa a <em>Contactado</em>; al desmarcar, el que estaba en <em>Contactado</em> y se queda sin marcas contactadas vuelve a <em>Nuevo</em>.</li>
+      <li><strong>Asignar a ▾</strong>: asignar los titulares a una persona del equipo (o dejarlos sin asignar), en el CRM. Se aplica una vez por titular aunque se hayan seleccionado varias de sus marcas.</li>
+      <li><strong>Oposición atendida ▾</strong>: marcar (o quitar) «atendida» en las marcas seleccionadas que tengan oposición o vista. Las que no tienen ninguna se ignoran, y el aviso dice cuántas cambiaron.</li>
+      <li><strong>Tiene gestor/apoderado</strong>: pide confirmación (y, si querés, el nombre del gestor). Los titulares dejan de ser leads y salen de la lista; se puede deshacer desde la ficha de cada titular. Los que no tengan marcas lead se saltean y el aviso lo cuenta.</li>
+      <li><strong>Exportar CSV</strong>: baja un archivo para abrir en Excel con las marcas seleccionadas (acta, boletín, clase, marca, titular, CUIT, emails, score, si es lead, contactado, oposición/vista, fechas y link).</li>
+    </ul>
+    <p>Después de cada acción, la tabla se recarga y un aviso corto abajo cuenta qué se hizo. No hay envío masivo de mails: los mails a leads se mandan de a uno desde la ficha de cada titular.</p>
 
     <h2>Misma marca en varias clases (filtro avanzado)</h2>
     <p>En <strong>Avanzados</strong>, el filtro <strong>Misma marca en varias clases</strong> muestra las marcas cuyo nombre está pedido en más de una clase. Cada solicitud es un acta con una sola clase, así que una marca pedida en 2 clases son 2 actas: el filtro las cruza por nombre. Tiene dos modos:</p>
@@ -331,6 +360,7 @@
     <h2>⚠ OPOSICIÓN vs 👁 VISTA DE INPI</h2>
     <p>Son dos alertas distintas, no deben confundirse: <button type="button" class="badge-oposicion" style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;background:#fff3cd;color:#92720d;border:none;">⚠ Ver oposición</button> significa que <strong>un tercero</strong> se opuso formalmente a la marca — es lo más urgente para contactar. Al hacer click se abre un popup con quién se opone (nombre, DNI/CUIT) y el fundamento legal completo, y si el fundamento cita una marca propia del oponente, un botón para abrir directamente esa marca en INPI ("Ver ficha") o, si solo dio el nombre, para buscarla. <span class="badge-vista" style="display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;background:var(--azul-claro);color:var(--azul);">👁 VISTA DE INPI</span> es una observación de oficio del propio INPI (no de un competidor) — vale la pena avisar igual, pero es un caso distinto; pasando el mouse se ve el detalle (fecha, tipo de archivo) tal como aparece en Grilla Digital.</p>
     <p><strong>🔎 Fecha de revisión.</strong> Al lado de los badges de un lead publicado aparece un chip gris con la fecha (día/mes) en que se revisó por última vez si tiene oposición. Al pasar el mouse se ve la fecha completa y cuál de las 3 revisiones (a los 10, 23 y 33 días de la publicación) fue. Si no aparece, todavía no se revisó. Un lead con oposición sigue revisándose todos los días hasta el día 33 y cada 3 días hasta el día 60, así que esa fecha se va actualizando.</p>
+    <p><strong>Filtrarlas.</strong> El desplegable <em>Oposición</em> de Leads separa las dos alertas: <em>Solo oposición</em> y <em>Solo vista</em>. Si una marca tiene las dos a la vez, el sistema guarda la oposición (es la más urgente), así que figura en <em>Solo oposición</em>. Las marcas que ya estaban guardadas con una vista se corrigen solas en la siguiente revisión.</p>
     <p>Importante: solo cuenta una vista/oposición fechada en o después de la publicación vigente en el boletín. Una vista vieja, de una presentación anterior ya resuelta, no se muestra — no es una alerta nueva.</p>
 
     <h2>Estado del trámite y fechas</h2>
@@ -552,7 +582,7 @@ le asigna un puntaje de prioridad. Después sigue a cada marca a lo largo del ti
             <p>El sistema no se detiene ahí: sigue revisando cada lead con el tiempo, para avisar si aparece una
               <strong>oposición de un tercero</strong> (alguien se opone a la marca) o una <strong>vista de INPI</strong>
               (una observación de oficio, sin que nadie se oponga) — son dos alertas distintas, con su propio badge cada
-              una — y sigue el trámite hasta que INPI lo resuelve. Cada lead se revisa a los <strong>10, 23 y 33 días</strong> de su publicación (muchas oposiciones llegan antes de los 30 días);
+              una; si una marca tiene las dos, se guarda la oposición — y sigue el trámite hasta que INPI lo resuelve. Cada lead se revisa a los <strong>10, 23 y 33 días</strong> de su publicación (muchas oposiciones llegan antes de los 30 días);
               si aparece una oposición, se vuelve a mirar todos los días hasta el día 33 y cada 3 días hasta el día 60, por si el titular suma un apoderado. Si se suma un apoderado/gestor después de la oposición, el titular ya no es un posible cliente: la marca deja de ser lead (pasa a «Apoderado/gestor (se sumó tras la oposición)»), sale de la lista de leads y deja de revisarse.
               Cuando aparece una oposición o una vista nueva en
               un lead, llega un <strong>mail de aviso</strong> al equipo a las 7:30 (uno por día como máximo, solo si hay novedades).</p>
@@ -747,6 +777,8 @@ le asigna un puntaje de prioridad. Después sigue a cada marca a lo largo del ti
           <tbody>
             <tr><th>Reintentar (en la ficha)</th><td>Vuelve a consultar en vivo un expediente puntual y actualiza carácter, email, CUIT y score.</td></tr>
             <tr><th>Importar boletín</th><td>En <strong>Automatizaciones → Boletines</strong> se ven todos los boletines de marcas nuevas publicados por INPI y cuáles ya están cargados. El botón Importar procesa uno puntual (por ejemplo, del historial) sin esperar al pipeline (espera su turno si hay otro proceso de INPI corriendo).</td></tr>
+            <tr><th>Accesos rápidos (⚡)</th><td>En el <strong>⚡</strong> de la barra de arriba (todas las pantallas): guardar la búsqueda actual de Leads con un nombre (personal, o compartida con el equipo), volver a ella con un clic y ver cuántas marcas da hoy. Se guardan en el servidor (tabla <code>accesos_rapidos</code>); solo el dueño edita o borra los suyos. Los atajos de <em>Fecha Boletín</em> (hoy / últimos 7, 15, 30 días) se guardan como número de días, no como fechas fijas.</td></tr>
+            <tr><th>Selección masiva</th><td>En <strong>Leads</strong>, casillas en la primera columna: contactado / sin contactar, asignar a una persona, oposición atendida, <em>tiene gestor/apoderado</em> y exportar CSV, sobre las marcas marcadas o sobre todas las que coinciden con el filtro (hasta 5.000). Reutiliza la lógica de las acciones de a una (CRM, gestor manual, oposición atendida).</td></tr>
             <tr><th>Tiene gestor/apoderado (a mano)</th><td>En la cabecera de la ficha de un lead (CRM o página del titular): el botón <strong>Tiene gestor/apoderado</strong> (nombre del gestor opcional) pasa las marcas lead del titular a <em>con agente</em> (<code>es_lead = false</code>, carácter «Gestor/apoderado (marcado a mano)», score recalculado como para los leads que sumaron un apoderado tras una oposición). Guarda quién y cuándo (<code>con_gestor_manual*</code>, <code>gestor_nombre</code>) y el carácter y score anteriores (<code>caracter_previo</code>, <code>lead_score_previo</code>) para poder <strong>Deshacer</strong>. <code>cargar_db.py</code> no lo revierte al reimportar un boletín y «Reintentar mail» (que vuelve a consultar INPI) tampoco pisa el carácter ni el score. No cambia la etapa del CRM. Reemplaza al botón «✓ Ya está atendida» de versiones anteriores: lo que ya estaba marcado como atendida se sigue pudiendo deshacer desde su aviso.</td></tr>
             <tr><th>CRM de leads</th><td>En <strong>CRM</strong>: mover leads de etapa arrastrando tarjetas, asignarlos, registrar gestiones, agendar seguimientos, cargar teléfono (con botón de WhatsApp), servicio y honorarios. La agenda junta seguimientos, oposiciones sin gestionar y plazos próximos.</td></tr>
             <tr><th>Clientes y vigilancia</th><td>En <strong>Clientes</strong>: cargar clientes y sumarles marcas por acta, por CUIT/titular o por matrícula; convertir un lead del CRM en cliente; decidir cada alerta de vigilancia (monitorear, oponer, oposición presentada, descartar); <strong>Probar un nombre</strong> contra las solicitudes conocidas; ver todos los vencimientos; ajustar la sensibilidad, las clases relacionadas y las palabras genéricas. El botón ↻ de cada marca vuelve a consultar su expediente en INPI en el momento.</td></tr>
@@ -774,8 +806,8 @@ le asigna un puntaje de prioridad. Después sigue a cada marca a lo largo del ti
         <div class="tarjetas-panel">
           <div class="tarjeta-mini">
             <h4>Panel principal</h4>
-            <p>Lista de marcas con filtros (lead, contactado, oposición, boletín, clase, fechas, búsqueda libre) y orden
-              por columna. Agrupa las marcas de un mismo titular en una sola fila. El filtro Boletín se abre como una lista
+            <p>Lista de marcas con filtros (lead, contactado, oposición —con oposición o vista, solo oposición, solo vista o sin oposición—, boletín, clase, fechas con atajos de «últimos N días», búsqueda libre) y orden
+              por columna. Casillas para <strong>seleccionar varias marcas</strong> y aplicarles una acción juntas (contactado, asignar, oposición atendida, gestor, CSV), y el <strong>⚡ de accesos rápidos</strong> en la barra de arriba para guardar y repetir las búsquedas de siempre. Agrupa las marcas de un mismo titular en una sola fila. El filtro Boletín se abre como una lista
               agrupada por <strong>mes de publicación</strong> (cada mes muestra cuántos boletines y marcas tiene; se
               abre el mes más reciente o el del boletín elegido), con <strong>Todos</strong> y <strong>🆕 Pre-boletín</strong> arriba.
               Pre-boletín muestra solo las marcas detectadas por el escaneo que todavía no salieron en ningún boletín.
@@ -864,6 +896,8 @@ le asigna un puntaje de prioridad. Después sigue a cada marca a lo largo del ti
             <tr><th>Persona física / jurídica</th><td>Física: la marca va a nombre de una persona. Jurídica: va a nombre de una empresa o sociedad. Cada una tiene su formulario para el cliente.</td></tr>
             <tr><th>🔎 Revisión de oposición</th><td>Chip gris con la fecha en que se revisó por última vez si un lead tiene oposición o vista. Se revisa a los 10, 23 y 33 días de la publicación (y más seguido si ya tiene una oposición).</td></tr>
             <tr><th>Oposición</th><td>Objeción formal de un tercero (un competidor u otro titular) dentro de los 30 días de publicada la marca — la alerta más urgente.</td></tr>
+            <tr><th>Acceso rápido (⚡)</th><td>Búsqueda de Leads guardada con un nombre, personal o compartida con el equipo, a la que se vuelve con un clic desde el rayito de la barra de arriba.</td></tr>
+            <tr><th>Selección masiva</th><td>Marcar varias marcas con las casillas de Leads para aplicarles juntas una acción (contactado, asignar, oposición atendida, gestor, exportar).</td></tr>
             <tr><th>Vista de INPI</th><td>Observación de oficio del propio INPI, no de un tercero — igual de visible en el panel, pero con badge distinto.</td></tr>
             <tr><th>Grilla Digital / Formulario</th><td>Archivos del expediente en INPI. El Formulario es el PDF de la solicitud original, de donde sale el email del titular.</td></tr>
             <tr><th>Bloqueo (WAF)</th><td>Filtro de seguridad del sitio de INPI que a veces rechaza consultas automáticas. Los reintentos lo resuelven solos; si es masivo, llega un mail de aviso.</td></tr>

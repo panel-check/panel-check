@@ -29,20 +29,23 @@ Correr local:
     DATABASE_URL=... PANEL_RECUPERAR=admin:unaClaveLarga uvicorn app:app --reload
 """
 
+import inspect
 import os
 import re
 import secrets
 from contextlib import contextmanager
 from typing import Optional
+from urllib.parse import parse_qsl
 
 import psycopg2
 import psycopg2.extras
 import requests
 from fastapi import Depends, FastAPI, HTTPException, Query
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+import accesos_api
 import auth
 import auth_api
 import cartera
@@ -144,6 +147,16 @@ def migrar_columnas_panel():
             conn.commit()
     except Exception as e:
         print(f"[startup] tablas de mails salteadas (no bloqueante): {e}")
+
+    # Accesos rápidos (el ⚡ del menú): búsquedas guardadas, no tocan `marcas`.
+    try:
+        with conexion() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SET lock_timeout = '3s'")
+                accesos_api.crear_tablas(cur)
+            conn.commit()
+    except Exception as e:
+        print(f"[startup] tabla de accesos rápidos salteada (no bloqueante): {e}")
 
 
 def _crear_tablas_crm(cur):
@@ -976,16 +989,29 @@ def _cruce_clases_sql(minimo, clase_a, clase_b, titular):
     return join_sql, valores, condicion_extra
 
 
-@app.get("/api/marcas")
-def listar_marcas(
-    _: str = Depends(verificar_login),
+# Filtro "Oposición": "oposición" y "vista" no tienen columna propia. Una
+# OPOSICIÓN es la de un tercero (el detalle guardado dice "OPO…"), una VISTA
+# es una observación de oficio de INPI. Es el mismo criterio que usa el panel
+# para dibujar los badges (badgeOposicion en comun.js: /OPO/i) y que usa
+# revisar_oposiciones.py al elegir qué fila guardar (si hay las dos, guarda la
+# oposición).
+TIPOS_OPOSICION = ("oposicion", "vista")
+SQL_ES_OPOSICION_TERCERO = "(tuvo_oposicion IS TRUE AND COALESCE(detalle_oposicion, '') ~* 'OPO')"
+SQL_ES_SOLO_VISTA = "(tuvo_oposicion IS TRUE AND COALESCE(detalle_oposicion, '') !~* 'OPO')"
+
+
+def filtros_marcas(
     boletin: Optional[str] = None,
     clase: Optional[int] = None,
     es_lead: Optional[bool] = None,
     contactado: Optional[bool] = None,
     tuvo_oposicion: Optional[bool] = None,
+    tipo_oposicion: Optional[str] = None,  # "oposicion" | "vista" (implica tuvo_oposicion)
     fecha_desde: Optional[str] = None,
     fecha_hasta: Optional[str] = None,
+    # Atajo "últimos N días" de Fecha Boletín: se calcula con la fecha de HOY
+    # cada vez que se usa (los accesos rápidos guardan esto, no fechas fijas).
+    fecha_dias: Optional[int] = Query(None, ge=1, le=3650),
     tiene_email: Optional[bool] = None,
     tiene_titular: Optional[bool] = None,
     tiene_clase: Optional[bool] = None,
@@ -998,37 +1024,45 @@ def listar_marcas(
     multiclase_b: Optional[int] = Query(None, ge=1, le=45),
     multiclase_titular: Optional[str] = None,  # "" (cualquiera) | "mismo" | "distinto"
     q: Optional[str] = None,
-    sort: str = "lead_score",
-    order: str = "desc",
-    limit: int = Query(200, le=1000),
-    offset: int = 0,
-):
-    if sort not in COLUMNAS_ORDENABLES:
-        sort = "lead_score"
-    order_sql = "DESC" if order.lower() != "asc" else "ASC"
+) -> dict:
+    """Los filtros de la lista de marcas, como dependencia: los comparten
+    /api/marcas (la tabla) y /api/marcas/actas (seleccionar "todas las que
+    coinciden"), para que las dos vean exactamente lo mismo."""
+    if tipo_oposicion and tipo_oposicion not in TIPOS_OPOSICION:
+        raise HTTPException(status_code=400, detail="tipo_oposicion tiene que ser 'oposicion' o 'vista'")
+    return dict(locals())
 
+
+def _consulta_marcas(f: dict) -> dict:
+    """Arma el WHERE (y el cruce de clases, si está activo) a partir de los
+    filtros de filtros_marcas()."""
     condiciones = []
     valores = []
-    if boletin == "pre":
+    if f["boletin"] == "pre":
         # Marcas detectadas por el escaneo directo de actas que todavía no
         # salieron en ningún boletín (ver scripts/escanear_actas_nuevas.py).
         condiciones.append("boletin IS NULL")
-    elif boletin:
+    elif f["boletin"]:
         condiciones.append("boletin = %s")
-        valores.append(boletin)
-    if clase is not None:
+        valores.append(f["boletin"])
+    if f["clase"] is not None:
         condiciones.append("clase = %s")
-        valores.append(clase)
-    if es_lead is not None:
+        valores.append(f["clase"])
+    if f["es_lead"] is not None:
         condiciones.append("es_lead = %s")
-        valores.append(es_lead)
-    if contactado is not None:
+        valores.append(f["es_lead"])
+    if f["contactado"] is not None:
         condiciones.append("contactado = %s")
-        valores.append(contactado)
-    if tuvo_oposicion is not None:
+        valores.append(f["contactado"])
+    if f["tipo_oposicion"] == "oposicion":
+        condiciones.append(SQL_ES_OPOSICION_TERCERO)
+    elif f["tipo_oposicion"] == "vista":
+        condiciones.append(SQL_ES_SOLO_VISTA)
+    elif f["tuvo_oposicion"] is not None:
         condiciones.append("tuvo_oposicion = %s")
-        valores.append(tuvo_oposicion)
-    if fecha_desde or fecha_hasta:
+        valores.append(f["tuvo_oposicion"])
+    fecha_desde, fecha_hasta, fecha_dias = f["fecha_desde"], f["fecha_hasta"], f["fecha_dias"]
+    if fecha_desde or fecha_hasta or fecha_dias:
         # Mismo criterio que muestra el panel como "Fecha Boletín"
         # (fechaPublicacionOFallback en comun.js): fecha_publicacion cuando
         # ya se verificó, si no fecha_presentacion — filtrar solo por
@@ -1042,28 +1076,33 @@ def listar_marcas(
         if fecha_hasta:
             condiciones.append(f"{fecha_boletin_sql} <= %s")
             valores.append(fecha_hasta)
-    if tiene_email is not None:
+        if fecha_dias:
+            # "Últimos N días" contando hoy (hora Argentina): últimos 7 días
+            # = de hace 6 días a hoy.
+            condiciones.append(f"{fecha_boletin_sql} >= (now() AT TIME ZONE '{_TZ}')::date - %s")
+            valores.append(fecha_dias - 1)
+    if f["tiene_email"] is not None:
         # Filtro "Avanzado": marcas a las que todavía no se les encontró
         # ningún email (ni del titular ni del apoderado) — útil para ver
         # a quién le falta ese dato antes de poder contactarlo.
         condicion_email = "(email IS NOT NULL AND email <> '') OR (email_apoderado IS NOT NULL AND email_apoderado <> '')"
-        condiciones.append(condicion_email if tiene_email else f"NOT ({condicion_email})")
-    if tiene_titular is not None:
+        condiciones.append(f"({condicion_email})" if f["tiene_email"] else f"NOT ({condicion_email})")
+    if f["tiene_titular"] is not None:
         condicion_titular = "titular IS NOT NULL AND titular <> ''"
-        condiciones.append(condicion_titular if tiene_titular else f"NOT ({condicion_titular})")
-    if tiene_clase is not None:
+        condiciones.append(condicion_titular if f["tiene_titular"] else f"NOT ({condicion_titular})")
+    if f["tiene_clase"] is not None:
         # Filtro "Avanzado": marcas a las que todavía no se les pudo leer el
         # número de clase (ni del boletín ni del expediente).
-        condiciones.append("clase IS NOT NULL" if tiene_clase else "clase IS NULL")
-    if estado_marca:
+        condiciones.append("clase IS NOT NULL" if f["tiene_clase"] else "clase IS NULL")
+    if f["estado_marca"]:
         # Mismo criterio que ESTADOS_FINALES en scripts/revisar_estado.py:
         # "pendiente" = todavía sin una resolución firme.
-        if estado_marca == "pendiente":
+        if f["estado_marca"] == "pendiente":
             condiciones.append("(estado_tramite IS NULL OR estado_tramite NOT IN ('Concedida', 'Denegada'))")
         else:
             condiciones.append("estado_tramite = %s")
-            valores.append(estado_marca)
-    if q:
+            valores.append(f["estado_marca"])
+    if f["q"]:
         condiciones.append(
             """(
                 titular ILIKE %s OR denominacion ILIKE %s OR denominacion_inpi ILIKE %s
@@ -1071,14 +1110,14 @@ def listar_marcas(
                 OR cuit ILIKE %s OR acta ILIKE %s
             )"""
         )
-        patron = f"%{q}%"
+        patron = f"%{f['q']}%"
         valores.extend([patron, patron, patron, patron, patron, patron, patron])
 
     join_sql = ""
     columnas_extra = ""
     orden_previo = ""
     valores_join = []
-    cruce = _cruce_clases_sql(multiclase_min, multiclase_a, multiclase_b, multiclase_titular)
+    cruce = _cruce_clases_sql(f["multiclase_min"], f["multiclase_a"], f["multiclase_b"], f["multiclase_titular"])
     if cruce:
         join_sql, valores_join, condicion_extra = cruce
         if condicion_extra:
@@ -1089,29 +1128,107 @@ def listar_marcas(
         # el orden que eligió el usuario).
         orden_previo = "cruce.nom, "
 
-    where_sql = f"WHERE {' AND '.join(condiciones)}" if condiciones else ""
+    return {
+        "where_sql": f"WHERE {' AND '.join(condiciones)}" if condiciones else "",
+        "valores": valores_join + valores,  # primero los del JOIN, después los del WHERE
+        "join_sql": join_sql,
+        "columnas_extra": columnas_extra,
+        "orden_previo": orden_previo,
+    }
+
+
+@app.get("/api/marcas")
+def listar_marcas(
+    _: str = Depends(verificar_login),
+    f: dict = Depends(filtros_marcas),
+    sort: str = "lead_score",
+    order: str = "desc",
+    limit: int = Query(200, le=1000),
+    offset: int = 0,
+):
+    if sort not in COLUMNAS_ORDENABLES:
+        sort = "lead_score"
+    order_sql = "DESC" if order.lower() != "asc" else "ASC"
+    c = _consulta_marcas(f)
 
     sql = f"""
-        SELECT {COLUMNAS_MARCA}{columnas_extra}
+        SELECT {COLUMNAS_MARCA}{c['columnas_extra']}
         FROM marcas
-        {join_sql}
-        {where_sql}
-        ORDER BY {orden_previo}{sort} {order_sql} NULLS LAST, acta DESC
+        {c['join_sql']}
+        {c['where_sql']}
+        ORDER BY {c['orden_previo']}{sort} {order_sql} NULLS LAST, acta DESC
         LIMIT %s OFFSET %s
     """
-    valores_paginado = valores_join + valores + [limit, offset]
-
-    sql_total = f"SELECT count(*) FROM marcas {join_sql} {where_sql}"
-    valores = valores_join + valores
+    sql_total = f"SELECT count(*) FROM marcas {c['join_sql']} {c['where_sql']}"
 
     with conexion() as conn:
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-            cur.execute(sql, valores_paginado)
+            cur.execute(sql, c["valores"] + [limit, offset])
             filas = cur.fetchall()
-            cur.execute(sql_total, valores)
+            cur.execute(sql_total, c["valores"])
             total = cur.fetchone()["count"]
 
     return {"total": total, "rows": filas}
+
+
+# Tope de actas que se devuelven/aceptan de una vez en la selección masiva.
+MAX_ACTAS_MASIVO = 5000
+
+
+@app.get("/api/marcas/actas")
+def actas_del_filtro(
+    _: str = Depends(verificar_login),
+    f: dict = Depends(filtros_marcas),
+):
+    """Todas las actas que coinciden con los filtros (no solo las 100 de la
+    página): es lo que usa "Seleccionar las N que coinciden con el filtro"."""
+    c = _consulta_marcas(f)
+    with conexion() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                f"SELECT marcas.acta FROM marcas {c['join_sql']} {c['where_sql']} "
+                f"ORDER BY lead_score DESC NULLS LAST, acta DESC LIMIT %s",
+                c["valores"] + [MAX_ACTAS_MASIVO + 1],
+            )
+            actas = [fila[0] for fila in cur.fetchall()]
+    truncado = len(actas) > MAX_ACTAS_MASIVO
+    return {"total": min(len(actas), MAX_ACTAS_MASIVO), "actas": actas[:MAX_ACTAS_MASIVO], "truncado": truncado}
+
+
+# ── Accesos rápidos: una búsqueda guardada es un querystring de filtros ─────
+# Los filtros que se pueden guardar son los de filtros_marcas() más el orden.
+CLAVES_ACCESO_RAPIDO = set(inspect.signature(filtros_marcas).parameters) | {"sort", "order"}
+_FILTROS_BOOL = {"es_lead", "contactado", "tuvo_oposicion", "tiene_email", "tiene_titular", "tiene_clase"}
+_FILTROS_INT = {"clase", "fecha_dias", "multiclase_min", "multiclase_a", "multiclase_b"}
+
+
+def _filtros_desde_consulta(consulta: str) -> dict:
+    """Querystring guardado → el dict que espera _consulta_marcas (lo mismo
+    que arma FastAPI con los parámetros de /api/marcas)."""
+    crudos = dict(parse_qsl(consulta or "", keep_blank_values=False))
+    f = {}
+    for nombre in inspect.signature(filtros_marcas).parameters:
+        valor = (crudos.get(nombre) or "").strip()
+        if not valor:
+            f[nombre] = None
+        elif nombre in _FILTROS_BOOL:
+            f[nombre] = {"true": True, "false": False}.get(valor.lower())
+        elif nombre in _FILTROS_INT:
+            f[nombre] = int(valor) if valor.lstrip("-").isdigit() else None
+        elif nombre == "tipo_oposicion":
+            f[nombre] = valor if valor in TIPOS_OPOSICION else None
+        else:
+            f[nombre] = valor
+    return f
+
+
+def _contar_consulta(consulta: str) -> int:
+    """Cuántas marcas da hoy una búsqueda guardada."""
+    c = _consulta_marcas(_filtros_desde_consulta(consulta))
+    with conexion() as conn:
+        with conn.cursor() as cur:
+            cur.execute(f"SELECT count(*) FROM marcas {c['join_sql']} {c['where_sql']}", c["valores"])
+            return cur.fetchone()[0]
 
 
 _cache_fechas_inpi = {"ts": 0.0, "datos": {}}
@@ -1408,6 +1525,214 @@ def marcar_contactado(acta: str, valor: bool = True, usuario: str = Depends(veri
                 print(f"[crm] no se pudo reflejar 'contactado' del acta {acta} en el CRM: {e}")
         conn.commit()
     return {"acta": acta, "contactado": valor}
+
+
+# ── Selección masiva (casillas de la tabla de leads) ──────────────────────
+# Todas reciben una lista de actas (las marcadas a mano, o todas las que
+# coinciden con el filtro, ver /api/marcas/actas) y aplican la misma lógica
+# que las acciones de a una. Lo que es del titular en el CRM (etapa,
+# asignado, gestor) se aplica una sola vez por titular, aunque haya
+# seleccionado varias de sus marcas.
+
+class SeleccionActas(BaseModel):
+    actas: list[str]
+
+
+class ContactadoMasivo(SeleccionActas):
+    contactado: bool = True
+
+
+class AsignarMasivo(SeleccionActas):
+    asignado: Optional[str] = None  # None / "" = dejar sin asignar
+
+
+class ConGestorMasivo(SeleccionActas):
+    nombre: Optional[str] = None
+
+
+def _actas_masivo(actas) -> list:
+    """Limpia la lista (sin repetidas ni vacías) y controla el tope."""
+    vistas, limpias = set(), []
+    for a in actas or []:
+        a = str(a).strip()
+        if a and a not in vistas:
+            vistas.add(a)
+            limpias.append(a)
+    if not limpias:
+        raise HTTPException(status_code=400, detail="No hay marcas seleccionadas")
+    if len(limpias) > MAX_ACTAS_MASIVO:
+        raise HTTPException(status_code=400, detail=f"Son demasiadas marcas de una vez (máximo {MAX_ACTAS_MASIVO})")
+    return limpias
+
+
+def _claves_de_actas(cur, actas: list) -> list:
+    """Los titulares (claves del CRM) de esas actas, sin repetir."""
+    _asegurar_claves(cur)
+    cur.execute(
+        f"WITH {_cte_marcas_con_clave(filtrar_actas=True)} SELECT DISTINCT clave FROM mk WHERE clave IS NOT NULL",
+        (actas,),
+    )
+    return [_valor(f) for f in cur.fetchall()]
+
+
+@app.get("/api/masivo/opciones")
+def masivo_opciones(usuario: str = Depends(verificar_login)):
+    """Usuarios a los que se puede asignar desde la barra de selección."""
+    return {"usuarios": _auth.usuarios_activos(), "usuario": usuario}
+
+
+@app.post("/api/masivo/contactado")
+def masivo_contactado(datos: ContactadoMasivo, usuario: str = Depends(verificar_login)):
+    """Marca o desmarca como contactadas todas esas actas. Igual que de a una,
+    acompaña al CRM: el titular "nuevo" pasa a "contactado"; al desmarcar,
+    el que estaba en "contactado" y ya no tiene ninguna marca contactada
+    vuelve a "nuevo"."""
+    actas = _actas_masivo(datos.actas)
+    valor = datos.contactado
+    with conexion() as conn:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                """
+                UPDATE marcas
+                SET contactado = %s,
+                    contactado_en = CASE WHEN %s THEN COALESCE(contactado_en, now()) ELSE NULL END
+                WHERE acta = ANY(%s)
+                """,
+                (valor, valor, actas),
+            )
+            marcas = cur.rowcount
+            titulares = 0
+            cur.execute("SAVEPOINT claves_masivo")
+            try:
+                claves = _claves_de_actas(cur, actas)
+                cur.execute("RELEASE SAVEPOINT claves_masivo")
+            except Exception as e:
+                cur.execute("ROLLBACK TO SAVEPOINT claves_masivo")
+                claves = []
+                print(f"[crm] no se pudieron ubicar los titulares de la selección masiva: {e}")
+            for clave in claves:
+                cur.execute("SAVEPOINT crm_contactado_masivo")
+                try:
+                    cur.execute("SELECT etapa FROM crm_leads WHERE clave = %s", (clave,))
+                    fila = cur.fetchone()
+                    etapa = fila["etapa"] if fila else "nuevo"
+                    cambio = False
+                    if valor and etapa == "nuevo":
+                        _aplicar_cambios_crm(cur, clave, {"etapa": "contactado"}, usuario,
+                                             motivo_auto="marcada como contactada en una selección masiva")
+                        cambio = True
+                    elif not valor and etapa == "contactado":
+                        cur.execute(
+                            "SELECT bool_or(contactado IS TRUE) AS otras FROM marcas WHERE acta = ANY(%s)",
+                            (_actas_de_clave(cur, clave),),
+                        )
+                        if not cur.fetchone()["otras"]:
+                            _aplicar_cambios_crm(cur, clave, {"etapa": "nuevo"}, usuario,
+                                                 motivo_auto="desmarcada como contactada en una selección masiva")
+                            cambio = True
+                    cur.execute("RELEASE SAVEPOINT crm_contactado_masivo")
+                    titulares += 1 if cambio else 0
+                except Exception as e:
+                    cur.execute("ROLLBACK TO SAVEPOINT crm_contactado_masivo")
+                    print(f"[crm] no se pudo reflejar 'contactado' de {clave} en el CRM: {e}")
+        conn.commit()
+    return {"ok": True, "marcas": marcas, "titulares_crm": titulares}
+
+
+@app.post("/api/masivo/asignar")
+def masivo_asignar(datos: AsignarMasivo, usuario: str = Depends(verificar_login)):
+    """Asigna (o desasigna) a una persona del equipo todos los titulares de
+    esas actas, en el CRM."""
+    actas = _actas_masivo(datos.actas)
+    asignado = (datos.asignado or "").strip() or None
+    if asignado and not _auth.usuario_existe(asignado):
+        raise HTTPException(status_code=400, detail=f"No existe el usuario {asignado}")
+    with conexion() as conn:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            claves = _claves_de_actas(cur, actas)
+            for clave in claves:
+                _aplicar_cambios_crm(cur, clave, {"asignado": asignado}, usuario)
+        conn.commit()
+    return {"ok": True, "titulares": len(claves), "asignado": asignado}
+
+
+@app.post("/api/masivo/con-gestor")
+def masivo_con_gestor(datos: ConGestorMasivo, usuario: str = Depends(verificar_login)):
+    """Marca a mano "tiene gestor/apoderado" a los titulares de esas actas
+    (salen de la lista de leads, ver crm_con_gestor). Los que no tienen marcas
+    lead para marcar se saltean y se cuentan aparte."""
+    actas = _actas_masivo(datos.actas)
+    nombre = (datos.nombre or "").strip() or None
+    if nombre and len(nombre) > 200:
+        raise HTTPException(status_code=400, detail="El nombre del gestor es demasiado largo (máx. 200 caracteres)")
+    marcadas = saltados = marcas = 0
+    with conexion() as conn:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            for clave in _claves_de_actas(cur, actas):
+                cur.execute("SAVEPOINT con_gestor_masivo")
+                try:
+                    marcas += _aplicar_con_gestor(cur, clave, usuario, True, nombre)
+                    cur.execute("RELEASE SAVEPOINT con_gestor_masivo")
+                    marcadas += 1
+                except HTTPException:
+                    cur.execute("ROLLBACK TO SAVEPOINT con_gestor_masivo")
+                    saltados += 1
+        conn.commit()
+    return {"ok": True, "titulares": marcadas, "marcas": marcas, "saltados": saltados}
+
+
+def _celda_csv(valor):
+    """Texto seguro para abrir en Excel: lo que empieza con = + - @ se
+    interpretaría como una fórmula, así que se le antepone un apóstrofo."""
+    if valor is None:
+        return ""
+    texto = str(valor)
+    return "'" + texto if texto[:1] in ("=", "+", "-", "@") else texto
+
+
+@app.post("/api/masivo/exportar")
+def masivo_exportar(datos: SeleccionActas, _: str = Depends(verificar_login)):
+    """CSV (para Excel) con las marcas seleccionadas."""
+    import csv
+    import io
+    actas = _actas_masivo(datos.actas)
+    with conexion() as conn:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(
+                """
+                SELECT acta, boletin, clase,
+                       COALESCE(NULLIF(trim(denominacion_inpi), ''), denominacion) AS marca,
+                       titular, cuit, email, email_apoderado, lead_score, es_lead, contactado,
+                       tuvo_oposicion, detalle_oposicion,
+                       CASE WHEN boletin IS NULL THEN NULL ELSE COALESCE(fecha_publicacion, fecha_presentacion) END AS fecha_boletin,
+                       fecha_concesion, link
+                FROM marcas WHERE acta = ANY(%s)
+                ORDER BY lead_score DESC NULLS LAST, acta DESC
+                """,
+                (actas,),
+            )
+            filas = cur.fetchall()
+    salida = io.StringIO()
+    escritor = csv.writer(salida, delimiter=";")
+    escritor.writerow(["Acta", "Boletín", "Clase", "Marca", "Titular", "CUIT", "Email", "Email apoderado",
+                       "Score", "Lead", "Contactado", "Oposición/vista", "Detalle", "Fecha boletín",
+                       "Fecha concedida", "Link"])
+    for r in filas:
+        tipo = ""
+        if r["tuvo_oposicion"]:
+            tipo = "Oposición" if re.search("OPO", r["detalle_oposicion"] or "", re.I) else "Vista"
+        escritor.writerow([_celda_csv(x) for x in (
+            r["acta"], r["boletin"], r["clase"], r["marca"], r["titular"], r["cuit"], r["email"],
+            r["email_apoderado"], r["lead_score"], "Sí" if r["es_lead"] else "No",
+            "Sí" if r["contactado"] else "No", tipo, r["detalle_oposicion"], r["fecha_boletin"],
+            r["fecha_concesion"], r["link"],
+        )])
+    # BOM + ";" para que Excel en español lo abra con las columnas y los acentos bien.
+    return Response(
+        content="\ufeff" + salida.getvalue(),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": 'attachment; filename="marcas-seleccionadas.csv"'},
+    )
 
 
 @app.post("/api/marcas/{acta}/reintentar-email")
@@ -2691,6 +3016,52 @@ class ConGestor(BaseModel):
     nombre: Optional[str] = None
 
 
+def _aplicar_con_gestor(cur, real: str, usuario: str, con_gestor: bool, nombre: Optional[str]) -> int:
+    """Marca (o desmarca) que el titular `real` tiene gestor/apoderado. Devuelve
+    cuántas marcas cambiaron; levanta HTTPException 400 si no había nada para
+    cambiar. El que llama hace commit."""
+    actas = _actas_de_clave(cur, real)
+    if con_gestor:
+        cur.execute(
+            """
+            UPDATE marcas
+            SET caracter_previo = caracter, lead_score_previo = lead_score,
+                con_gestor_manual = true, con_gestor_manual_en = now(),
+                con_gestor_manual_por = %s, gestor_nombre = %s,
+                es_lead = false, caracter = %s,
+                lead_score = (CASE WHEN TRIM(COALESCE(matricula_agente, '')) IN ('', 'Part.') THEN 50 ELSE 0 END)
+                             - 100 + (CASE WHEN COALESCE(email, '') <> '' THEN 20 ELSE 0 END),
+                actualizado_en = now()
+            WHERE acta = ANY(%s) AND es_lead IS TRUE
+            """,
+            (usuario, nombre, CARACTER_GESTOR_MANUAL, actas),
+        )
+        if cur.rowcount == 0:
+            raise HTTPException(status_code=400, detail="Este titular no tiene marcas lead para marcar")
+        texto = "Marcado a mano: tiene gestor/apoderado" + (f" ({nombre})" if nombre else "") \
+            + ". Deja de ser lead y pasa a «con agente»."
+    else:
+        cur.execute(
+            """
+            UPDATE marcas
+            SET es_lead = true, caracter = caracter_previo,
+                lead_score = COALESCE(lead_score_previo, lead_score),
+                caracter_previo = NULL, lead_score_previo = NULL,
+                con_gestor_manual = NULL, con_gestor_manual_en = NULL,
+                con_gestor_manual_por = NULL, gestor_nombre = NULL,
+                actualizado_en = now()
+            WHERE acta = ANY(%s) AND con_gestor_manual IS TRUE
+            """,
+            (actas,),
+        )
+        if cur.rowcount == 0:
+            raise HTTPException(status_code=400, detail="Este titular no estaba marcado con gestor")
+        texto = "Se deshizo «tiene gestor/apoderado»: vuelve a ser lead."
+    marcas = cur.rowcount
+    _registrar_actividad(cur, real, usuario, "sistema", texto)
+    return marcas
+
+
 @app.post("/api/crm/con-gestor")
 def crm_con_gestor(body: ConGestor, clave: str = Query(...), usuario: str = Depends(verificar_login)):
     """Marca (o desmarca) a mano que el titular ya tiene gestor/apoderado.
@@ -2706,45 +3077,7 @@ def crm_con_gestor(body: ConGestor, clave: str = Query(...), usuario: str = Depe
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
             _asegurar_claves(cur)
             real = _clave_existente(cur, clave)
-            actas = _actas_de_clave(cur, real)
-            if body.con_gestor:
-                cur.execute(
-                    """
-                    UPDATE marcas
-                    SET caracter_previo = caracter, lead_score_previo = lead_score,
-                        con_gestor_manual = true, con_gestor_manual_en = now(),
-                        con_gestor_manual_por = %s, gestor_nombre = %s,
-                        es_lead = false, caracter = %s,
-                        lead_score = (CASE WHEN TRIM(COALESCE(matricula_agente, '')) IN ('', 'Part.') THEN 50 ELSE 0 END)
-                                     - 100 + (CASE WHEN COALESCE(email, '') <> '' THEN 20 ELSE 0 END),
-                        actualizado_en = now()
-                    WHERE acta = ANY(%s) AND es_lead IS TRUE
-                    """,
-                    (usuario, nombre, CARACTER_GESTOR_MANUAL, actas),
-                )
-                if cur.rowcount == 0:
-                    raise HTTPException(status_code=400, detail="Este titular no tiene marcas lead para marcar")
-                texto = "Marcado a mano: tiene gestor/apoderado" + (f" ({nombre})" if nombre else "") \
-                    + ". Deja de ser lead y pasa a «con agente»."
-            else:
-                cur.execute(
-                    """
-                    UPDATE marcas
-                    SET es_lead = true, caracter = caracter_previo,
-                        lead_score = COALESCE(lead_score_previo, lead_score),
-                        caracter_previo = NULL, lead_score_previo = NULL,
-                        con_gestor_manual = NULL, con_gestor_manual_en = NULL,
-                        con_gestor_manual_por = NULL, gestor_nombre = NULL,
-                        actualizado_en = now()
-                    WHERE acta = ANY(%s) AND con_gestor_manual IS TRUE
-                    """,
-                    (actas,),
-                )
-                if cur.rowcount == 0:
-                    raise HTTPException(status_code=400, detail="Este titular no estaba marcado con gestor")
-                texto = "Se deshizo «tiene gestor/apoderado»: vuelve a ser lead."
-            marcas = cur.rowcount
-            _registrar_actividad(cur, real, usuario, "sistema", texto)
+            marcas = _aplicar_con_gestor(cur, real, usuario, body.con_gestor, nombre)
         conn.commit()
     return {"ok": True, "clave": real, "marcas": marcas}
 
@@ -2914,6 +3247,7 @@ app.include_router(cartera_api.crear_router(
 # Formularios para clientes (persona física / jurídica): páginas públicas
 # /formulario/... (sin login) + gestión de respuestas en Clientes → Formularios.
 app.include_router(formularios_api.crear_router(verificar_login, conexion))
+app.include_router(accesos_api.crear_router(verificar_login, conexion, CLAVES_ACCESO_RAPIDO, _contar_consulta))
 
 # Pestaña "Mails": cuenta de Resend, remitente, reply-to y plantillas de cada mail.
 def _crm_registrar_mail(cur, acta: str, usuario: str, texto: str):
