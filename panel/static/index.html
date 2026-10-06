@@ -724,7 +724,7 @@ function celdaOtrasClases(r) {
   if (!Array.isArray(r.clases_misma_marca)) return "";
   const otras = r.clases_misma_marca.filter(c => c !== r.clase);
   if (!otras.length) return "";
-  return ` <span class="otras-clases" title="Esta marca también está pedida en clase ${otras.join(", ")}">+${otras.join(", ")}</span>`;
+  return ` <span class="otras-clases" title="Esta marca también está pedida en clase ${_escapeHtml(otras.join(", "))}">+${_escapeHtml(otras.join(", "))}</span>`;
 }
 
 function filaHtml(r, { flecha = false, oculta = false, idGrupo = null, cantidadResto = 0 } = {}) {
@@ -740,19 +740,19 @@ function filaHtml(r, { flecha = false, oculta = false, idGrupo = null, cantidadR
   // las demás filas tienen su propia casilla.
   const celdaSel = flecha
     ? `<td class="col-sel"><input type="checkbox" class="sel-grupo" data-grupo="${idGrupo}" title="Seleccionar las ${cantidadResto + 1} marcas de este titular" aria-label="Seleccionar las ${cantidadResto + 1} marcas de este titular" /></td>`
-    : `<td class="col-sel"><input type="checkbox" class="sel-fila" data-acta="${r.acta}" aria-label="Seleccionar la marca del acta ${r.acta}" /></td>`;
+    : `<td class="col-sel"><input type="checkbox" class="sel-fila" data-acta="${_idSeguro(r.acta)}" aria-label="Seleccionar la marca del acta ${_escapeHtml(r.acta)}" /></td>`;
   return `
-    <tr class="${r.es_lead ? "lead" : ""} ${r.contactado ? "contactado" : ""} ${claseOculta}" ${atributoGrupo} data-acta="${r.acta}">
+    <tr class="${r.es_lead ? "lead" : ""} ${r.contactado ? "contactado" : ""} ${claseOculta}" ${atributoGrupo} data-acta="${_idSeguro(r.acta)}">
       ${celdaSel}
       <td class="score">${r.lead_score ?? ""}</td>
-      <td>${r.clase ?? ""}${celdaOtrasClases(r)}</td>
-      <td class="denominacion" title="${r.denominacion_inpi || r.denominacion || ""}">${r.denominacion_inpi || r.denominacion || `<em>${sinNombre(r.tipo)}</em>`}</td>
-      <td class="titular" title="${r.titular || ""}">${celdaTitular}</td>
+      <td>${_escapeHtml(r.clase ?? "")}${celdaOtrasClases(r)}</td>
+      <td class="denominacion" title="${_escapeHtml(r.denominacion_inpi || r.denominacion || "")}">${_escapeHtml(r.denominacion_inpi || r.denominacion || "") || `<em>${sinNombre(r.tipo)}</em>`}</td>
+      <td class="titular" title="${_escapeHtml(r.titular || "")}">${celdaTitular}</td>
       <td>${badgeLead(r)} ${crmSlot(claveTitular(r))} ${badgePreBoletin(r)} ${badgeOposicion(r)} ${badgeRevisionOposicion(r)} ${badgeEstadoTramite(r)}</td>
       <td class="celda-email">${celdaEmailIcono(r)}</td>
       <td>${fechaPublicacionOFallback(r)}</td>
       <td>${fmtFecha(r.fecha_concesion) || "—"}</td>
-      <td class="celda-acciones">${botonComentarios(r.acta)} <a class="abrir" href="${hrefTitular}" target="_blank" title="Ver ficha completa del titular (boletín ${r.boletin || "sin boletín todavía"}, acta ${r.acta})">Abrir</a></td>
+      <td class="celda-acciones">${botonComentarios(r.acta)} <a class="abrir" href="${hrefTitular}" target="_blank" title="Ver ficha completa del titular (boletín ${_escapeHtml(r.boletin || "sin boletín todavía")}, acta ${_escapeHtml(r.acta)})">Abrir</a></td>
     </tr>
   `;
 }

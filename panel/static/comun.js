@@ -54,7 +54,7 @@ function sinNombre(tipo) {
 
 function badgeLead(row) {
   if (row.es_lead === true) return '<span class="badge lead">LEAD</span>';
-  if (row.es_lead === false) return `<span class="badge no-lead">${row.caracter || "con agente"}</span>`;
+  if (row.es_lead === false) return `<span class="badge no-lead">${_escapeHtml(row.caracter || "con agente")}</span>`;
   return '<span class="badge sin-dato">sin verificar</span>';
 }
 
@@ -142,14 +142,23 @@ function badgeOposicion(row) {
     // legible en un tooltip de hover (ver corrección del 29/09/2026), así
     // que ahora es un botón que abre un popup con el texto completo.
     window._filasOposicion[row.acta] = row;
-    return `<button type="button" class="badge-oposicion" onclick="abrirModalOposicion('${row.acta}')">⚠ Ver oposición</button>${chipEstadoOposicion(row)}`;
+    return `<button type="button" class="badge-oposicion" onclick="abrirModalOposicion('${_idSeguro(row.acta)}')">⚠ Ver oposición</button>${chipEstadoOposicion(row)}`;
   }
-  return `<span class="tooltip badge-vista">👁 VISTA DE INPI<span class="globo">${detalle || "observación de oficio de INPI detectada en Grilla Digital"}</span></span>${chipEstadoOposicion(row)}`;
+  return `<span class="tooltip badge-vista">👁 VISTA DE INPI<span class="globo">${_escapeHtml(detalle) || "observación de oficio de INPI detectada en Grilla Digital"}</span></span>${chipEstadoOposicion(row)}`;
 }
 
 function _escapeHtml(s) {
   return (s ?? "").toString()
-    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+}
+
+// Para valores que van dentro de un onclick="...('X')" o de un selector: solo
+// deja letras, números, punto, guion y guion bajo (un acta o un id normal no
+// cambia). Escapar con _escapeHtml no alcanza ahí: el navegador decodifica
+// &#39; antes de ejecutar el JavaScript del atributo.
+function _idSeguro(s) {
+  return (s ?? "").toString().replace(/[^A-Za-z0-9._-]/g, "");
 }
 
 function _asegurarModalOposicion() {
@@ -241,7 +250,7 @@ function abrirModalOposicion(acta) {
       <p class="mo-fundamento">No se pudo obtener el detalle completo (oponente y fundamento) de esta oposición —
       el trámite no tiene un Formulario propio listado en Grilla Digital, o no se pudo descargar.
       ${fecha ? `Se detectó un ingreso de "Opo. de Marcas" el ${fecha}.` : ""}</p>
-      <a class="link-acta" href="javascript:void(0)" onclick="abrirActa('${row.acta}')">Ver expediente completo en INPI ↗</a>
+      <a class="link-acta" href="javascript:void(0)" onclick="abrirActa('${_idSeguro(row.acta)}')">Ver expediente completo en INPI ↗</a>
     `;
   }
 
@@ -260,7 +269,7 @@ function _renderMarcaOponente(row) {
   if (row.actas_marca_oponente) {
     const actas = row.actas_marca_oponente.split(",").filter(Boolean);
     cont.innerHTML = `<div class="mo-titulo">Marca(s) que invoca el oponente:</div>` +
-      actas.map(a => `<a class="link-acta" href="javascript:void(0)" onclick="abrirActa('${a}')">Ver ficha del acta ${a} ↗</a>`).join(" ");
+      actas.map(a => `<a class="link-acta" href="javascript:void(0)" onclick="abrirActa('${_idSeguro(a)}')">Ver ficha del acta ${_escapeHtml(a)} ↗</a>`).join(" ");
     return;
   }
 
@@ -282,6 +291,7 @@ function _renderMarcaOponente(row) {
 }
 
 async function _buscarMarcaOponente(denominacion, numeroBuscado) {
+  window._ultimaBusquedaMO = { d: denominacion, n: numeroBuscado };
   const cont = document.getElementById("mo-marca-oponente");
   cont.innerHTML = "Buscando…";
   try {
@@ -298,11 +308,11 @@ async function _buscarMarcaOponente(denominacion, numeroBuscado) {
         const coincide = numeroBuscado && f.numero_resolucion && f.numero_resolucion.replace(/\D/g, "") === numeroBuscado.replace(/\D/g, "");
         return `<div class="mo-resultado ${coincide ? "mo-coincide" : ""}">
           ${_escapeHtml(f.denominacion)} — clase ${_escapeHtml(f.clase)}${f.numero_resolucion ? ` · Reg. ${_escapeHtml(f.numero_resolucion)}` : ""}
-          <a class="link-acta" href="javascript:void(0)" onclick="abrirActa('${f.acta}')">Ver ficha ↗</a>
+          <a class="link-acta" href="javascript:void(0)" onclick="abrirActa('${_idSeguro(f.acta)}')">Ver ficha ↗</a>
         </div>`;
       }).join("");
   } catch (e) {
-    cont.innerHTML = `No se pudo buscar (${e.message}). <button type="button" onclick="_buscarMarcaOponente('${_escapeHtml(denominacion)}', '${_escapeHtml(numeroBuscado)}')">Reintentar</button>`;
+    cont.innerHTML = `No se pudo buscar (${e.message}). <button type="button" onclick="_buscarMarcaOponente(window._ultimaBusquedaMO.d, window._ultimaBusquedaMO.n)">Reintentar</button>`;
   }
 }
 
@@ -337,7 +347,7 @@ function badgeEstadoTramite(row, mostrarSinDato = false) {
   if (row.estado_tramite === "Denegada") {
     return '<span class="badge no-lead">DENEGADA</span>';
   }
-  return `<span class="badge sin-dato">${row.estado_tramite}</span>`;
+  return `<span class="badge sin-dato">${_escapeHtml(row.estado_tramite)}</span>`;
 }
 
 function fechaPublicacionOFallback(r) {
@@ -366,13 +376,13 @@ function claveTitular(r) {
 
 function linkTitular(r) {
   const clave = claveTitular(r);
-  if (!clave) return r.titular || "";
-  return `<a class="link-titular" href="/titular/${encodeURIComponent(clave)}">${r.titular || clave}</a>`;
+  if (!clave) return _escapeHtml(r.titular || "");
+  return `<a class="link-titular" href="/titular/${encodeURIComponent(clave)}">${_escapeHtml(r.titular || clave)}</a>`;
 }
 
 function celdaEmail(r) {
   if (r.email) {
-    return `<a href="mailto:${r.email}">${r.email}</a>`;
+    return `<a href="mailto:${_escapeHtml(r.email)}">${_escapeHtml(r.email)}</a>`;
   }
   if (r.es_lead !== true) {
     return ""; // no aplica (tiene apoderado) o todavía no se verificó
@@ -380,9 +390,9 @@ function celdaEmail(r) {
   const motivo = r.motivo_sin_email || "no se pudo determinar el motivo";
   return `
     <span class="sin-email">
-      <span class="tooltip">sin email<span class="globo">${motivo}</span></span>
-      <button class="reintentar" onclick="reintentarEmail('${r.acta}', this)">Reintentar</button>
-      <a class="link-acta" href="javascript:void(0)" onclick="abrirActa('${r.acta}')" title="Ver expediente completo en INPI">Ver ficha ↗</a>
+      <span class="tooltip">sin email<span class="globo">${_escapeHtml(motivo)}</span></span>
+      <button class="reintentar" onclick="reintentarEmail('${_idSeguro(r.acta)}', this)">Reintentar</button>
+      <a class="link-acta" href="javascript:void(0)" onclick="abrirActa('${_idSeguro(r.acta)}')" title="Ver expediente completo en INPI">Ver ficha ↗</a>
     </span>
   `;
 }
@@ -400,8 +410,8 @@ function celdaEmailIcono(r) {
   const motivo = r.motivo_sin_email || "no se pudo determinar el motivo";
   return `
     <span class="sin-email">
-      <span class="icono-email no tooltip">&#10007;<span class="globo">${motivo}</span></span>
-      <button class="reintentar" onclick="reintentarEmail('${r.acta}', this)">Reintentar</button>
+      <span class="icono-email no tooltip">&#10007;<span class="globo">${_escapeHtml(motivo)}</span></span>
+      <button class="reintentar" onclick="reintentarEmail('${_idSeguro(r.acta)}', this)">Reintentar</button>
     </span>
   `;
 }
@@ -526,7 +536,7 @@ function pintarBotonComentarios(boton) {
 
 function botonComentarios(acta) {
   if (!acta) return "";
-  return `<button type="button" class="btn-coment" data-acta-coment="${_escapeHtml(acta)}" onclick="abrirComentariosActa('${_escapeHtml(acta)}')">💬</button>`;
+  return `<button type="button" class="btn-coment" data-acta-coment="${_escapeHtml(acta)}" onclick="abrirComentariosActa('${_idSeguro(acta)}')">💬</button>`;
 }
 
 function htmlComentario(c, { mostrarActa = true } = {}) {
@@ -535,7 +545,7 @@ function htmlComentario(c, { mostrarActa = true } = {}) {
   const marca = c.denominacion_inpi || c.denominacion;
   const claveTit = (c.cuit || "").trim() || normalizarTitular(c.titular);
   const vinculo = mostrarActa && c.acta
-    ? `<div class="com-acta">📎 Acta <a class="link-acta" href="javascript:void(0)" onclick="abrirActa('${_escapeHtml(c.acta)}')" title="Ver expediente en INPI">${_escapeHtml(c.acta)} ↗</a>`
+    ? `<div class="com-acta">📎 Acta <a class="link-acta" href="javascript:void(0)" onclick="abrirActa('${_idSeguro(c.acta)}')" title="Ver expediente en INPI">${_escapeHtml(c.acta)} ↗</a>`
       + (marca ? ` · ${_escapeHtml(marca)}` : "")
       + (c.titular && claveTit ? ` · <a class="link-titular" href="/titular/${encodeURIComponent(claveTit)}">${_escapeHtml(c.titular)}</a>` : "")
       + (!c.titular && !marca ? ' <span class="com-todos">(no está cargada en el panel)</span>' : "")
@@ -685,7 +695,7 @@ async function _cargarModalComentarios(acta, conForm = false) {
   }
   // Actualiza el globito de la fila sin recargar la tabla entera.
   window._comentariosPorActa[acta] = { total: lista.length, abiertos: lista.filter(c => !c.resuelto).length };
-  document.querySelectorAll(`[data-acta-coment="${acta}"]`).forEach(pintarBotonComentarios);
+  document.querySelectorAll(`[data-acta-coment="${_idSeguro(acta)}"]`).forEach(pintarBotonComentarios);
 
   const htmlLista = lista.length
     ? lista.map(c => htmlComentario(c, { mostrarActa: false })).join("")

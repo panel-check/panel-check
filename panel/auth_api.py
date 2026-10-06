@@ -29,8 +29,10 @@ import psycopg2.extras
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from pydantic import BaseModel
+from starlette.concurrency import run_in_threadpool
 
 import auth
+import seguridad
 
 STATIC = os.path.join(os.path.dirname(__file__), "static")
 USUARIO_VALIDO = re.compile(r"^[A-Za-z0-9._-]{3,40}$")
@@ -129,8 +131,14 @@ def instalar(app, conexion):
     async def _seguridad(request: Request, call_next):
         if request.method in ("POST", "PUT", "PATCH", "DELETE") and not auth.origen_valido(request):
             return JSONResponse({"detail": "Pedido rechazado (origen distinto)"}, status_code=403)
+        # Las páginas HTML de /static (Ayuda, Crons, Mails, Clientes...) solo con
+        # sesión: antes se podían abrir directo sin iniciar sesión. Los .js y .css
+        # siguen abiertos (los necesita la pantalla de ingreso).
+        if seguridad.es_html_privado(request.url.path) and not await run_in_threadpool(_sesion, request):
+            return RedirectResponse("/login", status_code=303)
         respuesta = await call_next(request)
         h = respuesta.headers
+        h.setdefault("Content-Security-Policy", seguridad.CSP)
         h.setdefault("X-Content-Type-Options", "nosniff")
         h.setdefault("X-Frame-Options", "SAMEORIGIN")  # SAMEORIGIN: el panel de comentarios (menu.js) se muestra en un iframe propio
         h.setdefault("Referrer-Policy", "same-origin")
