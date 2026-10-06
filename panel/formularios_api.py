@@ -28,6 +28,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse, Response
 from pydantic import BaseModel
 
+import auth
 import formularios_core as fc
 import mails_core
 import poderes
@@ -65,8 +66,33 @@ def leer_apoderado(cur) -> str:
 
 
 def _ip(request: Request) -> str:
-    xff = request.headers.get("x-forwarded-for", "")
-    return (xff.split(",")[0].strip() if xff else (request.client.host if request.client else "")) or "?"
+    # Misma regla que el login (auth.ip_cliente): la IP real que pone Railway
+    # (X-Real-IP / último valor de X-Forwarded-For). El PRIMER valor de
+    # X-Forwarded-For lo puede inventar quien manda el pedido, y así se saltearía
+    # el límite de envíos por conexión.
+    return auth.ip_cliente(request) or "?"
+
+
+class _CuerpoExcedido(Exception):
+    pass
+
+
+async def _leer_formulario(request: Request):
+    """Lee el formulario multipart cortando si el pedido pasa de MAX_ENVIO bytes.
+    El chequeo de Content-Length solo sirve si el que manda el pedido lo declara;
+    esto cuenta los bytes que realmente llegan (también si viene en pedazos)."""
+    total = 0
+
+    async def recibir():
+        nonlocal total
+        mensaje = await request.receive()
+        if mensaje.get("type") == "http.request":
+            total += len(mensaje.get("body", b""))
+            if total > MAX_ENVIO:
+                raise _CuerpoExcedido()
+        return mensaje
+
+    return await Request(request.scope, recibir).form(max_files=10, max_fields=60)
 
 
 _envios = defaultdict(deque)
@@ -181,7 +207,10 @@ def crear_router(verificar_login, conexion) -> APIRouter:
             raise HTTPException(status_code=413, detail="Los archivos pesan demasiado (máximo 10 MB cada uno).")
         ip = _ip(request)
         _limite_envios(ip)
-        form = await request.form(max_files=10, max_fields=60)
+        try:
+            form = await _leer_formulario(request)
+        except _CuerpoExcedido:
+            raise HTTPException(status_code=413, detail="Los archivos pesan demasiado (máximo 10 MB cada uno).")
         if (form.get("sitio_web") or "").strip():  # campo trampa invisible: solo lo llenan los robots
             return {"ok": True}
         if not _captcha_ok(str(form.get("cf-turnstile-response") or ""), ip):

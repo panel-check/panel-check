@@ -216,7 +216,6 @@ jobs:
           mkdir -p data
           {
             echo "DATABASE_URL configurada: $([ -n "$DATABASE_URL" ] && echo si || echo no)"
-            echo "Host en DATABASE_URL: $(python3 -c "import os,urllib.parse as u; p=u.urlparse(os.environ.get('DATABASE_URL','')); print(p.hostname, p.port)" 2>&1)"
             for f in data/csv/*_completo_leads.csv; do
               numero=$(basename "$f" | sed 's/_completo_leads.csv//')
               fecha=$(python3 -c "import json,sys; l=json.load(open('data/boletines.json')); print(next((b.get('fecha') or '' for b in l if str(b.get('numero'))==sys.argv[1]), ''))" "$numero" 2>/dev/null || true)
