@@ -809,6 +809,13 @@ MESES = ("enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto
 CLAVE_MAIL_BASE = "prospecto_presupuesto_registro"
 
 
+def remitente_equipo() -> str:
+    """Desde dónde sale la copia interna del aviso: el remitente de los avisos al equipo
+    (variable RESEND_FROM; por defecto «Avisos Panel <avisos@quieroregistrarmimarca.com.ar>»)."""
+    import mails_core as mc
+    return (os.environ.get("RESEND_FROM") or "").strip() or mc.DEFAULT_FROM_INTERNO
+
+
 def mail_equipo():
     """A dónde llega la copia de cada aviso: el mail del estudio (el del calendario)."""
     valor = (os.environ.get("CALENDARIO_AVISO_EQUIPO") or calendar_id() or "").strip()
@@ -975,9 +982,14 @@ def avisar(conexion, evento_id: int, accion: str, usuario: str, email_persona: s
             return {"email": ", ".join(para), "enviado": False, "error": error_config}
         try:
             asunto, html_, texto = armar_aviso(ev, accion, para_equipo, usuario, ", ".join(destino_persona), panel_url)
-            mc.enviar(base["cuenta"], base["remitente"], base["responder_a"], para, asunto, html_, texto)
+            if para_equipo:
+                # La copia interna sale por la cuenta Interna, como los demás avisos al equipo
+                # (avisos@quieroregistrarmimarca.com.ar); el mail a la persona, por la de Prospectos.
+                mc.enviar("interna", remitente_equipo(), base["responder_a"], para, asunto, html_, texto)
+            else:
+                mc.enviar(base["cuenta"], base["remitente"], base["responder_a"], para, asunto, html_, texto)
             return {"email": ", ".join(para), "enviado": True, "error": None}
-        except Exception as e:  # sin RESEND_API_KEY_PROSPECTOS, Resend caído, etc.
+        except Exception as e:  # sin la clave de Resend de esa cuenta, Resend caído, etc.
             return {"email": ", ".join(para), "enviado": False, "error": str(e)[:300]}
 
     if destino_persona:
