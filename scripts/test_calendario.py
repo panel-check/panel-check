@@ -744,6 +744,19 @@ class EnvioDeAvisos(unittest.TestCase):
         self.assertTrue(self.enviados[0][4].startswith("Agendamos tu reunión"))
         self.assertEqual(self.enviados[1][4], "Reunión con Pérez")
 
+    def test_la_copia_al_equipo_sale_por_la_cuenta_interna_desde_avisos(self):
+        os.environ.pop("RESEND_FROM", None)
+        cc.avisar(self.conexion, 7, "agendada", "marcos", "juan@x.com")
+        persona, equipo = self.enviados
+        self.assertEqual(persona[:2], ("prospectos", "Smarties <s@x.com>"))
+        self.assertEqual(equipo[:2], ("interna", "Avisos Panel <avisos@quieroregistrarmimarca.com.ar>"))
+        self.assertEqual(equipo[2], "info@x.com", "si responden, va a la casilla del estudio")
+
+    def test_el_remitente_de_la_copia_sigue_a_resend_from(self):
+        os.environ["RESEND_FROM"] = "Avisos <otro@dominio.com>"
+        cc.avisar(self.conexion, 7, "agendada", "marcos", "")
+        self.assertEqual(self.enviados[0][:2], ("interna", "Avisos <otro@dominio.com>"))
+
     def test_sin_mail_de_la_persona_va_solo_al_equipo(self):
         r = cc.avisar(self.conexion, 7, "agendada", "marcos", "")
         self.assertIsNone(r["persona"])
