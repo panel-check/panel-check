@@ -11,6 +11,8 @@ Rutas (todas con sesión):
   POST  /api/analisis-marca/{acta}/oposiciones  consultar INPI (un pedido) y guardar las oposiciones
   POST  /api/analisis-marca/{acta}/pdf          el PDF con el membrete de Smarties (con el texto que
                                                 se mande, o el guardado)
+  POST  /api/analisis-marca/{acta}/mejorar-texto  propuesta de redacción mejorada con IA (no guarda
+                                                nada: la persona la acepta o la descarta)
 """
 
 from typing import Optional
@@ -22,6 +24,7 @@ from fastapi.responses import Response
 from pydantic import BaseModel
 
 import analisis_marca as am
+import ia_texto
 import inpi_lead
 
 
@@ -64,6 +67,8 @@ def crear_router(verificar_login, conexion) -> APIRouter:
             "actualizado_en": guardado["actualizado_en"].isoformat() if guardado["actualizado_en"] else None,
             # La primera vez que se abre una marca todavía no hay consulta a INPI guardada.
             "consultada_en_inpi": op["origen"] == "inpi",
+            # El botón «Mejorar texto» solo funciona si el servidor tiene la clave de la IA.
+            "ia_disponible": ia_texto.configurada(),
         }
 
     @router.get("/api/analisis-marca/{acta}")
@@ -126,5 +131,26 @@ def crear_router(verificar_login, conexion) -> APIRouter:
             content=am.generar_pdf(d), media_type="application/pdf",
             headers={"Content-Disposition": f"inline; filename*=UTF-8''{quote(am.nombre_archivo(d))}",
                      "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"})
+
+    @router.post("/api/analisis-marca/{acta}/mejorar-texto")
+    def mejorar_texto(acta: str, body: TextoAnalisis, _: str = Depends(verificar_login)):
+        """Manda SOLO el texto del análisis a la IA y devuelve la propuesta mejorada.
+        No guarda nada."""
+        acta = _acta(acta)
+        try:
+            texto = am.validar_texto(body.texto)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        if not ia_texto.configurada():
+            # 424 (y no 502/503) para que ningún proxy reemplace el mensaje por su página de error.
+            raise HTTPException(status_code=424, detail="La IA no está configurada en el servidor (falta IA_API_KEY).")
+        if len(texto.strip()) < ia_texto.LARGO_MIN:
+            raise HTTPException(status_code=400, detail="Escribí un poco más de texto para poder mejorarlo.")
+        with conexion() as conn, rcur(conn) as cur:
+            _marca(cur, acta)
+        try:
+            return ia_texto.mejorar_texto(texto)
+        except ia_texto.ErrorIA as e:
+            raise HTTPException(status_code=424, detail=str(e))
 
     return router

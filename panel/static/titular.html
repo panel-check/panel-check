@@ -57,6 +57,12 @@
   .an-lead .msg.ok { color: var(--verde); }
   .an-lead .msg.err { color: var(--rojo); }
   .an-lead .nota { font-size: 12px; color: var(--gris); margin-top: 6px; }
+  .an-lead button.secundario { background: #fff; color: var(--azul); border: 1px solid var(--azul); border-radius: 8px; padding: 8px 14px; font: inherit; font-weight: 600; cursor: pointer; }
+  .an-lead button.secundario:disabled { opacity: .5; cursor: not-allowed; }
+  .an-lead .an-propuesta { border: 1px solid var(--azul); border-radius: 10px; background: #f5f8ff; padding: 12px 14px; margin-top: 14px; }
+  .an-lead .an-propuesta-titulo { font-size: 13px; font-weight: 700; margin-bottom: 8px; }
+  .an-lead .an-propuesta textarea { min-height: 200px; background: #fff; }
+  .an-lead ul.an-avisos { margin: 0 0 8px; padding: 8px 10px 8px 26px; font-size: 13px; color: #92400e; background: #fffbeb; border: 1px solid #fcd34d; border-radius: 8px; }
 </style>
 </head>
 <body>
@@ -138,7 +144,20 @@
       <div class="nota">Se guarda solo mientras escribís. En el PDF, una línea en blanco separa párrafos y las líneas que empiezan con «- » salen como viñetas.</div>
       <div class="acciones">
         <button type="button" class="enviar" id="an-pdf" disabled>Exportar PDF</button>
+        <button type="button" class="secundario" id="an-mejorar" disabled>✨ Mejorar texto</button>
+        <button type="button" class="plegar" id="an-deshacer" hidden>↶ Volver al texto anterior</button>
         <span class="msg" id="an-estado"></span>
+      </div>
+      <div class="nota" id="an-ia-nota">«Mejorar texto» manda solo este texto a un servicio de IA y te muestra una propuesta para que la revises: no cambia nada hasta que la aceptes.</div>
+      <div class="an-propuesta" id="an-propuesta" hidden>
+        <div class="an-propuesta-titulo">✨ Versión mejorada <span class="nota">(podés editarla antes de usarla)</span></div>
+        <ul class="an-avisos" id="an-avisos" hidden></ul>
+        <textarea id="an-propuesta-texto" maxlength="20000"></textarea>
+        <div class="acciones">
+          <button type="button" class="enviar" id="an-usar">Usar esta versión</button>
+          <button type="button" class="secundario" id="an-descartar">Descartar</button>
+          <span class="nota" id="an-modelo"></span>
+        </div>
       </div>
     </div>
     <p class="nota pestana-vacia" id="an-vacio" hidden>Este titular no tiene marcas para analizar.</p>
@@ -567,6 +586,9 @@ let anGuardado = "";        // el texto tal como está guardado
 let anTimer = null;
 let anToken = 0;            // descarta respuestas de una marca que ya no está elegida
 let anIniciado = false;
+let anIaDisponible = false; // el servidor tiene la clave de la IA
+let anBase = "";            // texto que se mandó a mejorar (la propuesta se compara contra este)
+let anPrevio = null;        // texto anterior a «Usar esta versión», para poder volver
 
 function anMsg(t, ok = true) { const el = document.getElementById("an-estado"); el.textContent = t || ""; el.className = "msg " + (ok ? "ok" : "err"); }
 
@@ -620,12 +642,83 @@ async function anVerificar() {
   }
 }
 
+// «Mejorar texto»: manda SOLO el texto a la IA y muestra una propuesta editable. No guarda
+// ni reemplaza nada hasta que se toca «Usar esta versión». Mientras la propuesta está
+// abierta, el texto original queda de solo lectura para que la comparación no se desfase.
+function anBloquearTexto(bloquear) { document.getElementById("an-texto").readOnly = bloquear; }
+
+function anCerrarPropuesta() {
+  document.getElementById("an-propuesta").hidden = true;
+  document.getElementById("an-avisos").hidden = true;
+  document.getElementById("an-avisos").innerHTML = "";
+  document.getElementById("an-propuesta-texto").value = "";
+  anBloquearTexto(false);
+  document.getElementById("an-mejorar").disabled = !anIaDisponible || !anActa;
+}
+
+async function anMejorar() {
+  const acta = anActa;
+  if (!acta || !anIaDisponible) return;
+  const area = document.getElementById("an-texto");
+  const texto = area.value;
+  if (texto.trim().length < 20) { anMsg("Escribí un poco más de texto para poder mejorarlo.", false); return; }
+  const token = anToken;
+  const btn = document.getElementById("an-mejorar");
+  btn.disabled = true; anBloquearTexto(true);
+  anMsg("Mejorando el texto con IA… (puede tardar unos segundos)");
+  try {
+    const r = await apiJson(`/api/analisis-marca/${encodeURIComponent(acta)}/mejorar-texto`, "POST", { texto });
+    if (token !== anToken || acta !== anActa) return;   // se cambió de marca mientras tanto
+    anBase = texto;
+    document.getElementById("an-propuesta-texto").value = r.texto;
+    const av = document.getElementById("an-avisos");
+    av.innerHTML = (r.advertencias || []).map(a => `<li>${mlEsc(a)}</li>`).join("");
+    av.hidden = !(r.advertencias || []).length;
+    document.getElementById("an-modelo").textContent = r.modelo ? "Modelo: " + r.modelo : "";
+    document.getElementById("an-propuesta").hidden = false;
+    anMsg("Propuesta lista: revisala y elegí si la usás.");
+    document.getElementById("an-propuesta").scrollIntoView?.({ block: "nearest", behavior: "smooth" });
+  } catch (e) {
+    if (token !== anToken || acta !== anActa) return;
+    anBloquearTexto(false); btn.disabled = false;
+    anMsg("No se pudo mejorar el texto: " + e.message, false);
+    return;
+  }
+  // La propuesta quedó abierta: el botón vuelve a estar disponible recién al cerrarla.
+}
+
+function anUsarPropuesta() {
+  const nuevo = document.getElementById("an-propuesta-texto").value;
+  if (!nuevo.trim()) { anMsg("La versión mejorada está vacía.", false); return; }
+  anPrevio = anBase;
+  anCerrarPropuesta();
+  const area = document.getElementById("an-texto");
+  area.value = nuevo;
+  area.dispatchEvent(new Event("input"));   // dispara el guardado automático
+  document.getElementById("an-deshacer").hidden = false;
+  anMsg("Versión mejorada aplicada. Podés volver al texto anterior.");
+}
+
+function anDescartarPropuesta() { anCerrarPropuesta(); anMsg(""); }
+
+function anDeshacer() {
+  if (anPrevio === null) return;
+  const area = document.getElementById("an-texto");
+  area.value = anPrevio; anPrevio = null;
+  document.getElementById("an-deshacer").hidden = true;
+  area.dispatchEvent(new Event("input"));
+  anMsg("Texto anterior restaurado.");
+}
+
 async function anCargar(acta) {
   if (anActa && anActa !== acta) await anGuardarAhora();   // lo escrito en la marca anterior no se pierde
   anActa = acta;
   const token = ++anToken;
+  anCerrarPropuesta(); anPrevio = null; anBase = "";
+  document.getElementById("an-deshacer").hidden = true;
   const area = document.getElementById("an-texto");
   area.disabled = true; document.getElementById("an-pdf").disabled = true;
+  document.getElementById("an-mejorar").disabled = true;
   document.getElementById("an-datos").innerHTML = '<span class="nota">Cargando…</span>';
   anMsg("");
   let d;
@@ -637,6 +730,11 @@ async function anCargar(acta) {
   if (token !== anToken) return;
   area.value = d.texto; anGuardado = d.texto;
   area.disabled = false; document.getElementById("an-pdf").disabled = false;
+  anIaDisponible = !!d.ia_disponible;
+  document.getElementById("an-mejorar").disabled = !anIaDisponible;
+  document.getElementById("an-ia-nota").textContent = anIaDisponible
+    ? "«Mejorar texto» manda solo este texto a un servicio de IA y te muestra una propuesta para que la revises: no cambia nada hasta que la aceptes."
+    : "«Mejorar texto» todavía no está activado: falta cargar la clave de la IA (IA_API_KEY) en el servidor del panel. Ver el Manual del sistema.";
   if (d.actualizado_por && d.texto) anMsg(`Última edición: ${d.actualizado_por}, ${mlFecha(d.actualizado_en)}`);
   if (d.consultada_en_inpi) { anPintarDatos(d); return; }
   anPintarDatos(d, { consultando: true });
@@ -689,6 +787,10 @@ function anIniciar(filas) {
       anTimer = setTimeout(anGuardarAhora, 1200);
     });
     document.getElementById("an-pdf").addEventListener("click", anExportarPdf);
+    document.getElementById("an-mejorar").addEventListener("click", anMejorar);
+    document.getElementById("an-usar").addEventListener("click", anUsarPropuesta);
+    document.getElementById("an-descartar").addEventListener("click", anDescartarPropuesta);
+    document.getElementById("an-deshacer").addEventListener("click", anDeshacer);
     // Si se cierra o se recarga la página con algo sin guardar, se manda igual (keepalive sobrevive al cierre).
     window.addEventListener("pagehide", () => {
       const texto = document.getElementById("an-texto").value;
