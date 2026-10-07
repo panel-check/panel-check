@@ -468,5 +468,10 @@ CREATE TABLE IF NOT EXISTS analisis_marca (
     texto            TEXT NOT NULL DEFAULT '',
     oposiciones      JSONB,
     actualizado_por  TEXT,
-    actualizado_en   TIMESTAMPTZ NOT NULL DEFAULT now()
+    actualizado_en   TIMESTAMPTZ NOT NULL DEFAULT now(),
+    -- Logo de la marca tomado del expediente de INPI (reducido y sin metadatos);
+    -- logo_consultado_en vacío = todavía no se miró el expediente.
+    logo             BYTEA,
+    logo_mime        TEXT,
+    logo_consultado_en TIMESTAMPTZ
 );
