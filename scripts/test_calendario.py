@@ -417,5 +417,307 @@ class Configuracion(unittest.TestCase):
         self.assertEqual(cc.cuenta_servicio(), "sa@x.iam")
 
 
+# ── Modalidad (Meet / llamada / presencial) y avisos por mail ──────────────
+
+def fila_evento(**kw):
+    base = {"id": 7, "titulo": "Reunión con Pérez", "descripcion": "", "lugar": None, "todo_el_dia": False,
+            "inicio": dt.datetime(2026, 10, 8, 16, 0, tzinfo=TZ), "fin": dt.datetime(2026, 10, 8, 17, 0, tzinfo=TZ),
+            "actas": [], "origen": "panel", "creado_por": "marcos", "link": "https://g/e", "modalidad": "meet",
+            "meet_url": "https://meet.google.com/abc-defg-hij"}
+    base.update(kw)
+    return base
+
+
+class ModalidadYMeet(unittest.TestCase):
+    def setUp(self):
+        self.env = dict(os.environ)
+        for k in ("GOOGLE_OAUTH_CLIENT_ID", "GOOGLE_OAUTH_CLIENT_SECRET", "GOOGLE_OAUTH_REFRESH_TOKEN"):
+            os.environ.pop(k, None)
+        os.environ["GOOGLE_CALENDAR_ID"] = "estudio@gmail.com"
+        os.environ["GOOGLE_SERVICE_ACCOUNT_JSON"] = '{"client_email": "sa@x.iam", "private_key": "k"}'
+        self.pedidos, self.respuestas = [], []
+        self._pedir, self._guardar, self._sleep = cc._pedir, cc._guardar_resultado, cc.time.sleep
+
+        def falso(metodo, ruta, **kw):
+            self.pedidos.append((metodo, ruta, kw.get("json"), dict(kw.get("params") or {})))
+            return self.respuestas.pop(0)
+
+        cc._pedir = falso
+        cc._guardar_resultado = lambda conexion, recurso: 7
+        cc.time.sleep = lambda s: None
+
+    def tearDown(self):
+        cc._pedir, cc._guardar_resultado, cc.time.sleep = self._pedir, self._guardar, self._sleep
+        os.environ.clear()
+        os.environ.update(self.env)
+
+    def conectar_oauth(self):
+        os.environ.update(GOOGLE_OAUTH_CLIENT_ID="cid", GOOGLE_OAUTH_CLIENT_SECRET="sec", GOOGLE_OAUTH_REFRESH_TOKEN="tok")
+
+    DATOS = {"titulo": "Reunión", "fecha": "2026-10-08", "hora": "16:00", "duracion_min": 60}
+
+    def test_link_de_meet_del_evento(self):
+        self.assertEqual(cc.meet_de_evento({"hangoutLink": "https://meet.google.com/x"}), "https://meet.google.com/x")
+        self.assertEqual(cc.meet_de_evento({"conferenceData": {"entryPoints": [
+            {"entryPointType": "phone", "uri": "tel:+1"}, {"entryPointType": "video", "uri": "https://meet.google.com/y"}]}}),
+            "https://meet.google.com/y")
+        self.assertIsNone(cc.meet_de_evento({"summary": "sin meet"}))
+
+    def test_evento_de_google_modalidad(self):
+        e = ev("a")
+        e["hangoutLink"] = "https://meet.google.com/x"
+        f = cc.evento_a_fila(e, "c")
+        self.assertEqual((f["modalidad"], f["meet_url"]), ("meet", "https://meet.google.com/x"))
+        e = ev("b")
+        e["extendedProperties"] = {"private": {"panel": "1", "modalidad": "llamada"}}
+        self.assertEqual(cc.evento_a_fila(e, "c")["modalidad"], "llamada")
+        e["extendedProperties"] = {"private": {"modalidad": "meet"}}  # le sacaron el Meet desde Google
+        f = cc.evento_a_fila(e, "c")
+        self.assertEqual((f["modalidad"], f["meet_url"]), (None, None))
+        e["extendedProperties"] = {"private": {"modalidad": "inventada"}}
+        self.assertIsNone(cc.evento_a_fila(e, "c")["modalidad"])
+
+    def test_cuerpo_con_modalidad(self):
+        c = cc._cuerpo_evento({**self.DATOS, "modalidad": "llamada"}, "marcos")
+        self.assertEqual(c["extendedProperties"]["private"]["modalidad"], "llamada")
+        self.assertNotIn("modalidad", cc._cuerpo_evento(self.DATOS, "marcos")["extendedProperties"]["private"])
+        with self.assertRaises(cc.CalendarioError):
+            cc._cuerpo_evento({**self.DATOS, "modalidad": "zoom"}, "marcos")
+
+    def test_oauth_estados(self):
+        self.assertFalse(cc.puede_meet())
+        self.assertFalse(cc.oauth_pendiente())
+        os.environ.update(GOOGLE_OAUTH_CLIENT_ID="cid", GOOGLE_OAUTH_CLIENT_SECRET="sec")
+        self.assertTrue(cc.oauth_pendiente())
+        self.assertFalse(cc.puede_meet())
+        os.environ["GOOGLE_OAUTH_REFRESH_TOKEN"] = "tok"
+        self.assertTrue(cc.puede_meet())
+        self.assertFalse(cc.oauth_pendiente())
+        # con OAuth alcanza, aunque no haya cuenta de servicio
+        os.environ.pop("GOOGLE_SERVICE_ACCOUNT_JSON")
+        self.assertTrue(cc.configurado())
+
+    def test_meet_sin_cuenta_conectada_no_llama_a_google(self):
+        with self.assertRaises(cc.CalendarioError) as m:
+            cc.crear_evento(None, {**self.DATOS, "modalidad": "meet"}, "marcos")
+        self.assertIn("Conectar con Google", str(m.exception))
+        self.assertEqual(self.pedidos, [])
+
+    def test_crear_con_meet_pide_la_sala_y_no_invita_a_nadie(self):
+        self.conectar_oauth()
+        self.respuestas = [{"id": "g1", "hangoutLink": "https://meet.google.com/x"}]
+        self.assertEqual(cc.crear_evento(None, {**self.DATOS, "modalidad": "meet"}, "marcos"), 7)
+        metodo, ruta, cuerpo, params = self.pedidos[0]
+        self.assertEqual(metodo, "POST")
+        self.assertEqual(params, {"sendUpdates": "none", "conferenceDataVersion": 1})
+        pedido = cuerpo["conferenceData"]["createRequest"]
+        self.assertEqual(pedido["conferenceSolutionKey"], {"type": "hangoutsMeet"})
+        self.assertTrue(pedido["requestId"])
+        self.assertNotIn("attendees", cuerpo)
+
+    def test_si_el_link_tarda_se_vuelve_a_pedir(self):
+        self.conectar_oauth()
+        self.respuestas = [{"id": "g1", "conferenceData": {"createRequest": {"status": {"statusCode": "pending"}}}},
+                           {"id": "g1"}, {"id": "g1", "hangoutLink": "https://meet.google.com/x"}]
+        cc.crear_evento(None, {**self.DATOS, "modalidad": "meet"}, "marcos")
+        self.assertEqual([p[0] for p in self.pedidos], ["POST", "GET", "GET"])
+
+    def test_si_google_nunca_da_el_link_avisa(self):
+        self.conectar_oauth()
+        self.respuestas = [{"id": "g1"}] * 5
+        with self.assertRaises(cc.CalendarioError) as m:
+            cc.crear_evento(None, {**self.DATOS, "modalidad": "meet"}, "marcos")
+        self.assertIn("link de Meet", str(m.exception))
+
+    def test_llamada_no_pide_meet(self):
+        self.respuestas = [{"id": "g1"}]
+        cc.crear_evento(None, {**self.DATOS, "modalidad": "llamada", "lugar": "11 5555-1234"}, "marcos")
+        _, _, cuerpo, params = self.pedidos[0]
+        self.assertNotIn("conferenceData", cuerpo)
+        self.assertEqual(params, {"sendUpdates": "none"})
+        self.assertEqual(cuerpo["location"], "11 5555-1234")
+
+    def conexion_con(self, fila):
+        class Cur:
+            def __enter__(s): return s
+            def __exit__(s, *a): return False
+            def execute(s, sql, params=None): pass
+            def fetchone(s): return fila
+        class Conn:
+            def __enter__(s): return s
+            def __exit__(s, *a): return False
+            def cursor(s, **kw): return Cur()
+        return lambda: Conn()
+
+    def test_editar_agrega_saca_o_conserva_el_meet(self):
+        self.conectar_oauth()
+        # tenía llamada y pasa a Meet: se pide la sala
+        self.respuestas = [{"id": "g1", "hangoutLink": "https://meet.google.com/x"}]
+        cc.editar_evento(self.conexion_con(("g1", None)), 7, {**self.DATOS, "modalidad": "meet"}, "marcos")
+        _, _, cuerpo, params = self.pedidos[-1]
+        self.assertIn("createRequest", cuerpo["conferenceData"])
+        self.assertEqual(params["conferenceDataVersion"], 1)
+        # ya tenía Meet y sigue siendo Meet: no se toca la sala
+        self.respuestas = [{"id": "g1", "hangoutLink": "https://meet.google.com/x"}]
+        cc.editar_evento(self.conexion_con(("g1", "https://meet.google.com/x")), 7, {**self.DATOS, "modalidad": "meet"}, "marcos")
+        _, _, cuerpo, params = self.pedidos[-1]
+        self.assertNotIn("conferenceData", cuerpo)
+        self.assertNotIn("conferenceDataVersion", params)
+        # tenía Meet y pasa a llamada: se saca la videollamada y la marca anterior
+        self.respuestas = [{"id": "g1"}]
+        cc.editar_evento(self.conexion_con(("g1", "https://meet.google.com/x")), 7, {**self.DATOS, "modalidad": "llamada"}, "marcos")
+        _, _, cuerpo, params = self.pedidos[-1]
+        self.assertIn("conferenceData", cuerpo)
+        self.assertIsNone(cuerpo["conferenceData"])
+        self.assertEqual(params["conferenceDataVersion"], 1)
+        # sin modalidad: se borra la marca vieja
+        self.respuestas = [{"id": "g1"}]
+        cc.editar_evento(self.conexion_con(("g1", None)), 7, self.DATOS, "marcos")
+        self.assertIn("modalidad", self.pedidos[-1][2]["extendedProperties"]["private"])
+        self.assertIsNone(self.pedidos[-1][2]["extendedProperties"]["private"]["modalidad"])
+
+    def test_evento_a_json_trae_modalidad_y_meet(self):
+        j = cc.evento_a_json(fila_evento())
+        self.assertEqual((j["modalidad"], j["meet_url"]), ("meet", "https://meet.google.com/abc-defg-hij"))
+
+
+class TextosDelAviso(unittest.TestCase):
+    def test_cuando(self):
+        j = cc.evento_a_json(fila_evento())
+        self.assertEqual(cc.cuando_texto(j), "jueves 8 de octubre de 2026, de 16:00 a 17:00 hs (hora de Argentina)")
+        todo = cc.evento_a_json(fila_evento(todo_el_dia=True, inicio=dt.datetime(2026, 10, 8, tzinfo=TZ), fin=dt.datetime(2026, 10, 9, tzinfo=TZ)))
+        self.assertEqual(cc.cuando_texto(todo), "jueves 8 de octubre de 2026 (todo el día)")
+
+    def test_como(self):
+        self.assertEqual(cc.como_texto({"modalidad": "meet"}), "Videollamada por Google Meet")
+        self.assertEqual(cc.como_texto({"modalidad": "llamada", "lugar": "11 5555-1234"}), "Te llamamos por teléfono al 11 5555-1234")
+        self.assertEqual(cc.como_texto({"modalidad": "llamada", "lugar": ""}), "Te llamamos por teléfono")
+        self.assertEqual(cc.como_texto({"modalidad": "presencial", "lugar": "el estudio"}), "En persona: el estudio")
+        self.assertEqual(cc.como_texto({"modalidad": None, "lugar": ""}), "A coordinar")
+
+    def test_link_para_agregar_al_calendario(self):
+        j = cc.evento_a_json(fila_evento())
+        url = cc.link_agregar_a_calendario(j)
+        self.assertTrue(url.startswith("https://calendar.google.com/calendar/render?action=TEMPLATE"))
+        self.assertIn("dates=20261008T160000/20261008T170000", url)
+        self.assertIn("text=Reuni%C3%B3n%20con%20P%C3%A9rez", url)
+        self.assertIn("meet.google.com", url)
+
+    def test_aviso_a_la_persona(self):
+        j = cc.evento_a_json(fila_evento())
+        asunto, html, texto = cc.armar_aviso(j, "agendada", False, "marcos")
+        self.assertEqual(asunto, "Agendamos tu reunión: Reunión con Pérez")
+        for t in (html, texto):
+            self.assertIn("jueves 8 de octubre de 2026", t)
+            self.assertIn("https://meet.google.com/abc-defg-hij", t)
+            self.assertNotIn("{{", t)
+        self.assertNotIn("marcos", texto)  # el mail a la persona no cuenta quién lo agendó
+        self.assertEqual(cc.armar_aviso(j, "modificada", False, "marcos")[0], "Actualizamos tu reunión: Reunión con Pérez")
+
+    def test_aviso_sin_meet_no_muestra_link_vacio(self):
+        j = cc.evento_a_json(fila_evento(modalidad="llamada", meet_url=None, lugar="11 5555-1234"))
+        _, _, texto = cc.armar_aviso(j, "agendada", False, "marcos")
+        self.assertNotIn("Videollamada (link)", texto)
+        self.assertIn("Te llamamos por teléfono al 11 5555-1234", texto)
+
+    def test_aviso_al_equipo_cuenta_quien_actas_y_a_quien(self):
+        j = cc.evento_a_json(fila_evento(actas=["4797001"]))
+        j["vinculos"] = [{"acta": "4797001", "denominacion": "LUNA", "titular": "PEREZ JUAN", "tipo": "cliente"}]
+        asunto, html, texto = cc.armar_aviso(j, "agendada", True, "marcos", "juan@x.com", "https://panel.test")
+        self.assertEqual(asunto, "Se agendó: Reunión con Pérez – 8/10 16:00 hs")
+        self.assertIn("marcos agendó un evento", texto)
+        self.assertIn("4797001 (LUNA, PEREZ JUAN) – cliente", texto)
+        self.assertIn("juan@x.com", texto)
+        self.assertIn("https://panel.test/calendario", texto)
+        _, _, sin = cc.armar_aviso(j, "agendada", True, "marcos", "", "https://panel.test")
+        self.assertIn("no se mandó", sin)
+
+    def test_el_titulo_no_inyecta_html(self):
+        j = cc.evento_a_json(fila_evento(titulo="<script>alert(1)</script> {{marca}}"))
+        _, html, _ = cc.armar_aviso(j, "agendada", False, "marcos")
+        self.assertNotIn("<script>", html)
+        self.assertIn("&lt;script&gt;", html)
+        self.assertIn("{{marca}}", html)  # un título con llaves no se interpreta como variable
+
+
+class EnvioDeAvisos(unittest.TestCase):
+    def setUp(self):
+        self.env = dict(os.environ)
+        os.environ["GOOGLE_CALENDAR_ID"] = "estudio@gmail.com"
+        os.environ.pop("CALENDARIO_AVISO_EQUIPO", None)
+        import mails_core as mc
+        self.mc = mc
+        self.orig = (getattr(mc, "preparar", None), getattr(mc, "enviar", None), getattr(mc, "esta_de_baja", None))
+        self.enviados, self.bajas, self.falla = [], set(), set()
+        mc.preparar = lambda clave, dsn=None: {"cuenta": "prospectos", "remitente": "Smarties <s@x.com>", "responder_a": "info@x.com"}
+
+        def enviar(cuenta, remitente, responder_a, para, asunto, html, texto, adjuntos=None):
+            if para[0] in self.falla:
+                raise ValueError("Resend rechazó el envío (403)")
+            self.enviados.append((cuenta, remitente, responder_a, list(para), asunto))
+            return "id"
+
+        mc.enviar = enviar
+        mc.esta_de_baja = lambda cur, email: email in self.bajas
+        fila = fila_evento()
+
+        class Cur:
+            def __enter__(s): return s
+            def __exit__(s, *a): return False
+            def execute(s, sql, params=None): pass
+            def fetchone(s): return fila
+            def fetchall(s): return []
+        class Conn:
+            def __enter__(s): return s
+            def __exit__(s, *a): return False
+            def cursor(s, **kw): return Cur()
+        self.conexion = lambda: Conn()
+
+    def tearDown(self):
+        self.mc.preparar, self.mc.enviar, self.mc.esta_de_baja = self.orig
+        os.environ.clear()
+        os.environ.update(self.env)
+
+    def test_avisa_a_la_persona_y_copia_al_equipo(self):
+        r = cc.avisar(self.conexion, 7, "agendada", "marcos", "juan@x.com")
+        self.assertTrue(r["persona"]["enviado"] and r["equipo"]["enviado"])
+        self.assertEqual([e[3] for e in self.enviados], [["juan@x.com"], ["estudio@gmail.com"]])
+        self.assertEqual(self.enviados[0][:3], ("prospectos", "Smarties <s@x.com>", "info@x.com"))
+        self.assertTrue(self.enviados[0][4].startswith("Agendamos tu reunión"))
+        self.assertTrue(self.enviados[1][4].startswith("Se agendó"))
+
+    def test_sin_mail_de_la_persona_va_solo_al_equipo(self):
+        r = cc.avisar(self.conexion, 7, "agendada", "marcos", "")
+        self.assertIsNone(r["persona"])
+        self.assertEqual([e[3] for e in self.enviados], [["estudio@gmail.com"]])
+
+    def test_mail_invalido_no_se_manda_pero_el_equipo_si(self):
+        r = cc.avisar(self.conexion, 7, "agendada", "marcos", "esto no es un mail")
+        self.assertFalse(r["persona"]["enviado"])
+        self.assertIn("no es un mail válido", r["persona"]["error"])
+        self.assertTrue(r["equipo"]["enviado"])
+
+    def test_persona_de_baja_no_recibe(self):
+        self.bajas.add("juan@x.com")
+        r = cc.avisar(self.conexion, 7, "agendada", "marcos", "juan@x.com")
+        self.assertFalse(r["persona"]["enviado"])
+        self.assertIn("baja", r["persona"]["error"])
+        self.assertEqual([e[3] for e in self.enviados], [["estudio@gmail.com"]])
+
+    def test_si_falla_el_mail_a_la_persona_el_del_equipo_sale_igual(self):
+        self.falla.add("juan@x.com")
+        r = cc.avisar(self.conexion, 7, "agendada", "marcos", "juan@x.com")
+        self.assertFalse(r["persona"]["enviado"])
+        self.assertIn("Resend", r["persona"]["error"])
+        self.assertTrue(r["equipo"]["enviado"])
+
+    def test_copia_al_equipo_configurable(self):
+        os.environ["CALENDARIO_AVISO_EQUIPO"] = "pamela@x.com"
+        cc.avisar(self.conexion, 7, "agendada", "marcos", "")
+        self.assertEqual(self.enviados[0][3], ["pamela@x.com"])
+        os.environ["CALENDARIO_AVISO_EQUIPO"] = "no-es-mail"
+        self.assertIsNone(cc.mail_equipo())
+
+
 if __name__ == "__main__":
     unittest.main()

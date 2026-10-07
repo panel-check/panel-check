@@ -95,12 +95,33 @@ function pintarEstado() {
     <span>Se actualiza solo cada ${Math.round((e.sondeo_segundos || 120) / 60)} min</span>
     <a href="https://calendar.google.com/calendar/u/0/r" target="_blank" rel="noopener">Abrir Google Calendar ↗</a>
     <a href="#" id="cal-resync" title="Vuelve a leer todo el calendario desde cero">Resincronizar todo</a>`;
-  aviso.innerHTML = mal
+  let html = mal
     ? `<div class="cal-aviso error"><b>La última sincronización con Google falló:</b> ${esc(e.ultimo_error)}
-        ${e.cuenta_servicio ? `<br>Cuenta de servicio: <code>${esc(e.cuenta_servicio)}</code> (el calendario tiene que estar compartido con ese mail).` : ""}</div>`
+        ${e.cuenta_servicio && !e.oauth_conectado ? `<br>Cuenta de servicio: <code>${esc(e.cuenta_servicio)}</code> (el calendario tiene que estar compartido con ese mail).` : ""}</div>`
     : "";
+  if (!e.puede_meet) html += pasosMeet(e);
+  aviso.innerHTML = html;
   const r = $("cal-resync");
   if (r) r.addEventListener("click", (ev) => { ev.preventDefault(); sincronizar(true); });
+}
+
+// Guía para poder generar links de Meet: hace falta conectar la cuenta de Google del estudio.
+function pasosMeet(e) {
+  if (e.oauth_pendiente) {
+    return `<div class="cal-aviso"><b>Último paso para generar links de Meet:</b> conectar la cuenta de Google del estudio.
+      <a class="cal-btn principal chico" href="/api/calendario/google/conectar">Conectar con Google</a>
+      Entrá con <code>${esc(e.calendario || "la cuenta del estudio")}</code>, aceptá el permiso y copiá el token que aparece a Railway
+      (variable <code>GOOGLE_OAUTH_REFRESH_TOKEN</code>). Lo tiene que hacer un administrador.</div>`;
+  }
+  return `<div class="cal-aviso"><b>Para generar links de Meet</b> el panel tiene que usar la cuenta de Google del estudio (la cuenta de servicio no puede). Se hace una sola vez:
+    <ol>
+      <li>En <b>Google Cloud</b> → <i>APIs y servicios</i> → <i>Credenciales</i> → <i>Crear credenciales</i> → <b>ID de cliente de OAuth</b>, tipo <i>Aplicación web</i>.
+        En <i>URI de redireccionamiento autorizados</i> poné: <code>${esc(e.redirect_uri || "")}</code></li>
+      <li>En la <i>Pantalla de consentimiento de OAuth</i>: tipo <i>Externo</i>, agregá el permiso de Calendar y <b>publicá la app («En producción»)</b> para que la conexión no venza a los 7 días. Google va a avisar que la app «no está verificada»: es la nuestra, se acepta.</li>
+      <li>En <b>Railway</b> (servicio del panel): <code>GOOGLE_OAUTH_CLIENT_ID</code> y <code>GOOGLE_OAUTH_CLIENT_SECRET</code>.</li>
+      <li>Volvé acá y tocá <b>Conectar con Google</b>.</li>
+    </ol>
+    Mientras tanto se puede agendar como llamada o presencial. Más detalle en <a href="/ayuda#calendario">Ayuda → Calendario</a>.</div>`;
 }
 
 async function sincronizar(completa = false) {
@@ -156,7 +177,8 @@ function pintar() {
 
 function chipHtml(e) {
   const hora = e.todo_el_dia ? "" : `<span class="cal-hora">${esc(e.hora)}</span>`;
-  return `<button type="button" class="cal-chip ${calClaseEvento(e)}" data-chip="${e.id}" title="${esc(e.titulo)}">${hora}${esc(e.titulo)}</button>`;
+  const icono = e.meet_url ? "🎥 " : e.modalidad === "llamada" ? "📞 " : "";
+  return `<button type="button" class="cal-chip ${calClaseEvento(e)}" data-chip="${e.id}" title="${esc(e.titulo)}">${hora}${icono}${esc(e.titulo)}</button>`;
 }
 
 function pintarMes(porDia) {

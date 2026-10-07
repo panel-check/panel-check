@@ -162,3 +162,16 @@ a.cal-vinculo:hover { border-color: var(--azul); }
   .cal-mas { font-size: 10px; padding: 0 2px; }
   .cal-semana-cab div { padding: 6px 2px; text-align: center; font-size: 10px; }
 }
+
+/* «Cómo es» (Meet / llamada / presencial) y aviso por mail en el formulario */
+.modal-cal .mc-como { border: 0; margin: 12px 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px 14px; }
+.modal-cal .mc-como legend { font-size: 12px; color: var(--gris); padding: 0; margin-bottom: 4px; }
+.modal-cal .mc-como label { display: inline-flex; gap: 6px; align-items: center; font-size: 13px; color: var(--texto); cursor: pointer; }
+.modal-cal .mc-como label.deshabilitado { color: var(--gris); cursor: not-allowed; }
+.modal-cal .mc-aviso { margin-top: 14px; padding: 10px 12px; border: 1px solid var(--borde); border-radius: 8px; background: #f8fafc; }
+.modal-cal .mc-aviso label.check { margin-top: 0; font-weight: 600; }
+.cal-evento-meta a { color: var(--azul); font-weight: 600; }
+.cal-aviso .cal-btn { margin-left: 8px; }
+.cal-aviso ol { margin: 6px 0 8px; padding-left: 20px; }
+.cal-aviso code, .cal-aviso a { overflow-wrap: anywhere; word-break: break-word; }
+.cal-aviso a.cal-btn { display: inline-block; margin-top: 6px; }
