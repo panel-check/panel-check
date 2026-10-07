@@ -91,6 +91,18 @@ def _limpiar(respuesta: str) -> str:
     return t
 
 
+def _detalle_error(r) -> str:
+    """El motivo que informa el proveedor (sin datos sensibles: solo su mensaje de error),
+    para que se pueda diagnosticar desde la pantalla. Vacío si no lo informa."""
+    try:
+        e = r.json().get("error")
+        msg = e.get("message") if isinstance(e, dict) else e
+    except (ValueError, AttributeError, TypeError):
+        return ""
+    msg = " ".join(str(msg or "").split())
+    return f" Detalle del proveedor: «{msg[:300]}»" if msg else ""
+
+
 def mejorar_texto(texto: str) -> dict:
     """Devuelve {"texto": versión mejorada, "advertencias": [...], "modelo": nombre}.
     Levanta ErrorIA con un mensaje claro si no se pudo."""
@@ -116,14 +128,16 @@ def mejorar_texto(texto: str) -> dict:
         raise ErrorIA("La IA tardó demasiado en responder. Probá de nuevo en un momento.")
     except requests.RequestException:
         raise ErrorIA("No se pudo conectar con el servicio de IA. Probá de nuevo en un momento.")
+    detalle = _detalle_error(r)
     if r.status_code == 429:
-        raise ErrorIA("La IA llegó a su límite de uso por ahora. Probá de nuevo en un minuto.")
+        raise ErrorIA("La IA llegó a su límite de uso por ahora. Probá de nuevo en un minuto." + detalle)
     if r.status_code in (401, 403):
-        raise ErrorIA("El servicio de IA rechazó la clave (IA_API_KEY). Hay que revisarla en el servidor.")
+        raise ErrorIA("El servicio de IA rechazó la clave (IA_API_KEY). Hay que revisarla en el servidor." + detalle)
     if r.status_code == 404:
-        raise ErrorIA("El servicio de IA no encontró ese modelo (IA_MODEL) o esa dirección (IA_API_URL).")
+        raise ErrorIA("El servicio de IA no encontró ese modelo (IA_MODEL) o esa dirección (IA_API_URL), "
+                      "o la cuenta no tiene acceso a ese modelo." + detalle)
     if not r.ok:
-        raise ErrorIA(f"El servicio de IA respondió con un error ({r.status_code}).")
+        raise ErrorIA(f"El servicio de IA respondió con un error ({r.status_code})." + detalle)
     try:
         crudo = r.json()["choices"][0]["message"]["content"]
     except (ValueError, KeyError, IndexError, TypeError):
