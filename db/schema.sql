@@ -489,3 +489,13 @@ CREATE TABLE IF NOT EXISTS analisis_marca_opuesta (
     logo_mime      TEXT,
     consultado_en  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- Agregado el 07/10/2026: opción por titular del «Análisis de marca» (PDF con varias marcas):
+-- «es el mismo análisis para todas las marcas». Se recuerda para todo el equipo.
+-- También la crea sola el panel al arrancar.
+CREATE TABLE IF NOT EXISTS analisis_titular_opcion (
+    cuit             TEXT PRIMARY KEY,
+    mismo_analisis   BOOLEAN NOT NULL DEFAULT false,
+    actualizado_por  TEXT,
+    actualizado_en   TIMESTAMPTZ NOT NULL DEFAULT now()
+);

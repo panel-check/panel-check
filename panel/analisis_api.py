@@ -14,6 +14,7 @@ Rutas (todas con sesión):
                                                 se mande, o el guardado)
   GET   /api/analisis-marca/{acta}/logo         el logo de la marca (guardado de INPI), si tiene
   GET   /api/analisis-marca-opuesta/{acta}/logo  el logo de la marca de un oponente (guardado de INPI), si tiene
+  PUT   /api/analisis-marca-lote/mismo-analisis recordar (por titular) «el mismo análisis para todas»
   POST  /api/analisis-marca-lote/estado         de varias marcas: cuáles ya tienen análisis escrito
   POST  /api/analisis-marca-lote/pdf            UN PDF con varias marcas (cada una con su análisis guardado, o
                                                 con un mismo análisis para todas si se manda analisis_comun_de)
@@ -45,6 +46,11 @@ class TextoAnalisis(BaseModel):
 
 class PedidoPdf(BaseModel):
     texto: Optional[str] = None
+
+
+class PedidoMismoAnalisis(BaseModel):
+    acta: str
+    valor: bool = False
 
 
 class PedidoLote(BaseModel):
@@ -239,8 +245,22 @@ def crear_router(verificar_login, conexion) -> APIRouter:
         """De varias marcas, cuáles ya tienen un análisis escrito (para tildarlas solas)."""
         actas = _actas_lote(body.actas)
         with conexion() as conn, rcur(conn) as cur:
-            return {"marcas": am.leer_resumen_lote(cur, actas)}
+            m = am.leer_marca(cur, actas[0])
+            return {"marcas": am.leer_resumen_lote(cur, actas),
+                    # Opción recordada del titular: «el mismo análisis para todas las marcas».
+                    "mismo_analisis": am.leer_mismo_analisis(cur, am.cuit_de(m))}
 
+    @router.put("/api/analisis-marca-lote/mismo-analisis")
+    def guardar_mismo_analisis(body: PedidoMismoAnalisis, usuario: str = Depends(verificar_login)):
+        """Recuerda (para todo el equipo) si el titular de esa marca usa el mismo análisis en todas."""
+        acta = _acta(body.acta)
+        with conexion() as conn, rcur(conn) as cur:
+            cuit = am.cuit_de(_marca(cur, acta))
+            if not cuit:
+                return {"ok": True, "guardado": False}   # sin CUIT no hay a quién asociarla
+            am.guardar_mismo_analisis(cur, cuit, body.valor, usuario)
+            conn.commit()
+        return {"ok": True, "guardado": True}
     @router.post("/api/analisis-marca-lote/pdf")
     def pdf_lote(body: PedidoLote, _: str = Depends(verificar_login)):
         """Un solo PDF con varias marcas: cada una con sus datos, su logo y su análisis
