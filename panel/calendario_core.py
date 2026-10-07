@@ -1189,6 +1189,173 @@ def buscar_marcas(cur, texto: str, limite: int = 12) -> list:
     return out[:limite]
 
 
+# ── Agendar desde un texto pegado (IA) ────────────────────────────────
+# La IA (ia_texto.extraer_agenda) solo EXTRAE datos. Acá se validan uno por uno contra el texto
+# original y contra la base, se arma el título y se calcula qué falta para preguntárselo a la persona.
+# Nada se agenda sin que la persona revise y guarde el formulario.
+_RE_MAIL = re.compile(r"[\w.+'-]+@[\w-]+(?:\.[\w-]+)+")
+_OMITIBLES = ("quien", "email", "telefono", "lugar")   # lo que la persona puede decidir no cargar
+_BASE_TITULO = {"meet": "Meet", "llamada": "Llamada", "presencial": "Reunión", None: "Reunión"}
+
+
+def _str_o_none(v):
+    v = " ".join(str(v).split()) if v is not None else ""
+    return v if v and v.lower() not in ("null", "none", "n/a") else None
+
+
+def _hora_valida(v):
+    m = re.fullmatch(r"(\d{1,2})(?::|\.|h)?(\d{2})?\s*(?:hs?)?", (_str_o_none(v) or "").lower())
+    if not m:
+        return None
+    h, mi = int(m.group(1)), int(m.group(2) or 0)
+    return f"{h:02d}:{mi:02d}" if h < 24 and mi < 60 else None
+
+
+def _fecha_valida(v, texto: str, hoy: _dt.date):
+    """(fecha, ya_paso). Si el texto no trae el año y la fecha quedó atrás, es la del año que viene."""
+    try:
+        d = _dt.date.fromisoformat((_str_o_none(v) or "")[:10])
+    except ValueError:
+        return None, False
+    if d < hoy and str(d.year) not in (texto or ""):
+        try:
+            d = d.replace(year=d.year + 1)
+        except ValueError:
+            return None, False
+    return d, d < hoy
+
+
+def _modalidad_valida(v, texto: str):
+    m = (_str_o_none(v) or "").lower()
+    if m in MODALIDADES:
+        return m
+    t = _buscable(texto)
+    if re.search(r"\bmeet\b|videollamada|google meet", t):
+        return "meet"
+    if re.search(r"\bllamada\b|\btelefon", t):
+        return "llamada"
+    if re.search(r"presencial|en persona", t):
+        return "presencial"
+    return None
+
+
+def _se_parecen(a: str, b: str) -> bool:
+    """¿El nombre de la marca del texto y el de la base comparten alguna palabra (o uno contiene al otro)?"""
+    a, b = _buscable(a), _buscable(b)
+    if not a or not b:
+        return True
+    if a in b or b in a:
+        return True
+    pa = {w for w in re.findall(r"[a-z0-9]+", a) if len(w) >= 3}
+    pb = {w for w in re.findall(r"[a-z0-9]+", b) if len(w) >= 3}
+    return bool(pa & pb)
+
+
+def armar_propuesta(cur, crudo: dict, texto: str, hoy: _dt.date, omitir=()) -> dict:
+    """De lo que devolvió la IA (y el texto original) a una propuesta lista para el formulario.
+    {campos, negocio, faltantes: [{campo, pregunta, omitible, opciones?}], advertencias, marcas}.
+    `omitir`: campos que la persona ya dijo que no quiere cargar (no se vuelven a preguntar)."""
+    omitir = set(omitir or ())
+    crudo = crudo or {}
+    adv, faltan = [], []
+    t_norm = _buscable(texto)
+
+    # Nombre del negocio: solo si realmente está en el texto (la IA puede inventar).
+    negocio = _str_o_none(crudo.get("negocio"))
+    if negocio and _buscable(negocio) not in t_norm:
+        negocio = None
+
+    # Actas: las que el texto nombra; la de la IA solo si sus dígitos están en el texto.
+    actas = extraer_actas(texto)
+    ia_acta = re.sub(r"\D", "", str(crudo.get("acta") or ""))
+    if not actas and re.fullmatch(r"\d{4,9}", ia_acta) and ia_acta in re.sub(r"[.\s]", "", texto):
+        actas = [ia_acta]
+
+    # Mail(es): salen del texto con una expresión regular, no de la IA.
+    mails = list(dict.fromkeys(m.rstrip(".'-") for m in _RE_MAIL.findall(texto)))
+
+    fecha, ya_paso = _fecha_valida(crudo.get("fecha"), texto, hoy)
+    hora = _hora_valida(crudo.get("hora"))
+    modalidad = _modalidad_valida(crudo.get("modalidad"), texto)
+    try:
+        dur = int(crudo.get("duracion_min"))
+        dur = dur if 5 <= dur <= 480 else None
+    except (TypeError, ValueError):
+        dur = None
+    tel = _str_o_none(crudo.get("telefono"))
+    if tel and (len(re.sub(r"\D", "", tel)) < 6 or re.sub(r"\D", "", tel) not in re.sub(r"\D", "", texto)):
+        tel = None
+    lugar = _str_o_none(crudo.get("lugar"))
+    notas = _str_o_none(crudo.get("notas"))
+
+    # Quién es: por acta (se confirma contra la base) o por nombre (se busca).
+    marcas, denominacion, email_base = [], None, None
+    if actas:
+        res = resolver_actas(cur, actas)
+        marcas = [res[a] for a in actas if a in res]
+        for r in marcas:
+            if r["tipo"] == "desconocida":
+                adv.append(f"El acta {r['acta']} no está en la base: se agenda igual y se vincula si después se carga.")
+            else:
+                denominacion = denominacion or r.get("denominacion")
+                email_base = email_base or r.get("email")
+                if negocio and r.get("denominacion") and not _se_parecen(negocio, r["denominacion"]):
+                    adv.append(f"El acta {r['acta']} figura como «{r['denominacion']}», pero el texto dice «{negocio}»: revisá que sea la correcta.")
+    elif negocio:
+        halladas = buscar_marcas(cur, negocio, limite=6)
+        if len(halladas) == 1:
+            h = halladas[0]
+            actas = [h["acta"]]
+            denominacion, email_base = h["denominacion"], h.get("email")
+            marcas = [{**h, "existe": True}]
+            adv.append(f"Vinculé el evento con la acta {h['acta']} ({h['denominacion'] or '—'}, {h['titular'] or h['cliente'] or '—'}): revisá que sea la correcta.")
+        elif len(halladas) > 1 and "quien" not in omitir:
+            faltan.append({"campo": "quien", "omitible": True,
+                           "pregunta": f"Encontré varias marcas parecidas a «{negocio}»: ¿cuál es?",
+                           "opciones": halladas})
+        else:
+            adv.append(f"No encontré «{negocio}» en la base: el evento se agenda sin vincular a ninguna acta.")
+    elif "quien" not in omitir:
+        faltan.append({"campo": "quien", "omitible": True,
+                       "pregunta": "¿De qué marca o negocio es? (el nombre o el número de acta)"})
+
+    # Qué falta (lo importante se pregunta; lo secundario se puede omitir).
+    if fecha is None or ya_paso:
+        faltan.insert(0, {"campo": "fecha", "omitible": False,
+                          "pregunta": (f"La fecha que entendí ({fecha.day}/{fecha.month}/{fecha.year}) ya pasó. ¿Qué día es?"
+                                       if fecha else "¿Qué día es?")})
+        if ya_paso:
+            fecha = None
+    if hora is None:
+        faltan.append({"campo": "hora", "omitible": False, "pregunta": "¿A qué hora es?"})
+    if modalidad is None:
+        faltan.append({"campo": "modalidad", "omitible": False,
+                       "pregunta": "¿Cómo es: videollamada de Meet, llamada o presencial?"})
+    mail_final = ", ".join(mails) or email_base
+    if not mail_final and "email" not in omitir:
+        faltan.append({"campo": "email", "omitible": True,
+                       "pregunta": "¿A qué mail le aviso a la persona? (si no tiene, omitilo y el aviso va solo al equipo)"})
+    if modalidad == "llamada" and not tel and "telefono" not in omitir:
+        faltan.append({"campo": "telefono", "omitible": True, "pregunta": "¿A qué teléfono se llama?"})
+    if modalidad == "presencial" and not lugar and "lugar" not in omitir:
+        faltan.append({"campo": "lugar", "omitible": True, "pregunta": "¿Dónde es? (lugar o dirección)"})
+
+    if fecha and fecha.weekday() >= 5:
+        adv.append(f"El {fecha.day} de {MESES[fecha.month - 1]} cae {DIAS_SEMANA[fecha.weekday()]}: revisá que la fecha esté bien.")
+
+    nombre = negocio or denominacion
+    titulo = _BASE_TITULO.get(modalidad, "Reunión") + (f" ({nombre})" if nombre else "")
+    return {
+        "campos": {
+            "titulo": titulo, "fecha": fecha.isoformat() if fecha else None, "hora": hora, "duracion_min": dur,
+            "modalidad": modalidad, "email": mail_final,
+            "lugar": (tel if modalidad == "llamada" else lugar if modalidad == "presencial" else None),
+            "actas": actas, "notas": notas,
+        },
+        "negocio": negocio, "marcas": marcas, "faltantes": faltan, "advertencias": adv,
+    }
+
+
 def _con_vinculos(cur, eventos: list) -> list:
     todas = [a for e in eventos for a in e["actas"]]
     info = resolver_actas(cur, todas)

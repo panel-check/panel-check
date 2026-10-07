@@ -811,5 +811,189 @@ class BuscadorDeMarcas(unittest.TestCase):
         self.assertEqual(len(cc.buscar_marcas(cur, "marca", limite=12)), 12)
 
 
+class AgendarConIA(unittest.TestCase):
+    """armar_propuesta: lo que devuelve la IA se valida contra el texto y la base; lo que falta se pregunta."""
+
+    HOY = dt.date(2026, 10, 7)   # miércoles
+    TEXTO = "BUGGY'S CALIDAD Y SABOR, acta 4688297  18 de octubre 9am todosobret@gmail.com  GOOGLE MEET"
+    CRUDO = {"negocio": "BUGGY'S CALIDAD Y SABOR", "acta": "4688297", "fecha": "2026-10-18", "hora": "09:00",
+             "duracion_min": None, "modalidad": "meet", "email": "todosobret@gmail.com", "telefono": None,
+             "lugar": None, "notas": None}
+
+    def setUp(self):
+        self.base = {"4688297": {"acta": "4688297", "existe": True, "denominacion": "BUGGYS", "titular": "SOBRET SA",
+                                 "clave": None, "cliente_id": None, "cliente": None, "tipo": "lead", "email": "base@x.com"}}
+        self.busqueda = []
+        self._r, self._b = cc.resolver_actas, cc.buscar_marcas
+        cc.resolver_actas = lambda cur, actas: {a: self.base.get(a, {"acta": a, "existe": False, "denominacion": None,
+                                                                      "titular": None, "tipo": "desconocida", "email": None})
+                                                for a in actas}
+        cc.buscar_marcas = lambda cur, texto, limite=12: self.busqueda
+
+    def tearDown(self):
+        cc.resolver_actas, cc.buscar_marcas = self._r, self._b
+
+    def armar(self, crudo=None, texto=None, omitir=()):
+        return cc.armar_propuesta(None, self.CRUDO if crudo is None else crudo, texto or self.TEXTO, self.HOY, omitir)
+
+    def test_el_ejemplo_completo_no_pregunta_nada(self):
+        p = self.armar()
+        c = p["campos"]
+        self.assertEqual(p["faltantes"], [])
+        self.assertEqual((c["fecha"], c["hora"], c["modalidad"], c["actas"]), ("2026-10-18", "09:00", "meet", ["4688297"]))
+        self.assertEqual(c["email"], "todosobret@gmail.com")   # el del texto, no el de la base
+        self.assertEqual(c["titulo"], "Meet (BUGGY'S CALIDAD Y SABOR)")
+        self.assertIsNone(c["lugar"])
+
+    def test_el_domingo_se_avisa(self):
+        self.assertTrue(any("domingo" in a for a in self.armar()["advertencias"]))
+
+    def test_falta_la_hora_y_la_modalidad(self):
+        p = self.armar({**self.CRUDO, "negocio": "Pérez", "hora": None, "modalidad": None}, "Pérez acta 4688297 el 18 de octubre a@b.com")
+        self.assertEqual([f["campo"] for f in p["faltantes"]], ["hora", "modalidad"])
+        self.assertFalse(any(f["omitible"] for f in p["faltantes"]))
+        self.assertEqual(p["campos"]["titulo"], "Reunión (Pérez)")
+
+    def test_sin_fecha_pregunta_primero_la_fecha(self):
+        p = self.armar({**self.CRUDO, "fecha": None})
+        self.assertEqual(p["faltantes"][0]["campo"], "fecha")
+
+    def test_fecha_pasada_se_pasa_al_anio_que_viene_si_el_texto_no_trae_anio(self):
+        p = self.armar({**self.CRUDO, "fecha": "2026-03-18"})
+        self.assertEqual(p["campos"]["fecha"], "2027-03-18")
+
+    def test_fecha_pasada_con_anio_en_el_texto_se_pregunta(self):
+        p = self.armar({**self.CRUDO, "fecha": "2026-03-18"}, self.TEXTO + " 2026")
+        self.assertIsNone(p["campos"]["fecha"])
+        self.assertIn("ya pasó", p["faltantes"][0]["pregunta"])
+
+    def test_el_mail_sale_del_texto_y_no_de_lo_que_diga_la_ia(self):
+        p = self.armar({**self.CRUDO, "email": "inventado@x.com"})
+        self.assertEqual(p["campos"]["email"], "todosobret@gmail.com")
+
+    def test_sin_mail_en_el_texto_usa_el_de_la_base_y_si_no_hay_lo_pregunta(self):
+        texto = "BUGGY'S acta 4688297 18 de octubre 9am Meet"
+        self.assertEqual(self.armar(texto=texto)["campos"]["email"], "base@x.com")
+        self.base["4688297"]["email"] = None
+        f = self.armar(texto=texto)["faltantes"]
+        self.assertEqual([x["campo"] for x in f], ["email"])
+        self.assertTrue(f[0]["omitible"])
+        self.assertEqual(self.armar(texto=texto, omitir=["email"])["faltantes"], [])
+
+    def test_un_negocio_que_la_ia_inventa_se_descarta(self):
+        p = self.armar({**self.CRUDO, "negocio": "OTRA COSA"})
+        self.assertIsNone(p["negocio"])
+        self.assertEqual(p["campos"]["titulo"], "Meet (BUGGYS)")   # el de la base
+
+    def test_acta_que_no_corresponde_al_nombre_avisa(self):
+        self.base["4688297"]["denominacion"] = "LUNA"
+        self.assertTrue(any("figura como «LUNA»" in a for a in self.armar()["advertencias"]))
+
+    def test_acta_desconocida_avisa_y_no_frena(self):
+        p = self.armar(texto=self.TEXTO.replace("4688297", "4999999"), crudo={**self.CRUDO, "acta": "4999999"})
+        self.assertEqual(p["faltantes"], [])
+        self.assertTrue(any("no está en la base" in a for a in p["advertencias"]))
+
+    def test_sin_acta_busca_por_nombre(self):
+        texto = "BUGGY'S CALIDAD Y SABOR 18 de octubre 9am a@b.com Meet"
+        h = {"acta": "4688297", "denominacion": "BUGGYS", "titular": "SOBRET SA", "cliente": None, "email": None, "tipo": "lead", "clase": 30}
+        self.busqueda = [h]
+        p = self.armar(texto=texto)
+        self.assertEqual(p["campos"]["actas"], ["4688297"])
+        self.assertTrue(any("Vinculé" in a for a in p["advertencias"]))
+        self.busqueda = [h, {**h, "acta": "4688298"}]
+        p = self.armar(texto=texto)
+        self.assertEqual(p["campos"]["actas"], [])
+        self.assertEqual(p["faltantes"][0]["campo"], "quien")
+        self.assertEqual(len(p["faltantes"][0]["opciones"]), 2)
+        self.busqueda = []
+        p = self.armar(texto=texto)
+        self.assertEqual(p["faltantes"], [])
+        self.assertTrue(any("No encontré" in a for a in p["advertencias"]))
+
+    def test_sin_acta_ni_nombre_se_pregunta_quien_y_se_puede_omitir(self):
+        crudo = {**self.CRUDO, "negocio": None, "acta": None}
+        texto = "mañana 9am a@b.com Meet"
+        self.assertEqual([f["campo"] for f in self.armar(crudo, texto)["faltantes"]], ["quien"])
+        self.assertEqual(self.armar(crudo, texto, omitir=["quien"])["faltantes"], [])
+
+    def test_llamada_pide_telefono_y_presencial_pide_lugar(self):
+        t = "Pérez acta 4688297 el 18 de octubre 9am a@b.com"
+        p = self.armar({**self.CRUDO, "modalidad": "llamada"}, t)
+        self.assertEqual([f["campo"] for f in p["faltantes"]], ["telefono"])
+        p = self.armar({**self.CRUDO, "negocio": "Pérez", "modalidad": "llamada", "telefono": "11 5555-1234"}, t + " 11 5555-1234")
+        self.assertEqual(p["faltantes"], [])
+        self.assertEqual((p["campos"]["lugar"], p["campos"]["titulo"]), ("11 5555-1234", "Llamada (Pérez)"))
+        p = self.armar({**self.CRUDO, "modalidad": "presencial"}, t)
+        self.assertEqual([f["campo"] for f in p["faltantes"]], ["lugar"])
+
+    def test_telefono_inventado_se_descarta(self):
+        p = self.armar({**self.CRUDO, "modalidad": "llamada", "telefono": "11 9999-0000"})
+        self.assertIsNone(p["campos"]["lugar"])
+        self.assertEqual([f["campo"] for f in p["faltantes"]], ["telefono"])
+
+    def test_modalidad_por_palabras_si_la_ia_no_la_trae(self):
+        self.assertEqual(self.armar({**self.CRUDO, "modalidad": None})["campos"]["modalidad"], "meet")
+        self.assertEqual(self.armar({**self.CRUDO, "modalidad": "zoom"}, "x acta 4688297 llamada")["campos"]["modalidad"], "llamada")
+
+    def test_horas_en_distintos_formatos_y_basura(self):
+        for entrada, salida in (("9", "09:00"), ("9:30", "09:30"), ("15.45", "15:45"), ("09:00", "09:00"), ("25:00", None), ("tarde", None), (None, None)):
+            self.assertEqual(cc._hora_valida(entrada), salida, entrada)
+
+    def test_duracion_fuera_de_rango_se_ignora(self):
+        self.assertEqual(self.armar({**self.CRUDO, "duracion_min": 45})["campos"]["duracion_min"], 45)
+        self.assertIsNone(self.armar({**self.CRUDO, "duracion_min": 9999})["campos"]["duracion_min"])
+        self.assertIsNone(self.armar({**self.CRUDO, "duracion_min": "x"})["campos"]["duracion_min"])
+
+    def test_crudo_vacio_no_rompe(self):
+        p = self.armar({}, "algo de texto sin datos")
+        self.assertEqual([f["campo"] for f in p["faltantes"]], ["fecha", "quien", "hora", "modalidad", "email"])
+        self.assertEqual(p["campos"]["titulo"], "Reunión")
+
+
+class ExtraerAgendaConIA(unittest.TestCase):
+    def setUp(self):
+        import ia_texto
+        self.ia = ia_texto
+        self._p = ia_texto._pedir
+        self.mensajes = None
+
+    def tearDown(self):
+        self.ia._pedir = self._p
+
+    def pedir(self, respuesta):
+        def falso(mensajes, temperatura=0.2):
+            self.mensajes = (mensajes, temperatura)
+            return respuesta
+        self.ia._pedir = falso
+
+    def test_json_con_texto_alrededor_y_bloque_de_codigo(self):
+        self.pedir('Acá está:\n```json\n{"fecha": "2026-10-18", "hora": "09:00"}\n```')
+        self.assertEqual(self.ia.extraer_agenda("texto largo de prueba", "2026-10-07", "miércoles")["hora"], "09:00")
+
+    def test_la_fecha_de_hoy_viaja_en_el_prompt_y_la_temperatura_es_cero(self):
+        self.pedir("{}")
+        self.ia.extraer_agenda("texto largo de prueba", "2026-10-07", "miércoles")
+        mensajes, temp = self.mensajes
+        self.assertIn("2026-10-07 (miércoles)", mensajes[0]["content"])
+        self.assertEqual(mensajes[1]["content"], "texto largo de prueba")
+        self.assertEqual(temp, 0)
+
+    def test_respuesta_que_no_es_json_es_un_error_claro(self):
+        self.pedir("no sé")
+        with self.assertRaises(self.ia.ErrorIA):
+            self.ia.extraer_agenda("texto largo de prueba", "2026-10-07", "miércoles")
+
+    def test_texto_muy_corto(self):
+        with self.assertRaises(self.ia.ErrorIA):
+            self.ia.extraer_agenda("hola", "2026-10-07", "miércoles")
+
+    def test_sin_clave_no_llama_al_proveedor(self):
+        self.ia._pedir = self._p
+        os.environ.pop("IA_API_KEY", None)
+        with self.assertRaises(self.ia.ErrorIA):
+            self.ia.extraer_agenda("texto largo de prueba", "2026-10-07", "miércoles")
+
+
 if __name__ == "__main__":
     unittest.main()

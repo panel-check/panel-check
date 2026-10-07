@@ -14,7 +14,8 @@ variables de entorno, sin tocar el código:
                código abierto, servido por Groq)
 
 Qué se manda: SOLO el texto que escribió el equipo en el cuadro de análisis (nada
-de CUIT, titular ni datos de contacto). Qué NO hace: no guarda nada ni cambia el
+de CUIT, titular ni datos de contacto). Para «Agendar con IA» (calendario) se manda
+únicamente el texto que la persona pega en ese cuadro. Qué NO hace: no guarda nada ni cambia el
 texto por su cuenta; devuelve una propuesta que la persona acepta o descarta.
 
 Guardas: se avisa si en la versión mejorada falta algún número del original
@@ -22,6 +23,7 @@ Guardas: se avisa si en la versión mejorada falta algún número del original
 comerse un dato sin darse cuenta.
 """
 
+import json
 import os
 import re
 
@@ -103,25 +105,17 @@ def _detalle_error(r) -> str:
     return f" Detalle del proveedor: «{msg[:300]}»" if msg else ""
 
 
-def mejorar_texto(texto: str) -> dict:
-    """Devuelve {"texto": versión mejorada, "advertencias": [...], "modelo": nombre}.
+def _pedir(mensajes: list, temperatura: float = 0.2) -> str:
+    """Una consulta al proveedor (formato «chat completions»). Devuelve el texto crudo de la respuesta.
     Levanta ErrorIA con un mensaje claro si no se pudo."""
     if not configurada():
         raise ErrorIA("La IA no está configurada: falta la variable IA_API_KEY en el servidor del panel.")
-    texto = (texto or "").replace("\r\n", "\n").strip()
-    if len(texto) < LARGO_MIN:
-        raise ErrorIA("Escribí un poco más de texto para poder mejorarlo.")
     url, modelo, clave = _config()
     try:
         r = requests.post(
             f"{url}/chat/completions",
             headers={"Authorization": f"Bearer {clave}", "Content-Type": "application/json"},
-            json={
-                "model": modelo,
-                "temperature": 0.2,
-                "messages": [{"role": "system", "content": PROMPT_SISTEMA},
-                             {"role": "user", "content": texto}],
-            },
+            json={"model": modelo, "temperature": temperatura, "messages": mensajes},
             timeout=TIMEOUT,
         )
     except requests.Timeout:
@@ -139,10 +133,81 @@ def mejorar_texto(texto: str) -> dict:
     if not r.ok:
         raise ErrorIA(f"El servicio de IA respondió con un error ({r.status_code})." + detalle)
     try:
-        crudo = r.json()["choices"][0]["message"]["content"]
+        return r.json()["choices"][0]["message"]["content"]
     except (ValueError, KeyError, IndexError, TypeError):
         raise ErrorIA("El servicio de IA devolvió una respuesta que no se entiende.")
+
+
+def mejorar_texto(texto: str) -> dict:
+    """Devuelve {"texto": versión mejorada, "advertencias": [...], "modelo": nombre}.
+    Levanta ErrorIA con un mensaje claro si no se pudo."""
+    if not configurada():
+        raise ErrorIA("La IA no está configurada: falta la variable IA_API_KEY en el servidor del panel.")
+    texto = (texto or "").replace("\r\n", "\n").strip()
+    if len(texto) < LARGO_MIN:
+        raise ErrorIA("Escribí un poco más de texto para poder mejorarlo.")
+    crudo = _pedir([{"role": "system", "content": PROMPT_SISTEMA}, {"role": "user", "content": texto}])
     mejorado = _limpiar(crudo)
     if not mejorado:
         raise ErrorIA("La IA no devolvió ningún texto. Probá de nuevo.")
-    return {"texto": mejorado, "advertencias": advertencias(texto, mejorado), "modelo": modelo}
+    return {"texto": mejorado, "advertencias": advertencias(texto, mejorado), "modelo": _config()[1]}
+
+
+# ── Agendar desde un texto pegado ────────────────────────────────────
+# La IA solo EXTRAE datos del texto (no decide nada ni agenda): el panel valida cada dato
+# (calendario_core.armar_propuesta) y la persona confirma en el formulario.
+PROMPT_AGENDA = (
+    "Sos un asistente de un estudio de propiedad industrial de Argentina. Te paso un texto pegado por el equipo "
+    "con los datos de una reunión, llamada o videollamada para agendar. Extraé los datos y devolvé SOLO un objeto "
+    "JSON (sin explicaciones, sin comillas de bloque de código) con exactamente estas claves:\n"
+    '{"negocio": string|null, "acta": string|null, "fecha": "AAAA-MM-DD"|null, "hora": "HH:MM"|null, '
+    '"duracion_min": number|null, "modalidad": "meet"|"llamada"|"presencial"|null, "email": string|null, '
+    '"telefono": string|null, "lugar": string|null, "notas": string|null}\n'
+    "Reglas estrictas:\n"
+    "1. Si un dato NO está en el texto, poné null. No inventes ni supongas nada: es preferible null a adivinar.\n"
+    "2. «negocio»: el nombre de la marca o negocio tal como está escrito (con sus mayúsculas y símbolos).\n"
+    "3. «acta»: solo los dígitos del número de acta.\n"
+    "4. «fecha»: la fecha ya resuelta en formato AAAA-MM-DD. Hoy es {hoy} ({dia}). Si el texto no dice el año, "
+    "usá la próxima vez que llegue esa fecha (nunca una fecha pasada). Para «mañana», «el viernes», «el lunes que "
+    "viene», etc., calculala desde hoy. Si el texto no dice ninguna fecha, null.\n"
+    "5. «hora»: formato 24 horas HH:MM, hora de Argentina (9am = 09:00, 3 de la tarde = 15:00). Si no hay hora, null. "
+    "Si dice «a la mañana» o «a la tarde» sin hora exacta, null.\n"
+    "6. «modalidad»: «meet» si menciona Meet, Google Meet, videollamada o Zoom; «llamada» si es llamada o teléfono; "
+    "«presencial» si es en persona o en un lugar. Si no lo dice, null.\n"
+    "7. «duracion_min»: solo si el texto dice cuánto dura, en minutos; si no, null.\n"
+    "8. «email»: el mail de la persona tal cual está escrito (si hay más de uno, separalos con coma). «telefono»: "
+    "el teléfono tal cual. «lugar»: el lugar o la dirección si es presencial.\n"
+    "9. «notas»: SOLO si hay algo más que el equipo deba tener presente (por ejemplo «traer DNI»), copiado casi "
+    "textual y corto; si no, null. No repitas los datos de arriba.\n"
+    "10. Las respuestas del equipo a preguntas anteriores aparecen al final del texto; usalas como parte del texto."
+)
+
+
+def _json_de(crudo: str):
+    """El primer objeto JSON de la respuesta (algunos modelos agregan texto o bloques ```)."""
+    t = _limpiar(crudo)
+    i, j = t.find("{"), t.rfind("}")
+    if i < 0 or j <= i:
+        return None
+    try:
+        d = json.loads(t[i:j + 1])
+    except ValueError:
+        return None
+    return d if isinstance(d, dict) else None
+
+
+def extraer_agenda(texto: str, hoy: str, dia: str) -> dict:
+    """Pide a la IA los datos de agenda del texto. Devuelve el diccionario crudo (sin validar).
+    Levanta ErrorIA si no se pudo."""
+    texto = (texto or "").replace("\r\n", "\n").strip()
+    if len(texto) < 8:
+        raise ErrorIA("Pegá o escribí un poco más de texto con los datos de la reunión.")
+    crudo = _pedir(
+        [{"role": "system", "content": PROMPT_AGENDA.replace("{hoy}", hoy).replace("{dia}", dia)},
+         {"role": "user", "content": texto}],
+        temperatura=0,
+    )
+    datos = _json_de(crudo)
+    if datos is None:
+        raise ErrorIA("La IA no devolvió datos que se entiendan. Probá de nuevo o completá el formulario a mano.")
+    return datos

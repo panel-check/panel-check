@@ -11,6 +11,7 @@ Rutas:
   GET    /api/calendario/por-actas?actas=a,b  eventos que nombran esas actas (ficha del titular)
   GET    /api/calendario/actas?actas=a,b      de quién es cada acta (vista previa del formulario)
   GET    /api/calendario/buscar?q=texto       búsqueda en vivo de marcas por nombre, titular, cliente o acta
+  POST   /api/calendario/interpretar          «Agendar con IA»: texto pegado → propuesta para el formulario + preguntas (no crea nada)
   POST   /api/calendario/eventos              crear (en Google y en el panel); con modalidad «meet» genera el link;
                                               con avisar=true manda el mail a la persona y la copia al equipo
   PUT    /api/calendario/eventos/{id}         editar (con avisar=true, manda el aviso de cambio)
@@ -34,6 +35,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import BaseModel
 
 import calendario_core as cal
+import ia_texto
 
 # Un mes con semanas completas a los costados cabe de sobra en 70 días; el tope evita
 # que un pedido a mano traiga años de eventos de una vez.
@@ -53,6 +55,11 @@ class EventoEntrada(BaseModel):
     modalidad: Optional[str] = None      # «meet» | «llamada» | «presencial»
     avisar: Optional[bool] = False       # mandar el mail de aviso (a la persona, si hay mail, y la copia al equipo)
     email_aviso: Optional[str] = None    # a quién se le avisa (uno o varios separados por coma)
+
+
+class TextoAgenda(BaseModel):
+    texto: str
+    omitir: Optional[List[str]] = None   # campos que la persona decidió no cargar (no se vuelven a preguntar)
 
 
 def _fecha(valor: str, nombre: str) -> _dt.date:
@@ -97,6 +104,7 @@ def crear_router(verificar_login, conexion, verificar_admin=None) -> APIRouter:
                 try:
                     datos = cal.estado(cur)
                     datos["redirect_uri"] = _redirect_uri(request)
+                    datos["ia_disponible"] = ia_texto.configurada()
                     return datos
                 except Exception:
                     conn.rollback()
@@ -106,7 +114,8 @@ def crear_router(verificar_login, conexion, verificar_admin=None) -> APIRouter:
                             "oauth_conectado": cal.oauth_completo(), "oauth_pendiente": cal.oauth_pendiente(),
                             "aviso_equipo": cal.mail_equipo(), "ultimo_ok_en": None,
                             "ultimo_error": None, "sondeo_segundos": cal.SONDEO_SEGUNDOS,
-                            "redirect_uri": _redirect_uri(request)}
+                            "redirect_uri": _redirect_uri(request),
+                            "ia_disponible": ia_texto.configurada()}
 
     @router.post("/api/calendario/sincronizar")
     def sincronizar(completa: bool = False, _: str = Depends(verificar_login)):
@@ -145,6 +154,27 @@ def crear_router(verificar_login, conexion, verificar_admin=None) -> APIRouter:
         with conexion() as conn:
             with rcur(conn) as cur:
                 return {"resultados": cal.buscar_marcas(cur, q)}
+
+    @router.post("/api/calendario/interpretar")
+    def interpretar(datos: TextoAgenda, _: str = Depends(verificar_login)):
+        """Agendar con IA: de un texto pegado a una propuesta para el formulario, con lo que falta
+        preguntar. NO crea nada: la persona revisa y guarda el formulario."""
+        texto = (datos.texto or "").strip()
+        if len(texto) < 8:
+            raise HTTPException(status_code=400, detail="Pegá o escribí un poco más de texto con los datos de la reunión.")
+        if len(texto) > 4000:
+            raise HTTPException(status_code=400, detail="El texto es demasiado largo (máximo 4000 caracteres).")
+        if not ia_texto.configurada():
+            # 424 (y no 502/503) para que ningún proxy reemplace el mensaje por su página de error.
+            raise HTTPException(status_code=424, detail="La IA no está configurada en el servidor (falta IA_API_KEY).")
+        hoy = _dt.datetime.now(cal.TZ).date()
+        try:
+            crudo = ia_texto.extraer_agenda(texto, hoy.isoformat(), cal.DIAS_SEMANA[hoy.weekday()])
+        except ia_texto.ErrorIA as e:
+            raise HTTPException(status_code=424, detail=str(e))
+        with conexion() as conn:
+            with rcur(conn) as cur:
+                return cal.armar_propuesta(cur, crudo, texto, hoy, datos.omitir or [])
 
     def _evento_por_id(evento_id: int) -> dict:
         with conexion() as conn:

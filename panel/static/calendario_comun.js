@@ -157,6 +157,19 @@ function _calAsegurarModal() {
     <div class="modal-caja modal-cal" onclick="event.stopPropagation()">
       <button type="button" class="modal-cerrar" id="mc-x" aria-label="Cerrar">&times;</button>
       <h3 id="mc-titulo-modal">Nuevo evento</h3>
+      <div class="mc-ia" id="mc-ia" hidden>
+        <button type="button" class="cal-btn chico" id="mc-ia-abrir">✨ Completar con IA</button>
+        <div id="mc-ia-caja" hidden>
+          <label class="campo" for="mc-ia-texto">Pegá el texto con los datos (negocio o acta, fecha, hora, mail, Meet o llamada…)</label>
+          <textarea id="mc-ia-texto" rows="4" maxlength="4000" placeholder="Ej: BUGGY'S CALIDAD Y SABOR, acta 4688297, 18 de octubre 9am, todosobret@gmail.com, Google Meet"></textarea>
+          <div class="mc-ia-acciones">
+            <button type="button" class="cal-btn principal chico" id="mc-ia-ir">Completar el formulario</button>
+            <span class="mc-ia-estado" id="mc-ia-estado" role="status"></span>
+          </div>
+          <div id="mc-ia-resultado"></div>
+        </div>
+        <p class="mc-ayuda" id="mc-ia-apagada" hidden>«Completar con IA» no está activo: falta cargar IA_API_KEY en Railway.</p>
+      </div>
       <form id="mc-form" autocomplete="off">
         <label class="campo">Título
           <input type="text" id="mc-titulo" maxlength="200" placeholder="Ej: Reunión con Pérez" required />
@@ -223,6 +236,13 @@ function _calAsegurarModal() {
     if (!h.value || h.value < document.getElementById("mc-fecha").value) h.value = document.getElementById("mc-fecha").value;
   });
   document.getElementById("mc-form").addEventListener("submit", _calGuardar);
+  document.getElementById("mc-titulo").addEventListener("input", (ev) => { delete ev.target.dataset.ia; });
+  document.getElementById("mc-ia-abrir").addEventListener("click", () => {
+    const caja = document.getElementById("mc-ia-caja");
+    caja.hidden = !caja.hidden;
+    if (!caja.hidden) document.getElementById("mc-ia-texto").focus();
+  });
+  document.getElementById("mc-ia-ir").addEventListener("click", () => _calIAInterpretar());
   _calEnlazarBuscador();
   document.getElementById("mc-borrar").addEventListener("click", () => {
     const ctx = _calModalCtx;
@@ -236,6 +256,150 @@ function _calAsegurarModal() {
     clearTimeout(temporizador);
     temporizador = setTimeout(_calVistaPreviaActas, 350);
   });
+}
+
+// ── Completar con IA: de un texto pegado al formulario (con preguntas por lo que falta) ──
+// La IA solo propone: nada se agenda hasta que la persona revisa y toca Guardar.
+let _calIAOmitir = [];
+
+function _calIAReiniciar(permitido, embebido) {
+  const $ = (id) => document.getElementById(id);
+  _calIAOmitir = [];
+  $("mc-ia").hidden = !permitido;
+  $("mc-ia-texto").value = "";
+  $("mc-ia-resultado").innerHTML = "";
+  $("mc-ia-estado").textContent = "";
+  const disponible = !!(_calEstado && _calEstado.ia_disponible);
+  $("mc-ia-abrir").hidden = !disponible;
+  $("mc-ia-apagada").hidden = disponible;
+  $("mc-ia-caja").hidden = !(disponible && embebido);   // en /agendar-llamada arranca abierto
+}
+
+function _calDuracion(min) {
+  const sel = document.getElementById("mc-dur");
+  if (![...sel.options].some(o => +o.value === min)) {
+    const o = document.createElement("option");
+    o.value = min; o.dataset.extra = "1";
+    o.textContent = min % 60 === 0 ? `${min / 60} h` : min > 60 ? `${Math.floor(min / 60)} h ${min % 60} min` : `${min} min`;
+    sel.appendChild(o);
+  }
+  sel.value = String(min);
+}
+
+function _calIAAplicar(prop) {
+  const $ = (id) => document.getElementById(id);
+  const c = prop.campos || {};
+  const avisos = [];
+  if (c.titulo && (!$("mc-titulo").value.trim() || $("mc-titulo").dataset.ia)) {
+    $("mc-titulo").value = c.titulo;
+    $("mc-titulo").dataset.ia = "1";
+  }
+  if (c.fecha) { $("mc-fecha").value = c.fecha; $("mc-hasta").value = c.fecha; }
+  if (c.hora) { $("mc-todo").checked = false; $("mc-hora").value = c.hora; _calPintarTodoElDia(); }
+  if (c.duracion_min) _calDuracion(c.duracion_min);
+  if (c.modalidad) {
+    const radio = document.querySelector(`input[name="mc-mod"][value="${c.modalidad}"]`);
+    if (radio && !radio.disabled) { radio.checked = true; _calPintarModalidad(); }
+    else avisos.push("Meet no está conectado con la cuenta de Google del estudio: elegí «Llamada» o «Presencial», o conectá Meet en Calendario.");
+  }
+  if (c.lugar) $("mc-lugar").value = c.lugar;
+  if ((c.actas || []).length) {
+    $("mc-actas").value = c.actas.join(", ");
+    _calPintarChipsMarcas();
+    _calVistaPreviaActas();
+  }
+  if (c.email) {
+    $("mc-email").value = c.email;
+    $("mc-avisar").checked = true;
+    _calPintarAviso();
+  }
+  if (c.notas && !$("mc-notas").value.trim()) $("mc-notas").value = c.notas;
+  return avisos;
+}
+
+function _calIAPintar(prop, avisosExtra) {
+  const $ = (id) => document.getElementById(id);
+  const esc = _escapeHtml;
+  const avisos = [...(prop.advertencias || []), ...avisosExtra];
+  const faltan = prop.faltantes || [];
+  let h = "";
+  if (avisos.length) h += `<ul class="mc-ia-avisos">${avisos.map(a => `<li>⚠ ${esc(a)}</li>`).join("")}</ul>`;
+  if (!faltan.length) {
+    h += `<p class="mc-ia-ok">✔ Listo: revisá los datos del formulario y tocá <b>Guardar</b>.</p>`;
+  } else {
+    h += `<div class="mc-ia-preguntas"><p class="mc-ia-titulo">Para completar el formulario necesito saber:</p>`;
+    faltan.forEach((f, i) => {
+      h += `<div class="mc-ia-pregunta" data-campo="${esc(f.campo)}" data-pregunta="${esc(f.pregunta)}"><span>${esc(f.pregunta)}</span>`;
+      if (f.opciones && f.opciones.length) {
+        h += `<div class="mc-ia-opciones">${f.opciones.map(o =>
+          `<button type="button" class="cal-btn chico" data-acta="${esc(o.acta)}">${esc(o.acta)} · ${esc(o.denominacion || "—")}${o.titular ? " — " + esc(o.titular) : ""}${o.tipo === "cliente" ? " (cliente)" : ""}</button>`).join("")}</div>`;
+      } else {
+        h += `<input type="text" class="mc-ia-resp" id="mc-ia-resp-${i}" maxlength="300" autocomplete="off" aria-label="${esc(f.pregunta)}" />`;
+      }
+      if (f.omitible) h += ` <button type="button" class="cal-btn chico mc-ia-omitir">Omitir</button>`;
+      h += `</div>`;
+    });
+    if (faltan.some(f => !(f.opciones && f.opciones.length))) h += `<button type="button" class="cal-btn principal chico" id="mc-ia-responder">Responder</button>`;
+    h += `</div>`;
+  }
+  const caja = $("mc-ia-resultado");
+  caja.innerHTML = h;
+  caja.querySelectorAll(".mc-ia-omitir").forEach(b => b.addEventListener("click", () => {
+    const campo = b.closest(".mc-ia-pregunta").dataset.campo;
+    if (!_calIAOmitir.includes(campo)) _calIAOmitir.push(campo);
+    _calIAInterpretar();
+  }));
+  caja.querySelectorAll(".mc-ia-opciones button").forEach(b => b.addEventListener("click", () => {
+    _calIAAgregarAlTexto(`Acta ${b.dataset.acta}`);
+    _calIAInterpretar();
+  }));
+  caja.querySelectorAll(".mc-ia-resp").forEach(inp => inp.addEventListener("keydown", (ev) => {
+    if (ev.key === "Enter") { ev.preventDefault(); _calIAResponder(); }
+  }));
+  const resp = $("mc-ia-responder");
+  if (resp) resp.addEventListener("click", _calIAResponder);
+  const primero = caja.querySelector(".mc-ia-resp");
+  if (primero) primero.focus();
+}
+
+function _calIAAgregarAlTexto(linea) {
+  const t = document.getElementById("mc-ia-texto");
+  t.value = (t.value.trimEnd() + "\n" + linea).trim();
+}
+
+function _calIAResponder() {
+  let alguna = false;
+  document.querySelectorAll("#mc-ia-resultado .mc-ia-pregunta").forEach(q => {
+    const inp = q.querySelector(".mc-ia-resp");
+    const v = inp ? inp.value.trim() : "";
+    if (v) { _calIAAgregarAlTexto(`${q.dataset.pregunta} ${v}`); alguna = true; }
+  });
+  if (!alguna) {
+    document.getElementById("mc-ia-estado").textContent = "Escribí al menos una respuesta, o tocá «Omitir».";
+    return;
+  }
+  _calIAInterpretar();
+}
+
+async function _calIAInterpretar() {
+  const $ = (id) => document.getElementById(id);
+  const texto = $("mc-ia-texto").value.trim();
+  const estado = $("mc-ia-estado");
+  if (texto.length < 8) { estado.textContent = "Pegá o escribí el texto con los datos."; return; }
+  const boton = $("mc-ia-ir");
+  boton.disabled = true;
+  estado.textContent = "Leyendo el texto…";
+  try {
+    const prop = await apiJson("/api/calendario/interpretar", "POST", { texto, omitir: _calIAOmitir });
+    estado.textContent = "";
+    const extra = _calIAAplicar(prop);
+    _calIAPintar(prop, extra);
+  } catch (e) {
+    estado.textContent = "";
+    $("mc-ia-resultado").innerHTML = `<p class="mc-error">${_escapeHtml(e.message)}</p>`;
+  } finally {
+    boton.disabled = false;
+  }
 }
 
 function calCerrarModal() {
@@ -428,6 +592,8 @@ async function calAbrirModal({ evento = null, fecha = null, actas = [], marcas =
   $("mc-borrar").hidden = !evento;
   $("mc-guardar").disabled = false;
   $("mc-guardar").textContent = "Guardar";
+  delete $("mc-titulo").dataset.ia;
+  _calIAReiniciar(!evento, embebido);
 
   const durSel = $("mc-dur");
   [...durSel.querySelectorAll("option[data-extra]")].forEach(o => o.remove());
