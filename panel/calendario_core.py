@@ -816,12 +816,42 @@ def cuando_texto(ev: dict) -> str:
     return f"{_fecha_larga(d0)}, de {ev['hora']} a {ev['hora_fin']} hs (hora de Argentina)"
 
 
-def como_texto(ev: dict) -> str:
+MESES_CORTOS = ("ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic")
+
+
+def _hora12(hhmm: str) -> str:
+    """«13:30» → «1:30pm»; «14:00» → «2pm»."""
+    h, m = [int(x) for x in hhmm.split(":")[:2]]
+    sufijo = "am" if h < 12 else "pm"
+    h12 = h % 12 or 12
+    return f"{h12}{sufijo}" if m == 0 else f"{h12}:{m:02d}{sufijo}"
+
+
+def _fecha_corta_larga(d: _dt.date) -> str:
+    return f"{DIAS_SEMANA[d.weekday()]} {d.day} {MESES_CORTOS[d.month - 1]} {d.year}"
+
+
+def cuando_corto(ev: dict) -> str:
+    """Como lo muestra Google Calendar, para leerlo de un vistazo en la bandeja de entrada:
+    «viernes 9 oct 2026 · 1:30pm – 2pm (Hora estándar de Argentina)»."""
+    d0 = _dt.date.fromisoformat(ev["fecha"])
+    if ev.get("todo_el_dia") or not ev.get("hora"):
+        d1 = _dt.date.fromisoformat(ev.get("fecha_fin") or ev["fecha"])
+        if d1 > d0:
+            return f"{_fecha_corta_larga(d0)} – {_fecha_corta_larga(d1)}"
+        return f"{_fecha_corta_larga(d0)} · todo el día"
+    return f"{_fecha_corta_larga(d0)} · {_hora12(ev['hora'])} – {_hora12(ev['hora_fin'])} (Hora estándar de Argentina)"
+
+
+def como_texto(ev: dict, para_equipo: bool = False) -> str:
+    """Cómo es la reunión. Para la persona («Te llamamos por teléfono al …») o para el equipo («Llamada al …»)."""
     lugar = (ev.get("lugar") or "").strip()
     modalidad = ev.get("modalidad")
     if modalidad == "meet":
         return "Videollamada por Google Meet"
     if modalidad == "llamada":
+        if para_equipo:
+            return f"Llamada al {lugar}" if lugar else "Llamada (sin teléfono anotado)"
         return f"Te llamamos por teléfono al {lugar}" if lugar else "Te llamamos por teléfono"
     if modalidad == "presencial":
         return f"En persona: {lugar}" if lugar else "En persona"
@@ -847,7 +877,7 @@ def link_agregar_a_calendario(ev: dict) -> str:
             f"&details={quote(detalle, safe='')}&location={quote(lugar, safe='')}")
 
 
-_VERBOS = {"agendada": ("Agendamos", "agendó", "Se agendó"), "modificada": ("Actualizamos", "actualizó", "Se actualizó")}
+_VERBOS = {"agendada": "Agendamos", "modificada": "Actualizamos"}
 
 
 def armar_aviso(ev: dict, accion: str = "agendada", para_equipo: bool = False, usuario: str = "",
@@ -858,7 +888,7 @@ def armar_aviso(ev: dict, accion: str = "agendada", para_equipo: bool = False, u
     avisó y de qué acta/cliente es."""
     import mails_core as mc
 
-    verbo_persona, verbo_equipo, titulo_equipo = _VERBOS.get(accion, _VERBOS["agendada"])
+    verbo_persona = _VERBOS.get(accion, _VERBOS["agendada"])
     datos = {
         "titulo": ev["titulo"], "cuando": cuando_texto(ev), "como": como_texto(ev),
         "link_meet": ev.get("meet_url") or "", "link_cal": link_agregar_a_calendario(ev),
@@ -875,24 +905,25 @@ def armar_aviso(ev: dict, accion: str = "agendada", para_equipo: bool = False, u
                   f"\n\n[Sumarla a mi calendario]({datos['link_cal']})"
                   "\n\nSi necesitás cambiar el horario, respondé este mail.\n\nSaludos,\nSmarties Consultora")
     else:
+        # Para el equipo el mail se arma para leerlo en la lista de la bandeja: el asunto es el título del
+        # evento y lo primero del cuerpo (lo que Gmail muestra al lado del asunto) es «Agendada: <cuándo>».
         vinculos = [v for v in ev.get("vinculos") or []]
+        etiquetas = {"cliente": "cliente", "lead": "lead", "tercero": "tercero", "desconocida": "acta sin base"}
+        datos["cuando_corto"] = cuando_corto(ev)
+        datos["como"] = como_texto(ev, para_equipo=True)
+        datos["estado"] = "Agendada" if accion == "agendada" else "Actualizada"
         if vinculos:
-            etiquetas = {"cliente": "cliente", "lead": "lead", "tercero": "tercero", "desconocida": "acta sin base"}
             datos["actas"] = "; ".join(
                 f"{v['acta']}" + (f" ({v['denominacion']}" + (f", {v['titular']}" if v.get("titular") else "") + ")" if v.get("denominacion") else "")
                 + f" – {etiquetas.get(v.get('tipo'), '')}" for v in vinculos)
-        asunto = f"{titulo_equipo}: {{{{titulo}}}} – {_fecha_corta(ev)}"
-        cuerpo = ("{{quien}} " + verbo_equipo + " un evento en el calendario del estudio.\n\n"
-                  "* **Qué:** {{titulo}}\n* **Cuándo:** {{cuando}}\n* **Cómo:** {{como}}\n" + meet +
+        asunto = "{{titulo}}" if accion == "agendada" else "Actualizada: {{titulo}}"
+        cuerpo = ("{{estado}}: {{cuando_corto}}\n\n"
+                  "* **Cómo:** {{como}}\n" + meet.replace("Videollamada (link)", "Link de Meet") +
                   ("* **Actas:** {{actas}}\n" if vinculos else "") +
                   ("* **Aviso a la persona:** {{persona}}\n" if email_persona else "* **Aviso a la persona:** no se mandó\n") +
+                  "* **Agendó:** {{quien}}\n"
                   "\nVerlo en el panel: {{panel}}")
     return mc.render_prospecto(asunto, cuerpo.strip(), datos, simple=True)
-
-
-def _fecha_corta(ev: dict) -> str:
-    d = _dt.date.fromisoformat(ev["fecha"])
-    return f"{d.day}/{d.month}" + (f" {ev['hora']} hs" if ev.get("hora") and not ev.get("todo_el_dia") else "")
 
 
 def avisar(conexion, evento_id: int, accion: str, usuario: str, email_persona: str = "", a_equipo: bool = True) -> dict:
@@ -1046,6 +1077,32 @@ def resolver_actas(cur, actas) -> dict:
     return res
 
 
+# Eventos que NO se muestran en el panel (siguen en Google Calendar): el Meet fijo del equipo,
+# que se repite todos los días y estorba. Se compara el título sin tildes, mayúsculas ni espacios
+# de más. Se cambia con CALENDARIO_OCULTAR (títulos separados por «;»; vacío = no ocultar nada).
+OCULTAR_POR_DEFECTO = "MEET PAME / TOMI"
+
+
+def _titulo_normal(texto: str) -> str:
+    import unicodedata
+
+    t = unicodedata.normalize("NFD", texto or "")
+    t = "".join(c for c in t if unicodedata.category(c) != "Mn").lower()
+    t = re.sub(r"\s*/\s*", "/", t)
+    return " ".join(t.split())
+
+
+def titulos_ocultos() -> set:
+    crudo = os.environ.get("CALENDARIO_OCULTAR")
+    crudo = OCULTAR_POR_DEFECTO if crudo is None else crudo
+    return {n for n in (_titulo_normal(t) for t in crudo.split(";")) if n}
+
+
+def _sin_ocultos(filas: list) -> list:
+    ocultos = titulos_ocultos()
+    return [f for f in filas if _titulo_normal(f["titulo"]) not in ocultos] if ocultos else filas
+
+
 def listar_eventos(cur, desde: _dt.date, hasta: _dt.date) -> list:
     """Eventos que tocan el rango [desde, hasta] (fechas inclusive, hora Argentina), con sus
     vínculos resueltos."""
@@ -1059,7 +1116,7 @@ def listar_eventos(cur, desde: _dt.date, hasta: _dt.date) -> list:
         """,
         (calendar_id(), d1, d0),
     )
-    return _con_vinculos(cur, [evento_a_json(f) for f in cur.fetchall()])
+    return _con_vinculos(cur, [evento_a_json(f) for f in _sin_ocultos(cur.fetchall())])
 
 
 def eventos_de_actas(cur, actas, dias_atras: int = 60) -> list:
@@ -1076,7 +1133,60 @@ def eventos_de_actas(cur, actas, dias_atras: int = 60) -> list:
         """,
         (calendar_id(), actas, desde),
     )
-    return _con_vinculos(cur, [evento_a_json(f) for f in cur.fetchall()])
+    return _con_vinculos(cur, [evento_a_json(f) for f in _sin_ocultos(cur.fetchall())])
+
+
+_ACENTOS = ("áéíóúüñ", "aeiouun")
+
+
+def _buscable(texto: str) -> str:
+    t = (texto or "").lower()
+    for a, b in zip(*_ACENTOS):
+        t = t.replace(a, b)
+    return " ".join(t.split())
+
+
+def buscar_marcas(cur, texto: str, limite: int = 12) -> list:
+    """Búsqueda en vivo para vincular un evento: por nombre de la marca, del titular o del cliente,
+    o por número de acta (los primeros dígitos). Todas las palabras tienen que aparecer (en cualquier
+    orden, sin tildes ni mayúsculas). Primero van las marcas de clientes y después las de leads.
+    Cada resultado: {acta, denominacion, titular, clase, tipo, cliente, email}."""
+    palabras = [w for w in _buscable(texto).split(" ") if w][:5]
+    if not palabras or sum(len(w) for w in palabras) < 2:
+        return []
+    patrones = ["%" + w.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%" for w in palabras]
+    trad = "translate(lower(concat_ws(' ', {})), 'áéíóúüñ', 'aeiouun')"
+    clientes = trad.format("cm.denominacion, cm.titular, c.nombre, cm.acta")
+    leads = trad.format("m.denominacion_inpi, m.denominacion, m.titular, m.acta")
+    cur.execute(
+        f"""
+        SELECT * FROM (
+            SELECT 'cliente' AS tipo, cm.acta, cm.denominacion, cm.titular, cm.clase, c.nombre AS cliente, c.email
+            FROM cartera_marcas cm JOIN clientes c ON c.id = cm.cliente_id
+            WHERE {" AND ".join([clientes + " LIKE %s"] * len(patrones))}
+            UNION ALL
+            SELECT 'lead', m.acta, COALESCE(NULLIF(m.denominacion_inpi, ''), NULLIF(m.denominacion, '')),
+                   m.titular, m.clase, NULL, m.email
+            FROM marcas m
+            WHERE m.es_lead AND {" AND ".join([leads + " LIKE %s"] * len(patrones))}
+        ) t
+        ORDER BY (tipo = 'cliente') DESC, denominacion, acta
+        LIMIT 60
+        """,
+        patrones + patrones,
+    )
+    por_acta = {}
+    for f in cur.fetchall():
+        previa = por_acta.get(f["acta"])
+        if previa and not (previa["tipo"] == "lead" and f["tipo"] == "cliente"):
+            continue   # una marca de cliente que también es lead se muestra como cliente
+        por_acta[f["acta"]] = {"acta": f["acta"], "denominacion": f["denominacion"], "titular": f["titular"], "clase": f["clase"],
+                               "tipo": f["tipo"], "cliente": f["cliente"], "email": (f["email"] or "").strip() or None}
+    out = list(por_acta.values())
+    # las que empiezan con lo escrito primero (sin cambiar el orden cliente/lead dentro de cada grupo)
+    q0 = _buscable(texto)
+    out.sort(key=lambda r: (r["tipo"] != "cliente", not _buscable(r["denominacion"]).startswith(q0)))
+    return out[:limite]
 
 
 def _con_vinculos(cur, eventos: list) -> list:

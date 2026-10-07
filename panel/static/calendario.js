@@ -5,19 +5,18 @@
 const $ = (id) => document.getElementById(id);
 const esc = _escapeHtml;
 
+const AGENDA_PASO = 30;       // días que se suman cada vez que se pide «ver más» en la agenda
+const AGENDA_MAXIMO = 120;    // tope del servidor para un pedido
+
 const est = {
-  vista: "mes",            // "mes" | "agenda"
+  vista: "agenda",         // "agenda" (por defecto: desde hoy hacia adelante) | "mes"
+  agendaDias: AGENDA_PASO,
   mes: calHoy().slice(0, 7) + "-01",
   elegido: calHoy(),
   eventos: [],
   estado: null,
   cargando: false,
 };
-
-try {
-  const guardada = localStorage.getItem("calVista");
-  est.vista = guardada === "mes" || guardada === "agenda" ? guardada : (window.innerWidth < 760 ? "agenda" : "mes");
-} catch (_) { est.vista = window.innerWidth < 760 ? "agenda" : "mes"; }
 
 function calHace(iso) {
   if (!iso) return "nunca";
@@ -37,7 +36,8 @@ function ultimoDiaDelMes(iso) {
 
 function rangoVisible() {
   const primero = est.mes;
-  if (est.vista === "agenda") return { desde: primero, hasta: ultimoDiaDelMes(primero) };
+  // La agenda arranca siempre hoy (los días pasados no se muestran) y avanza de a AGENDA_PASO días.
+  if (est.vista === "agenda") return { desde: calHoy(), hasta: calSumarDias(calHoy(), est.agendaDias - 1) };
   const desde = calSumarDias(primero, -calDiaSemanaLunes(primero));
   return { desde, hasta: calSumarDias(desde, 41) };
 }
@@ -160,7 +160,9 @@ function eventosPorDia() {
 function pintar() {
   const d = calUTC(est.mes);
   const nombre = CAL_MESES[d.getUTCMonth()];
-  $("cal-titulo").textContent = `${nombre.charAt(0).toUpperCase()}${nombre.slice(1)} ${d.getUTCFullYear()}`;
+  const enAgenda = est.vista === "agenda";
+  $("cal-titulo").textContent = enAgenda ? "Próximos eventos" : `${nombre.charAt(0).toUpperCase()}${nombre.slice(1)} ${d.getUTCFullYear()}`;
+  $("cal-ant").parentElement.hidden = enAgenda;   // ‹ Hoy › solo tiene sentido en el mes
   $("cal-v-mes").classList.toggle("activo", est.vista === "mes");
   $("cal-v-agenda").classList.toggle("activo", est.vista === "agenda");
   const porDia = eventosPorDia();
@@ -217,15 +219,25 @@ function pintarDetalle(porDia) {
 
 function pintarAgenda(porDia) {
   const hoy = calHoy();
-  const dias = Object.keys(porDia).sort();
-  if (!dias.length) { $("cal-vista").innerHTML = '<p class="cal-vacio">No hay eventos este mes.</p>'; return; }
-  $("cal-vista").innerHTML = dias.map(d => `
-    <div class="cal-agenda-dia ${d === hoy ? "hoy" : ""} ${d < hoy ? "pasado" : ""}">
+  const dias = Object.keys(porDia).filter(d => d >= hoy);
+  if (!dias.includes(hoy)) dias.unshift(hoy);   // hoy siempre figura, aunque no haya nada
+  dias.sort();
+  const dia = (d) => `
+    <div class="cal-agenda-dia ${d === hoy ? "hoy" : ""}">
       <h3>${esc(calFechaLarga(d))}${d === hoy ? " · hoy" : ""}</h3>
-      ${porDia[d].map(e => calTarjetaHtml(e)).join("")}
-    </div>`).join("");
+      ${(porDia[d] || []).length ? porDia[d].map(e => calTarjetaHtml(e)).join("") : '<p class="cal-vacio">No hay nada agendado hoy.</p>'}
+    </div>`;
+  const hayMas = est.agendaDias < AGENDA_MAXIMO;
+  const pie = hayMas
+    ? `<button type="button" class="cal-btn" id="cal-mas-dias">Ver ${AGENDA_PASO} días más</button>`
+    : `<p class="cal-vacio">Se muestran los próximos ${est.agendaDias} días.</p>`;
+  const sinNada = dias.length === 1 && !(porDia[hoy] || []).length
+    ? `<p class="cal-vacio">No hay eventos en los próximos ${est.agendaDias} días.</p>` : "";
+  $("cal-vista").innerHTML = dias.map(dia).join("") + sinNada + `<div class="cal-agenda-pie">${pie}</div>`;
   const porId = Object.fromEntries(est.eventos.map(e => [String(e.id), e]));
   calEnlazarTarjetas($("cal-vista"), porId, () => cargar());
+  const mas = $("cal-mas-dias");
+  if (mas) mas.addEventListener("click", () => { est.agendaDias = Math.min(AGENDA_MAXIMO, est.agendaDias + AGENDA_PASO); cargar(); });
 }
 
 // ── Interacción ──────────────────────────────────────────────────────
@@ -248,7 +260,7 @@ $("cal-nuevo").addEventListener("click", () => calAbrirModal({ fecha: est.elegid
 for (const [id, vista] of [["cal-v-mes", "mes"], ["cal-v-agenda", "agenda"]]) {
   $(id).addEventListener("click", () => {
     est.vista = vista;
-    try { localStorage.setItem("calVista", vista); } catch (_) {}
+    if (vista === "agenda") est.agendaDias = AGENDA_PASO;
     cargar();
   });
 }

@@ -3290,6 +3290,12 @@ def pagina_calendario(_: str = Depends(verificar_pagina)):
     return FileResponse(os.path.join(os.path.dirname(__file__), "static", "calendario.html"))
 
 
+@app.get("/agendar-llamada")
+def pagina_agendar_llamada(_: str = Depends(verificar_pagina)):
+    """Solo el formulario para agendar (para dejarlo como acceso rápido)."""
+    return FileResponse(os.path.join(os.path.dirname(__file__), "static", "agendar.html"))
+
+
 # Sección Clientes (cartera + vigilancia): el router recibe el login, la
 # conexión y los helpers del CRM que necesita (para no importar app.py).
 from types import SimpleNamespace  # noqa: E402
