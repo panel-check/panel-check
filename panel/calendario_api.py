@@ -11,6 +11,7 @@ Rutas:
   GET    /api/calendario/por-actas?actas=a,b  eventos que nombran esas actas (ficha del titular)
   GET    /api/calendario/actas?actas=a,b      de quién es cada acta (vista previa del formulario)
   GET    /api/calendario/buscar?q=texto       búsqueda en vivo de marcas por nombre, titular, cliente o acta
+  POST   /api/calendario/agenda/enviar        manda ahora el mail AGENDA de mañana (el de las 20 hs); si no hay nada, no manda
   POST   /api/calendario/interpretar          «Agendar con IA»: texto pegado → propuesta para el formulario + preguntas (no crea nada)
   POST   /api/calendario/eventos              crear (en Google y en el panel); con modalidad «meet» genera el link;
                                               con avisar=true manda el mail a la persona y la copia al equipo
@@ -125,6 +126,17 @@ def crear_router(verificar_login, conexion, verificar_admin=None) -> APIRouter:
             return cal.sincronizar(conexion, completa=completa)
         except cal.CalendarioError as e:
             raise _como_http(e)
+
+    @router.post("/api/calendario/agenda/enviar")
+    def enviar_agenda(_: str = Depends(verificar_login)):
+        """Manda ahora el mail AGENDA de mañana (el mismo de las 20 hs) a los destinatarios de «Agenda
+        diaria» (pestaña Mails). Si mañana no hay ninguna reunión ni llamada, no manda nada. No toca el
+        envío automático de las 20 hs."""
+        _configurado_o_409()
+        r = cal.enviar_agenda(conexion, manual=True)
+        if r["estado"] == "error":
+            raise HTTPException(status_code=424, detail=r["error"])
+        return r
 
     @router.get("/api/calendario/eventos")
     def eventos(desde: str, hasta: str, _: str = Depends(verificar_login)):

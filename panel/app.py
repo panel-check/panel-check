@@ -192,6 +192,11 @@ def migrar_columnas_panel():
         calendario_core.iniciar_sondeo(conexion)
     except Exception as e:
         print(f"[startup] sondeo del calendario no arrancó (no bloqueante): {e}")
+    # Mail diario «AGENDA» de las 20 hs (reuniones y llamadas de mañana); necesita el calendario conectado.
+    try:
+        calendario_core.iniciar_agenda_diaria(conexion)
+    except Exception as e:
+        print(f"[startup] la agenda diaria no arrancó (no bloqueante): {e}")
 
 
 def _crear_tablas_crm(cur):

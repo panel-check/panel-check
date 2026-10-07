@@ -547,3 +547,15 @@ CREATE TABLE IF NOT EXISTS calendario_estado (
     ultimo_cambios     INTEGER,
     CONSTRAINT calendario_estado_una_fila CHECK (id = 1)
 );
+
+-- Mail diario «AGENDA» (20 hs, reuniones y llamadas del día siguiente): una fila por día de la agenda.
+-- omitida = ese día no había ninguna reunión ni llamada y no se mandó nada.
+CREATE TABLE IF NOT EXISTS calendario_agenda_envios (
+    fecha         DATE PRIMARY KEY,
+    intento_en    TIMESTAMPTZ,
+    enviado_en    TIMESTAMPTZ,
+    omitida       BOOLEAN NOT NULL DEFAULT false,
+    cantidad      INTEGER,
+    destinatarios TEXT,
+    error         TEXT
+);

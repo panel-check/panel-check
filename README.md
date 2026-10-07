@@ -54,6 +54,11 @@ El workflow `.github/workflows/pipeline.yml` corre estos 6 pasos automáticament
   `GOOGLE_CALENDAR_ID` (el mail del calendario principal). Un evento cuya nota dice
   «Acta N» queda vinculado al cliente o lead de esa marca. Tablas `calendario_eventos`
   y `calendario_estado`.
+  **Mail «AGENDA»**: todas las noches a las 20 hs (hora Argentina) el panel manda, desde
+  `avisos@quieroregistrarmimarca.com.ar` (cuenta Interna), las reuniones y llamadas del día
+  siguiente; si no hay ninguna, no manda nada. `AGENDA_DIARIA_HORA` cambia la hora (o `off`);
+  destinatario en Mails → «Agenda diaria» (por defecto `CALENDARIO_AVISO_EQUIPO` o el mail
+  del calendario). Tabla `calendario_agenda_envios`.
   Para **generar links de Meet** y mandar el mail de aviso al agendar, el panel tiene que
   usar la propia cuenta de Google del estudio (la cuenta de servicio no puede): cliente
   OAuth de Google Cloud (app «En producción»), `GOOGLE_OAUTH_CLIENT_ID` y
