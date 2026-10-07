@@ -16,6 +16,7 @@ const est = {
   eventos: [],
   estado: null,
   cargando: false,
+  abiertos: new Set(),     // eventos de hoy ya pasados que se desplegaron en la agenda
 };
 
 function calHace(iso) {
@@ -222,10 +223,23 @@ function pintarAgenda(porDia) {
   const dias = Object.keys(porDia).filter(d => d >= hoy);
   if (!dias.includes(hoy)) dias.unshift(hoy);   // hoy siempre figura, aunque no haya nada
   dias.sort();
+  // Hoy: primero lo que falta (completo) y debajo lo que ya pasó, cerrado en una línea (se despliega al tocarlo).
+  const cuerpoHoy = (evs) => {
+    const proximos = evs.filter(e => !calEventoPasado(e));
+    const pasados = evs.filter(e => calEventoPasado(e));
+    let h = proximos.length ? proximos.map(e => calTarjetaHtml(e)).join("")
+                            : (pasados.length ? '<p class="cal-vacio">No queda nada más por hoy.</p>' : '<p class="cal-vacio">No hay nada agendado hoy.</p>');
+    if (pasados.length) {
+      h += `<p class="cal-pasaron">Ya pasaron (${pasados.length})</p>` +
+           pasados.map(e => calTarjetaHtml(e, { plegado: true, abierto: est.abiertos.has(String(e.id)) })).join("");
+    }
+    return h;
+  };
   const dia = (d) => `
     <div class="cal-agenda-dia ${d === hoy ? "hoy" : ""}">
       <h3>${esc(calFechaLarga(d))}${d === hoy ? " · hoy" : ""}</h3>
-      ${(porDia[d] || []).length ? porDia[d].map(e => calTarjetaHtml(e)).join("") : '<p class="cal-vacio">No hay nada agendado hoy.</p>'}
+      ${d === hoy ? cuerpoHoy(porDia[d] || [])
+        : (porDia[d] || []).map(e => calTarjetaHtml(e)).join("")}
     </div>`;
   const hayMas = est.agendaDias < AGENDA_MAXIMO;
   const pie = hayMas
@@ -236,6 +250,10 @@ function pintarAgenda(porDia) {
   $("cal-vista").innerHTML = dias.map(dia).join("") + sinNada + `<div class="cal-agenda-pie">${pie}</div>`;
   const porId = Object.fromEntries(est.eventos.map(e => [String(e.id), e]));
   calEnlazarTarjetas($("cal-vista"), porId, () => cargar());
+  // los desplegados siguen abiertos cuando la agenda se vuelve a pintar (sincronización, guardar…)
+  $("cal-vista").querySelectorAll("details.plegado").forEach(d => d.addEventListener("toggle", () => {
+    if (d.open) est.abiertos.add(d.dataset.evento); else est.abiertos.delete(d.dataset.evento);
+  }));
   const mas = $("cal-mas-dias");
   if (mas) mas.addEventListener("click", () => { est.agendaDias = Math.min(AGENDA_MAXIMO, est.agendaDias + AGENDA_PASO); cargar(); });
 }

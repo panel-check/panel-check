@@ -102,14 +102,19 @@ function calComoHtml(e) {
   return lugar ? `📍 ${lugar}` : "";
 }
 
-function calTarjetaHtml(e, { fechaCorta = false } = {}) {
+// plegado: tarjeta «cerrada» (una sola línea: hora y título) que se despliega al tocarla. Se usa en la agenda
+// para lo que ya pasó hoy, así lo próximo queda a la vista.
+function calTarjetaHtml(e, { fechaCorta = false, plegado = false, abierto = false } = {}) {
   const clase = calClaseEvento(e);
   const donde = calComoHtml(e);
   const quien = e.origen === "panel" && e.creado_por ? `Agendado desde el panel por ${_escapeHtml(e.creado_por)}` : "";
   const meta = [donde, quien].filter(Boolean).join(" · ");
   const dia = fechaCorta ? `${_escapeHtml(calFechaLarga(e.fecha))} · ` : "";
-  return `<div class="cal-evento ${clase}" data-evento="${e.id}">
-    <div class="cal-evento-cab"><span class="cal-evento-hora">${dia}${_escapeHtml(calHoraTexto(e))}</span><span class="cal-evento-titulo">${_escapeHtml(e.titulo)}</span></div>
+  const cab = `<span class="cal-evento-hora">${dia}${_escapeHtml(calHoraTexto(e))}</span><span class="cal-evento-titulo">${_escapeHtml(e.titulo)}</span>`;
+  const abre = plegado
+    ? `<details class="cal-evento plegado ${clase}" data-evento="${e.id}"${abierto ? " open" : ""}><summary class="cal-evento-cab" title="Tocá para ver el detalle">${cab}</summary>`
+    : `<div class="cal-evento ${clase}" data-evento="${e.id}"><div class="cal-evento-cab">${cab}</div>`;
+  return `${abre}
     ${meta ? `<p class="cal-evento-meta">${meta}</p>` : ""}
     ${calVinculosHtml(e)}
     ${e.descripcion ? `<p class="cal-evento-notas">${_escapeHtml(e.descripcion)}</p>` : ""}
@@ -118,7 +123,7 @@ function calTarjetaHtml(e, { fechaCorta = false } = {}) {
       ${e.link ? `<a class="cal-btn chico" href="${_escapeHtml(e.link)}" target="_blank" rel="noopener">Abrir en Google Calendar</a>` : ""}
       <button type="button" class="cal-btn chico peligro" data-cal-borrar="${e.id}">Borrar</button>
     </div>
-  </div>`;
+  ${plegado ? "</details>" : "</div>"}`;
 }
 
 // Engancha los botones Editar / Borrar de las tarjetas dentro de `cont`.
