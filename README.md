@@ -54,6 +54,12 @@ El workflow `.github/workflows/pipeline.yml` corre estos 6 pasos automáticament
   `GOOGLE_CALENDAR_ID` (el mail del calendario principal). Un evento cuya nota dice
   «Acta N» queda vinculado al cliente o lead de esa marca. Tablas `calendario_eventos`
   y `calendario_estado`.
+  Para **generar links de Meet** y mandar el mail de aviso al agendar, el panel tiene que
+  usar la propia cuenta de Google del estudio (la cuenta de servicio no puede): cliente
+  OAuth de Google Cloud (app «En producción»), `GOOGLE_OAUTH_CLIENT_ID` y
+  `GOOGLE_OAUTH_CLIENT_SECRET` en Railway, y el botón **Conectar con Google** de la pantalla
+  Calendario, que entrega el `GOOGLE_OAUTH_REFRESH_TOKEN`. Los avisos salen por Resend
+  (cuenta de prospectos); la copia al equipo va a `CALENDARIO_AVISO_EQUIPO` (opcional).
 
 ### 2. Cargar los secrets en GitHub
 

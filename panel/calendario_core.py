@@ -16,14 +16,22 @@ Qué hace:
     de esa marca. El vínculo NO se guarda: se calcula al leer, así que si la
     marca se carga después, el evento se vincula solo.
 
-Acceso a Google: cuenta de servicio (sin pantalla de login, sin tokens que se
-venzan). Variables de entorno (Railway):
-    GOOGLE_SERVICE_ACCOUNT_JSON  el contenido COMPLETO del .json de la cuenta
-                                 de servicio.
-    GOOGLE_CALENDAR_ID           el ID del calendario (para el calendario
-                                 principal de una cuenta Gmail es el mismo mail).
-El calendario tiene que estar compartido con el mail de la cuenta de servicio
-(client_email del JSON) con permiso «Hacer cambios en eventos».
+Acceso a Google, de dos maneras (variables de entorno en Railway):
+  1) Cuenta de servicio (sirve para ver y agendar, pero Google no le deja crear
+     links de Meet a una cuenta de servicio con Gmail común):
+       GOOGLE_SERVICE_ACCOUNT_JSON  el contenido COMPLETO del .json.
+       GOOGLE_CALENDAR_ID           el ID del calendario (para el calendario
+                                    principal de una cuenta Gmail es el mismo mail).
+     El calendario tiene que estar compartido con el mail de la cuenta de servicio
+     (client_email del JSON) con permiso «Hacer cambios en eventos».
+  2) La propia cuenta de Google del estudio (OAuth): lo que hace falta para generar
+     links de Meet. Si estas tres variables están, se usan en lugar de la cuenta de servicio:
+       GOOGLE_OAUTH_CLIENT_ID, GOOGLE_OAUTH_CLIENT_SECRET, GOOGLE_OAUTH_REFRESH_TOKEN
+     (el token se consigue con el botón «Conectar con Google» de la pantalla Calendario).
+
+Al agendar desde el panel se elige la modalidad (videollamada de Meet, llamada o
+presencial) y, si se pide, se manda un mail de aviso a la persona y una copia al
+equipo (por Resend, ver armar_aviso / avisar).
 
 Sin FastAPI: lo usan el panel (calendario_api.py) y las pruebas.
 """
@@ -44,6 +52,8 @@ TZ = ZoneInfo(TZ_NOMBRE)
 
 API = "https://www.googleapis.com/calendar/v3"
 SCOPE = "https://www.googleapis.com/auth/calendar"
+TOKEN_URI = "https://oauth2.googleapis.com/token"
+AUTH_URI = "https://accounts.google.com/o/oauth2/v2/auth"
 
 # Primera sincronización (y la completa semanal): ventana de eventos que se copian.
 DIAS_ATRAS = 90
@@ -88,8 +98,30 @@ def calendar_id():
     return (os.environ.get("GOOGLE_CALENDAR_ID") or "").strip() or None
 
 
+def _oauth_config():
+    """(client_id, client_secret, refresh_token); los que falten, None."""
+    g = lambda k: (os.environ.get(k) or "").strip() or None
+    return g("GOOGLE_OAUTH_CLIENT_ID"), g("GOOGLE_OAUTH_CLIENT_SECRET"), g("GOOGLE_OAUTH_REFRESH_TOKEN")
+
+
+def oauth_completo() -> bool:
+    """Está conectada la cuenta de Google del estudio (puede generar links de Meet)."""
+    return all(_oauth_config())
+
+
+def oauth_pendiente() -> bool:
+    """Están cargados el ID y el secreto del cliente OAuth, pero falta conectar la cuenta."""
+    cid, secreto, token = _oauth_config()
+    return bool(cid and secreto and not token)
+
+
+def puede_meet() -> bool:
+    return oauth_completo() and bool(calendar_id())
+
+
 def configurado() -> bool:
-    return bool((os.environ.get("GOOGLE_SERVICE_ACCOUNT_JSON") or "").strip() and calendar_id())
+    credenciales = oauth_completo() or bool((os.environ.get("GOOGLE_SERVICE_ACCOUNT_JSON") or "").strip())
+    return bool(credenciales and calendar_id())
 
 
 def cuenta_servicio():
@@ -106,16 +138,29 @@ _sesion_cache = {"clave": None, "sesion": None}
 
 
 def _sesion():
-    info = _info_cuenta()
-    if not info or not calendar_id():
-        raise CalendarioError("Falta configurar GOOGLE_SERVICE_ACCOUNT_JSON y GOOGLE_CALENDAR_ID en Railway.")
-    clave = (info["client_email"], info.get("private_key_id"))
+    if not calendar_id():
+        raise CalendarioError("Falta configurar GOOGLE_CALENDAR_ID en Railway.")
+    cid, secreto, token = _oauth_config()
+    if cid and secreto and token:
+        clave = ("oauth", cid, token)
+    else:
+        info = _info_cuenta()
+        if not info:
+            raise CalendarioError("Falta configurar GOOGLE_SERVICE_ACCOUNT_JSON (o conectar la cuenta de Google) y GOOGLE_CALENDAR_ID en Railway.")
+        clave = ("servicio", info["client_email"], info.get("private_key_id"))
     with _sesion_lock:
         if _sesion_cache["clave"] != clave:
             from google.auth.transport.requests import AuthorizedSession
-            from google.oauth2 import service_account
 
-            creds = service_account.Credentials.from_service_account_info(info, scopes=[SCOPE])
+            if clave[0] == "oauth":
+                from google.oauth2.credentials import Credentials
+
+                creds = Credentials(None, refresh_token=token, token_uri=TOKEN_URI, client_id=cid,
+                                    client_secret=secreto, scopes=[SCOPE])
+            else:
+                from google.oauth2 import service_account
+
+                creds = service_account.Credentials.from_service_account_info(info, scopes=[SCOPE])
             _sesion_cache["sesion"] = AuthorizedSession(creds)
             _sesion_cache["clave"] = clave
         return _sesion_cache["sesion"]
@@ -127,6 +172,14 @@ def _mensaje_google(status, cuerpo):
         detalle = (cuerpo.get("error") or {}).get("message") or ""
     except Exception:
         pass
+    if oauth_completo():
+        if status == 404:
+            return ("Google no encuentra el calendario: con la cuenta del estudio conectada, GOOGLE_CALENDAR_ID tiene que ser el mail "
+                    "de esa misma cuenta (o el ID de un calendario suyo).")
+        if status == 403:
+            return f"Google rechazó el acceso con la cuenta conectada (¿Calendar API desactivada o sin permiso de edición?). {detalle}".strip()
+        if status == 401:
+            return f"Google no aceptó la conexión con la cuenta del estudio: hay que volver a conectarla. {detalle}".strip()
     if status == 404:
         return ("Google no encuentra el calendario: revisá GOOGLE_CALENDAR_ID y que el calendario esté compartido con "
                 f"{cuenta_servicio() or 'la cuenta de servicio'} (permiso «Hacer cambios en eventos»).")
@@ -146,6 +199,9 @@ def _pedir(metodo, ruta, **kw):
     except CalendarioError:
         raise
     except Exception as e:  # red caída, clave mal formada, etc.
+        if "invalid_grant" in str(e) or "invalid_client" in str(e):
+            raise CalendarioError("Google ya no acepta la conexión con la cuenta del estudio (el permiso se revocó, venció o cambió el cliente OAuth). "
+                                  "Entrá a Calendario → «Conectar con Google» y cargá el token nuevo en GOOGLE_OAUTH_REFRESH_TOKEN.")
         raise CalendarioError(f"No se pudo hablar con Google: {e}")
     if r.status_code >= 400:
         try:
@@ -190,6 +246,9 @@ def crear_tablas(cur):
         )
         """
     )
+    # Agregadas con la modalidad (07/10/2026): 'meet' | 'llamada' | 'presencial' y el link de la videollamada.
+    cur.execute("ALTER TABLE calendario_eventos ADD COLUMN IF NOT EXISTS modalidad TEXT")
+    cur.execute("ALTER TABLE calendario_eventos ADD COLUMN IF NOT EXISTS meet_url TEXT")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_calendario_eventos_inicio ON calendario_eventos(inicio)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_calendario_eventos_actas ON calendario_eventos USING GIN (actas)")
     cur.execute(
@@ -309,6 +368,19 @@ def _fecha_hora(valor: dict):
     return _dt.datetime.combine(d, _dt.time(0, 0), tzinfo=TZ), True
 
 
+MODALIDADES = ("meet", "llamada", "presencial")
+
+
+def meet_de_evento(ev: dict):
+    """Link de la videollamada de Meet de un evento de Google (o None)."""
+    if ev.get("hangoutLink"):
+        return ev["hangoutLink"]
+    for punto in ((ev.get("conferenceData") or {}).get("entryPoints") or []):
+        if punto.get("entryPointType") == "video" and punto.get("uri"):
+            return punto["uri"]
+    return None
+
+
 def evento_a_fila(ev: dict, calendar: str) -> dict:
     """Un evento de la API de Google → los campos de calendario_eventos (sin actas validadas)."""
     inicio, todo = _fecha_hora(ev.get("start") or {})
@@ -322,7 +394,15 @@ def evento_a_fila(ev: dict, calendar: str) -> dict:
             actualizado = _dt.datetime.fromisoformat(ev["updated"].replace("Z", "+00:00"))
         except ValueError:
             pass
+    meet = meet_de_evento(ev)
+    modalidad = privadas.get("modalidad") if privadas.get("modalidad") in MODALIDADES else None
+    if meet:
+        modalidad = "meet"
+    elif modalidad == "meet":
+        modalidad = None  # le sacaron el Meet desde Google
     return {
+        "modalidad": modalidad,
+        "meet_url": meet,
         "calendar_id": calendar,
         "google_id": ev["id"],
         "titulo": (ev.get("summary") or "").strip() or "(sin título)",
@@ -355,16 +435,18 @@ def _guardar_eventos(cur, filas: list) -> None:
         """
         INSERT INTO calendario_eventos
             (calendar_id, google_id, titulo, descripcion, lugar, inicio, fin, todo_el_dia, actas,
-             origen, creado_por, link, etag, actualizado_google, sincronizado_en)
+             origen, creado_por, link, etag, actualizado_google, sincronizado_en, modalidad, meet_url)
         VALUES
             (%(calendar_id)s, %(google_id)s, %(titulo)s, %(descripcion)s, %(lugar)s, %(inicio)s, %(fin)s,
-             %(todo_el_dia)s, %(actas)s, %(origen)s, %(creado_por)s, %(link)s, %(etag)s, %(actualizado_google)s, now())
+             %(todo_el_dia)s, %(actas)s, %(origen)s, %(creado_por)s, %(link)s, %(etag)s, %(actualizado_google)s, now(),
+             %(modalidad)s, %(meet_url)s)
         ON CONFLICT (calendar_id, google_id) DO UPDATE SET
             titulo = EXCLUDED.titulo, descripcion = EXCLUDED.descripcion, lugar = EXCLUDED.lugar,
             inicio = EXCLUDED.inicio, fin = EXCLUDED.fin, todo_el_dia = EXCLUDED.todo_el_dia,
             actas = EXCLUDED.actas, origen = EXCLUDED.origen, creado_por = EXCLUDED.creado_por,
             link = EXCLUDED.link, etag = EXCLUDED.etag,
-            actualizado_google = EXCLUDED.actualizado_google, sincronizado_en = now()
+            actualizado_google = EXCLUDED.actualizado_google, sincronizado_en = now(),
+            modalidad = EXCLUDED.modalidad, meet_url = EXCLUDED.meet_url
         """,
         filas,
     )
@@ -468,7 +550,7 @@ def _sincronizar_con_candado(conn, cur, cal, ahora, completa) -> dict:
                 if vistos:
                     cur.execute(
                         "DELETE FROM calendario_eventos WHERE calendar_id = %s AND NOT (google_id = ANY(%s))",
-                        (cal, list(vistos)),
+                        (cal, sorted(vistos)),
                     )
                 else:
                     cur.execute("DELETE FROM calendario_eventos WHERE calendar_id = %s", (cal,))
@@ -580,14 +662,20 @@ def _cuerpo_evento(datos: dict, usuario: str):
     if len(titulo) > 200:
         raise CalendarioError("El título es demasiado largo (máximo 200 letras).")
     actas = _normalizar_actas(datos.get("actas"))
+    modalidad = (datos.get("modalidad") or "").strip() or None
+    if modalidad not in (None,) + MODALIDADES:
+        raise CalendarioError("La modalidad tiene que ser videollamada de Meet, llamada o presencial.")
     start, end, _ = _inicio_fin_google(datos)
+    privadas = {"panel": "1", "usuario": usuario or "", "actas": ",".join(actas)}
+    if modalidad:
+        privadas["modalidad"] = modalidad
     return {
         "summary": titulo,
         "description": _nota_con_actas(datos.get("descripcion"), actas),
         "location": (datos.get("lugar") or "").strip(),
         "start": start,
         "end": end,
-        "extendedProperties": {"private": {"panel": "1", "usuario": usuario or "", "actas": ",".join(actas)}},
+        "extendedProperties": {"private": privadas},
     }
 
 
@@ -602,9 +690,48 @@ def _guardar_resultado(conexion, recurso: dict) -> int:
     return fila["id"]
 
 
+def _pedir_meet():
+    """El fragmento que le pide a Google que cree la videollamada de Meet del evento."""
+    import uuid
+
+    return {"createRequest": {"requestId": uuid.uuid4().hex, "conferenceSolutionKey": {"type": "hangoutsMeet"}}}
+
+
+def _exigir_meet_posible():
+    if not puede_meet():
+        raise CalendarioError(
+            "Para generar el link de Meet hay que conectar el panel con la cuenta de Google del estudio: "
+            "entrá a Calendario → «Conectar con Google» (Google no deja crear Meet con la cuenta de servicio). "
+            "Mientras tanto se puede agendar como llamada o presencial."
+        )
+
+
+def _esperar_meet(google_id: str, recurso: dict) -> dict:
+    """Google arma la sala de Meet en el momento, pero a veces el link llega unos segundos
+    después de crear el evento: se vuelve a pedir hasta tenerlo."""
+    for _ in range(4):
+        if meet_de_evento(recurso):
+            return recurso
+        time.sleep(1.2)
+        recurso = _pedir("GET", _ruta_eventos("/" + google_id)) or recurso
+    return recurso
+
+
 def crear_evento(conexion, datos: dict, usuario: str) -> int:
-    """Crea el evento en Google y lo copia al panel. Devuelve el id local."""
-    recurso = _pedir("POST", _ruta_eventos(), json=_cuerpo_evento(datos, usuario))
+    """Crea el evento en Google y lo copia al panel. Devuelve el id local. Con modalidad
+    «meet», Google genera la videollamada y su link queda guardado en el evento."""
+    cuerpo = _cuerpo_evento(datos, usuario)
+    params = {"sendUpdates": "none"}
+    if datos.get("modalidad") == "meet":
+        _exigir_meet_posible()
+        cuerpo["conferenceData"] = _pedir_meet()
+        params["conferenceDataVersion"] = 1
+    recurso = _pedir("POST", _ruta_eventos(), json=cuerpo, params=params)
+    if datos.get("modalidad") == "meet":
+        recurso = _esperar_meet(recurso["id"], recurso)
+        if not meet_de_evento(recurso):
+            _guardar_resultado(conexion, recurso)
+            raise CalendarioError("El evento se creó, pero Google todavía no devolvió el link de Meet. Editalo y guardalo de nuevo en un momento.")
     return _guardar_resultado(conexion, recurso)
 
 
@@ -619,9 +746,29 @@ def _google_id_de(conexion, evento_id: int) -> str:
 
 
 def editar_evento(conexion, evento_id: int, datos: dict, usuario: str) -> int:
-    google_id = _google_id_de(conexion, evento_id)
+    with conexion() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT google_id, meet_url FROM calendario_eventos WHERE id = %s AND calendar_id = %s",
+                        (evento_id, calendar_id()))
+            fila = cur.fetchone()
+    if not fila:
+        raise CalendarioError("Ese evento ya no existe (puede que lo hayan borrado desde Google Calendar).")
+    google_id, meet_actual = fila[0], fila[1]
     cuerpo = _cuerpo_evento(datos, usuario)
-    recurso = _pedir("PATCH", _ruta_eventos("/" + google_id), json=cuerpo)
+    params = {"sendUpdates": "none"}
+    quiere_meet = datos.get("modalidad") == "meet"
+    if quiere_meet and not meet_actual:
+        _exigir_meet_posible()
+        cuerpo["conferenceData"] = _pedir_meet()
+        params["conferenceDataVersion"] = 1
+    elif not quiere_meet and meet_actual:
+        cuerpo["conferenceData"] = None  # se saca la videollamada del evento
+        params["conferenceDataVersion"] = 1
+    if not datos.get("modalidad"):
+        cuerpo["extendedProperties"]["private"]["modalidad"] = None  # en un PATCH, null borra la marca anterior
+    recurso = _pedir("PATCH", _ruta_eventos("/" + google_id), json=cuerpo, params=params)
+    if quiere_meet and not meet_actual:
+        recurso = _esperar_meet(google_id, recurso)
     return _guardar_resultado(conexion, recurso)
 
 
@@ -636,6 +783,169 @@ def borrar_evento(conexion, evento_id: int) -> None:
         with conn.cursor() as cur:
             cur.execute("DELETE FROM calendario_eventos WHERE id = %s", (evento_id,))
         conn.commit()
+
+
+# ── Avisos por mail (a la persona y copia al equipo) ───────────────────
+
+DIAS_SEMANA = ("lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo")
+MESES = ("enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre",
+         "octubre", "noviembre", "diciembre")
+# Los avisos salen con el remitente, la cuenta de Resend y el Reply-To del mail
+# «Presupuesto de registro de marca» (se editan en Más → Mails): escrito como una persona, sin encabezado.
+CLAVE_MAIL_BASE = "prospecto_presupuesto_registro"
+
+
+def mail_equipo():
+    """A dónde llega la copia de cada aviso: el mail del estudio (el del calendario)."""
+    valor = (os.environ.get("CALENDARIO_AVISO_EQUIPO") or calendar_id() or "").strip()
+    return valor if re.fullmatch(r"[^\s<>@,;]+@[^\s<>@,;]+\.[^\s<>@,;]+", valor) else None
+
+
+def _fecha_larga(d: _dt.date) -> str:
+    return f"{DIAS_SEMANA[d.weekday()]} {d.day} de {MESES[d.month - 1]} de {d.year}"
+
+
+def cuando_texto(ev: dict) -> str:
+    """«miércoles 7 de octubre de 2026, de 16:00 a 17:00 hs (hora de Argentina)»."""
+    d0 = _dt.date.fromisoformat(ev["fecha"])
+    if ev.get("todo_el_dia") or not ev.get("hora"):
+        d1 = _dt.date.fromisoformat(ev.get("fecha_fin") or ev["fecha"])
+        if d1 > d0:
+            return f"del {_fecha_larga(d0)} al {_fecha_larga(d1)}"
+        return f"{_fecha_larga(d0)} (todo el día)"
+    return f"{_fecha_larga(d0)}, de {ev['hora']} a {ev['hora_fin']} hs (hora de Argentina)"
+
+
+def como_texto(ev: dict) -> str:
+    lugar = (ev.get("lugar") or "").strip()
+    modalidad = ev.get("modalidad")
+    if modalidad == "meet":
+        return "Videollamada por Google Meet"
+    if modalidad == "llamada":
+        return f"Te llamamos por teléfono al {lugar}" if lugar else "Te llamamos por teléfono"
+    if modalidad == "presencial":
+        return f"En persona: {lugar}" if lugar else "En persona"
+    return lugar or "A coordinar"
+
+
+def link_agregar_a_calendario(ev: dict) -> str:
+    """Link «Agregar a Google Calendar» (sirve aunque la persona no use Google)."""
+    from urllib.parse import quote
+
+    d0 = _dt.date.fromisoformat(ev["fecha"])
+    if ev.get("todo_el_dia") or not ev.get("hora"):
+        d1 = _dt.date.fromisoformat(ev.get("fecha_fin") or ev["fecha"]) + _dt.timedelta(days=1)
+        fechas = f"{d0:%Y%m%d}/{d1:%Y%m%d}"
+    else:
+        h0, h1 = ev["hora"].replace(":", ""), ev["hora_fin"].replace(":", "")
+        d_fin = d0 if ev["hora_fin"] > ev["hora"] else d0 + _dt.timedelta(days=1)
+        fechas = f"{d0:%Y%m%d}T{h0}00/{d_fin:%Y%m%d}T{h1}00"
+    detalle = como_texto(ev) + (f"\n{ev['meet_url']}" if ev.get("meet_url") else "")
+    lugar = ev.get("meet_url") or ev.get("lugar") or ""
+    return ("https://calendar.google.com/calendar/render?action=TEMPLATE"
+            f"&text={quote(ev['titulo'], safe='')}&dates={fechas}&ctz={quote(TZ_NOMBRE, safe='')}"
+            f"&details={quote(detalle, safe='')}&location={quote(lugar, safe='')}")
+
+
+_VERBOS = {"agendada": ("Agendamos", "agendó", "Se agendó"), "modificada": ("Actualizamos", "actualizó", "Se actualizó")}
+
+
+def armar_aviso(ev: dict, accion: str = "agendada", para_equipo: bool = False, usuario: str = "",
+                email_persona: str = "", panel_url: str = "") -> tuple:
+    """(asunto, html, texto) del aviso. `ev` es un evento ya convertido con evento_a_json
+    (con sus vínculos). Para la persona: qué, cuándo y cómo, con el link de Meet si hay y un
+    link para sumarlo a su calendario. Para el equipo: lo mismo más quién lo agendó, a quién se
+    avisó y de qué acta/cliente es."""
+    import mails_core as mc
+
+    verbo_persona, verbo_equipo, titulo_equipo = _VERBOS.get(accion, _VERBOS["agendada"])
+    datos = {
+        "titulo": ev["titulo"], "cuando": cuando_texto(ev), "como": como_texto(ev),
+        "link_meet": ev.get("meet_url") or "", "link_cal": link_agregar_a_calendario(ev),
+        "quien": usuario or "Alguien del equipo", "persona": email_persona or "",
+        "panel": f"{(panel_url or mc.DEFAULT_PANEL).rstrip('/')}/calendario",
+    }
+    meet = "* **Videollamada (link):** {{link_meet}}\n" if ev.get("meet_url") else ""
+    if not para_equipo:
+        asunto = f"{verbo_persona} tu reunión: {{{{titulo}}}}"
+        intro = ("Te confirmamos que agendamos una reunión con Smarties Consultora." if accion == "agendada"
+                 else "Actualizamos los datos de tu reunión con Smarties Consultora.")
+        cuerpo = (f"Hola:\n\n{intro}\n\n"
+                  "* **Qué:** {{titulo}}\n* **Cuándo:** {{cuando}}\n* **Cómo:** {{como}}\n" + meet.rstrip("\n") +
+                  f"\n\n[Sumarla a mi calendario]({datos['link_cal']})"
+                  "\n\nSi necesitás cambiar el horario, respondé este mail.\n\nSaludos,\nSmarties Consultora")
+    else:
+        vinculos = [v for v in ev.get("vinculos") or []]
+        if vinculos:
+            etiquetas = {"cliente": "cliente", "lead": "lead", "tercero": "tercero", "desconocida": "acta sin base"}
+            datos["actas"] = "; ".join(
+                f"{v['acta']}" + (f" ({v['denominacion']}" + (f", {v['titular']}" if v.get("titular") else "") + ")" if v.get("denominacion") else "")
+                + f" – {etiquetas.get(v.get('tipo'), '')}" for v in vinculos)
+        asunto = f"{titulo_equipo}: {{{{titulo}}}} – {_fecha_corta(ev)}"
+        cuerpo = ("{{quien}} " + verbo_equipo + " un evento en el calendario del estudio.\n\n"
+                  "* **Qué:** {{titulo}}\n* **Cuándo:** {{cuando}}\n* **Cómo:** {{como}}\n" + meet +
+                  ("* **Actas:** {{actas}}\n" if vinculos else "") +
+                  ("* **Aviso a la persona:** {{persona}}\n" if email_persona else "* **Aviso a la persona:** no se mandó\n") +
+                  "\nVerlo en el panel: {{panel}}")
+    return mc.render_prospecto(asunto, cuerpo.strip(), datos, simple=True)
+
+
+def _fecha_corta(ev: dict) -> str:
+    d = _dt.date.fromisoformat(ev["fecha"])
+    return f"{d.day}/{d.month}" + (f" {ev['hora']} hs" if ev.get("hora") and not ev.get("todo_el_dia") else "")
+
+
+def avisar(conexion, evento_id: int, accion: str, usuario: str, email_persona: str = "", a_equipo: bool = True) -> dict:
+    """Manda el aviso del evento: a la persona (si hay mail) y una copia al equipo. Un mail que
+    falla no frena al otro ni al evento (que ya está en Google): el resultado cuenta qué pasó con cada uno.
+    Devuelve {"persona": {...}|None, "equipo": {...}|None}; cada uno {email, enviado, error}."""
+    import mails_core as mc
+
+    out = {"persona": None, "equipo": None}
+    destino_persona = []
+    if (email_persona or "").strip():
+        destino_persona = mc.lista_de_emails(email_persona)
+        malos = [d for d in destino_persona if not mc._RE_EMAIL.match(d)]
+        if malos or not destino_persona:
+            out["persona"] = {"email": email_persona.strip(), "enviado": False, "error": f"«{(malos or [email_persona])[0]}» no es un mail válido"}
+            destino_persona = []
+        destino_persona = destino_persona[:3]
+    with conexion() as conn:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute("SELECT * FROM calendario_eventos WHERE id = %s", (evento_id,))
+            fila = cur.fetchone()
+            if not fila:
+                raise CalendarioError("El evento ya no existe.")
+            ev = _con_vinculos(cur, [evento_a_json(fila)])[0]
+            de_baja = {d: mc.esta_de_baja(cur, d) for d in destino_persona}
+    try:
+        base = mc.preparar(CLAVE_MAIL_BASE)
+    except Exception as e:
+        base = None
+        error_config = f"No se pudo leer la configuración de mails: {e}"
+    panel_url = (os.environ.get("PANEL_URL") or mc.DEFAULT_PANEL).rstrip("/")
+
+    def mandar(para, para_equipo):
+        if base is None:
+            return {"email": ", ".join(para), "enviado": False, "error": error_config}
+        try:
+            asunto, html_, texto = armar_aviso(ev, accion, para_equipo, usuario, ", ".join(destino_persona), panel_url)
+            mc.enviar(base["cuenta"], base["remitente"], base["responder_a"], para, asunto, html_, texto)
+            return {"email": ", ".join(para), "enviado": True, "error": None}
+        except Exception as e:  # sin RESEND_API_KEY_PROSPECTOS, Resend caído, etc.
+            return {"email": ", ".join(para), "enviado": False, "error": str(e)[:300]}
+
+    if destino_persona:
+        permitidos = [d for d in destino_persona if not de_baja.get(d)]
+        if permitidos:
+            out["persona"] = mandar(permitidos, False)
+        else:
+            out["persona"] = {"email": ", ".join(destino_persona), "enviado": False,
+                              "error": "esa persona pidió no recibir más mails (baja)"}
+    equipo = mail_equipo()
+    if a_equipo and equipo:
+        out["equipo"] = mandar([equipo], True)
+    return out
 
 
 # ── Lectura para el panel ──────────────────────────────────────────────
@@ -666,6 +976,8 @@ def evento_a_json(f: dict) -> dict:
         "origen": f["origen"],
         "creado_por": f["creado_por"],
         "link": f["link"],
+        "modalidad": f.get("modalidad"),
+        "meet_url": f.get("meet_url"),
     }
 
 
@@ -676,14 +988,14 @@ def resolver_actas(cur, actas) -> dict:
     que vio el escaneo pero tiene agente: no es lead ni cliente) o «desconocida» (no está en la base)."""
     actas = [a for a in dict.fromkeys(actas or []) if a]
     res = {a: {"acta": a, "existe": False, "denominacion": None, "titular": None, "clave": None,
-               "cliente_id": None, "cliente": None, "tipo": "desconocida"} for a in actas}
+               "cliente_id": None, "cliente": None, "tipo": "desconocida", "email": None} for a in actas}
     if not actas:
         return res
 
     cur.execute(
         """
         SELECT m.acta, COALESCE(NULLIF(m.denominacion_inpi, ''), NULLIF(m.denominacion, '')) AS denominacion,
-               m.titular, cc.clave
+               m.titular, cc.clave, m.email
         FROM marcas m LEFT JOIN crm_claves cc ON cc.acta = m.acta
         WHERE m.acta = ANY(%s)
         """,
@@ -691,7 +1003,8 @@ def resolver_actas(cur, actas) -> dict:
     )
     for f in cur.fetchall():
         r = res[f["acta"]]
-        r.update(existe=True, denominacion=f["denominacion"], titular=f["titular"], clave=f["clave"], tipo="lead")
+        r.update(existe=True, denominacion=f["denominacion"], titular=f["titular"], clave=f["clave"], tipo="lead",
+                 email=(f["email"] or "").strip() or None)
 
     cur.execute(
         """
@@ -707,7 +1020,7 @@ def resolver_actas(cur, actas) -> dict:
 
     cur.execute(
         """
-        SELECT cm.acta, cm.denominacion, cm.titular, c.id AS cliente_id, c.nombre
+        SELECT cm.acta, cm.denominacion, cm.titular, c.id AS cliente_id, c.nombre, c.email
         FROM cartera_marcas cm JOIN clientes c ON c.id = cm.cliente_id
         WHERE cm.acta = ANY(%s)
         """,
@@ -715,19 +1028,21 @@ def resolver_actas(cur, actas) -> dict:
     )
     for f in cur.fetchall():
         r = res[f["acta"]]
-        r.update(existe=True, cliente_id=f["cliente_id"], cliente=f["nombre"], tipo="cliente")
+        r.update(existe=True, cliente_id=f["cliente_id"], cliente=f["nombre"], tipo="cliente",
+                 email=(f["email"] or "").strip() or r["email"])
         r["denominacion"] = r["denominacion"] or f["denominacion"]
         r["titular"] = r["titular"] or f["titular"]
 
     # Titular de un lead que ya se convirtió en cliente del estudio.
     claves = list({r["clave"] for r in res.values() if r["clave"] and r["tipo"] == "lead"})
     if claves:
-        cur.execute("SELECT id, nombre, clave_crm FROM clientes WHERE clave_crm = ANY(%s)", (claves,))
+        cur.execute("SELECT id, nombre, clave_crm, email FROM clientes WHERE clave_crm = ANY(%s)", (claves,))
         por_clave = {f["clave_crm"]: f for f in cur.fetchall()}
         for r in res.values():
             c = por_clave.get(r["clave"]) if r["tipo"] == "lead" else None
             if c:
-                r.update(cliente_id=c["id"], cliente=c["nombre"], tipo="cliente")
+                r.update(cliente_id=c["id"], cliente=c["nombre"], tipo="cliente",
+                         email=(c["email"] or "").strip() or r["email"])
     return res
 
 
@@ -779,6 +1094,10 @@ def estado(cur) -> dict:
         "configurado": configurado(),
         "calendario": calendar_id(),
         "cuenta_servicio": cuenta_servicio(),
+        "puede_meet": puede_meet(),
+        "oauth_conectado": oauth_completo(),
+        "oauth_pendiente": oauth_pendiente(),
+        "aviso_equipo": mail_equipo(),
         "ultimo_ok_en": f.get("ultimo_ok_en"),
         "ultimo_intento_en": f.get("ultimo_intento_en"),
         "ultimo_error": f.get("ultimo_error"),

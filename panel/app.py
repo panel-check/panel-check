@@ -3333,7 +3333,7 @@ app.include_router(mails_api.crear_router(verificar_login, _auth.verificar_admin
 app.include_router(analisis_api.crear_router(verificar_login, conexion))
 
 # Sección Calendario: eventos sincronizados con Google Calendar, vinculados por número de acta.
-app.include_router(calendario_api.crear_router(verificar_login, conexion))
+app.include_router(calendario_api.crear_router(verificar_login, conexion, _auth.verificar_admin))
 
 
 class ArchivosSinCache(StaticFiles):

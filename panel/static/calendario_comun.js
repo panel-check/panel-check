@@ -79,9 +79,18 @@ function calHoraTexto(e) {
   return `${e.hora} – ${e.hora_fin}`;
 }
 
+// «Cómo» es el evento: videollamada de Meet (con link), llamada o presencial.
+function calComoHtml(e) {
+  const lugar = e.lugar ? _escapeHtml(e.lugar) : "";
+  if (e.meet_url) return `🎥 Videollamada · <a href="${_escapeHtml(e.meet_url)}" target="_blank" rel="noopener">Unirse a Meet</a>`;
+  if (e.modalidad === "llamada") return `📞 Llamada${lugar ? " · " + lugar : ""}`;
+  if (e.modalidad === "presencial") return `📍 ${lugar || "Presencial"}`;
+  return lugar ? `📍 ${lugar}` : "";
+}
+
 function calTarjetaHtml(e, { fechaCorta = false } = {}) {
   const clase = calClaseEvento(e);
-  const donde = e.lugar ? `📍 ${_escapeHtml(e.lugar)}` : "";
+  const donde = calComoHtml(e);
   const quien = e.origen === "panel" && e.creado_por ? `Agendado desde el panel por ${_escapeHtml(e.creado_por)}` : "";
   const meta = [donde, quien].filter(Boolean).join(" · ");
   const dia = fechaCorta ? `${_escapeHtml(calFechaLarga(e.fecha))} · ` : "";
@@ -150,7 +159,14 @@ function _calAsegurarModal() {
           <label class="campo" id="mc-l-hasta" hidden>Hasta (inclusive) <input type="date" id="mc-hasta" /></label>
         </div>
         <label class="check"><input type="checkbox" id="mc-todo" /> Todo el día</label>
-        <label class="campo">Lugar o link (opcional) <input type="text" id="mc-lugar" maxlength="300" placeholder="Estudio, Meet, teléfono…" /></label>
+        <fieldset class="mc-como" id="mc-como">
+          <legend>Cómo es</legend>
+          <label><input type="radio" name="mc-mod" value="meet" /> 🎥 Videollamada (Meet)</label>
+          <label><input type="radio" name="mc-mod" value="llamada" /> 📞 Llamada</label>
+          <label><input type="radio" name="mc-mod" value="presencial" /> 📍 Presencial</label>
+        </fieldset>
+        <p class="mc-ayuda" id="mc-meet-nota" hidden></p>
+        <label class="campo" id="mc-l-lugar">Lugar <input type="text" id="mc-lugar" maxlength="300" /></label>
         <label class="campo">Actas vinculadas (opcional)
           <input type="text" id="mc-actas" placeholder="Ej: 4797001, 4797002" />
         </label>
@@ -158,6 +174,13 @@ function _calAsegurarModal() {
         <div class="mc-vista-actas" id="mc-vista-actas" hidden></div>
         <p class="mc-ayuda">Con el número de acta, el evento queda vinculado al lead o cliente dueño de esa marca. También sirve escribir «Acta 4797001» en las notas, incluso si lo agendás directo en Google Calendar.</p>
         <label class="campo">Notas (opcional) <textarea id="mc-notas" rows="4" placeholder="Qué hay que hacer, qué traer…"></textarea></label>
+        <div class="mc-aviso" id="mc-aviso-caja">
+          <label class="check"><input type="checkbox" id="mc-avisar" /> <span id="mc-avisar-txt">Avisar por mail</span></label>
+          <label class="campo" id="mc-l-email">Mail de la persona (si lo dejás vacío, el aviso va solo al equipo)
+            <input type="text" id="mc-email" placeholder="persona@mail.com" />
+          </label>
+          <p class="mc-ayuda" id="mc-aviso-ayuda"></p>
+        </div>
         <p class="mc-error" id="mc-error" hidden></p>
         <div class="acciones-modal">
           <button type="button" class="cal-btn peligro" id="mc-borrar" hidden>Borrar</button>
@@ -173,6 +196,9 @@ function _calAsegurarModal() {
   document.getElementById("mc-x").addEventListener("click", calCerrarModal);
   document.getElementById("mc-cancelar").addEventListener("click", calCerrarModal);
   document.getElementById("mc-todo").addEventListener("change", _calPintarTodoElDia);
+  document.querySelectorAll('input[name="mc-mod"]').forEach(r => r.addEventListener("change", _calPintarModalidad));
+  document.getElementById("mc-avisar").addEventListener("change", _calPintarAviso);
+  document.getElementById("mc-email").addEventListener("input", (ev) => { ev.target.dataset.manual = "1"; });
   document.getElementById("mc-fecha").addEventListener("change", () => {
     const h = document.getElementById("mc-hasta");
     if (!h.value || h.value < document.getElementById("mc-fecha").value) h.value = document.getElementById("mc-fecha").value;
@@ -206,6 +232,46 @@ function _calPintarTodoElDia() {
   if (todo && !document.getElementById("mc-hasta").value) document.getElementById("mc-hasta").value = document.getElementById("mc-fecha").value;
 }
 
+function _calModalidad() {
+  const r = document.querySelector('input[name="mc-mod"]:checked');
+  return r ? r.value : null;
+}
+
+// Cambia el rótulo del campo «lugar» y muestra lo que corresponde según cómo sea el evento.
+function _calPintarModalidad() {
+  const $ = (id) => document.getElementById(id);
+  const mod = _calModalidad();
+  const ctx = _calModalCtx || {};
+  const lugar = $("mc-lugar");
+  const nota = $("mc-meet-nota");
+  $("mc-l-lugar").hidden = mod === "meet";
+  nota.hidden = mod !== "meet";
+  if (mod === "meet") {
+    nota.textContent = ctx.evento && ctx.evento.meet_url
+      ? "Este evento ya tiene su videollamada de Meet; el link no cambia al guardar."
+      : "Al guardar, Google genera la videollamada y el link de Meet queda en el evento y en el mail de aviso.";
+  }
+  const rotulo = { llamada: "Teléfono al que se llama", presencial: "Lugar" }[mod] || "Lugar o link (opcional)";
+  $("mc-l-lugar").firstChild.textContent = rotulo + " ";
+  lugar.placeholder = mod === "llamada" ? "Ej: 11 5555-1234" : mod === "presencial" ? "Ej: Estudio, Av. Corrientes 1234" : "Estudio, teléfono…";
+}
+
+function _calPintarAviso() {
+  const $ = (id) => document.getElementById(id);
+  const on = $("mc-avisar").checked;
+  $("mc-l-email").hidden = !on;
+  const equipo = (_calEstado && _calEstado.aviso_equipo) || "";
+  $("mc-aviso-ayuda").hidden = !on;
+  $("mc-aviso-ayuda").textContent = equipo
+    ? `Se le manda el aviso a esa persona y una copia a ${equipo}.`
+    : "No hay mail del equipo configurado: el aviso va solo a la persona.";
+}
+
+let _calEstado = null;
+async function _calCargarEstado() {
+  try { _calEstado = await api("/api/calendario/estado"); } catch (_) { _calEstado = _calEstado || null; }
+}
+
 function _calActasDelCampo() {
   return document.getElementById("mc-actas").value.split(/[\s,;]+/).filter(Boolean);
 }
@@ -237,6 +303,9 @@ async function _calVistaPreviaActas() {
   try {
     const r = await api(`/api/calendario/actas?actas=${validas.join(",")}`);
     caja.hidden = false;
+    const correo = document.getElementById("mc-email");
+    const conMail = r.actas.find(a => a.email);
+    if (correo && !correo.dataset.manual && conMail && !correo.value) correo.value = conMail.email;
     caja.innerHTML = r.actas.map(a => {
       if (a.tipo === "cliente") return `✔ <b>${_escapeHtml(a.acta)}</b>: cliente <b>${_escapeHtml(a.cliente)}</b>${a.denominacion ? " · " + _escapeHtml(a.denominacion) : ""}`;
       if (a.tipo === "lead") return `✔ <b>${_escapeHtml(a.acta)}</b>: lead <b>${_escapeHtml(a.titular || "")}</b>${a.denominacion ? " · " + _escapeHtml(a.denominacion) : ""}`;
@@ -253,9 +322,11 @@ async function _calVistaPreviaActas() {
  *   marcas      → [{acta, denominacion}] para tildar rápido (ficha del titular).
  *   titulo      → título sugerido para uno nuevo.
  *   alGuardar   → se llama (sin argumentos) después de guardar o borrar. */
-function calAbrirModal({ evento = null, fecha = null, actas = [], marcas = [], titulo = "", alGuardar = null } = {}) {
+async function calAbrirModal({ evento = null, fecha = null, actas = [], marcas = [], titulo = "", alGuardar = null } = {}) {
   _calAsegurarModal();
   _calModalCtx = { evento, marcas, alGuardar };
+  await _calCargarEstado();
+  if (!_calModalCtx) return;
   const $ = (id) => document.getElementById(id);
   $("mc-titulo-modal").textContent = evento ? "Editar evento" : "Nuevo evento";
   $("mc-error").hidden = true;
@@ -296,6 +367,23 @@ function calAbrirModal({ evento = null, fecha = null, actas = [], marcas = [], t
     $("mc-notas").value = "";
     durSel.value = "60";
   }
+  // Cómo es: Meet solo se ofrece si el panel está conectado con la cuenta de Google del estudio
+  // (o si el evento ya tiene su Meet).
+  const puedeMeet = !!(_calEstado && _calEstado.puede_meet) || !!(evento && evento.meet_url);
+  const radioMeet = document.querySelector('input[name="mc-mod"][value="meet"]');
+  radioMeet.disabled = !puedeMeet;
+  radioMeet.parentElement.title = puedeMeet ? "" : "Para generar el link de Meet hay que conectar el panel con la cuenta de Google (Calendario → Conectar con Google)";
+  radioMeet.parentElement.classList.toggle("deshabilitado", !puedeMeet);
+  const modInicial = evento ? (evento.meet_url ? "meet" : evento.modalidad) : (puedeMeet ? "meet" : "llamada");
+  document.querySelectorAll('input[name="mc-mod"]').forEach(r => { r.checked = r.value === modInicial; });
+  // Aviso por mail: tildado al agendar uno nuevo; al editar, a elección.
+  const correo = $("mc-email");
+  correo.value = "";
+  delete correo.dataset.manual;
+  $("mc-avisar").checked = !evento;
+  $("mc-avisar-txt").textContent = evento ? "Avisar del cambio por mail" : "Avisar por mail (a la persona y al equipo)";
+  _calPintarModalidad();
+  _calPintarAviso();
   _calPintarTodoElDia();
   _calPintarChipsMarcas();
   if ($("mc-actas").value) _calVistaPreviaActas();
@@ -316,6 +404,10 @@ async function _calGuardar(ev) {
   if (!$("mc-fecha").value) return error("Elegí la fecha.");
   if (!todo && !hora) return error("Poné la hora, o tildá «Todo el día».");
   if (todo && $("mc-hasta").value && $("mc-hasta").value < $("mc-fecha").value) return error("«Hasta» no puede ser anterior a la fecha de inicio.");
+  const modalidad = _calModalidad();
+  const avisar = $("mc-avisar").checked;
+  const email = $("mc-email").value.trim();
+  if (avisar && email && !email.split(/[,;\s]+/).filter(Boolean).every(m => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(m))) return error("El mail de la persona no es válido.");
   const actas = _calActasDelCampo();
   const mala = actas.find(a => !/^\d{4,9}$/.test(a));
   if (mala) return error(`«${mala}» no es un número de acta (son de 4 a 9 cifras, separados por coma).`);
@@ -328,17 +420,31 @@ async function _calGuardar(ev) {
     todo_el_dia: todo,
     fecha_fin: todo && $("mc-hasta").value && $("mc-hasta").value !== $("mc-fecha").value ? $("mc-hasta").value : null,
     descripcion: $("mc-notas").value,
-    lugar: $("mc-lugar").value,
+    lugar: modalidad === "meet" ? "" : $("mc-lugar").value,
     actas: [...new Set(actas)],
+    modalidad,
+    avisar,
+    email_aviso: avisar ? email : null,
   };
   const ctx = _calModalCtx || {};
   $("mc-guardar").disabled = true;
   $("mc-guardar").textContent = "Guardando…";
   try {
-    if (ctx.evento) await apiJson(`/api/calendario/eventos/${ctx.evento.id}`, "PUT", cuerpo);
-    else await apiJson("/api/calendario/eventos", "POST", cuerpo);
+    const r = ctx.evento ? await apiJson(`/api/calendario/eventos/${ctx.evento.id}`, "PUT", cuerpo)
+                         : await apiJson("/api/calendario/eventos", "POST", cuerpo);
     calCerrarModal();
-    mostrarAviso(ctx.evento ? "Evento actualizado (también en Google Calendar)" : "Evento agendado (también en Google Calendar)");
+    const partes = [ctx.evento ? "Evento actualizado (también en Google Calendar)" : "Evento agendado (también en Google Calendar)"];
+    if (r && r.evento && r.evento.meet_url && modalidad === "meet") partes.push("videollamada de Meet creada");
+    let hayError = false;
+    const av = r && r.aviso;
+    if (av) {
+      for (const [quien, x] of [["a la persona", av.persona], ["al equipo", av.equipo]]) {
+        if (!x) continue;
+        if (x.enviado) partes.push(`aviso enviado ${quien} (${x.email})`);
+        else { hayError = true; partes.push(`no se pudo avisar ${quien}: ${x.error}`); }
+      }
+    }
+    mostrarAviso(partes.join(" · "), hayError ? "aviso" : undefined);
     if (ctx.alGuardar) ctx.alGuardar();
   } catch (e) {
     $("mc-guardar").disabled = false;

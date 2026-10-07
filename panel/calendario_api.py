@@ -10,17 +10,26 @@ Rutas:
   GET    /api/calendario/eventos?desde&hasta  eventos de un rango de fechas (AAAA-MM-DD)
   GET    /api/calendario/por-actas?actas=a,b  eventos que nombran esas actas (ficha del titular)
   GET    /api/calendario/actas?actas=a,b      de quién es cada acta (vista previa del formulario)
-  POST   /api/calendario/eventos              crear (en Google y en el panel)
-  PUT    /api/calendario/eventos/{id}         editar
+  POST   /api/calendario/eventos              crear (en Google y en el panel); con modalidad «meet» genera el link;
+                                              con avisar=true manda el mail a la persona y la copia al equipo
+  PUT    /api/calendario/eventos/{id}         editar (con avisar=true, manda el aviso de cambio)
   DELETE /api/calendario/eventos/{id}         borrar (también en Google)
+  GET    /api/calendario/google/conectar      (admin) empieza la conexión con la cuenta de Google del estudio (OAuth)
+  GET    /api/calendario/google/callback      (admin) vuelta de Google: muestra el token para cargar en Railway
 """
 
 import datetime as _dt
+import html as _html
+import os
 import re
+import secrets
 from typing import List, Optional
+from urllib.parse import urlencode
 
 import psycopg2.extras
-from fastapi import APIRouter, Depends, HTTPException, Query
+import requests
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import BaseModel
 
 import calendario_core as cal
@@ -40,6 +49,9 @@ class EventoEntrada(BaseModel):
     descripcion: Optional[str] = None
     lugar: Optional[str] = None
     actas: Optional[List[str]] = None
+    modalidad: Optional[str] = None      # «meet» | «llamada» | «presencial»
+    avisar: Optional[bool] = False       # mandar el mail de aviso (a la persona, si hay mail, y la copia al equipo)
+    email_aviso: Optional[str] = None    # a quién se le avisa (uno o varios separados por coma)
 
 
 def _fecha(valor: str, nombre: str) -> _dt.date:
@@ -53,7 +65,8 @@ def _lista_actas(texto: str) -> list:
     return [a for a in re.split(r"[,\s]+", texto or "") if re.fullmatch(r"\d{4,9}", a)][:200]
 
 
-def crear_router(verificar_login, conexion) -> APIRouter:
+def crear_router(verificar_login, conexion, verificar_admin=None) -> APIRouter:
+    verificar_admin = verificar_admin or verificar_login
     router = APIRouter()
 
     def rcur(conn):
@@ -71,18 +84,28 @@ def crear_router(verificar_login, conexion) -> APIRouter:
         codigo = 502 if isinstance(e, cal.GoogleError) else 400
         return HTTPException(status_code=codigo, detail=str(e))
 
+    def _redirect_uri(request: Request) -> str:
+        proto = (request.headers.get("x-forwarded-proto") or request.url.scheme).split(",")[0].strip()
+        host = (request.headers.get("x-forwarded-host") or request.headers.get("host") or request.url.netloc).split(",")[0].strip()
+        return f"{proto}://{host}/api/calendario/google/callback"
+
     @router.get("/api/calendario/estado")
-    def estado(_: str = Depends(verificar_login)):
+    def estado(request: Request, _: str = Depends(verificar_login)):
         with conexion() as conn:
             with rcur(conn) as cur:
                 try:
-                    return cal.estado(cur)
+                    datos = cal.estado(cur)
+                    datos["redirect_uri"] = _redirect_uri(request)
+                    return datos
                 except Exception:
                     conn.rollback()
                     # La tabla puede no existir todavía si el panel recién arrancó: se informa igual.
                     return {"configurado": cal.configurado(), "calendario": cal.calendar_id(),
-                            "cuenta_servicio": cal.cuenta_servicio(), "ultimo_ok_en": None,
-                            "ultimo_error": None, "sondeo_segundos": cal.SONDEO_SEGUNDOS}
+                            "cuenta_servicio": cal.cuenta_servicio(), "puede_meet": cal.puede_meet(),
+                            "oauth_conectado": cal.oauth_completo(), "oauth_pendiente": cal.oauth_pendiente(),
+                            "aviso_equipo": cal.mail_equipo(), "ultimo_ok_en": None,
+                            "ultimo_error": None, "sondeo_segundos": cal.SONDEO_SEGUNDOS,
+                            "redirect_uri": _redirect_uri(request)}
 
     @router.post("/api/calendario/sincronizar")
     def sincronizar(completa: bool = False, _: str = Depends(verificar_login)):
@@ -125,6 +148,15 @@ def crear_router(verificar_login, conexion) -> APIRouter:
                     raise HTTPException(status_code=404, detail="Ese evento no existe")
                 return cal._con_vinculos(cur, [cal.evento_a_json(fila)])[0]
 
+    def _avisar(evento_id: int, datos: EventoEntrada, accion: str, usuario: str):
+        """El evento ya está en Google: un mail que falla no lo deshace, se informa aparte."""
+        if not datos.avisar:
+            return None
+        try:
+            return cal.avisar(conexion, evento_id, accion, usuario, datos.email_aviso or "")
+        except Exception as e:
+            return {"persona": None, "equipo": {"email": cal.mail_equipo() or "", "enviado": False, "error": str(e)[:300]}}
+
     @router.post("/api/calendario/eventos")
     def crear(datos: EventoEntrada, usuario: str = Depends(verificar_login)):
         _configurado_o_409()
@@ -132,7 +164,7 @@ def crear_router(verificar_login, conexion) -> APIRouter:
             nuevo = cal.crear_evento(conexion, datos.dict(), usuario)
         except cal.CalendarioError as e:
             raise _como_http(e)
-        return {"evento": _evento_por_id(nuevo)}
+        return {"evento": _evento_por_id(nuevo), "aviso": _avisar(nuevo, datos, "agendada", usuario)}
 
     @router.put("/api/calendario/eventos/{evento_id}")
     def editar(evento_id: int, datos: EventoEntrada, usuario: str = Depends(verificar_login)):
@@ -141,7 +173,7 @@ def crear_router(verificar_login, conexion) -> APIRouter:
             cal.editar_evento(conexion, evento_id, datos.dict(), usuario)
         except cal.CalendarioError as e:
             raise _como_http(e)
-        return {"evento": _evento_por_id(evento_id)}
+        return {"evento": _evento_por_id(evento_id), "aviso": _avisar(evento_id, datos, "modificada", usuario)}
 
     @router.delete("/api/calendario/eventos/{evento_id}")
     def borrar(evento_id: int, _: str = Depends(verificar_login)):
@@ -151,5 +183,83 @@ def crear_router(verificar_login, conexion) -> APIRouter:
         except cal.CalendarioError as e:
             raise _como_http(e)
         return {"ok": True}
+
+    # ── Conexión con la cuenta de Google del estudio (para poder generar links de Meet) ──
+
+    def _pagina(titulo: str, cuerpo_html: str, codigo: int = 200) -> HTMLResponse:
+        pagina = (
+            '<!doctype html><html lang="es"><head><meta charset="utf-8">'
+            '<meta name="viewport" content="width=device-width,initial-scale=1">'
+            f"<title>{_html.escape(titulo)}</title>"
+            '<link rel="stylesheet" href="/static/comun.css"><link rel="stylesheet" href="/static/calendario.css">'
+            '</head><body><main class="cal-pagina" style="max-width:640px;margin:40px auto;padding:0 16px">'
+            f"<h2>{_html.escape(titulo)}</h2>{cuerpo_html}"
+            '<p><a href="/calendario">← Volver al calendario</a></p></main></body></html>'
+        )
+        return HTMLResponse(pagina, status_code=codigo, headers={"Cache-Control": "no-store"})
+
+    @router.get("/api/calendario/google/conectar")
+    def conectar(request: Request, _: str = Depends(verificar_admin)):
+        cid, secreto, _token = cal._oauth_config()
+        if not (cid and secreto):
+            return _pagina("Falta el cliente OAuth", "<p>Cargá <code>GOOGLE_OAUTH_CLIENT_ID</code> y <code>GOOGLE_OAUTH_CLIENT_SECRET</code> "
+                           "en Railway (servicio del panel) y volvé a probar. La guía está en la pantalla Calendario.</p>", 409)
+        estado_oauth = secrets.token_urlsafe(24)
+        params = {"client_id": cid, "redirect_uri": _redirect_uri(request), "response_type": "code",
+                  "scope": cal.SCOPE, "access_type": "offline", "prompt": "consent", "state": estado_oauth}
+        if "@" in (cal.calendar_id() or ""):
+            params["login_hint"] = cal.calendar_id()
+        resp = RedirectResponse(cal.AUTH_URI + "?" + urlencode(params), status_code=302)
+        resp.set_cookie("cal_oauth_state", estado_oauth, max_age=600, httponly=True,
+                        secure=(_redirect_uri(request).startswith("https")), samesite="lax", path="/api/calendario/google")
+        return resp
+
+    @router.get("/api/calendario/google/callback")
+    def callback(request: Request, code: str = "", state: str = "", error: str = "", _: str = Depends(verificar_admin)):
+        esperado = request.cookies.get("cal_oauth_state") or ""
+        if error:
+            return _pagina("Google no autorizó la conexión", f"<p>Google respondió: <code>{_html.escape(error)}</code>. Probá de nuevo desde la pantalla Calendario.</p>", 400)
+        if not code or not esperado or not secrets.compare_digest(esperado, state or ""):
+            return _pagina("La conexión venció", "<p>Volvé a empezar desde el botón «Conectar con Google» de la pantalla Calendario.</p>", 400)
+        cid, secreto, _token = cal._oauth_config()
+        if not (cid and secreto):
+            return _pagina("Falta el cliente OAuth", "<p>Faltan <code>GOOGLE_OAUTH_CLIENT_ID</code> o <code>GOOGLE_OAUTH_CLIENT_SECRET</code>.</p>", 409)
+        try:
+            r = requests.post(cal.TOKEN_URI, data={"code": code, "client_id": cid, "client_secret": secreto,
+                                                   "redirect_uri": _redirect_uri(request), "grant_type": "authorization_code"}, timeout=30)
+            datos = r.json()
+        except Exception as e:
+            return _pagina("No se pudo hablar con Google", f"<p>{_html.escape(str(e))}</p>", 502)
+        if r.status_code >= 400 or not datos.get("access_token"):
+            detalle = datos.get("error_description") or datos.get("error") or r.text[:200]
+            return _pagina("Google rechazó el código", f"<p>{_html.escape(str(detalle))}</p>", 400)
+        refresco = datos.get("refresh_token")
+        if not refresco:
+            return _pagina("Google no devolvió el token permanente",
+                           "<p>Pasa cuando esta cuenta ya había autorizado la app. Entrá a "
+                           "<code>myaccount.google.com/permissions</code>, quitale el acceso a la app y volvé a tocar «Conectar con Google».</p>", 400)
+        cuenta = ""
+        try:
+            c = requests.get(cal.API + "/calendars/primary", headers={"Authorization": f"Bearer {datos['access_token']}"}, timeout=30)
+            cuenta = (c.json() or {}).get("id") or ""
+        except Exception:
+            pass
+        aviso_cuenta = ""
+        if cuenta and cal.calendar_id() and cuenta.lower() != cal.calendar_id().lower():
+            aviso_cuenta = (f"<p><strong>Ojo:</strong> la cuenta que autorizaste es <code>{_html.escape(cuenta)}</code> y "
+                            f"<code>GOOGLE_CALENDAR_ID</code> es <code>{_html.escape(cal.calendar_id())}</code>. Si el calendario del estudio "
+                            "es el de la otra cuenta, volvé a conectar entrando con esa.</p>")
+        cuerpo = (
+            (f"<p>Cuenta conectada: <strong>{_html.escape(cuenta)}</strong>.</p>" if cuenta else "")
+            + aviso_cuenta
+            + "<p>Último paso: copiá este valor completo y cargalo en Railway, en el servicio del panel, como variable "
+              "<code>GOOGLE_OAUTH_REFRESH_TOKEN</code>. Cuando Railway reinicie el panel, ya se pueden generar links de Meet.</p>"
+              f'<p><code style="word-break:break-all;user-select:all;display:block;padding:10px;background:#f4f6f9;border-radius:6px">{_html.escape(refresco)}</code></p>'
+              "<p>Es una clave: no la compartas ni la pegues en un chat o mail. Esta página no se guarda en ningún lado; "
+              "si la cerrás sin copiarla, se vuelve a generar con «Conectar con Google».</p>"
+        )
+        resp = _pagina("Cuenta de Google conectada", cuerpo)
+        resp.delete_cookie("cal_oauth_state", path="/api/calendario/google")
+        return resp
 
     return router
