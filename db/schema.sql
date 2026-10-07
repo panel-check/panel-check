@@ -528,6 +528,8 @@ CREATE TABLE IF NOT EXISTS calendario_eventos (
 -- Agregadas con la modalidad: 'meet' | 'llamada' | 'presencial' y el link de la videollamada de Meet.
 ALTER TABLE calendario_eventos ADD COLUMN IF NOT EXISTS modalidad TEXT;
 ALTER TABLE calendario_eventos ADD COLUMN IF NOT EXISTS meet_url TEXT;
+-- Mail de la persona a la que se avisa del evento (para poder avisarle si después se cambia).
+ALTER TABLE calendario_eventos ADD COLUMN IF NOT EXISTS email_aviso TEXT;
 CREATE INDEX IF NOT EXISTS idx_calendario_eventos_inicio ON calendario_eventos(inicio);
 CREATE INDEX IF NOT EXISTS idx_calendario_eventos_actas ON calendario_eventos USING GIN (actas);
 

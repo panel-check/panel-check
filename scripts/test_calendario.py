@@ -549,6 +549,39 @@ class ModalidadYMeet(unittest.TestCase):
             def cursor(s, **kw): return Cur()
         return lambda: Conn()
 
+    def test_editar_de_horario_a_todo_el_dia_anula_lo_que_sobra(self):
+        """Causa del 502: en un PATCH start/end se mezclan con lo que ya tiene el evento; con date y dateTime juntos Google rechaza."""
+        self.respuestas = [{"id": "g1"}]
+        cc.editar_evento(self.conexion_con(("g1", None)), 7,
+                         {"titulo": "CUMPLE", "fecha": "2026-10-14", "fecha_fin": "2026-10-15", "todo_el_dia": True}, "marcos")
+        cuerpo = self.pedidos[-1][2]
+        self.assertEqual(cuerpo["start"], {"date": "2026-10-14", "dateTime": None, "timeZone": None})
+        self.assertEqual(cuerpo["end"], {"date": "2026-10-16", "dateTime": None, "timeZone": None})   # el fin de Google es exclusivo
+        # y al revés: de todo el día a un horario
+        self.respuestas = [{"id": "g1"}]
+        cc.editar_evento(self.conexion_con(("g1", None)), 7, self.DATOS, "marcos")
+        cuerpo = self.pedidos[-1][2]
+        self.assertIsNone(cuerpo["start"]["date"])
+        self.assertEqual(cuerpo["start"]["dateTime"], "2026-10-08T16:00:00-03:00")
+        self.assertEqual(cuerpo["end"]["dateTime"], "2026-10-08T17:00:00-03:00")
+        self.assertIsNone(cuerpo["end"]["date"])
+
+    def test_el_mail_de_la_persona_se_guarda_en_el_evento(self):
+        c = cc._cuerpo_evento({**self.DATOS, "email_aviso": " a@b.com,  c@d.com "}, "marcos")
+        self.assertEqual(c["extendedProperties"]["private"]["email_aviso"], "a@b.com, c@d.com")
+        self.assertNotIn("email_aviso", cc._cuerpo_evento(self.DATOS, "marcos")["extendedProperties"]["private"])
+        e = ev("a")
+        e["extendedProperties"] = {"private": {"panel": "1", "email_aviso": " a@b.com "}}
+        self.assertEqual(cc.evento_a_fila(e, "c")["email_aviso"], "a@b.com")
+        self.assertIsNone(cc.evento_a_fila(ev("b"), "c")["email_aviso"])
+        # al editar sin mail, se borra el que había
+        self.respuestas = [{"id": "g1"}]
+        cc.editar_evento(self.conexion_con(("g1", None)), 7, self.DATOS, "marcos")
+        self.assertIsNone(self.pedidos[-1][2]["extendedProperties"]["private"]["email_aviso"])
+        self.respuestas = [{"id": "g1"}]
+        cc.editar_evento(self.conexion_con(("g1", None)), 7, {**self.DATOS, "email_aviso": "a@b.com"}, "marcos")
+        self.assertEqual(self.pedidos[-1][2]["extendedProperties"]["private"]["email_aviso"], "a@b.com")
+
     def test_editar_agrega_saca_o_conserva_el_meet(self):
         self.conectar_oauth()
         # tenía llamada y pasa a Meet: se pide la sala
@@ -1002,6 +1035,41 @@ class ExtraerAgendaConIA(unittest.TestCase):
         os.environ.pop("IA_API_KEY", None)
         with self.assertRaises(self.ia.ErrorIA):
             self.ia.extraer_agenda("texto largo de prueba", "2026-10-07", "miércoles")
+
+
+class ResolverActasConAnalisis(unittest.TestCase):
+    """resolver_actas marca qué actas están en `marcas` y si ya tienen análisis de marca escrito."""
+
+    class Cur:
+        def __init__(self):
+            self.rows, self.sqls = [], []
+
+        def execute(self, sql, params=None):
+            self.sqls.append(sql)
+            if "FROM marcas m" in sql:
+                self.rows = [{"acta": "111111", "denominacion": "LUNA", "titular": "PEREZ", "clave": "20111111112", "email": "p@x.com"},
+                             {"acta": "222222", "denominacion": "SOL", "titular": "GOMEZ", "clave": "20222222223", "email": None}]
+            elif "FROM analisis_marca" in sql:
+                self.rows = [{"acta": "111111"}]
+            else:
+                self.rows = []
+            if params:   # como la base: solo las actas que se pidieron
+                self.rows = [r for r in self.rows if r["acta"] in params[0]]
+
+        def fetchall(self):
+            return self.rows
+
+    def test_en_marcas_y_tiene_analisis(self):
+        r = cc.resolver_actas(self.Cur(), ["111111", "222222", "333333"])
+        self.assertEqual((r["111111"]["en_marcas"], r["111111"]["tiene_analisis"]), (True, True))
+        self.assertEqual((r["222222"]["en_marcas"], r["222222"]["tiene_analisis"]), (True, False))
+        self.assertEqual((r["333333"]["en_marcas"], r["333333"]["tiene_analisis"], r["333333"]["tipo"]), (False, False, "desconocida"))
+        self.assertEqual(r["111111"]["clave"], "20111111112")
+
+    def test_sin_marcas_no_consulta_los_analisis(self):
+        cur = self.Cur()
+        cc.resolver_actas(cur, ["333333"])
+        self.assertFalse(any("analisis_marca" in s for s in cur.sqls))
 
 
 if __name__ == "__main__":

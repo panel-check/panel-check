@@ -104,6 +104,23 @@ function calComoHtml(e) {
 
 // plegado: tarjeta «cerrada» (una sola línea: hora y título) que se despliega al tocarla. Se usa en la agenda
 // para lo que ya pasó hoy, así lo próximo queda a la vista.
+// Botones del análisis de marca de cada marca vinculada: «Ver» (abre el PDF) si ya está escrito;
+// si no, «Generar» (lleva a la pestaña Análisis de marca de esa marca, en la ficha del titular).
+function calAnalisisHtml(e) {
+  const marcas = (e.vinculos || []).filter(v => v.en_marcas).slice(0, 4);
+  const varios = marcas.length > 1;
+  return marcas.map(v => {
+    const suf = varios ? ` · ${_escapeHtml(v.denominacion || v.acta)}` : "";
+    if (v.tiene_analisis) {
+      return `<a class="cal-btn chico" href="/api/analisis-marca/${encodeURIComponent(v.acta)}/pdf" target="_blank" rel="noopener" title="Abrir el PDF del análisis de marca">📄 Ver análisis de marca${suf}</a>`;
+    }
+    if (v.clave) {
+      return `<a class="cal-btn chico principal" href="/titular/${encodeURIComponent(v.clave)}?acta=${encodeURIComponent(v.acta)}#analisis" title="Todavía no se escribió el análisis de esta marca: se arma en la ficha del titular">📝 Generar análisis de marca${suf}</a>`;
+    }
+    return "";
+  }).join("");
+}
+
 function calTarjetaHtml(e, { fechaCorta = false, plegado = false, abierto = false } = {}) {
   const clase = calClaseEvento(e);
   const donde = calComoHtml(e);
@@ -119,8 +136,8 @@ function calTarjetaHtml(e, { fechaCorta = false, plegado = false, abierto = fals
     ${calVinculosHtml(e)}
     ${e.descripcion ? `<p class="cal-evento-notas">${_escapeHtml(e.descripcion)}</p>` : ""}
     <div class="cal-evento-acciones">
+      ${calAnalisisHtml(e)}
       <button type="button" class="cal-btn chico" data-cal-editar="${e.id}">Editar</button>
-      ${e.link ? `<a class="cal-btn chico" href="${_escapeHtml(e.link)}" target="_blank" rel="noopener">Abrir en Google Calendar</a>` : ""}
       <button type="button" class="cal-btn chico peligro" data-cal-borrar="${e.id}">Borrar</button>
     </div>
   ${plegado ? "</details>" : "</div>"}`;
@@ -234,7 +251,12 @@ function _calAsegurarModal() {
   document.getElementById("mc-cancelar").addEventListener("click", calCerrarModal);
   document.getElementById("mc-todo").addEventListener("change", _calPintarTodoElDia);
   document.querySelectorAll('input[name="mc-mod"]').forEach(r => r.addEventListener("change", _calPintarModalidad));
-  document.getElementById("mc-avisar").addEventListener("change", _calPintarAviso);
+  document.getElementById("mc-avisar").addEventListener("change", (ev) => { ev.target.dataset.manual = "1"; _calPintarAviso(); });
+  for (const id of ["mc-fecha", "mc-hora", "mc-dur", "mc-hasta", "mc-todo"]) {
+    document.getElementById(id).addEventListener("change", _calAvisoPorCambio);
+  }
+  document.getElementById("mc-hora").addEventListener("input", _calAvisoPorCambio);
+  document.querySelectorAll('input[name="mc-mod"]').forEach(r => r.addEventListener("change", _calAvisoPorCambio));
   document.getElementById("mc-email").addEventListener("input", (ev) => { ev.target.dataset.manual = "1"; });
   document.getElementById("mc-fecha").addEventListener("change", () => {
     const h = document.getElementById("mc-hasta");
@@ -532,15 +554,37 @@ function _calPintarModalidad() {
   lugar.placeholder = mod === "llamada" ? "Ej: 11 5555-1234" : mod === "presencial" ? "Ej: Estudio, Av. Corrientes 1234" : "Estudio, teléfono…";
 }
 
+// Lo que, si cambia al editar un evento, obliga a avisarle a la persona: cuándo es y cómo es.
+function _calFirma() {
+  const $ = (id) => document.getElementById(id);
+  const todo = $("mc-todo").checked;
+  return JSON.stringify([$("mc-fecha").value, todo, todo ? $("mc-hasta").value : $("mc-hora").value, todo ? "" : $("mc-dur").value, _calModalidad() || ""]);
+}
+
+function _calCambioHorario() {
+  const ctx = _calModalCtx;
+  return !!(ctx && ctx.evento && ctx.original && _calFirma() !== ctx.original);
+}
+
+// Al editar, si se cambia la fecha, la hora, la duración o cómo es, el aviso se tilda solo
+// (la persona puede destildarlo); si se vuelve a lo de antes, se destilda.
+function _calAvisoPorCambio() {
+  const av = document.getElementById("mc-avisar");
+  if (!_calModalCtx || !_calModalCtx.evento || av.dataset.manual) return;
+  av.checked = _calCambioHorario();
+  _calPintarAviso();
+}
+
 function _calPintarAviso() {
   const $ = (id) => document.getElementById(id);
   const on = $("mc-avisar").checked;
   $("mc-l-email").hidden = !on;
   const equipo = (_calEstado && _calEstado.aviso_equipo) || "";
   $("mc-aviso-ayuda").hidden = !on;
-  $("mc-aviso-ayuda").textContent = equipo
+  const motivo = on && _calCambioHorario() ? "Cambiaste cuándo o cómo es, por eso queda tildado el aviso (destildalo si no querés avisar). " : "";
+  $("mc-aviso-ayuda").textContent = motivo + (equipo
     ? `Se le manda el aviso a esa persona y una copia a ${equipo}.`
-    : "No hay mail del equipo configurado: el aviso va solo a la persona.";
+    : "No hay mail del equipo configurado: el aviso va solo a la persona.");
 }
 
 let _calEstado = null;
@@ -665,11 +709,14 @@ async function calAbrirModal({ evento = null, fecha = null, actas = [], marcas =
   const correo = $("mc-email");
   correo.value = "";
   delete correo.dataset.manual;
+  if (evento && evento.email_aviso) { correo.value = evento.email_aviso; correo.dataset.manual = "1"; }
+  delete $("mc-avisar").dataset.manual;
   $("mc-avisar").checked = !evento;
   $("mc-avisar-txt").textContent = evento ? "Avisar del cambio por mail" : "Avisar por mail (a la persona y al equipo)";
   _calPintarModalidad();
-  _calPintarAviso();
   _calPintarTodoElDia();
+  _calModalCtx.original = evento ? _calFirma() : null;
+  _calPintarAviso();
   _calPintarChipsMarcas();
   if ($("mc-actas").value) _calVistaPreviaActas();
   document.getElementById("modal-cal").classList.add("abierto");
@@ -710,7 +757,8 @@ async function _calGuardar(ev) {
     actas: [...new Set(actas)],
     modalidad,
     avisar,
-    email_aviso: avisar ? email : null,
+    // el mail de la persona se guarda en el evento (si es válido) para poder avisarle de cambios más adelante
+    email_aviso: email && email.split(/[,;\s]+/).filter(Boolean).every(m => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(m)) ? email : null,
   };
   const ctx = _calModalCtx || {};
   $("mc-guardar").disabled = true;

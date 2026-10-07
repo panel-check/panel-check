@@ -12,6 +12,8 @@ Rutas (todas con sesión):
                                                 que citan los fundamentos) y guardar oposiciones y datos
   POST  /api/analisis-marca/{acta}/pdf          el PDF con el membrete de Smarties (con el texto que
                                                 se mande, o el guardado)
+  GET   /api/analisis-marca/{acta}/pdf          el mismo PDF con un link: siempre con el análisis guardado
+                                                (lo abre el botón «Ver análisis de marca» del Calendario)
   GET   /api/analisis-marca/{acta}/logo         el logo de la marca (guardado de INPI), si tiene
   GET   /api/analisis-marca-opuesta/{acta}/logo  el logo de la marca de un oponente (guardado de INPI), si tiene
   PUT   /api/analisis-marca-lote/mismo-analisis recordar (por titular) «el mismo análisis para todas»
@@ -186,16 +188,14 @@ def crear_router(verificar_login, conexion) -> APIRouter:
         out["aviso"] = aviso
         return out
 
-    @router.post("/api/analisis-marca/{acta}/pdf")
-    def pdf_analisis(acta: str, body: PedidoPdf, _: str = Depends(verificar_login)):
-        acta = _acta(acta)
+    def _respuesta_pdf(acta: str, texto_pedido: Optional[str]) -> Response:
         with conexion() as conn, rcur(conn) as cur:
             m = _marca(cur, acta)
             guardado = am.leer_analisis(cur, acta)
             logo = am.leer_logo(cur, acta)
             op, _pend = am.adjuntar_opuestas(cur, acta, am.armar_oposiciones(m, guardado["oposiciones"]), con_logo=True)
         try:
-            texto = am.validar_texto(body.texto) if body.texto is not None else guardado["texto"]
+            texto = am.validar_texto(texto_pedido) if texto_pedido is not None else guardado["texto"]
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
         d = am.datos_para_pdf(m, texto, op, logo, guardado["expediente"])
@@ -203,6 +203,17 @@ def crear_router(verificar_login, conexion) -> APIRouter:
             content=am.generar_pdf(d), media_type="application/pdf",
             headers={"Content-Disposition": f"inline; filename*=UTF-8''{quote(am.nombre_archivo(d))}",
                      "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"})
+
+    @router.post("/api/analisis-marca/{acta}/pdf")
+    def pdf_analisis(acta: str, body: PedidoPdf, _: str = Depends(verificar_login)):
+        return _respuesta_pdf(_acta(acta), body.texto)
+
+    @router.get("/api/analisis-marca/{acta}/pdf")
+    def ver_pdf_analisis(acta: str, _: str = Depends(verificar_login)):
+        """El mismo PDF pero con un link: se arma en el momento con el análisis GUARDADO, así que siempre
+        está al día. Sirve para abrirlo desde otra pantalla (la tarjeta del evento del Calendario) o pasarlo
+        al equipo (requiere sesión del panel)."""
+        return _respuesta_pdf(_acta(acta), None)
 
     @router.get("/api/analisis-marca/{acta}/logo")
     def ver_logo(acta: str, _: str = Depends(verificar_login)):
