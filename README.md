@@ -45,6 +45,15 @@ El workflow `.github/workflows/pipeline.yml` corre estos 6 pasos automáticament
   pestaña **Mails** del panel (tablas `mails_config` y `mails_bajas`); las API
   keys nunca se guardan en la base. `RESEND_FROM` y `NOTIFICAR_A` quedan como
   respaldo si no hay nada guardado.
+- **Google Calendar** — pantalla **Calendario** del panel, sincronizada en las dos
+  direcciones con el calendario de Google del estudio (`panel/calendario_core.py`).
+  En Google Cloud: proyecto con la *Google Calendar API* habilitada y una **cuenta
+  de servicio** con clave JSON; en Google Calendar, compartir el calendario con el mail de
+  esa cuenta con permiso «Hacer cambios en eventos». Se cargan solo en el servicio del
+  panel en Railway (no en GitHub): `GOOGLE_SERVICE_ACCOUNT_JSON` (el JSON completo) y
+  `GOOGLE_CALENDAR_ID` (el mail del calendario principal). Un evento cuya nota dice
+  «Acta N» queda vinculado al cliente o lead de esa marca. Tablas `calendario_eventos`
+  y `calendario_estado`.
 
 ### 2. Cargar los secrets en GitHub
 

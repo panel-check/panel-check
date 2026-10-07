@@ -499,3 +499,43 @@ CREATE TABLE IF NOT EXISTS analisis_titular_opcion (
     actualizado_por  TEXT,
     actualizado_en   TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- Agregado el 07/10/2026: Calendario (sincronización con Google Calendar, ver
+-- panel/calendario_core.py). calendario_eventos es la copia local de los eventos del
+-- calendario de Google; `actas` son los números de acta que nombra la nota del evento
+-- (el cliente o lead se resuelve al leer). calendario_estado es una sola fila con el
+-- marcador de sincronización incremental y el último error. También las crea sola el
+-- panel al arrancar.
+CREATE TABLE IF NOT EXISTS calendario_eventos (
+    id                  BIGSERIAL PRIMARY KEY,
+    calendar_id         TEXT NOT NULL,
+    google_id           TEXT NOT NULL,
+    titulo              TEXT NOT NULL DEFAULT '',
+    descripcion         TEXT,
+    lugar               TEXT,
+    inicio              TIMESTAMPTZ NOT NULL,
+    fin                 TIMESTAMPTZ NOT NULL,
+    todo_el_dia         BOOLEAN NOT NULL DEFAULT false,
+    actas               TEXT[] NOT NULL DEFAULT '{}',
+    origen              TEXT NOT NULL DEFAULT 'google',   -- 'google' | 'panel'
+    creado_por          TEXT,
+    link                TEXT,
+    etag                TEXT,
+    actualizado_google  TIMESTAMPTZ,
+    sincronizado_en     TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (calendar_id, google_id)
+);
+CREATE INDEX IF NOT EXISTS idx_calendario_eventos_inicio ON calendario_eventos(inicio);
+CREATE INDEX IF NOT EXISTS idx_calendario_eventos_actas ON calendario_eventos USING GIN (actas);
+
+CREATE TABLE IF NOT EXISTS calendario_estado (
+    id                 SMALLINT PRIMARY KEY DEFAULT 1,
+    calendar_id        TEXT,
+    sync_token         TEXT,
+    ultimo_intento_en  TIMESTAMPTZ,
+    ultimo_ok_en       TIMESTAMPTZ,
+    ultima_completa_en TIMESTAMPTZ,
+    ultimo_error       TEXT,
+    ultimo_cambios     INTEGER,
+    CONSTRAINT calendario_estado_una_fila CHECK (id = 1)
+);

@@ -19,6 +19,11 @@ Variables de entorno:
                     - formato viejo (HTTP Basic). Solo se leen una vez, para
                       crear los usuarios si la tabla usuarios_panel está vacía.
                       Después se pueden (y conviene) borrar de Railway.
+    GOOGLE_SERVICE_ACCOUNT_JSON / GOOGLE_CALENDAR_ID
+                    - opcionales, para la sección Calendario (sincronización
+                      con Google Calendar): el contenido completo del .json de
+                      la cuenta de servicio y el ID del calendario. Sin esto la
+                      sección muestra cómo conectarlo. Ver calendario_core.py.
     GITHUB_TOKEN    - opcional, para la sección "Automatizaciones" (/crons):
                       un Personal Access Token (fine-grained) con permiso
                       "Actions: Read-only" sobre este repo. Sin esto, esa
@@ -50,6 +55,8 @@ import analisis_api
 import analisis_marca
 import auth
 import auth_api
+import calendario_api
+import calendario_core
 import cartera
 import cartera_api
 import formularios_api
@@ -169,6 +176,22 @@ def migrar_columnas_panel():
             conn.commit()
     except Exception as e:
         print(f"[startup] tabla de análisis de marca salteada (no bloqueante): {e}")
+
+    # Calendario sincronizado con Google Calendar (sección /calendario): no toca
+    # `marcas`. El sondeo (un hilo que pregunta a Google cada 2 minutos qué
+    # cambió) solo se prende si están GOOGLE_SERVICE_ACCOUNT_JSON y GOOGLE_CALENDAR_ID.
+    try:
+        with conexion() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SET lock_timeout = '3s'")
+                calendario_core.crear_tablas(cur)
+            conn.commit()
+    except Exception as e:
+        print(f"[startup] tablas del calendario salteadas (no bloqueante): {e}")
+    try:
+        calendario_core.iniciar_sondeo(conexion)
+    except Exception as e:
+        print(f"[startup] sondeo del calendario no arrancó (no bloqueante): {e}")
 
 
 def _crear_tablas_crm(cur):
@@ -3262,6 +3285,11 @@ def pagina_crm(_: str = Depends(verificar_pagina)):
     return FileResponse(os.path.join(os.path.dirname(__file__), "static", "crm.html"))
 
 
+@app.get("/calendario")
+def pagina_calendario(_: str = Depends(verificar_pagina)):
+    return FileResponse(os.path.join(os.path.dirname(__file__), "static", "calendario.html"))
+
+
 # Sección Clientes (cartera + vigilancia): el router recibe el login, la
 # conexión y los helpers del CRM que necesita (para no importar app.py).
 from types import SimpleNamespace  # noqa: E402
@@ -3303,6 +3331,9 @@ app.include_router(mails_api.crear_router(verificar_login, _auth.verificar_admin
 
 # Pestaña «Análisis de marca» de la ficha del titular: texto, oposiciones y PDF con membrete.
 app.include_router(analisis_api.crear_router(verificar_login, conexion))
+
+# Sección Calendario: eventos sincronizados con Google Calendar, vinculados por número de acta.
+app.include_router(calendario_api.crear_router(verificar_login, conexion))
 
 
 class ArchivosSinCache(StaticFiles):

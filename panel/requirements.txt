@@ -9,3 +9,4 @@ reportlab
 python-docx
 pillow
 pypdf
+google-auth
