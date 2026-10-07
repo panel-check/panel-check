@@ -7,8 +7,12 @@
  *    cambia (burbuja llena), aparece un círculo rojo con la cantidad, el título
  *    de la pestaña muestra "(n)" y, si el mensaje llegó mientras mirabas el
  *    panel, sale un cartelito con quién escribió y qué dijo;
- *  - lupa (🔍) y rayito (⚡), que se agregan solos al principio de la barra:
- *    búsqueda rápida de una marca y accesos rápidos a búsquedas guardadas.
+ *  - lupa (🔍), teléfono (📞) y rayito (⚡), que se agregan solos al principio de
+ *    la barra: búsqueda rápida de una marca, acceso a «Agendar llamada» y accesos
+ *    rápidos a búsquedas guardadas;
+ *  - logo de Meet, que se agrega solo al lado del chat: abre la sala fija de
+ *    reuniones internas del equipo;
+ *  - submenú de segundo nivel dentro de «Más» (Automatizaciones → Boletines, Crons).
  * El HTML del menú está en cada página; acá solo se le da el comportamiento. */
 
 (function () {
@@ -26,6 +30,16 @@
       g.classList.remove("abierto");
       const b = g.querySelector(":scope > .nav-boton");
       if (b) b.setAttribute("aria-expanded", "false");
+      cerrarSubgrupos(g);
+    });
+  }
+
+  // Sub-submenús (los que están adentro de «Más»).
+  function cerrarSubgrupos(dentroDe) {
+    (dentroDe || document).querySelectorAll(".app-header .nav-sub-grupo.abierto").forEach((sg) => {
+      sg.classList.remove("abierto");
+      const b = sg.querySelector(":scope > .nav-sub-boton");
+      if (b) b.setAttribute("aria-expanded", "false");
     });
   }
 
@@ -40,6 +54,21 @@
         g.classList.toggle("abierto", abrir);
         boton.setAttribute("aria-expanded", abrir ? "true" : "false");
       });
+    });
+    document.querySelectorAll(".app-header .nav-sub-grupo").forEach((sg) => {
+      const boton = sg.querySelector(":scope > .nav-sub-boton");
+      if (!boton) return;
+      boton.addEventListener("click", (e) => {
+        e.stopPropagation();   // «Más» sigue abierto
+        const abrir = !sg.classList.contains("abierto");
+        cerrarSubgrupos(sg.parentElement);
+        sg.classList.toggle("abierto", abrir);
+        boton.setAttribute("aria-expanded", abrir ? "true" : "false");
+      });
+    });
+    // Al sacar el mouse de «Más», el sub-submenú vuelve a quedar cerrado.
+    document.querySelectorAll(".app-header .nav-grupo").forEach((g) => {
+      g.addEventListener("mouseleave", () => cerrarSubgrupos(g));
     });
     document.addEventListener("click", () => cerrarGrupos(null));
     document.addEventListener("keydown", (e) => { if (e.key === "Escape") cerrarGrupos(null); });
@@ -493,7 +522,42 @@
     document.addEventListener("click", () => { if (form.classList.contains("abierto") && !campo.value.trim()) abrir(false); });
   }
 
-  function iniciar() { iniciarAccesos(); iniciarBusqueda(); iniciarGrupos(); iniciarChat(); }
+  // ── Atajos: teléfono (📞) y Meet ───────────────────────────────────────
+  // Teléfono: va entre la lupa y el rayito y abre la pantalla pública de «Agendar llamada».
+  // Meet: va al lado del chat y abre la sala fija que el equipo deja abierta para reuniones
+  // internas. Los dos se abren en una pestaña nueva para no perder lo que se está mirando.
+  const URL_AGENDAR = "https://panel.registrodemimarca.com.ar/agendar-llamada";
+  const URL_MEET = "https://meet.google.com/tuo-iwyz-jpd?pli=1&authuser=1";
+  const TEL_SVG = '<svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/></svg>';
+  const MEET_SVG = '<svg class="nav-ico nav-ico-color" viewBox="0 0 87.5 72" aria-hidden="true"><path fill="#00832d" d="M49.5 36l8.53 9.75 11.47 7.33 2-17.02-2-16.64-11.69 6.44z"/><path fill="#0066da" d="M0 51.5V66c0 3.315 2.685 6 6 6h14.5l3-10.96-3-9.54-9.95-3z"/><path fill="#e94235" d="M20.5 0L0 20.5l10.55 3 9.95-3 2.95-9.41z"/><path fill="#2684fc" d="M20.5 20.5H0v31h20.5z"/><path fill="#00ac47" d="M82.6 8.68L69.5 19.42v33.66l13.16 10.79c1.97 1.54 4.85.135 4.85-2.37V11c0-2.535-2.945-3.925-4.91-2.32zM49.5 36v15.5h-29V72h43c3.315 0 6-2.685 6-6V53.08z"/><path fill="#ffba00" d="M63.5 0h-43v20.5h29V36l20-16.57V6c0-3.315-2.685-6-6-6z"/></svg>';
+
+  function enlaceNav(clase, href, titulo, svg) {
+    const a = document.createElement("a");
+    a.className = clase;
+    a.href = href;
+    a.target = "_blank";
+    a.rel = "noopener noreferrer";
+    a.title = titulo;
+    a.setAttribute("aria-label", titulo);
+    a.innerHTML = svg;
+    return a;
+  }
+
+  function iniciarAtajos() {
+    const nav = document.querySelector(".app-header .nav");
+    if (!nav) return;
+    if (!nav.querySelector(".nav-tel")) {
+      const tel = enlaceNav("nav-tel", URL_AGENDAR, "Agendar una llamada", TEL_SVG);
+      const lupa = nav.querySelector(".nav-buscar");
+      nav.insertBefore(tel, lupa ? lupa.nextSibling : nav.firstChild);
+    }
+    if (!nav.querySelector(".nav-meet")) {
+      const meet = enlaceNav("nav-meet", URL_MEET, "Reunión interna (Google Meet)", MEET_SVG);
+      nav.insertBefore(meet, document.getElementById("link-comentarios"));   // si no hay chat, queda al final
+    }
+  }
+
+  function iniciar() { iniciarAccesos(); iniciarBusqueda(); iniciarAtajos(); iniciarGrupos(); iniciarChat(); }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", iniciar);
   else iniciar();
 })();
