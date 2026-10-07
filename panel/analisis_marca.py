@@ -83,6 +83,41 @@ def crear_tablas(cur):
         )
         """
     )
+    # Opción por titular (CUIT): en el PDF con varias marcas, «el mismo análisis para todas».
+    # Se recuerda para todo el equipo.
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS analisis_titular_opcion (
+            cuit            TEXT PRIMARY KEY,
+            mismo_analisis  BOOLEAN NOT NULL DEFAULT false,
+            actualizado_por TEXT,
+            actualizado_en  TIMESTAMPTZ NOT NULL DEFAULT now()
+        )
+        """
+    )
+
+
+def cuit_de(m: dict):
+    """CUIT del titular de la marca (11 dígitos) o None si no figura."""
+    d = re.sub(r"\D", "", str((m or {}).get("cuit") or ""))
+    return d if len(d) == 11 else None
+
+
+def leer_mismo_analisis(cur, cuit) -> bool:
+    if not cuit:
+        return False
+    cur.execute("SELECT mismo_analisis FROM analisis_titular_opcion WHERE cuit = %s", (cuit,))
+    f = cur.fetchone()
+    return bool(f and _valor(f, "mismo_analisis", 0))
+
+
+def guardar_mismo_analisis(cur, cuit: str, valor: bool, usuario: str):
+    cur.execute(
+        "INSERT INTO analisis_titular_opcion (cuit, mismo_analisis, actualizado_por, actualizado_en) "
+        "VALUES (%s, %s, %s, now()) ON CONFLICT (cuit) DO UPDATE SET mismo_analisis = EXCLUDED.mismo_analisis, "
+        "actualizado_por = EXCLUDED.actualizado_por, actualizado_en = now()",
+        (cuit, bool(valor), usuario),
+    )
 
 
 # ── Formatos ──────────────────────────────────────────────────────────────

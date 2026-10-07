@@ -615,6 +615,7 @@ let anIniciado = false;
 let anIaDisponible = false; // el servidor tiene la clave de la IA
 let anBase = "";            // texto que se mandó a mejorar (la propuesta se compara contra este)
 let anPrevio = null;        // texto anterior a «Usar esta versión», para poder volver
+let anUnicoLeido = false;    // ya se leyó del servidor la opción recordada
 let anUnico = false;         // PDF con varias marcas: un solo análisis (el de la marca abierta) para todas
 let anSel = new Set();      // actas tildadas para el PDF con varias marcas
 let anTocadas = new Set();  // actas que la persona tildó o destildó a mano (ya no se tildan solas)
@@ -789,7 +790,7 @@ function anPintarLote() {
   const fa = anFilas.find(r => r.acta === anActa);
   document.getElementById("an-lote-unico-nota").textContent = anUnico
     ? `Se usa el análisis de «${fa ? mlNombreMarca(fa) : anActa}» (la marca que tenés abierta) y sale una sola vez, al final del PDF, después de los datos de todas las marcas tildadas.`
-    : "Sin tildar: cada marca sale con su propio análisis.";
+    : "Sin tildar: cada marca sale con su propio análisis. Lo que elijas se recuerda para este titular.";
   const n = anSel.size;
   const b = document.getElementById("an-lote-pdf");
   b.disabled = n === 0;
@@ -799,7 +800,8 @@ function anPintarLote() {
 async function anActualizarLote() {
   if (anFilas.length < 2) { anPintarLote(); return; }
   await anActualizarLoteEstado();
-  for (const f of anFilas) if (!anTocadas.has(f.acta) && anEstado[f.acta]?.tiene_texto) anSel.add(f.acta);
+  // Con «el mismo análisis» se tildan todas (sirve el texto de la abierta); si no, las que ya tienen texto.
+  for (const f of anFilas) if (!anTocadas.has(f.acta) && (anUnico || anEstado[f.acta]?.tiene_texto)) anSel.add(f.acta);
   anPintarLote();
 }
 
@@ -855,6 +857,7 @@ async function anActualizarLoteEstado() {
   try {
     const r = await apiJson("/api/analisis-marca-lote/estado", "POST", { actas: anFilas.map(f => f.acta) });
     anEstado = r.marcas || {};
+    if (!anUnicoLeido) { anUnicoLeido = true; anUnico = !!r.mismo_analisis; }   // lo recordado del titular, una sola vez
   } catch (_) { /* se sigue con lo que había */ }
 }
 
@@ -938,7 +941,13 @@ function anIniciar(filas) {
     document.getElementById("an-pdf").addEventListener("click", anExportarPdf);
     document.getElementById("an-mejorar").addEventListener("click", anMejorar);
     document.getElementById("an-lote-pdf").addEventListener("click", anExportarLote);
-    document.getElementById("an-lote-unico").addEventListener("change", ev => { anUnico = ev.target.checked; anPintarLote(); });
+    document.getElementById("an-lote-unico").addEventListener("change", ev => {
+      anUnico = ev.target.checked; anUnicoLeido = true;
+      if (anUnico) for (const f of anFilas) if (!anTocadas.has(f.acta)) anSel.add(f.acta);
+      anPintarLote();
+      // Se recuerda para este titular (y para todo el equipo); si falla, igual vale en esta pantalla.
+      apiJson("/api/analisis-marca-lote/mismo-analisis", "PUT", { acta: anActa, valor: anUnico }).catch(() => {});
+    });
     document.getElementById("an-lote-lista").addEventListener("change", ev => {
       const cb = ev.target; if (!cb || cb.type !== "checkbox") return;
       anTocadas.add(cb.value);
