@@ -274,6 +274,18 @@ $("cal-ant").addEventListener("click", () => moverMes(-1));
 $("cal-sig").addEventListener("click", () => moverMes(1));
 $("cal-hoy").addEventListener("click", () => irAlMes(calHoy().slice(0, 7) + "-01", calHoy()));
 $("cal-sync").addEventListener("click", () => sincronizar(false));
+$("cal-agenda-mail").addEventListener("click", async () => {
+  if (!confirm("¿Mandar ahora el mail AGENDA con las reuniones y llamadas de mañana?\n\nEs el mismo que sale solo a las 20 hs.")) return;
+  const b = $("cal-agenda-mail"), txt = b.textContent;
+  b.disabled = true; b.textContent = "Mandando…";
+  try {
+    const r = await apiJson("/api/calendario/agenda/enviar", "POST");
+    if (r.estado === "sin_eventos") mostrarAviso("Mañana no hay reuniones ni llamadas: no se mandó nada.", "aviso");
+    else mostrarAviso(`Agenda enviada a ${r.destinatarios} (${r.cantidad} ${r.cantidad === 1 ? "reunión o llamada" : "reuniones y llamadas"}).`);
+  } catch (e) {
+    mostrarAviso(`No se pudo mandar la agenda: ${e.message}`, "aviso");
+  } finally { b.disabled = false; b.textContent = txt; }
+});
 $("cal-nuevo").addEventListener("click", () => calAbrirModal({ fecha: est.elegido, alGuardar: () => cargar() }));
 for (const [id, vista] of [["cal-v-mes", "mes"], ["cal-v-agenda", "agenda"]]) {
   $(id).addEventListener("click", () => {

@@ -246,6 +246,17 @@ CATALOGO = {
         "env_remitente": "RESEND_FROM",
         "env_destinatarios": "NOTIFICAR_A",
     },
+    "agenda": {
+        "grupo": "interno",
+        "nombre": "Agenda diaria (20 hs)",
+        "descripcion": "Todas las noches a las 20 hs: los horarios de las reuniones y llamadas del día siguiente, con cómo es cada una (Meet, llamada o presencial). Si al día siguiente no hay ninguna, no se manda nada.",
+        "cuenta": "interna",
+        "remitente": DEFAULT_FROM_INTERNO,
+        "responder_a": "",
+        "destinatarios": "smartiesconsultora@gmail.com",
+        "env_remitente": "RESEND_FROM",
+        "env_destinatarios": "CALENDARIO_AVISO_EQUIPO",
+    },
     "prospecto_primer_contacto": {
         "grupo": "prospectos",
         "nombre": "Primer contacto a un lead",
@@ -892,6 +903,7 @@ _ASUNTOS_INTERNOS = [
     ("cartera", re.compile(r"^Cartera y vigilancia", re.I)),
     ("formularios", re.compile(r"Formulario recibido", re.I)),
     ("bloqueo", re.compile(r"INPI está bloqueando", re.I)),
+    ("agenda", re.compile(r"^AGENDA\b")),
 ]
 
 

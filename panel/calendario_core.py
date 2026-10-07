@@ -251,6 +251,20 @@ def crear_tablas(cur):
     cur.execute("ALTER TABLE calendario_eventos ADD COLUMN IF NOT EXISTS meet_url TEXT")
     # Mail de la persona a la que se le avisa (para poder avisarle también si después se cambia la fecha u hora).
     cur.execute("ALTER TABLE calendario_eventos ADD COLUMN IF NOT EXISTS email_aviso TEXT")
+    # Mail diario «AGENDA» de las 20 hs: una fila por día de la agenda (el de mañana), para no mandarlo dos veces.
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS calendario_agenda_envios (
+            fecha         DATE PRIMARY KEY,          -- el día de la agenda (el que sigue a la noche del envío)
+            intento_en    TIMESTAMPTZ,
+            enviado_en    TIMESTAMPTZ,
+            omitida       BOOLEAN NOT NULL DEFAULT false,   -- ese día no había reuniones ni llamadas: no se manda
+            cantidad      INTEGER,
+            destinatarios TEXT,
+            error         TEXT
+        )
+        """
+    )
     cur.execute("CREATE INDEX IF NOT EXISTS idx_calendario_eventos_inicio ON calendario_eventos(inicio)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_calendario_eventos_actas ON calendario_eventos USING GIN (actas)")
     cur.execute(
@@ -1003,6 +1017,237 @@ def avisar(conexion, evento_id: int, accion: str, usuario: str, email_persona: s
     if a_equipo and equipo:
         out["equipo"] = mandar([equipo], True)
     return out
+
+
+# ── Mail diario «AGENDA» (20 hs): reuniones y llamadas del día siguiente ──────────
+
+AGENDA_HORA_DEFECTO = "20:00"
+AGENDA_REINTENTO_MIN = 5          # si el envío falla, se vuelve a probar cada tanto hasta medianoche
+_ETIQUETA_COMO = {
+    "meet": ("🎥", "MEET"),
+    "llamada": ("📞", "LLAMADA"),
+    "presencial": ("📍", "PRESENCIAL"),
+}
+
+
+def agenda_hora():
+    """(hora, minuto) del envío, en hora Argentina; None si está apagado (AGENDA_DIARIA_HORA=off)."""
+    v = (os.environ.get("AGENDA_DIARIA_HORA") or AGENDA_HORA_DEFECTO).strip().lower()
+    if v in ("off", "no", "0", "apagado", "desactivado"):
+        return None
+    m = re.fullmatch(r"([01]?\d|2[0-3]):([0-5]\d)", v)
+    if not m:
+        m = re.fullmatch(r"([01]?\d|2[0-3])", v)
+        return (int(m.group(1)), 0) if m else (20, 0)
+    return int(m.group(1)), int(m.group(2))
+
+
+def eventos_de_agenda(cur, fecha: _dt.date) -> list:
+    """Las reuniones y llamadas de ese día: eventos con horario que EMPIEZAN ese día (los de todo el día,
+    como un cumpleaños, no entran). Los ocultos (la sala propia «MEET PAME / TOMI») tampoco."""
+    return [e for e in listar_eventos(cur, fecha, fecha)
+            if e["fecha"] == fecha.isoformat() and not e.get("todo_el_dia") and e.get("hora")]
+
+
+def _como_agenda(ev: dict) -> tuple:
+    """(etiqueta con ícono, detalle) de cómo es: «🎥 MEET» + link, «📞 LLAMADA» + teléfono, «📍 PRESENCIAL» + lugar."""
+    mod = ev.get("modalidad")
+    lugar = (ev.get("lugar") or "").strip()
+    if mod == "meet":
+        return "🎥 MEET", (ev.get("meet_url") or "")
+    if mod == "llamada":
+        return "📞 LLAMADA", (f"Teléfono: {lugar}" if lugar else "sin teléfono anotado")
+    if mod == "presencial":
+        return "📍 PRESENCIAL", lugar
+    return "SIN ESPECIFICAR (llamada o Meet)", lugar
+
+
+def _marcas_agenda(ev: dict) -> str:
+    etiquetas = {"cliente": "cliente", "lead": "lead", "tercero": "tercero"}
+    out = []
+    for v in ev.get("vinculos") or []:
+        if not v.get("denominacion") and not v.get("titular"):
+            out.append(f"acta {v['acta']}")
+            continue
+        det = ", ".join(x for x in (etiquetas.get(v.get("tipo")), v.get("titular")) if x)
+        out.append(f"{v.get('denominacion') or 'acta ' + v['acta']}" + (f" ({det})" if det else ""))
+    return "; ".join(out)
+
+
+def armar_agenda(fecha: _dt.date, eventos: list, panel_url: str = "") -> tuple:
+    """(asunto, html, texto) del mail AGENDA: horarios de las reuniones y llamadas del día, con
+    cómo es cada una (Meet / llamada / presencial) bien a la vista. `eventos` ya vienen filtrados
+    y ordenados por hora (eventos_de_agenda)."""
+    import mails_core as mc
+
+    e = _html.escape
+    panel = f"{(panel_url or mc.DEFAULT_PANEL).rstrip('/')}/calendario"
+    dia = f"{DIAS_SEMANA[fecha.weekday()]} {fecha.day}/{fecha.month}/{fecha.year}"
+    asunto = f"AGENDA {dia}"
+    n = len(eventos)
+    cuentas = {}
+    for ev in eventos:
+        k = {"meet": "Meet", "llamada": "llamada", "presencial": "presencial"}.get(ev.get("modalidad"), "sin especificar")
+        cuentas[k] = cuentas.get(k, 0) + 1
+    resumen = ", ".join(f"{c} {k}" for k, c in cuentas.items())
+    titulo = f"{_fecha_larga(fecha)}: {n} {'reunión o llamada' if n == 1 else 'reuniones y llamadas'}" + (f" ({resumen})" if n > 1 else "")
+
+    bloques, lineas = [], [f"AGENDA · {titulo}", ""]
+    for ev in eventos:
+        etiqueta, detalle = _como_agenda(ev)
+        marcas = _marcas_agenda(ev)
+        hora = f"{ev['hora']} – {ev['hora_fin']}"
+        persona = (ev.get("email_aviso") or "").strip()
+        det_html = ""
+        if detalle:
+            det_html = (f'<div style="font-size:14px;color:#344054;margin-top:2px"><a href="{e(detalle)}" style="color:#1d4ed8">{e(detalle)}</a></div>'
+                        if detalle.startswith("http") else f'<div style="font-size:14px;color:#344054;margin-top:2px">{e(detalle)}</div>')
+        bloques.append(
+            '<tr><td style="padding:14px 16px;border-bottom:1px solid #eaecf0">'
+            f'<div style="font-size:20px;font-weight:700;color:#101828">{e(hora)} <span style="font-size:15px;font-weight:700;color:#1d4ed8;margin-left:6px">{e(etiqueta)}</span></div>'
+            f'<div style="font-size:16px;color:#101828;margin-top:2px">{e(ev["titulo"])}</div>'
+            f"{det_html}"
+            + (f'<div style="font-size:13px;color:#475467;margin-top:4px">Marca: {e(marcas)}</div>' if marcas else "")
+            + (f'<div style="font-size:13px;color:#475467">Mail de la persona: {e(persona)}</div>' if persona else "")
+            + "</td></tr>")
+        lineas.append(f"{hora}  {etiqueta}")
+        lineas.append(f"  {ev['titulo']}")
+        if detalle:
+            lineas.append(f"  {detalle}")
+        if marcas:
+            lineas.append(f"  Marca: {marcas}")
+        if persona:
+            lineas.append(f"  Mail de la persona: {persona}")
+        lineas.append("")
+    lineas.append(f"Calendario: {panel}")
+    html_ = f"""<!doctype html>
+<html><body style="margin:0;background:#f2f4f7;font-family:Arial,Helvetica,sans-serif">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td align="center" style="padding:16px">
+<table role="presentation" width="560" cellpadding="0" cellspacing="0" style="max-width:560px;width:100%;background:#ffffff;border:1px solid #eaecf0;border-radius:8px">
+  <tr><td style="padding:16px;border-bottom:1px solid #eaecf0"><div style="font-size:12px;font-weight:700;color:#475467;letter-spacing:.06em">AGENDA</div>
+    <div style="font-size:18px;font-weight:700;color:#101828;margin-top:2px">{e(titulo)}</div></td></tr>
+  {''.join(bloques)}
+  <tr><td style="padding:12px 16px;color:#98a2b3;font-size:12px">Horarios en hora de Argentina. Aviso automático del panel · <a href="{e(panel)}" style="color:#98a2b3">abrir el calendario</a></td></tr>
+</table></td></tr></table></body></html>"""
+    return asunto, html_, "\n".join(lineas)
+
+
+def ejemplo_agenda(panel_url: str = "") -> tuple:
+    """(asunto, html) con datos inventados para la vista previa de la pestaña Mails."""
+    manana = _dt.datetime.now(TZ).date() + _dt.timedelta(days=1)
+    base = {"fecha": manana.isoformat(), "todo_el_dia": False}
+    eventos = [
+        {**base, "hora": "09:00", "hora_fin": "09:30", "titulo": "Llamada (LUNA NUEVA)", "modalidad": "llamada", "lugar": "11 5555-1234",
+         "vinculos": [{"acta": "4797123", "denominacion": "LUNA NUEVA", "titular": "María Gómez", "tipo": "lead"}], "email_aviso": "maria@ejemplo.com"},
+        {**base, "hora": "11:30", "hora_fin": "12:00", "titulo": "Reunión virtual (DON LUIS)", "modalidad": "meet", "meet_url": "https://meet.google.com/abc-defg-hij",
+         "vinculos": [{"acta": "3901234", "denominacion": "DON LUIS", "titular": "Panadería Don Luis", "tipo": "cliente"}], "email_aviso": "luis@ejemplo.com"},
+    ]
+    asunto, html_, _ = armar_agenda(manana, eventos, panel_url)
+    return asunto, html_
+
+
+def _reservar_envio(conexion, fecha: _dt.date) -> bool:
+    """Se anota que este proceso va a intentar mandar la agenda de `fecha`. False si ya salió, ya se
+    descartó (no había nada) o se intentó hace menos de AGENDA_REINTENTO_MIN minutos (otro proceso o
+    un intento fallido reciente): así no sale duplicada aunque haya dos copias del panel prendidas."""
+    with conexion() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO calendario_agenda_envios (fecha, intento_en) VALUES (%s, now())
+                ON CONFLICT (fecha) DO UPDATE SET intento_en = now()
+                WHERE calendario_agenda_envios.enviado_en IS NULL AND NOT calendario_agenda_envios.omitida
+                  AND (calendario_agenda_envios.intento_en IS NULL
+                       OR calendario_agenda_envios.intento_en < now() - make_interval(mins => %s))
+                RETURNING fecha
+                """,
+                (fecha, AGENDA_REINTENTO_MIN),
+            )
+            ok = cur.fetchone() is not None
+        conn.commit()
+    return ok
+
+
+def _cerrar_envio(conexion, fecha: _dt.date, **campos):
+    cols = ", ".join(f"{k} = %s" for k in campos)
+    with conexion() as conn:
+        with conn.cursor() as cur:
+            cur.execute(f"UPDATE calendario_agenda_envios SET {cols} WHERE fecha = %s", (*campos.values(), fecha))
+        conn.commit()
+
+
+def enviar_agenda(conexion, fecha: _dt.date = None, manual: bool = False) -> dict:
+    """Manda el mail AGENDA del día `fecha` (por defecto, mañana) desde la cuenta Interna (avisos@…),
+    a los destinatarios de «Agenda diaria» en la pestaña Mails. Si ese día NO hay ninguna reunión ni
+    llamada, no manda nada. Automático (manual=False): una sola vez por día, con reintentos si falla.
+    Manual (el botón del Calendario): manda siempre que haya algo, sin tocar el registro del envío
+    automático. Devuelve {"estado": "enviada"|"sin_eventos"|"ya_enviada"|"error", ...}."""
+    import mails_core as mc
+
+    fecha = fecha or (_dt.datetime.now(TZ).date() + _dt.timedelta(days=1))
+    if not manual and not _reservar_envio(conexion, fecha):
+        return {"estado": "ya_enviada", "fecha": fecha.isoformat()}
+    try:
+        try:
+            sincronizar(conexion)   # lo último de Google antes de armar la agenda (si falla, vale lo que ya hay)
+        except Exception as e:
+            print(f"[agenda] no se pudo sincronizar antes de armar la agenda: {e}")
+        with conexion() as conn:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                eventos = eventos_de_agenda(cur, fecha)
+        if not eventos:
+            if not manual:
+                _cerrar_envio(conexion, fecha, omitida=True, cantidad=0)
+            return {"estado": "sin_eventos", "fecha": fecha.isoformat(), "cantidad": 0}
+        cfg = mc.preparar("agenda")
+        if not cfg["destinatarios"]:
+            raise CalendarioError("Falta el destinatario de la agenda diaria (pestaña Mails → Agenda diaria).")
+        panel_url = (os.environ.get("PANEL_URL") or mc.DEFAULT_PANEL).rstrip("/")
+        asunto, html_, texto = armar_agenda(fecha, eventos, panel_url)
+        mc.enviar(cfg["cuenta"], cfg["remitente"], cfg["responder_a"], cfg["destinatarios"], asunto, html_, texto)
+        para = ", ".join(cfg["destinatarios"])
+        if not manual:
+            _cerrar_envio(conexion, fecha, enviado_en=_dt.datetime.now(_dt.timezone.utc), cantidad=len(eventos), destinatarios=para, error=None)
+        return {"estado": "enviada", "fecha": fecha.isoformat(), "cantidad": len(eventos), "asunto": asunto, "destinatarios": para}
+    except Exception as e:
+        if not manual:
+            try:
+                _cerrar_envio(conexion, fecha, error=str(e)[:500])
+            except Exception:
+                pass
+        return {"estado": "error", "fecha": fecha.isoformat(), "error": str(e)[:300]}
+
+
+def iniciar_agenda_diaria(conexion):
+    """Arranca (una vez) el hilo que, desde la hora configurada (20:00 hora Argentina) y hasta
+    medianoche, manda el mail AGENDA del día siguiente. Corre dentro del panel (no es un workflow
+    de GitHub, que puede demorarse): mira la hora cada 60 segundos. Sin calendario configurado, o con
+    AGENDA_DIARIA_HORA=off, no hace nada."""
+    if not configurado():
+        return None
+    if agenda_hora() is None:
+        print("[agenda] el mail diario de la agenda está apagado (AGENDA_DIARIA_HORA=off)")
+        return None
+
+    def bucle():
+        time.sleep(45)
+        while True:
+            try:
+                hora = agenda_hora()
+                ahora = _dt.datetime.now(TZ)
+                if hora and (ahora.hour, ahora.minute) >= hora:
+                    r = enviar_agenda(conexion)
+                    if r["estado"] == "enviada":
+                        print(f"[agenda] enviada la agenda de {r['fecha']} ({r['cantidad']} evento(s))")
+                    elif r["estado"] == "error":
+                        print(f"[agenda] no se pudo mandar la agenda de {r['fecha']}: {r['error']}")
+            except Exception as e:
+                print(f"[agenda] falló el control de la agenda diaria: {e}")
+            time.sleep(60)
+
+    hilo = threading.Thread(target=bucle, name="agenda-diaria", daemon=True)
+    hilo.start()
+    return hilo
 
 
 # ── Lectura para el panel ──────────────────────────────────────────────

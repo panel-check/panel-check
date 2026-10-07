@@ -203,4 +203,7 @@ def ejemplo(clave, panel_url):
     if clave == "bloqueo":
         return armar_mail_bloqueo("Escanear actas nuevas", "7 consultas seguidas bloqueadas", 0, 7,
                                   "https://github.com/panel-check/panel-check/actions")
+    if clave == "agenda":
+        import calendario_core
+        return calendario_core.ejemplo_agenda(panel_url)
     raise KeyError(clave)
