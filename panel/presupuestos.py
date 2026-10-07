@@ -286,6 +286,43 @@ COLOR_SUBTITULO = "#4964D4"
 AJUSTE = 1.25  # pt: calibración vertical contra el modelo de Canva
 
 
+def dibujar_membrete_y_pie(c, cuando: str):
+    """Membrete de Smarties Consultora (logo en mosaico, nombre, web, mail y mes/año
+    arriba a la derecha) y pie de la consultora, dibujados sobre la página A4 del
+    canvas `c`. Lo usan el presupuesto y el análisis de marca para que ambos PDF
+    lleven exactamente el mismo membrete. `cuando` es el texto de la última línea
+    del bloque (ej. «octubre 2026»)."""
+    from reportlab.lib.colors import HexColor
+    from reportlab.lib.enums import TA_LEFT
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.styles import ParagraphStyle
+    from reportlab.platypus import Paragraph
+
+    F = _fuentes()
+    esc = F["escala"]
+    ancho, alto = A4  # 595.27 x 841.89
+    pie = Paragraph(
+        escape(PIE_PARTES) + f'<u><a href="mailto:{MARCA_EMAIL}" color="{COLOR_TEXTO}">{MARCA_EMAIL}</a></u> | ' + escape(PIE_TELEFONO),
+        ParagraphStyle("pie", fontName=F["r"], fontSize=9 * esc, leading=15.8, alignment=TA_LEFT,
+                       textColor=HexColor(COLOR_TEXTO)))
+    c.saveState()
+    # Logo (mosaico) arriba a la derecha, pegado al borde.
+    if os.path.exists(LOGO):
+        c.drawImage(LOGO, ancho - 132.8, alto - 66.0, width=132.8, height=66.0, mask="auto")
+    # Bloque de datos de la consultora, alineado a la derecha.
+    c.setFillColor(HexColor(COLOR_TITULO))
+    c.setFont(F["b"], 12 * esc * F["escala_b"])
+    c.drawRightString(579.3, alto - (87.6 - AJUSTE), MARCA_NOMBRE)
+    c.setFillColor(HexColor(COLOR_TEXTO))
+    c.setFont(F["r"], 9 * esc)
+    for texto, y in ((MARCA_WEB, 104.9), (MARCA_EMAIL, 120.6), (cuando, 136.4)):
+        c.drawRightString(579.3, alto - (y - AJUSTE), texto)
+    # Pie: la primera línea apoya su base 791.4 pt más abajo del borde de arriba.
+    _, alto_pie = pie.wrap(476.5, 60)
+    pie.drawOn(c, 59.5, alto - (791.4 - AJUSTE - 9 * esc) - alto_pie)
+    c.restoreState()
+
+
 def generar_pdf(d: dict) -> bytes:
     """El presupuesto de registro de marca en PDF (A4, una hoja) a partir del snapshot `d`."""
     from reportlab.lib.colors import HexColor
@@ -370,30 +407,11 @@ def generar_pdf(d: dict) -> bytes:
     p(f"CVU: {e(d.get('cvu') or '—')}", linea, L)
     p(f"Nombre: {e(d.get('titular_cuenta') or '—')}", linea, L)
 
-    pie = Paragraph(
-        e(PIE_PARTES) + f'<u><a href="mailto:{MARCA_EMAIL}" color="{COLOR_TEXTO}">{MARCA_EMAIL}</a></u> | ' + e(PIE_TELEFONO),
-        estilo("pie", size=9, leading=15.8))
-
     fecha = _dt.date.fromisoformat(d["fecha"])
     cuando = mes_anio(fecha)
 
     def decorar(c: _canvas.Canvas, doc):
-        c.saveState()
-        # Logo (mosaico) arriba a la derecha, pegado al borde.
-        if os.path.exists(LOGO):
-            c.drawImage(LOGO, ancho - 132.8, alto - 66.0, width=132.8, height=66.0, mask="auto")
-        # Bloque de datos de la consultora, alineado a la derecha.
-        c.setFillColor(HexColor(COLOR_TITULO))
-        c.setFont(F["b"], 12 * esc * F["escala_b"])
-        c.drawRightString(579.3, alto - (87.6 - AJUSTE), MARCA_NOMBRE)
-        c.setFillColor(HexColor(COLOR_TEXTO))
-        c.setFont(F["r"], 9 * esc)
-        for texto, y in ((MARCA_WEB, 104.9), (MARCA_EMAIL, 120.6), (cuando, 136.4)):
-            c.drawRightString(579.3, alto - (y - AJUSTE), texto)
-        # Pie: la primera línea apoya su base 791.4 pt más abajo del borde de arriba.
-        _, alto_pie = pie.wrap(476.5, 60)
-        pie.drawOn(c, 59.5, alto - (791.4 - AJUSTE - 9 * esc) - alto_pie)
-        c.restoreState()
+        dibujar_membrete_y_pie(c, cuando)
 
     buf = io.BytesIO()
     doc = BaseDocTemplate(buf, pagesize=A4, title=TIPOS["registro_marca"]["archivo"], author=MARCA_NOMBRE)

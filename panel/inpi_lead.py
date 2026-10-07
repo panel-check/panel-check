@@ -594,6 +594,111 @@ def consultar_expediente(acta: str, s=None, timeout: int = 30, con_grilla: bool 
     return out
 
 
+# ── Oposiciones del expediente (pestaña «Análisis de marca») ──────────────
+# Copia acotada de scripts/oposiciones_expediente.py (el panel no importa de
+# scripts/, ver el comentario del principio): el expediente trae la tabla
+# OPOSICIONES como `opos = JSON.parse('[...]')`, con los campos Oponente,
+# Fecha_Presentacion, Fecha_Notificacion, Fecha_Vencimiento, Numero, Agente,
+# Caracter, Fecha_Levantamiento, Fundamento, Motivo_Levantamiento. Una fecha
+# vacía viene como 01/01/0001. "Agente"/"Caracter" son los del OPONENTE.
+_ANIO_MINIMO_OPOSICION = 1990
+
+
+def _fecha_valida_opo(valor):
+    """Fecha ISO o None si viene vacía (01/01/0001) o no se entiende."""
+    if not valor or not isinstance(valor, str):
+        return None
+    iso = _parsear_fecha_grilla(valor)
+    if not iso or int(iso[:4]) < _ANIO_MINIMO_OPOSICION:
+        return None
+    return iso
+
+
+def _json_de_js(html: str, variable: str):
+    """Lee `variable = JSON.parse('...')` de la página del expediente.
+    Devuelve (lista | None, hubo_error): None sin error = la tabla viene vacía;
+    hubo_error=True = hay datos pero no se pudieron leer."""
+    m = re.search(
+        r"\b" + re.escape(variable) + r"\s*=\s*JSON\.parse\('((?:[^'\\]|\\.)*)'\)",
+        html, re.S,
+    )
+    if not m:
+        return None, False
+    crudo = m.group(1).strip()
+    if not crudo:
+        return None, False
+    try:
+        import json as _json
+
+        datos = _json.loads(crudo.replace("\\'", "'"))
+    except ValueError:
+        return None, True
+    return (datos if isinstance(datos, list) else None), False
+
+
+def parsear_oposiciones(html: str) -> dict:
+    """Las oposiciones de la página del expediente, ya normalizadas:
+    {"items": [{oponente, numero, presentacion, notificacion, vencimiento,
+    levantamiento, agente_oponente}], "error_lectura": bool}."""
+    crudas, error = _json_de_js(html, "opos")
+    items = []
+    for o in crudas or []:
+        if not isinstance(o, dict):
+            continue
+        # Agente 0 / vacío = el oponente se presentó sin agente matriculado.
+        agente = o.get("Agente")
+        agente = None if agente in (None, "", 0, "0") else agente
+        caracter = (o.get("Caracter") or "").strip()
+        agente_txt = (f"{agente} ({caracter})" if agente and caracter
+                      else str(agente) if agente else None)
+        items.append({
+            "oponente": " ".join(str(o.get("Oponente") or "").split()) or None,
+            "numero": o.get("Numero"),
+            "presentacion": _fecha_valida_opo(o.get("Fecha_Presentacion")),
+            "notificacion": _fecha_valida_opo(o.get("Fecha_Notificacion")),
+            "vencimiento": _fecha_valida_opo(o.get("Fecha_Vencimiento")),
+            "levantamiento": _fecha_valida_opo(o.get("Fecha_Levantamiento")),
+            "agente_oponente": agente_txt,
+        })
+    items.sort(key=lambda x: x["presentacion"] or "")
+    return {"items": items, "error_lectura": error}
+
+
+def consultar_oposiciones(acta: str, s=None, timeout: int = 30) -> dict:
+    """Consulta el expediente y devuelve todas las oposiciones que figuran.
+    estado_consulta: "ok" | "no_existe" | "bloqueado" | "error" (con `error`
+    explicando). Hace UN pedido a INPI (el del expediente)."""
+    s = s or _crear_sesion()
+    out = {"acta": str(acta), "estado_consulta": "error", "error": "", "items": [], "error_lectura": False}
+    try:
+        r = _get_con_reintentos(
+            lambda: s.post(
+                f"{BASE}/MarcasConsultas/Resultado",
+                headers={"Referer": f"{BASE}/MarcasConsultas/Grilla"},
+                data={"acta": str(acta)},
+                timeout=timeout,
+            )
+        )
+    except requests.RequestException as e:
+        out["error"] = f"error de conexión al consultar INPI: {e}"
+        return out
+    if "Web Page Blocked" in r.text or "Attack ID" in r.text:
+        out["estado_consulta"] = "bloqueado"
+        out["error"] = "INPI bloqueó la consulta (WAF)"
+        return out
+    if "GESTION DEL TRAMITE" not in r.text and "TITULARIDAD" not in r.text:
+        out["estado_consulta"] = "no_existe"
+        out["error"] = "INPI no tiene un expediente con ese número de acta"
+        return out
+    res = parsear_oposiciones(r.text)
+    out.update(res)
+    if res["error_lectura"]:
+        out["error"] = "INPI tiene oposiciones cargadas pero no se pudieron leer"
+        return out
+    out["estado_consulta"] = "ok"
+    return out
+
+
 # Webservice SOAP público (ver references/inpi-webservice.md): marcas de un
 # titular por CUIT o por nombre. No trae agente ni estado.
 WS_URL = "https://ws.inpi.gob.ar/wsinpi.asmx"

@@ -36,6 +36,27 @@
   @media (max-width: 760px) { .mail-lead .presu-grid { grid-template-columns: 1fr 1fr; } }
   .mail-lead .presu button.plegar { margin-top: 8px; }
   .mail-lead td .nota a { color: var(--azul); }
+  /* Pestaña «Análisis de marca» */
+  .an-lead label { display: block; font-size: 12px; font-weight: 600; color: #344054; margin-bottom: 4px; }
+  .an-lead select { width: 100%; max-width: 520px; padding: 7px 9px; border: 1px solid var(--borde-control); border-radius: 8px; font: inherit; font-size: 14px; background: #fff; box-sizing: border-box; }
+  .an-lead .an-datos { border: 1px solid var(--borde); border-radius: 10px; background: #f9fafb; padding: 12px 14px; margin: 12px 0; }
+  .an-lead .an-fila { display: grid; grid-template-columns: 110px 1fr; gap: 10px; padding: 3px 0; font-size: 14px; }
+  .an-lead .an-fila > span:first-child { color: var(--gris); font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .03em; padding-top: 2px; }
+  @media (max-width: 560px) { .an-lead .an-fila { grid-template-columns: 1fr; gap: 0; } }
+  .an-lead ol.an-opos { margin: 4px 0 0; padding-left: 20px; font-size: 13.5px; }
+  .an-lead ol.an-opos li { margin: 2px 0; }
+  .an-lead .an-origen { font-size: 12px; color: var(--gris); margin-top: 4px; }
+  .an-lead .an-origen.aviso { color: #92400e; }
+  .an-lead button.plegar { background: none; border: 0; color: var(--azul); font: inherit; font-size: 13px; cursor: pointer; padding: 0; }
+  .an-lead button.plegar:disabled { opacity: .5; cursor: wait; }
+  .an-lead textarea { width: 100%; min-height: 260px; padding: 10px 12px; border: 1px solid var(--borde-control); border-radius: 8px; font: inherit; font-size: 14px; line-height: 1.5; box-sizing: border-box; resize: vertical; }
+  .an-lead .acciones { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 10px; }
+  .an-lead button.enviar { background: var(--azul); color: #fff; border: 0; border-radius: 8px; padding: 9px 16px; font: inherit; font-weight: 600; cursor: pointer; }
+  .an-lead button.enviar:disabled { opacity: .5; cursor: not-allowed; }
+  .an-lead .msg { font-size: 13px; }
+  .an-lead .msg.ok { color: var(--verde); }
+  .an-lead .msg.err { color: var(--rojo); }
+  .an-lead .nota { font-size: 12px; color: var(--gris); margin-top: 6px; }
 </style>
 </head>
 <body>
@@ -74,6 +95,7 @@
 
   <div class="pestanas" id="pestanas" role="tablist" aria-label="Secciones de la ficha">
     <button type="button" role="tab" id="pest-marca" data-tab="marca" aria-controls="tab-marca" aria-selected="true" class="activa">Marca</button>
+    <button type="button" role="tab" id="pest-analisis" data-tab="analisis" aria-controls="tab-analisis" aria-selected="false">Análisis de marca</button>
     <button type="button" role="tab" id="pest-mail" data-tab="mail" aria-controls="tab-mail" aria-selected="false">Mail<span class="pest-badge" id="pb-mail" hidden></span></button>
     <button type="button" role="tab" id="pest-plazos" data-tab="plazos" aria-controls="tab-plazos" aria-selected="false">Plazos y fechas<span class="pest-badge" id="pb-plazos" hidden></span></button>
     <button type="button" role="tab" id="pest-crm" data-tab="crm" aria-controls="tab-crm" aria-selected="false">CRM<span class="pest-badge" id="pb-crm" hidden></span></button>
@@ -103,6 +125,23 @@
       </tbody>
     </table>
     </div>
+  </section>
+
+  <section class="pestana-panel" id="tab-analisis" role="tabpanel" aria-labelledby="pest-analisis" hidden>
+    <div class="crm-box an-lead" id="an-box" hidden>
+      <div class="crm-box-titulo">📝 Análisis de marca</div>
+      <label for="an-marca">Marca</label>
+      <select id="an-marca"></select>
+      <div class="an-datos" id="an-datos"><span class="nota">Cargando…</span></div>
+      <label for="an-texto">Análisis</label>
+      <textarea id="an-texto" maxlength="20000" placeholder="Escribí acá el análisis de la marca…" disabled></textarea>
+      <div class="nota">Se guarda solo mientras escribís. En el PDF, una línea en blanco separa párrafos y las líneas que empiezan con «- » salen como viñetas.</div>
+      <div class="acciones">
+        <button type="button" class="enviar" id="an-pdf" disabled>Exportar PDF</button>
+        <span class="msg" id="an-estado"></span>
+      </div>
+    </div>
+    <p class="nota pestana-vacia" id="an-vacio" hidden>Este titular no tiene marcas para analizar.</p>
   </section>
 
   <section class="pestana-panel" id="tab-mail" role="tabpanel" aria-labelledby="pest-mail" hidden>
@@ -203,6 +242,7 @@ async function cargar({ conCRM = true } = {}) {
       : '<tr><td colspan="12" class="vacio">Sin marcas para este titular.</td></tr>';
     cargarContadoresComentarios(data.rows.map(r => r.acta));
     mlIniciar(data.rows);  // siempre: si se marcó «tiene gestor» cambia el aviso del mail
+    anIniciar(data.rows);
 
     // Ficha del lead (CRM): la cabecera queda siempre a la vista y plazos /
     // gestión viven en sus pestañas. Si el titular todavía no tiene una clave
@@ -253,8 +293,8 @@ function pintarColaNavegacion() {
 }
 
 // ── Pestañas de la ficha ──
-// Siempre abre en «Marca». El hash (#mail, #plazos, #crm) permite linkear a una.
-const PESTANAS = ["marca", "mail", "plazos", "crm"];
+// Siempre abre en «Marca». El hash (#analisis, #mail, #plazos, #crm) permite linkear a una.
+const PESTANAS = ["marca", "analisis", "mail", "plazos", "crm"];
 let pestanaActual = "marca";
 
 function abrirPestana(id) {
@@ -514,6 +554,149 @@ async function mlIniciar(filas) {
     mlPresuActualizar();
     mlHistorial();
   } catch (e) { box.hidden = true; document.getElementById("mail-vacio").hidden = false; }
+}
+
+// ── Análisis de marca ──
+// Marca elegida, texto libre que se guarda solo, datos automáticos (marca, acta,
+// titular con CUIT, oposiciones) y PDF con el membrete de Smarties. La primera
+// vez que se abre una marca se consultan sus oposiciones en INPI (un pedido) y
+// queda guardado; «Verificar en INPI» las vuelve a consultar.
+let anFilas = [];
+let anActa = null;          // acta cuyo análisis está cargado en pantalla
+let anGuardado = "";        // el texto tal como está guardado
+let anTimer = null;
+let anToken = 0;            // descarta respuestas de una marca que ya no está elegida
+let anIniciado = false;
+
+function anMsg(t, ok = true) { const el = document.getElementById("an-estado"); el.textContent = t || ""; el.className = "msg " + (ok ? "ok" : "err"); }
+
+function anPintarDatos(d, { consultando = false, aviso = "" } = {}) {
+  const op = d.oposiciones;
+  const lineas = op.lineas.length ? `<ol class="an-opos">${op.lineas.map(l => `<li>${mlEsc(l)}</li>`).join("")}</ol>` : "";
+  let origen;
+  if (consultando) origen = '<span class="an-origen">Consultando INPI…</span>';
+  else if (op.origen === "inpi") origen = `<span class="an-origen">Verificado en INPI el ${mlEsc(mlFecha(op.consultado_en))}. <button type="button" class="plegar" id="an-verificar">↻ Verificar de nuevo</button></span>`;
+  else origen = `<span class="an-origen aviso">Dato del sistema, sin verificar contra el expediente de INPI${aviso ? " (" + mlEsc(aviso) + ")" : ""}. <button type="button" class="plegar" id="an-verificar">↻ Verificar en INPI</button></span>`;
+  document.getElementById("an-datos").innerHTML = `
+    <div class="an-fila"><span>Marca</span><strong>${mlEsc(d.marca)}</strong></div>
+    <div class="an-fila"><span>Acta</span><div>${mlEsc(d.acta)}</div></div>
+    <div class="an-fila"><span>Titular</span><div>${mlEsc(d.titular)}</div></div>
+    <div class="an-fila"><span>Oposiciones</span><div>${mlEsc(op.resumen)}${lineas}<div>${origen}</div></div></div>`;
+  const b = document.getElementById("an-verificar");
+  if (b) b.addEventListener("click", () => anVerificar());
+}
+
+async function anGuardarAhora() {
+  clearTimeout(anTimer);
+  const texto = document.getElementById("an-texto").value;
+  if (!anActa || texto === anGuardado) return true;
+  const acta = anActa;
+  anMsg("Guardando…");
+  try {
+    const r = await apiJson(`/api/analisis-marca/${encodeURIComponent(acta)}`, "PUT", { texto });
+    if (acta === anActa) {
+      anGuardado = texto;
+      anMsg(`Guardado ✓${r.actualizado_por ? " (" + r.actualizado_por + ", " + mlFecha(r.actualizado_en) + ")" : ""}`);
+    }
+    return true;
+  } catch (e) { anMsg("No se pudo guardar: " + e.message, false); return false; }
+}
+
+async function anVerificar() {
+  const acta = anActa;
+  if (!acta) return;
+  const token = anToken;
+  const b = document.getElementById("an-verificar");
+  if (b) b.disabled = true;
+  try {
+    const d = await apiJson(`/api/analisis-marca/${encodeURIComponent(acta)}/oposiciones`, "POST");
+    if (token !== anToken) return;
+    anPintarDatos(d, { aviso: d.aviso || "" });
+  } catch (e) {
+    if (token !== anToken) return;
+    const b2 = document.getElementById("an-verificar");
+    if (b2) b2.disabled = false;
+    anMsg("No se pudo consultar INPI: " + e.message, false);
+  }
+}
+
+async function anCargar(acta) {
+  if (anActa && anActa !== acta) await anGuardarAhora();   // lo escrito en la marca anterior no se pierde
+  anActa = acta;
+  const token = ++anToken;
+  const area = document.getElementById("an-texto");
+  area.disabled = true; document.getElementById("an-pdf").disabled = true;
+  document.getElementById("an-datos").innerHTML = '<span class="nota">Cargando…</span>';
+  anMsg("");
+  let d;
+  try { d = await apiJson(`/api/analisis-marca/${encodeURIComponent(acta)}`, "GET"); }
+  catch (e) {
+    if (token === anToken) document.getElementById("an-datos").innerHTML = `<span class="msg err">No se pudo cargar el análisis (${mlEsc(e.message)}).</span>`;
+    return;
+  }
+  if (token !== anToken) return;
+  area.value = d.texto; anGuardado = d.texto;
+  area.disabled = false; document.getElementById("an-pdf").disabled = false;
+  if (d.actualizado_por && d.texto) anMsg(`Última edición: ${d.actualizado_por}, ${mlFecha(d.actualizado_en)}`);
+  if (d.consultada_en_inpi) { anPintarDatos(d); return; }
+  anPintarDatos(d, { consultando: true });
+  anVerificar();                                       // primera vez: se consulta INPI y queda guardado
+}
+
+async function anExportarPdf() {
+  if (!anActa) return;
+  const btn = document.getElementById("an-pdf");
+  btn.disabled = true; anMsg("Armando el PDF…");
+  try {
+    if (!(await anGuardarAhora())) throw new Error("no se pudo guardar el texto");
+    const r = await fetch(`/api/analisis-marca/${encodeURIComponent(anActa)}/pdf`, {
+      method: "POST", credentials: "include", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ texto: document.getElementById("an-texto").value }),
+    });
+    if (r.status === 401 && typeof irAlLogin === "function") irAlLogin();
+    if (!r.ok) {
+      let detalle = `${r.status}`;
+      try { detalle = (await r.json()).detail || detalle; } catch (_) {}
+      throw new Error(detalle);
+    }
+    let nombre = `Analisis de marca - acta ${anActa}.pdf`;
+    const m = /filename\*=UTF-8''([^;]+)/i.exec(r.headers.get("Content-Disposition") || "");
+    if (m) { try { nombre = decodeURIComponent(m[1]); } catch (_) { /* queda el nombre genérico */ } }
+    const url = URL.createObjectURL(await r.blob());
+    const a = document.createElement("a");
+    a.href = url; a.download = nombre; document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+    anMsg("PDF descargado ✓");
+  } catch (e) { anMsg("No se pudo armar el PDF: " + e.message, false); }
+  btn.disabled = false;
+}
+
+function anIniciar(filas) {
+  anFilas = filas;
+  const box = document.getElementById("an-box");
+  box.hidden = !filas.length;
+  document.getElementById("an-vacio").hidden = !!filas.length;
+  if (!filas.length) return;
+  const sel = document.getElementById("an-marca");
+  const actual = sel.value;
+  sel.innerHTML = filas.map(r => `<option value="${mlEsc(r.acta)}">${mlEsc(mlNombreMarca(r))} · acta ${mlEsc(r.acta)} · clase ${mlEsc(r.clase ?? "—")}</option>`).join("");
+  if (actual && filas.some(r => r.acta === actual)) sel.value = actual;
+  if (!anIniciado) {
+    anIniciado = true;
+    sel.addEventListener("change", () => anCargar(sel.value));
+    document.getElementById("an-texto").addEventListener("input", () => {
+      clearTimeout(anTimer); anMsg("");
+      anTimer = setTimeout(anGuardarAhora, 1200);
+    });
+    document.getElementById("an-pdf").addEventListener("click", anExportarPdf);
+    // Si se cierra o se recarga la página con algo sin guardar, se manda igual (keepalive sobrevive al cierre).
+    window.addEventListener("pagehide", () => {
+      const texto = document.getElementById("an-texto").value;
+      if (!anActa || texto === anGuardado) return;
+      try { fetch(`/api/analisis-marca/${encodeURIComponent(anActa)}`, { method: "PUT", credentials: "include", keepalive: true, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ texto }) }); } catch (_) { /* no es crítico */ }
+    });
+  }
+  if (anActa !== sel.value) anCargar(sel.value);   // si ya está cargada esa marca no se pisa lo que se está escribiendo
 }
 
 cargar();

@@ -458,3 +458,15 @@ CREATE TABLE IF NOT EXISTS mails_bajas (
     creada_en  TIMESTAMPTZ NOT NULL DEFAULT now(),
     creada_por TEXT
 );
+
+-- Agregado el 07/10/2026: pestaña «Análisis de marca» de la ficha del titular.
+-- Una fila por acta: el texto que escribe el equipo y la última consulta a INPI
+-- de las oposiciones del expediente (JSON: consultado_en + items). El panel
+-- también la crea solo al arrancar (ver panel/analisis_marca.py: crear_tablas).
+CREATE TABLE IF NOT EXISTS analisis_marca (
+    acta             TEXT PRIMARY KEY,
+    texto            TEXT NOT NULL DEFAULT '',
+    oposiciones      JSONB,
+    actualizado_por  TEXT,
+    actualizado_en   TIMESTAMPTZ NOT NULL DEFAULT now()
+);
