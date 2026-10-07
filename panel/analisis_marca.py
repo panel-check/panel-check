@@ -300,6 +300,11 @@ def guardar_logo(cur, acta: str, logo):
     return bool(prep)
 
 
+def url_expediente(acta) -> str:
+    """Link público al expediente de la marca en INPI (el mismo que usa el resto del panel)."""
+    return f"https://portaltramites.inpi.gob.ar/MarcasConsultas/Resultado?acta={re.sub(r'[^0-9]', '', str(acta))}"
+
+
 def clase_texto(m: dict) -> str:
     c = m.get("clase")
     return str(c) if c not in (None, "") else "no informada"
@@ -342,6 +347,7 @@ def datos_para_pdf(m: dict, texto: str, op: dict, logo=None, expediente=None) ->
     e = datos_expediente(m, expediente)
     return {
         "acta": str(m["acta"]),
+        "url_acta": url_expediente(m["acta"]),
         "marca": e["denominacion"],
         "tipo_marca": e["tipo_marca"],
         "limitacion": e["limitacion"],
@@ -469,7 +475,10 @@ def generar_pdf(datos) -> bytes:
         datos_p = [Paragraph(f"<b>Denominación:</b> {_xml(d['marca'])}", dato)]
         if d.get("tipo_marca"):
             datos_p.append(Paragraph(f"<b>Tipo de marca:</b> {_xml(d['tipo_marca'])}", dato))
-        datos_p.append(Paragraph(f"<b>Acta:</b> {_xml(d['acta'])}", dato))
+        acta_xml = _xml(d["acta"])
+        if d.get("url_acta"):
+            acta_xml = f'<a href="{escape(d["url_acta"], {chr(34): "&quot;"})}" color="{pres.COLOR_SUBTITULO}">{acta_xml}</a>'
+        datos_p.append(Paragraph(f"<b>Acta:</b> {acta_xml}", dato))
         datos_p.append(Paragraph(f"<b>Clase:</b> {_xml(d.get('clase') or 'no informada')}", dato))
         if d.get("limitacion"):
             datos_p.append(Paragraph(f"<b>Limitaciones:</b> {_xml(d['limitacion'])}", dato))

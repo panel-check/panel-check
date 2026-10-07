@@ -632,7 +632,7 @@ function anPintarDatos(d, { consultando = false, aviso = "" } = {}) {
   document.getElementById("an-datos").innerHTML = `${logo}
     <div class="an-fila"><span>Denominación</span><strong>${mlEsc(d.marca)}</strong></div>
     ${d.tipo_marca ? `<div class="an-fila"><span>Tipo de marca</span><div>${mlEsc(d.tipo_marca)}</div></div>` : ""}
-    <div class="an-fila"><span>Acta</span><div>${mlEsc(d.acta)}</div></div>
+    <div class="an-fila"><span>Acta</span><div>${d.url_acta ? `<a href="${mlEsc(d.url_acta)}" target="_blank" rel="noopener" title="Abrir el expediente en INPI">${mlEsc(d.acta)}</a>` : mlEsc(d.acta)}</div></div>
     <div class="an-fila"><span>Clase</span><div>${mlEsc(d.clase)}</div></div>
     ${d.limitacion ? `<div class="an-fila"><span>Limitaciones</span><div>${mlEsc(d.limitacion)}</div></div>` : ""}
     <div class="an-fila"><span>Titular</span><div>${mlEsc(d.titular)}</div></div>

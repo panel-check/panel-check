@@ -66,6 +66,7 @@ def crear_router(verificar_login, conexion) -> APIRouter:
         e = am.datos_expediente(m, guardado["expediente"])
         return {
             "acta": str(m["acta"]),
+            "url_acta": am.url_expediente(m["acta"]),
             "marca": e["denominacion"],
             "tipo_marca": e["tipo_marca"],
             "limitacion": e["limitacion"],
