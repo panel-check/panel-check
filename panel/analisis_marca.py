@@ -65,6 +65,9 @@ def crear_tablas(cur):
     cur.execute("ALTER TABLE analisis_marca ADD COLUMN IF NOT EXISTS logo BYTEA")
     cur.execute("ALTER TABLE analisis_marca ADD COLUMN IF NOT EXISTS logo_mime TEXT")
     cur.execute("ALTER TABLE analisis_marca ADD COLUMN IF NOT EXISTS logo_consultado_en TIMESTAMPTZ")
+    # Datos de la marca tal como figuran en el expediente (denominación, tipo de marca,
+    # limitación, publicación). NULL = todavía no se leyeron.
+    cur.execute("ALTER TABLE analisis_marca ADD COLUMN IF NOT EXISTS expediente JSONB")
 
 
 # ── Formatos ──────────────────────────────────────────────────────────────
@@ -179,14 +182,24 @@ def leer_marca(cur, acta: str):
 def leer_analisis(cur, acta: str) -> dict:
     cur.execute(
         "SELECT texto, oposiciones, actualizado_por, actualizado_en, logo_consultado_en, "
-        "(logo IS NOT NULL) AS tiene_logo FROM analisis_marca WHERE acta = %s", (acta,))
+        "(logo IS NOT NULL) AS tiene_logo, expediente FROM analisis_marca WHERE acta = %s", (acta,))
     f = cur.fetchone()
     if not f:
         return {"texto": "", "oposiciones": None, "actualizado_por": None, "actualizado_en": None,
-                "logo_consultado": False, "tiene_logo": False}
+                "logo_consultado": False, "tiene_logo": False, "expediente": None}
     return {"texto": _valor(f, "texto", 0) or "", "oposiciones": _valor(f, "oposiciones", 1),
             "actualizado_por": _valor(f, "actualizado_por", 2), "actualizado_en": _valor(f, "actualizado_en", 3),
-            "logo_consultado": bool(_valor(f, "logo_consultado_en", 4)), "tiene_logo": bool(_valor(f, "tiene_logo", 5))}
+            "logo_consultado": bool(_valor(f, "logo_consultado_en", 4)), "tiene_logo": bool(_valor(f, "tiene_logo", 5)),
+            "expediente": _json_o_none(_valor(f, "expediente", 6))}
+
+
+def _json_o_none(v):
+    if isinstance(v, str):
+        try:
+            v = json.loads(v)
+        except ValueError:
+            return None
+    return v if isinstance(v, dict) else None
 
 
 def leer_logo(cur, acta: str):
@@ -203,7 +216,7 @@ def leer_resumen_lote(cur, actas: list) -> dict:
     cuáles ya se consultaron en INPI (oposiciones y logo). Las que no están en la tabla no figuran."""
     cur.execute(
         "SELECT acta, (btrim(texto) <> '') AS tiene_texto, actualizado_en, "
-        "(oposiciones IS NOT NULL AND logo_consultado_en IS NOT NULL) AS consultada "
+        "(oposiciones IS NOT NULL AND logo_consultado_en IS NOT NULL AND expediente IS NOT NULL) AS consultada "
         "FROM analisis_marca WHERE acta = ANY(%s)",
         (list(actas),))
     out = {}
@@ -265,6 +278,15 @@ def preparar_logo(datos: bytes, mime: str):
         return None
 
 
+def guardar_expediente(cur, acta: str, expediente: dict):
+    """Guarda los datos de la marca que figuran en el expediente (sin tocar lo demás)."""
+    cur.execute(
+        "INSERT INTO analisis_marca (acta, expediente) VALUES (%s, %s::jsonb) "
+        "ON CONFLICT (acta) DO UPDATE SET expediente = EXCLUDED.expediente",
+        (acta, json.dumps(expediente or {}, ensure_ascii=False)),
+    )
+
+
 def guardar_logo(cur, acta: str, logo):
     """Guarda el logo del expediente (`logo` = (bytes, mime) de inpi_lead, o None si la
     marca no tiene). Siempre deja anotado que ya se miró el expediente."""
@@ -283,10 +305,47 @@ def clase_texto(m: dict) -> str:
     return str(c) if c not in (None, "") else "no informada"
 
 
-def datos_para_pdf(m: dict, texto: str, op: dict, logo=None) -> dict:
+TIPOS_MARCA = {"D": "Denominativa", "M": "Mixta", "F": "Figurativa", "T": "Tridimensional"}
+
+
+def datos_expediente(m: dict, expediente) -> dict:
+    """Lo que se muestra de la marca: denominación y tipo salen del expediente de INPI si
+    ya se leyó (y si no, de lo que el sistema sabe); limitación y publicación solo
+    existen si el expediente se leyó."""
+    e = expediente if isinstance(expediente, dict) else {}
+    pubs = []
+    for p in e.get("publicaciones") or []:
+        if isinstance(p, dict) and (p.get("fecha") or p.get("numero")):
+            pubs.append({"fecha": fmt_fecha(p.get("fecha")), "numero": p.get("numero") or "",
+                         "url": p.get("url") or None, "tipo": p.get("tipo") or ""})
+    return {
+        "denominacion": (e.get("denominacion") or "").strip() or nombre_marca(m),
+        "tipo_marca": (e.get("tipo_marca") or "").strip() or TIPOS_MARCA.get(m.get("tipo"), ""),
+        "limitacion": (e.get("limitacion") or "").strip(),
+        "publicaciones": pubs,
+    }
+
+
+def linea_publicacion(p: dict) -> str:
+    """'Fecha 02/09/2026 · Boletín N.º 11110 · Tipo: Nueva' (sin el link)."""
+    partes = []
+    if p.get("fecha"):
+        partes.append(f"Fecha {p['fecha']}")
+    if p.get("numero"):
+        partes.append(f"Boletín N.º {p['numero']}")
+    if p.get("tipo"):
+        partes.append(f"Tipo: {p['tipo']}")
+    return " · ".join(partes)
+
+
+def datos_para_pdf(m: dict, texto: str, op: dict, logo=None, expediente=None) -> dict:
+    e = datos_expediente(m, expediente)
     return {
         "acta": str(m["acta"]),
-        "marca": nombre_marca(m),
+        "marca": e["denominacion"],
+        "tipo_marca": e["tipo_marca"],
+        "limitacion": e["limitacion"],
+        "publicaciones": e["publicaciones"],
         "clase": clase_texto(m),
         "logo": logo,   # (bytes, mime) o None
         "titular": titular_con_cuit(m),
@@ -373,6 +432,7 @@ def generar_pdf(datos) -> bytes:
     seccion = estilo("seccion", "b", 12, 17, TA_LEFT, pres.COLOR_SUBTITULO)
     marca_n = estilo("marca_n", "b", 13, 18, TA_LEFT, pres.COLOR_TITULO)
     cuerpo = estilo("cuerpo", alin=TA_JUSTIFY)
+    fundamento = estilo("fundamento", size=10, leading=14, alin=TA_JUSTIFY, leftIndent=18.7)
     vineta = estilo("vineta", alin=TA_JUSTIFY, leftIndent=18.7, bulletIndent=6, bulletFontName=F["r"],
                     bulletFontSize=11 * esc)
 
@@ -406,12 +466,14 @@ def generar_pdf(datos) -> bytes:
             h.append(Paragraph(f"Marca {n} de {len(marcas)}", marca_n))
             h.append(Spacer(1, 6))
 
-        datos_p = [
-            Paragraph(f"<b>Marca:</b> {_xml(d['marca'])}", dato),
-            Paragraph(f"<b>Acta:</b> {_xml(d['acta'])}", dato),
-            Paragraph(f"<b>Clase:</b> {_xml(d.get('clase') or 'no informada')}", dato),
-            Paragraph(f"<b>Titular:</b> {_xml(d['titular'])}", dato),
-        ]
+        datos_p = [Paragraph(f"<b>Denominación:</b> {_xml(d['marca'])}", dato)]
+        if d.get("tipo_marca"):
+            datos_p.append(Paragraph(f"<b>Tipo de marca:</b> {_xml(d['tipo_marca'])}", dato))
+        datos_p.append(Paragraph(f"<b>Acta:</b> {_xml(d['acta'])}", dato))
+        datos_p.append(Paragraph(f"<b>Clase:</b> {_xml(d.get('clase') or 'no informada')}", dato))
+        if d.get("limitacion"):
+            datos_p.append(Paragraph(f"<b>Limitaciones:</b> {_xml(d['limitacion'])}", dato))
+        datos_p.append(Paragraph(f"<b>Titular:</b> {_xml(d['titular'])}", dato))
         img = imagen_logo(d.get("logo"))
         if img is not None:
             t = Table([[datos_p, img]], colWidths=[ANCHO - LOGO_W - 12, LOGO_W + 12])
@@ -421,9 +483,33 @@ def generar_pdf(datos) -> bytes:
             h.append(t)
         else:
             h.extend(datos_p)
+        pubs = d.get("publicaciones") or []
+
+        def pub_xml(p):
+            partes = []
+            if p.get("fecha"):
+                partes.append(f"Fecha {_xml(p['fecha'])}")
+            if p.get("numero"):
+                num = _xml(p["numero"])
+                if p.get("url"):
+                    num = f'<a href="{escape(p["url"], {chr(34): "&quot;"})}" color="{pres.COLOR_SUBTITULO}">{num}</a>'
+                partes.append(f"Boletín N.º {num}")
+            if p.get("tipo"):
+                partes.append(f"Tipo: {_xml(p['tipo'])}")
+            return " · ".join(partes)
+
+        if len(pubs) == 1:
+            h.append(Paragraph(f"<b>Publicación:</b> {pub_xml(pubs[0])}", dato))
+        elif pubs:
+            h.append(Paragraph("<b>Publicaciones:</b>", dato))
+            for k, p in enumerate(pubs, 1):
+                h.append(Paragraph(pub_xml(p), dato_op, bulletText=f"{k}."))
         h.append(Paragraph(f"<b>Oposiciones:</b> {_xml(resumen_oposiciones(op))}", dato))
         for k, i in enumerate(op["items"], 1):
             h.append(Paragraph(_xml(linea_oposicion(i)), dato_op, bulletText=f"{k}."))
+            if i.get("fundamento"):
+                h.append(Paragraph(f"<b>Fundamento:</b> {_xml(i['fundamento'])}", fundamento))
+                h.append(Spacer(1, 4))
         if op["origen"] == "sistema":
             h.append(Spacer(1, 3))
             h.append(Paragraph("Dato del sistema: no se verificó contra el expediente de INPI.", chico))

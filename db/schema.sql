@@ -473,5 +473,7 @@ CREATE TABLE IF NOT EXISTS analisis_marca (
     -- logo_consultado_en vacío = todavía no se miró el expediente.
     logo             BYTEA,
     logo_mime        TEXT,
-    logo_consultado_en TIMESTAMPTZ
+    logo_consultado_en TIMESTAMPTZ,
+    -- Denominación, tipo de marca, limitación y publicación tal como figuran en el expediente.
+    expediente       JSONB
 );

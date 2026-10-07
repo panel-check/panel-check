@@ -40,11 +40,14 @@
   .an-lead label { display: block; font-size: 12px; font-weight: 600; color: #344054; margin-bottom: 4px; }
   .an-lead select { width: 100%; max-width: 520px; padding: 7px 9px; border: 1px solid var(--borde-control); border-radius: 8px; font: inherit; font-size: 14px; background: #fff; box-sizing: border-box; }
   .an-lead .an-datos { border: 1px solid var(--borde); border-radius: 10px; background: #f9fafb; padding: 12px 14px; margin: 12px 0; }
-  .an-lead .an-fila { display: grid; grid-template-columns: 110px 1fr; gap: 10px; padding: 3px 0; font-size: 14px; }
+  .an-lead .an-fila { display: grid; grid-template-columns: 125px 1fr; gap: 10px; padding: 3px 0; font-size: 14px; }
   .an-lead .an-fila > span:first-child { color: var(--gris); font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .03em; padding-top: 2px; }
   @media (max-width: 560px) { .an-lead .an-fila { grid-template-columns: 1fr; gap: 0; } }
   .an-lead ol.an-opos { margin: 4px 0 0; padding-left: 20px; font-size: 13.5px; }
   .an-lead ol.an-opos li { margin: 2px 0; }
+  .an-lead details.an-fund { margin: 3px 0 4px; font-size: 13px; }
+  .an-lead details.an-fund summary { cursor: pointer; color: var(--azul); }
+  .an-lead details.an-fund div { white-space: pre-wrap; margin-top: 4px; padding: 6px 8px; background: #fff; border: 1px solid var(--borde); border-radius: 6px; color: #344054; }
   .an-lead .an-origen { font-size: 12px; color: var(--gris); margin-top: 4px; }
   .an-lead .an-origen.aviso { color: #92400e; }
   .an-lead button.plegar { background: none; border: 0; color: var(--azul); font: inherit; font-size: 13px; cursor: pointer; padding: 0; }
@@ -612,17 +615,28 @@ function anMsg(t, ok = true) { const el = document.getElementById("an-estado"); 
 
 function anPintarDatos(d, { consultando = false, aviso = "" } = {}) {
   const op = d.oposiciones;
-  const lineas = op.lineas.length ? `<ol class="an-opos">${op.lineas.map(l => `<li>${mlEsc(l)}</li>`).join("")}</ol>` : "";
+  const lineas = op.lineas.length ? `<ol class="an-opos">${op.lineas.map((l, k) => {
+    const f = (op.items[k] || {}).fundamento;
+    return `<li>${mlEsc(l)}${f ? `<details class="an-fund"><summary>Ver fundamento</summary><div>${mlEsc(f)}</div></details>` : ""}</li>`;
+  }).join("")}</ol>` : "";
+  const pubs = (d.publicaciones || []).map(p => {
+    const num = p.numero ? (p.url ? `<a href="${mlEsc(p.url)}" target="_blank" rel="noopener">${mlEsc(p.numero)}</a>` : mlEsc(p.numero)) : "";
+    return [p.fecha ? "Fecha " + mlEsc(p.fecha) : "", num ? "Boletín N.º " + num : "", p.tipo ? "Tipo: " + mlEsc(p.tipo) : ""].filter(Boolean).join(" · ");
+  });
+  const filaPub = pubs.length ? `<div class="an-fila"><span>Publicación</span><div>${pubs.join("<br>")}</div></div>` : "";
   let origen;
   if (consultando) origen = '<span class="an-origen">Consultando INPI…</span>';
   else if (op.origen === "inpi") origen = `<span class="an-origen">Verificado en INPI el ${mlEsc(mlFecha(op.consultado_en))}. <button type="button" class="plegar" id="an-verificar">↻ Verificar de nuevo</button></span>`;
   else origen = `<span class="an-origen aviso">Dato del sistema, sin verificar contra el expediente de INPI${aviso ? " (" + mlEsc(aviso) + ")" : ""}. <button type="button" class="plegar" id="an-verificar">↻ Verificar en INPI</button></span>`;
   const logo = d.tiene_logo ? `<img class="an-logo" alt="Logo de la marca" src="/api/analisis-marca/${encodeURIComponent(d.acta)}/logo?v=${Date.now()}">` : "";
   document.getElementById("an-datos").innerHTML = `${logo}
-    <div class="an-fila"><span>Marca</span><strong>${mlEsc(d.marca)}</strong></div>
+    <div class="an-fila"><span>Denominación</span><strong>${mlEsc(d.marca)}</strong></div>
+    ${d.tipo_marca ? `<div class="an-fila"><span>Tipo de marca</span><div>${mlEsc(d.tipo_marca)}</div></div>` : ""}
     <div class="an-fila"><span>Acta</span><div>${mlEsc(d.acta)}</div></div>
     <div class="an-fila"><span>Clase</span><div>${mlEsc(d.clase)}</div></div>
+    ${d.limitacion ? `<div class="an-fila"><span>Limitaciones</span><div>${mlEsc(d.limitacion)}</div></div>` : ""}
     <div class="an-fila"><span>Titular</span><div>${mlEsc(d.titular)}</div></div>
+    ${filaPub}
     <div class="an-fila"><span>Oposiciones</span><div>${mlEsc(op.resumen)}${lineas}<div>${origen}</div></div></div>`;
   const b = document.getElementById("an-verificar");
   if (b) b.addEventListener("click", () => anVerificar());

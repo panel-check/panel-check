@@ -637,10 +637,25 @@ def _json_de_js(html: str, variable: str):
     return (datos if isinstance(datos, list) else None), False
 
 
+FUNDAMENTO_MAX = 8000
+
+
+def _texto_libre(valor, maximo: int = FUNDAMENTO_MAX):
+    """Texto escrito por una persona (fundamento de una oposición): sin espacios de más
+    y con un tope de largo. None si viene vacío."""
+    t = re.sub(r"[ \t\r\f\v]+", " ", str(valor or "")).strip()
+    t = re.sub(r"\n{3,}", "\n\n", t)
+    # INPI suele pegar las oraciones («solicitante.Invocamos»): se les devuelve el espacio.
+    t = re.sub(r"(?<=[a-záéíóúñ)\]])\.(?=[A-ZÁÉÍÓÚÑ])", ". ", t)
+    if not t:
+        return None
+    return t if len(t) <= maximo else t[:maximo].rstrip() + "…"
+
+
 def parsear_oposiciones(html: str) -> dict:
     """Las oposiciones de la página del expediente, ya normalizadas:
     {"items": [{oponente, numero, presentacion, notificacion, vencimiento,
-    levantamiento, agente_oponente}], "error_lectura": bool}."""
+    levantamiento, agente_oponente, fundamento}], "error_lectura": bool}."""
     crudas, error = _json_de_js(html, "opos")
     items = []
     for o in crudas or []:
@@ -660,9 +675,65 @@ def parsear_oposiciones(html: str) -> dict:
             "vencimiento": _fecha_valida_opo(o.get("Fecha_Vencimiento")),
             "levantamiento": _fecha_valida_opo(o.get("Fecha_Levantamiento")),
             "agente_oponente": agente_txt,
+            # Lo que alega el oponente (texto libre, a veces largo).
+            "fundamento": _texto_libre(o.get("Fundamento")),
         })
     items.sort(key=lambda x: x["presentacion"] or "")
     return {"items": items, "error_lectura": error}
+
+
+# Datos de la marca que figuran en el expediente (cada uno es un <label class="input">
+# con el texto «ETIQUETA: valor»). La PUBLICACIÓN es un bloque aparte (#collapse-six)
+# con FECHA / NÚMERO (link al PDF del boletín) / TIPO.
+_URL_BOLETIN_OK = "https://portaltramites.inpi.gob.ar/"
+
+
+def _etiquetas_expediente(nodo) -> list:
+    """[(ETIQUETA en mayúsculas sin tildes, valor, <a> o None)] de los labels de un bloque."""
+    import unicodedata
+
+    out = []
+    for lab in nodo.select("label.input"):
+        txt = " ".join(lab.get_text(" ", strip=True).split())
+        if ":" not in txt:
+            continue
+        clave, valor = txt.split(":", 1)
+        clave = "".join(c for c in unicodedata.normalize("NFD", clave) if unicodedata.category(c) != "Mn").upper().strip()
+        out.append((clave, valor.strip(), lab.find("a")))
+    return out
+
+
+def parsear_datos_expediente(html: str) -> dict:
+    """Lo que el expediente informa de la marca: {denominacion, tipo_marca, limitacion,
+    publicaciones: [{fecha (ISO), numero, url, tipo}]}. Lo que no figura queda vacío."""
+    soup = BeautifulSoup(html or "", "html.parser")
+    out = {"denominacion": None, "tipo_marca": None, "limitacion": None, "publicaciones": []}
+    for clave, valor, _ in _etiquetas_expediente(soup):
+        if clave == "DENOMINACION" and not out["denominacion"]:
+            out["denominacion"] = valor or None
+        elif clave == "TIPO DE MARCA" and not out["tipo_marca"]:
+            out["tipo_marca"] = valor or None
+        elif clave == "LIMITACION" and not out["limitacion"]:
+            # «A ;B ;C ;» -> «A; B; C»
+            partes = [p.strip() for p in valor.split(";") if p.strip()]
+            out["limitacion"] = "; ".join(partes) or None
+    bloque = soup.find(id="collapse-six")
+    actual = None
+    for clave, valor, a in _etiquetas_expediente(bloque) if bloque else []:
+        if clave == "FECHA":
+            actual = {"fecha": None, "numero": None, "url": None, "tipo": None}
+            out["publicaciones"].append(actual)
+            m = re.fullmatch(r"(\d{2})/(\d{2})/(\d{4})", valor)
+            actual["fecha"] = f"{m.group(3)}-{m.group(2)}-{m.group(1)}" if m else None
+        elif actual is not None and clave in ("NUMERO", "TIPO"):
+            if clave == "NUMERO":
+                actual["numero"] = valor or None
+                href = (a.get("href") or "").strip() if a is not None else ""
+                actual["url"] = href if href.startswith(_URL_BOLETIN_OK) else None
+            else:
+                actual["tipo"] = valor or None
+    out["publicaciones"] = [p for p in out["publicaciones"] if p["fecha"] or p["numero"]]
+    return out
 
 
 # El expediente de INPI trae el logo de la marca embebido en la página:
@@ -702,7 +773,7 @@ def consultar_oposiciones(acta: str, s=None, timeout: int = 30) -> dict:
     oposiciones y el logo de la marca (`logo`: (bytes, mime) o None)."""
     s = s or _crear_sesion()
     out = {"acta": str(acta), "estado_consulta": "error", "error": "", "items": [], "error_lectura": False,
-           "logo": None}
+           "logo": None, "expediente": None}
     try:
         r = _get_con_reintentos(
             lambda: s.post(
@@ -726,6 +797,7 @@ def consultar_oposiciones(acta: str, s=None, timeout: int = 30) -> dict:
     res = parsear_oposiciones(r.text)
     out.update(res)
     out["logo"] = extraer_logo(r.text)   # (bytes, mime) o None si la marca no tiene logo
+    out["expediente"] = parsear_datos_expediente(r.text)
     if res["error_lectura"]:
         out["error"] = "INPI tiene oposiciones cargadas pero no se pudieron leer"
         return out
