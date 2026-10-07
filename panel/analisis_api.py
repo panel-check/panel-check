@@ -63,9 +63,13 @@ def crear_router(verificar_login, conexion) -> APIRouter:
 
     def _vista(m: dict, guardado: dict) -> dict:
         op = am.armar_oposiciones(m, guardado["oposiciones"])
+        e = am.datos_expediente(m, guardado["expediente"])
         return {
             "acta": str(m["acta"]),
-            "marca": am.nombre_marca(m),
+            "marca": e["denominacion"],
+            "tipo_marca": e["tipo_marca"],
+            "limitacion": e["limitacion"],
+            "publicaciones": e["publicaciones"],
             "clase": am.clase_texto(m),
             "tiene_logo": guardado["tiene_logo"],
             # Si todavía no se miró el expediente en busca del logo, la pantalla lo consulta sola.
@@ -77,7 +81,7 @@ def crear_router(verificar_login, conexion) -> APIRouter:
             "actualizado_por": guardado["actualizado_por"],
             "actualizado_en": guardado["actualizado_en"].isoformat() if guardado["actualizado_en"] else None,
             # La primera vez que se abre una marca todavía no hay consulta a INPI guardada.
-            "consultada_en_inpi": op["origen"] == "inpi" and guardado["logo_consultado"],
+            "consultada_en_inpi": op["origen"] == "inpi" and guardado["logo_consultado"] and guardado["expediente"] is not None,
             # El botón «Mejorar texto» solo funciona si el servidor tiene la clave de la IA.
             "ia_disponible": ia_texto.configurada(),
         }
@@ -119,6 +123,7 @@ def crear_router(verificar_login, conexion) -> APIRouter:
             with conexion() as conn, rcur(conn) as cur:
                 am.guardar_oposiciones(cur, acta, res["items"])
                 am.guardar_logo(cur, acta, res.get("logo"))
+                am.guardar_expediente(cur, acta, res.get("expediente"))
                 conn.commit()
         else:
             aviso = res.get("error") or "No se pudo consultar INPI"
@@ -139,7 +144,7 @@ def crear_router(verificar_login, conexion) -> APIRouter:
             texto = am.validar_texto(body.texto) if body.texto is not None else guardado["texto"]
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
-        d = am.datos_para_pdf(m, texto, am.armar_oposiciones(m, guardado["oposiciones"]), logo)
+        d = am.datos_para_pdf(m, texto, am.armar_oposiciones(m, guardado["oposiciones"]), logo, guardado["expediente"])
         return Response(
             content=am.generar_pdf(d), media_type="application/pdf",
             headers={"Content-Disposition": f"inline; filename*=UTF-8''{quote(am.nombre_archivo(d))}",
@@ -188,7 +193,7 @@ def crear_router(verificar_login, conexion) -> APIRouter:
                 m = _marca(cur, acta)
                 guardado = am.leer_analisis(cur, acta)
                 marcas.append(am.datos_para_pdf(m, guardado["texto"], am.armar_oposiciones(m, guardado["oposiciones"]),
-                                                am.leer_logo(cur, acta)))
+                                                am.leer_logo(cur, acta), guardado["expediente"]))
         return Response(
             content=am.generar_pdf(marcas), media_type="application/pdf",
             headers={"Content-Disposition": f"inline; filename*=UTF-8''{quote(am.nombre_archivo(marcas))}",
