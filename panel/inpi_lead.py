@@ -704,15 +704,21 @@ def _etiquetas_expediente(nodo) -> list:
 
 
 def parsear_datos_expediente(html: str) -> dict:
-    """Lo que el expediente informa de la marca: {denominacion, tipo_marca, limitacion,
-    publicaciones: [{fecha (ISO), numero, url, tipo}]}. Lo que no figura queda vacío."""
+    """Lo que el expediente informa de la marca: {denominacion, tipo_marca, clase, proteccion,
+    limitacion, publicaciones: [{fecha (ISO), numero, url, tipo}]}. Lo que no figura queda vacío."""
     soup = BeautifulSoup(html or "", "html.parser")
-    out = {"denominacion": None, "tipo_marca": None, "limitacion": None, "publicaciones": []}
+    out = {"denominacion": None, "tipo_marca": None, "clase": None, "proteccion": None, "limitacion": None,
+           "publicaciones": []}
     for clave, valor, _ in _etiquetas_expediente(soup):
         if clave == "DENOMINACION" and not out["denominacion"]:
             out["denominacion"] = valor or None
         elif clave == "TIPO DE MARCA" and not out["tipo_marca"]:
             out["tipo_marca"] = valor or None
+        elif clave == "CLASE" and not out["clase"]:
+            m_cl = re.match(r"\d{1,2}", valor)
+            out["clase"] = m_cl.group(0) if m_cl else None
+        elif clave == "PROTECCION" and not out["proteccion"]:
+            out["proteccion"] = valor or None
         elif clave == "LIMITACION" and not out["limitacion"]:
             # «A ;B ;C ;» -> «A; B; C»
             partes = [p.strip() for p in valor.split(";") if p.strip()]
@@ -733,6 +739,115 @@ def parsear_datos_expediente(html: str) -> dict:
             else:
                 actual["tipo"] = valor or None
     out["publicaciones"] = [p for p in out["publicaciones"] if p["fecha"] or p["numero"]]
+    return out
+
+
+# ── Marca del oponente ────────────────────────────────────────────────────
+# El fundamento de una oposición suele citar la marca propia del oponente como
+# «Acta N° X» (copia acotada de scripts/validar_leads.py, que el panel no puede
+# importar). Si cita varias actas se toman las primeras; la propia marca (a veces se
+# la repite entre paréntesis) se descarta.
+RE_ACTA_CITADA = re.compile(r"ACTAS?\s+N[°ºo]\.?\s*(\d{5,8})", re.IGNORECASE)
+RE_GRUPO_ACTAS = re.compile(
+    r"ACTAS?\s+N[°ºo]\.?\s*\d{5,8}\s*\(clase[^)]*\)(?:\s*[,y]\s*\d{5,8}\s*\(clase[^)]*\))*",
+    re.IGNORECASE,
+)
+RE_NUMERO_EN_GRUPO_ACTAS = re.compile(r"(\d{5,8})\s*\(clase", re.IGNORECASE)
+RE_ACTA_REFERENCIA = re.compile(
+    r"actas?\s+de\s+referencia\s*(\d{5,8}(?:\s*[,y]\s*\d{5,8})*)", re.IGNORECASE
+)
+RE_MARCA_OPONENTE_COMILLAS = re.compile(r'["“]([^"”]{2,60})["”]\s*Nro\.?\s*([\d.]{4,})')
+RE_MARCA_OPONENTE_REG = re.compile(
+    r"\b([A-ZÁÉÍÓÚÑ][A-ZÁÉÍÓÚÑ0-9]*(?:\s+[A-ZÁÉÍÓÚÑ][A-ZÁÉÍÓÚÑ0-9]*){0,4})\s+Reg\.?\s*Nr\.?\s*([\d.]{4,})"
+)
+RE_MARCA_OPONENTE_REGISTROS = re.compile(
+    r'["“]([^"”]{2,60})["”][^"0-9]{0,40}?Registro?s?\.?\s*N?[°ºo]?\.?\s*([\d.]{4,})',
+    re.IGNORECASE,
+)
+MAX_ACTAS_OPUESTAS_POR_OPOSICION = 3
+
+
+def marcas_opuestas_citadas(fundamento, acta_propia=None) -> dict:
+    """{"actas": [acta, ...], "citada": "ALIGN (Registro N° 123)" | None} a partir del
+    fundamento. «actas» son las que el fundamento cita con su número de acta (se pueden
+    abrir en INPI); «citada» solo se llena cuando no hay actas y el fundamento da el
+    nombre y número de registro de la marca (no hay expediente que abrir)."""
+    out = {"actas": [], "citada": None}
+    if not fundamento:
+        return out
+    propia = str(acta_propia or "")
+    actas = []
+
+    def sumar(a):
+        if a != propia and a not in actas:
+            actas.append(a)
+
+    for m in RE_ACTA_CITADA.finditer(fundamento):
+        sumar(m.group(1))
+    for grupo in RE_GRUPO_ACTAS.finditer(fundamento):
+        for m in RE_NUMERO_EN_GRUPO_ACTAS.finditer(grupo.group(0)):
+            sumar(m.group(1))
+    m_ref = RE_ACTA_REFERENCIA.search(fundamento)
+    if m_ref:
+        for a in re.findall(r"\d{5,8}", m_ref.group(1)):
+            sumar(a)
+    if actas:
+        out["actas"] = actas[:MAX_ACTAS_OPUESTAS_POR_OPOSICION]
+        return out
+    m = (RE_MARCA_OPONENTE_COMILLAS.search(fundamento) or RE_MARCA_OPONENTE_REG.search(fundamento)
+         or RE_MARCA_OPONENTE_REGISTROS.search(fundamento))
+    if m:
+        out["citada"] = f"{m.group(1).strip()} (Registro N° {m.group(2).replace('.', '')})"
+    return out
+
+
+def parsear_marca_opuesta(html_expediente: str) -> dict:
+    """Los datos de la marca del oponente que se muestran: denominación, tipo de marca,
+    clase, protección, limitación, y el agente de su expediente (texto tal cual, carácter
+    y si es particular)."""
+    datos = parsear_datos_expediente(html_expediente)
+    m_gestion = RE_GESTION.search(html_expediente or "")
+    bloque = m_gestion.group(1) if m_gestion else ""
+    m_car = RE_CARACTER_SPAN.search(bloque or "")
+    ag = _agente_de_bloque(bloque)
+    return {
+        "denominacion": datos["denominacion"], "tipo_marca": datos["tipo_marca"], "clase": datos["clase"],
+        "proteccion": datos["proteccion"], "limitacion": datos["limitacion"],
+        "agente": ag["agente"] or None, "matricula_agente": ag["matricula_agente"] or None,
+        "particular": bool(ag["particular"]),
+        "caracter": re.sub(r"\s+", " ", m_car.group(1)).strip() if m_car else None,
+    }
+
+
+def consultar_marca_opuesta(acta: str, s=None, timeout: int = 30) -> dict:
+    """Expediente de la marca del oponente (UN pedido a INPI). estado_consulta: "ok" |
+    "no_existe" | "bloqueado" | "error"; si "ok": `datos` (ver parsear_marca_opuesta) y
+    `logo` ((bytes, mime) o None)."""
+    s = s or _crear_sesion()
+    out = {"acta": str(acta), "estado_consulta": "error", "error": "", "datos": None, "logo": None}
+    try:
+        r = _get_con_reintentos(
+            lambda: s.post(
+                f"{BASE}/MarcasConsultas/Resultado",
+                headers={"Referer": f"{BASE}/MarcasConsultas/Grilla"},
+                data={"acta": str(acta)},
+                timeout=timeout,
+            )
+        )
+    except requests.RequestException as e:
+        out["error"] = f"error de conexión al consultar INPI: {e}"
+        return out
+    if "Web Page Blocked" in r.text or "Attack ID" in r.text:
+        out["estado_consulta"] = "bloqueado"
+        out["error"] = "INPI bloqueó la consulta (WAF)"
+        return out
+    if "GESTION DEL TRAMITE" not in r.text and "TITULARIDAD" not in r.text:
+        out["estado_consulta"] = "no_existe"
+        out["error"] = "INPI no tiene un expediente con ese número de acta"
+        return out
+    out["datos"] = parsear_marca_opuesta(r.text)
+    out["logo"] = extraer_logo(r.text)
+    out["estado_consulta"] = "ok"
     return out
 
 

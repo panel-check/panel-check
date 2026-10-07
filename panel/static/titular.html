@@ -48,6 +48,11 @@
   .an-lead details.an-fund { margin: 3px 0 4px; font-size: 13px; }
   .an-lead details.an-fund summary { cursor: pointer; color: var(--azul); }
   .an-lead details.an-fund div { white-space: pre-wrap; margin-top: 4px; padding: 6px 8px; background: #fff; border: 1px solid var(--borde); border-radius: 6px; color: #344054; }
+  .an-lead .an-opuesta { margin: 4px 0 6px; padding: 6px 8px; background: #fff; border: 1px solid var(--borde); border-radius: 6px; font-size: 13px; overflow: hidden; }
+  .an-lead .an-opuesta img.an-logo-op { float: right; max-width: 110px; max-height: 70px; margin: 0 0 4px 10px; border: 1px solid var(--borde); border-radius: 6px; padding: 2px; background: #fff; }
+  .an-lead .an-opuesta .an-op-titulo { font-weight: 600; margin-bottom: 2px; }
+  .an-lead .an-opuesta .an-op-linea { color: #344054; }
+  .an-lead .an-opuesta .an-op-linea b { color: var(--gris); font-weight: 600; }
   .an-lead .an-origen { font-size: 12px; color: var(--gris); margin-top: 4px; }
   .an-lead .an-origen.aviso { color: #92400e; }
   .an-lead button.plegar { background: none; border: 0; color: var(--azul); font: inherit; font-size: 13px; cursor: pointer; padding: 0; }
@@ -613,11 +618,28 @@ let anEstado = {};          // por acta: {tiene_texto, consultada}
 
 function anMsg(t, ok = true) { const el = document.getElementById("an-estado"); el.textContent = t || ""; el.className = "msg " + (ok ? "ok" : "err"); }
 
+// Datos de la marca del oponente (la que cita el fundamento de su oposición), debajo de cada oposición.
+function anPintarOpuestas(it) {
+  const marcas = (it.marcas_opuestas || []).map(mo => {
+    const link = mo.url ? `<a href="${mlEsc(mo.url)}" target="_blank" rel="noopener" title="Abrir el expediente en INPI">${mlEsc(mo.acta)}</a>` : mlEsc(mo.acta);
+    if (mo.estado === "no_existe") return `<div class="an-opuesta"><div class="an-op-titulo">Marca del oponente · Acta ${link}</div><div class="an-op-linea">No se encontró el expediente en INPI.</div></div>`;
+    const logo = mo.tiene_logo ? `<img class="an-logo-op" alt="Logo de la marca del oponente" src="/api/analisis-marca-opuesta/${encodeURIComponent(mo.acta)}/logo">` : "";
+    const lin = [["Tipo de marca", mo.tipo_marca], ["Clase", mo.clase], ["Protección", mo.proteccion],
+                 ["Limitaciones", mo.limitacion], ["Agente", mo.agente_mostrar]]
+      .filter(x => x[1]).map(x => `<div class="an-op-linea"><b>${x[0]}:</b> ${mlEsc(x[1])}</div>`).join("");
+    return `<div class="an-opuesta">${logo}<div class="an-op-titulo">Marca del oponente: ${mlEsc(mo.denominacion || "sin denominación")} · Acta ${link}</div>${lin}</div>`;
+  }).join("");
+  const citada = it.marca_citada && !(it.marcas_opuestas || []).length
+    ? `<div class="an-opuesta"><div class="an-op-linea"><b>Marca del oponente (citada en el fundamento):</b> ${mlEsc(it.marca_citada)}</div></div>` : "";
+  return marcas + citada;
+}
+
 function anPintarDatos(d, { consultando = false, aviso = "" } = {}) {
   const op = d.oposiciones;
   const lineas = op.lineas.length ? `<ol class="an-opos">${op.lineas.map((l, k) => {
-    const f = (op.items[k] || {}).fundamento;
-    return `<li>${mlEsc(l)}${f ? `<details class="an-fund"><summary>Ver fundamento</summary><div>${mlEsc(f)}</div></details>` : ""}</li>`;
+    const it = op.items[k] || {};
+    const f = it.fundamento;
+    return `<li>${mlEsc(l)}${f ? `<details class="an-fund"><summary>Ver fundamento</summary><div>${mlEsc(f)}</div></details>` : ""}${anPintarOpuestas(it)}</li>`;
   }).join("")}</ol>` : "";
   const pubs = (d.publicaciones || []).map(p => {
     const num = p.numero ? (p.url ? `<a href="${mlEsc(p.url)}" target="_blank" rel="noopener">${mlEsc(p.numero)}</a>` : mlEsc(p.numero)) : "";
@@ -626,7 +648,7 @@ function anPintarDatos(d, { consultando = false, aviso = "" } = {}) {
   const filaPub = pubs.length ? `<div class="an-fila"><span>Publicación</span><div>${pubs.join("<br>")}</div></div>` : "";
   let origen;
   if (consultando) origen = '<span class="an-origen">Consultando INPI…</span>';
-  else if (op.origen === "inpi") origen = `<span class="an-origen">Verificado en INPI el ${mlEsc(mlFecha(op.consultado_en))}. <button type="button" class="plegar" id="an-verificar">↻ Verificar de nuevo</button></span>`;
+  else if (op.origen === "inpi") origen = `<span class="an-origen${aviso ? " aviso" : ""}">Verificado en INPI el ${mlEsc(mlFecha(op.consultado_en))}.${aviso ? " " + mlEsc(aviso) + "." : ""} <button type="button" class="plegar" id="an-verificar">↻ Verificar de nuevo</button></span>`;
   else origen = `<span class="an-origen aviso">Dato del sistema, sin verificar contra el expediente de INPI${aviso ? " (" + mlEsc(aviso) + ")" : ""}. <button type="button" class="plegar" id="an-verificar">↻ Verificar en INPI</button></span>`;
   const logo = d.tiene_logo ? `<img class="an-logo" alt="Logo de la marca" src="/api/analisis-marca/${encodeURIComponent(d.acta)}/logo?v=${Date.now()}">` : "";
   document.getElementById("an-datos").innerHTML = `${logo}
@@ -813,7 +835,7 @@ async function anExportarLote() {
     const a = document.createElement("a");
     a.href = url; a.download = nombre; document.body.appendChild(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 60000);
-    anLoteMsg(sinVerificar ? `PDF descargado ✓ (en ${sinVerificar} marca${sinVerificar === 1 ? "" : "s"} INPI no respondió: salen con datos del sistema, sin verificar)` : "PDF descargado ✓");
+    anLoteMsg(sinVerificar ? `PDF descargado ✓ (en ${sinVerificar} marca${sinVerificar === 1 ? "" : "s"} INPI no respondió del todo: salen con los datos que ya estaban guardados)` : "PDF descargado ✓");
   } catch (e) { anLoteMsg("No se pudo armar el PDF: " + e.message, false); }
   btn.disabled = anSel.size === 0;
 }

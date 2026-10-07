@@ -477,3 +477,15 @@ CREATE TABLE IF NOT EXISTS analisis_marca (
     -- Denominación, tipo de marca, limitación y publicación tal como figuran en el expediente.
     expediente       JSONB
 );
+
+-- Agregado el 07/10/2026: marcas de los oponentes (la que cita el fundamento de cada
+-- oposición del «Análisis de marca»), una fila por acta: lo que figura en su expediente
+-- de INPI (denominación, tipo de marca, clase, protección, limitación, agente) y su logo.
+-- datos.estado = 'ok' | 'no_existe'. También la crea sola el panel al arrancar.
+CREATE TABLE IF NOT EXISTS analisis_marca_opuesta (
+    acta           TEXT PRIMARY KEY,
+    datos          JSONB NOT NULL,
+    logo           BYTEA,
+    logo_mime      TEXT,
+    consultado_en  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
