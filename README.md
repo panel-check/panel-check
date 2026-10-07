@@ -62,6 +62,8 @@ El workflow `.github/workflows/pipeline.yml` corre estos 6 pasos automáticament
   (cuenta de prospectos); la copia al equipo va a `CALENDARIO_AVISO_EQUIPO` (opcional).
   El evento «MEET PAME / TOMI» no se muestra en el panel; `CALENDARIO_OCULTAR` (títulos
   separados por `;`) cambia qué eventos se ocultan. `/agendar-llamada` abre solo el formulario de agendar.
+  «✨ Completar con IA» (pegar un texto y que se llene el formulario, preguntando lo que falta) usa la misma
+  IA que «Mejorar texto» (`IA_API_KEY`).
 
 ### 2. Cargar los secrets en GitHub
 
