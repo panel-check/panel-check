@@ -1195,7 +1195,7 @@ def buscar_marcas(cur, texto: str, limite: int = 12) -> list:
 # Nada se agenda sin que la persona revise y guarde el formulario.
 _RE_MAIL = re.compile(r"[\w.+'-]+@[\w-]+(?:\.[\w-]+)+")
 _OMITIBLES = ("quien", "email", "telefono", "lugar")   # lo que la persona puede decidir no cargar
-_BASE_TITULO = {"meet": "Meet", "llamada": "Llamada", "presencial": "Reunión", None: "Reunión"}
+_BASE_TITULO = {"meet": "Reunión virtual", "llamada": "Llamada", "presencial": "Reunión", None: "Reunión"}
 
 
 def _str_o_none(v):
@@ -1343,7 +1343,7 @@ def armar_propuesta(cur, crudo: dict, texto: str, hoy: _dt.date, omitir=()) -> d
     if fecha and fecha.weekday() >= 5:
         adv.append(f"El {fecha.day} de {MESES[fecha.month - 1]} cae {DIAS_SEMANA[fecha.weekday()]}: revisá que la fecha esté bien.")
 
-    nombre = negocio or denominacion
+    nombre = denominacion or negocio   # el nombre que tiene la marca en el panel; si no está, el del texto
     titulo = _BASE_TITULO.get(modalidad, "Reunión") + (f" ({nombre})" if nombre else "")
     return {
         "campos": {
@@ -1352,7 +1352,7 @@ def armar_propuesta(cur, crudo: dict, texto: str, hoy: _dt.date, omitir=()) -> d
             "lugar": (tel if modalidad == "llamada" else lugar if modalidad == "presencial" else None),
             "actas": actas, "notas": notas,
         },
-        "negocio": negocio, "marcas": marcas, "faltantes": faltan, "advertencias": adv,
+        "negocio": negocio, "nombre": nombre, "marcas": marcas, "faltantes": faltan, "advertencias": adv,
     }
 
 
