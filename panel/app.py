@@ -46,6 +46,8 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 import accesos_api
+import analisis_api
+import analisis_marca
 import auth
 import auth_api
 import cartera
@@ -157,6 +159,16 @@ def migrar_columnas_panel():
             conn.commit()
     except Exception as e:
         print(f"[startup] tabla de accesos rápidos salteada (no bloqueante): {e}")
+
+    # Análisis de marca (pestaña de la ficha del titular): no toca `marcas`.
+    try:
+        with conexion() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SET lock_timeout = '3s'")
+                analisis_marca.crear_tablas(cur)
+            conn.commit()
+    except Exception as e:
+        print(f"[startup] tabla de análisis de marca salteada (no bloqueante): {e}")
 
 
 def _crear_tablas_crm(cur):
@@ -3288,6 +3300,9 @@ def _crm_registrar_mail(cur, acta: str, usuario: str, texto: str):
 
 
 app.include_router(mails_api.crear_router(verificar_login, _auth.verificar_admin, conexion, _crm_registrar_mail))
+
+# Pestaña «Análisis de marca» de la ficha del titular: texto, oposiciones y PDF con membrete.
+app.include_router(analisis_api.crear_router(verificar_login, conexion))
 
 
 class ArchivosSinCache(StaticFiles):
