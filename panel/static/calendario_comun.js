@@ -236,7 +236,7 @@ function _calAsegurarModal() {
     if (!h.value || h.value < document.getElementById("mc-fecha").value) h.value = document.getElementById("mc-fecha").value;
   });
   document.getElementById("mc-form").addEventListener("submit", _calGuardar);
-  document.getElementById("mc-titulo").addEventListener("input", (ev) => { delete ev.target.dataset.ia; });
+  document.getElementById("mc-titulo").addEventListener("input", (ev) => { delete ev.target.dataset.auto; });
   document.getElementById("mc-ia-abrir").addEventListener("click", () => {
     const caja = document.getElementById("mc-ia-caja");
     caja.hidden = !caja.hidden;
@@ -256,6 +256,23 @@ function _calAsegurarModal() {
     clearTimeout(temporizador);
     temporizador = setTimeout(_calVistaPreviaActas, 350);
   });
+}
+
+// ── Título automático: «Reunión virtual (MARCA)» / «Llamada (MARCA)» ──
+// Se completa solo al elegir la marca (o escribir su acta) y la modalidad, con el nombre que tiene
+// la marca cargado en el panel. Si la persona escribe el título a mano, no se le pisa.
+const _CAL_BASE_TITULO = { meet: "Reunión virtual", llamada: "Llamada", presencial: "Reunión" };
+let _calMarcaTitulo = null;   // nombre de la marca vinculada (el que figura en el panel)
+let _calNombreTexto = null;   // nombre que dijo el texto pegado, si esa marca no está en el panel
+
+function _calTituloAuto() {
+  const t = document.getElementById("mc-titulo");
+  if (!t || (_calModalCtx && _calModalCtx.evento)) return;   // al editar no se toca el título
+  if (t.value.trim() && !t.dataset.auto) return;              // lo escribió la persona
+  const nombre = _calMarcaTitulo;
+  if (!nombre && !t.dataset.auto) return;                     // sin marca no se inventa un título
+  t.value = (_CAL_BASE_TITULO[_calModalidad()] || "Reunión") + (nombre ? ` (${nombre})` : "");
+  t.dataset.auto = "1";
 }
 
 // ── Completar con IA: de un texto pegado al formulario (con preguntas por lo que falta) ──
@@ -290,9 +307,10 @@ function _calIAAplicar(prop) {
   const $ = (id) => document.getElementById(id);
   const c = prop.campos || {};
   const avisos = [];
-  if (c.titulo && (!$("mc-titulo").value.trim() || $("mc-titulo").dataset.ia)) {
+  if (prop.nombre) { _calNombreTexto = prop.nombre; _calMarcaTitulo = prop.nombre; }
+  if (c.titulo && (!$("mc-titulo").value.trim() || $("mc-titulo").dataset.auto)) {
     $("mc-titulo").value = c.titulo;
-    $("mc-titulo").dataset.ia = "1";
+    $("mc-titulo").dataset.auto = "1";
   }
   if (c.fecha) { $("mc-fecha").value = c.fecha; $("mc-hasta").value = c.fecha; }
   if (c.hora) { $("mc-todo").checked = false; $("mc-hora").value = c.hora; _calPintarTodoElDia(); }
@@ -448,10 +466,7 @@ function _calEnlazarBuscador() {
     $("mc-actas").value = actual.join(", ");
     const correo = $("mc-email");
     if (r.email && !correo.dataset.manual && !correo.value) correo.value = r.email;
-    if (!$("mc-titulo").value.trim() && r.denominacion) {
-      const mod = _calModalidad();
-      $("mc-titulo").value = `${mod === "llamada" ? "Llamada" : "Reunión"} (${r.denominacion})`;
-    }
+    if (r.denominacion) { _calMarcaTitulo = r.denominacion; _calTituloAuto(); }
     caja.value = "";
     resultados = [];
     cerrar();
@@ -508,6 +523,7 @@ function _calPintarModalidad() {
   }
   const rotulo = { llamada: "Teléfono al que se llama", presencial: "Lugar" }[mod] || "Lugar o link (opcional)";
   $("mc-l-lugar").firstChild.textContent = rotulo + " ";
+  _calTituloAuto();
   lugar.placeholder = mod === "llamada" ? "Ej: 11 5555-1234" : mod === "presencial" ? "Ej: Estudio, Av. Corrientes 1234" : "Estudio, teléfono…";
 }
 
@@ -554,10 +570,13 @@ async function _calVistaPreviaActas() {
   const caja = document.getElementById("mc-vista-actas");
   if (!caja) return;
   const validas = [...new Set(_calActasDelCampo().filter(a => /^\d{4,9}$/.test(a)))];
-  if (!validas.length) { caja.hidden = true; return; }
+  if (!validas.length) { caja.hidden = true; _calMarcaTitulo = _calNombreTexto; _calTituloAuto(); return; }
   try {
     const r = await api(`/api/calendario/actas?actas=${validas.join(",")}`);
     caja.hidden = false;
+    const dens = r.actas.map(a => a.denominacion).filter(Boolean);
+    if (!dens.includes(_calMarcaTitulo)) _calMarcaTitulo = dens[0] || _calNombreTexto;
+    _calTituloAuto();
     const correo = document.getElementById("mc-email");
     const conMail = r.actas.find(a => a.email);
     if (correo && !correo.dataset.manual && conMail && !correo.value) correo.value = conMail.email;
@@ -592,7 +611,8 @@ async function calAbrirModal({ evento = null, fecha = null, actas = [], marcas =
   $("mc-borrar").hidden = !evento;
   $("mc-guardar").disabled = false;
   $("mc-guardar").textContent = "Guardar";
-  delete $("mc-titulo").dataset.ia;
+  delete $("mc-titulo").dataset.auto;
+  _calMarcaTitulo = null; _calNombreTexto = null;
   _calIAReiniciar(!evento, embebido);
 
   const durSel = $("mc-dur");

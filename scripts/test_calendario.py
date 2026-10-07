@@ -842,7 +842,9 @@ class AgendarConIA(unittest.TestCase):
         self.assertEqual(p["faltantes"], [])
         self.assertEqual((c["fecha"], c["hora"], c["modalidad"], c["actas"]), ("2026-10-18", "09:00", "meet", ["4688297"]))
         self.assertEqual(c["email"], "todosobret@gmail.com")   # el del texto, no el de la base
-        self.assertEqual(c["titulo"], "Meet (BUGGY'S CALIDAD Y SABOR)")
+        # el nombre es el que tiene la marca en el panel (no el que dijo el texto)
+        self.assertEqual(c["titulo"], "Reunión virtual (BUGGYS)")
+        self.assertEqual(p["nombre"], "BUGGYS")
         self.assertIsNone(c["lugar"])
 
     def test_el_domingo_se_avisa(self):
@@ -852,7 +854,7 @@ class AgendarConIA(unittest.TestCase):
         p = self.armar({**self.CRUDO, "negocio": "Pérez", "hora": None, "modalidad": None}, "Pérez acta 4688297 el 18 de octubre a@b.com")
         self.assertEqual([f["campo"] for f in p["faltantes"]], ["hora", "modalidad"])
         self.assertFalse(any(f["omitible"] for f in p["faltantes"]))
-        self.assertEqual(p["campos"]["titulo"], "Reunión (Pérez)")
+        self.assertEqual(p["campos"]["titulo"], "Reunión (BUGGYS)")   # gana el nombre que tiene la marca en el panel
 
     def test_sin_fecha_pregunta_primero_la_fecha(self):
         p = self.armar({**self.CRUDO, "fecha": None})
@@ -883,11 +885,18 @@ class AgendarConIA(unittest.TestCase):
     def test_un_negocio_que_la_ia_inventa_se_descarta(self):
         p = self.armar({**self.CRUDO, "negocio": "OTRA COSA"})
         self.assertIsNone(p["negocio"])
-        self.assertEqual(p["campos"]["titulo"], "Meet (BUGGYS)")   # el de la base
+        self.assertEqual(p["campos"]["titulo"], "Reunión virtual (BUGGYS)")   # el de la base
 
     def test_acta_que_no_corresponde_al_nombre_avisa(self):
         self.base["4688297"]["denominacion"] = "LUNA"
         self.assertTrue(any("figura como «LUNA»" in a for a in self.armar()["advertencias"]))
+
+    def test_titulo_segun_como_es_y_nombre_del_texto_si_la_marca_no_esta_en_la_base(self):
+        t = "BUGGY'S CALIDAD Y SABOR acta 4999999 18 de octubre 9am a@b.com"
+        c = {**self.CRUDO, "acta": "4999999"}
+        self.assertEqual(self.armar(c, t)["campos"]["titulo"], "Reunión virtual (BUGGY'S CALIDAD Y SABOR)")
+        self.assertEqual(self.armar({**c, "modalidad": "llamada", "telefono": None}, t)["campos"]["titulo"], "Llamada (BUGGY'S CALIDAD Y SABOR)")
+        self.assertEqual(self.armar({**c, "modalidad": "presencial"}, t)["campos"]["titulo"], "Reunión (BUGGY'S CALIDAD Y SABOR)")
 
     def test_acta_desconocida_avisa_y_no_frena(self):
         p = self.armar(texto=self.TEXTO.replace("4688297", "4999999"), crudo={**self.CRUDO, "acta": "4999999"})
@@ -923,7 +932,7 @@ class AgendarConIA(unittest.TestCase):
         self.assertEqual([f["campo"] for f in p["faltantes"]], ["telefono"])
         p = self.armar({**self.CRUDO, "negocio": "Pérez", "modalidad": "llamada", "telefono": "11 5555-1234"}, t + " 11 5555-1234")
         self.assertEqual(p["faltantes"], [])
-        self.assertEqual((p["campos"]["lugar"], p["campos"]["titulo"]), ("11 5555-1234", "Llamada (Pérez)"))
+        self.assertEqual((p["campos"]["lugar"], p["campos"]["titulo"]), ("11 5555-1234", "Llamada (BUGGYS)"))
         p = self.armar({**self.CRUDO, "modalidad": "presencial"}, t)
         self.assertEqual([f["campo"] for f in p["faltantes"]], ["lugar"])
 
