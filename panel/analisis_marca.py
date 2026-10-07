@@ -29,12 +29,14 @@ import re
 from xml.sax.saxutils import escape
 
 import archivos_seguros
+import inpi_lead
 import presupuestos as pres
 
 log = logging.getLogger(__name__)
 
 LARGO_MAX_TEXTO = 20000
 RE_ACTA = re.compile(r"^\d{4,9}$")
+MAX_OPUESTAS_TOTAL = 6   # marcas de oponentes que se consultan en INPI por análisis (una por acta citada)
 MAX_MARCAS_PDF = 30      # tope de marcas en un mismo PDF
 LOGO_MAX_LADO = 800      # px: el logo se guarda reducido (alcanza de sobra para el PDF)
 
@@ -68,6 +70,19 @@ def crear_tablas(cur):
     # Datos de la marca tal como figuran en el expediente (denominación, tipo de marca,
     # limitación, publicación). NULL = todavía no se leyeron.
     cur.execute("ALTER TABLE analisis_marca ADD COLUMN IF NOT EXISTS expediente JSONB")
+    # Marcas de los oponentes (la que cita el fundamento de cada oposición), una fila por acta:
+    # sus datos y logo tal como figuran en su expediente de INPI. Se comparten entre análisis.
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS analisis_marca_opuesta (
+            acta           TEXT PRIMARY KEY,
+            datos          JSONB NOT NULL,
+            logo           BYTEA,
+            logo_mime      TEXT,
+            consultado_en  TIMESTAMPTZ NOT NULL DEFAULT now()
+        )
+        """
+    )
 
 
 # ── Formatos ──────────────────────────────────────────────────────────────
@@ -216,15 +231,21 @@ def leer_resumen_lote(cur, actas: list) -> dict:
     cuáles ya se consultaron en INPI (oposiciones y logo). Las que no están en la tabla no figuran."""
     cur.execute(
         "SELECT acta, (btrim(texto) <> '') AS tiene_texto, actualizado_en, "
-        "(oposiciones IS NOT NULL AND logo_consultado_en IS NOT NULL AND expediente IS NOT NULL) AS consultada "
-        "FROM analisis_marca WHERE acta = ANY(%s)",
+        "(oposiciones IS NOT NULL AND logo_consultado_en IS NOT NULL AND expediente IS NOT NULL) AS consultada, "
+        "oposiciones FROM analisis_marca WHERE acta = ANY(%s)",
         (list(actas),))
-    out = {}
+    out, snaps = {}, {}
     for f in cur.fetchall():
+        a = str(_valor(f, "acta", 0))
         e = _valor(f, "actualizado_en", 2)
-        out[str(_valor(f, "acta", 0))] = {"tiene_texto": bool(_valor(f, "tiene_texto", 1)),
-                                           "actualizado_en": e.isoformat() if e else None,
-                                           "consultada": bool(_valor(f, "consultada", 3))}
+        out[a] = {"tiene_texto": bool(_valor(f, "tiene_texto", 1)),
+                  "actualizado_en": e.isoformat() if e else None,
+                  "consultada": bool(_valor(f, "consultada", 3))}
+        snaps[a] = _valor(f, "oposiciones", 4)
+    # Una marca no está «consultada» del todo si falta leer la marca de algún oponente.
+    for a, e in out.items():
+        if e["consultada"] and pendientes_de_snapshot(cur, a, snaps[a]):
+            e["consultada"] = False
     return out
 
 
@@ -285,6 +306,119 @@ def guardar_expediente(cur, acta: str, expediente: dict):
         "ON CONFLICT (acta) DO UPDATE SET expediente = EXCLUDED.expediente",
         (acta, json.dumps(expediente or {}, ensure_ascii=False)),
     )
+
+
+# ── Marcas de los oponentes ───────────────────────────────────────────────
+def actas_opuestas(items: list, acta_propia: str) -> list:
+    """Actas de las marcas de los oponentes que citan los fundamentos de las oposiciones
+    (sin repetir, en orden y con tope), listas para consultar en INPI."""
+    out = []
+    for i in items or []:
+        for a in inpi_lead.marcas_opuestas_citadas(i.get("fundamento"), acta_propia)["actas"]:
+            if a not in out:
+                out.append(a)
+    return out[:MAX_OPUESTAS_TOTAL]
+
+
+def guardar_opuesta(cur, acta: str, estado: str, datos, logo):
+    """Guarda lo leído del expediente de la marca de un oponente. estado: 'ok' | 'no_existe'."""
+    prep = preparar_logo(*logo) if (logo and estado == "ok") else None
+    cur.execute(
+        "INSERT INTO analisis_marca_opuesta (acta, datos, logo, logo_mime, consultado_en) "
+        "VALUES (%s, %s::jsonb, %s, %s, now()) "
+        "ON CONFLICT (acta) DO UPDATE SET datos = EXCLUDED.datos, logo = EXCLUDED.logo, "
+        "logo_mime = EXCLUDED.logo_mime, consultado_en = now()",
+        (acta, json.dumps({**(datos or {}), "estado": estado}, ensure_ascii=False),
+         prep[0] if prep else None, prep[1] if prep else None),
+    )
+    return bool(prep)
+
+
+def leer_opuestas(cur, actas: list, con_logo: bool = False) -> dict:
+    """{acta: {estado, denominacion, tipo_marca, clase, proteccion, limitacion, agente, caracter,
+    particular, tiene_logo[, logo]}} de las que ya se consultaron."""
+    if not actas:
+        return {}
+    cur.execute(
+        "SELECT acta, datos, (logo IS NOT NULL) AS tiene_logo, logo, logo_mime FROM analisis_marca_opuesta "
+        "WHERE acta = ANY(%s)", (list(actas),))
+    out = {}
+    for f in cur.fetchall():
+        datos = _json_o_none(_valor(f, "datos", 1)) or {}
+        e = dict(datos, tiene_logo=bool(_valor(f, "tiene_logo", 2)))
+        if con_logo and e["tiene_logo"]:
+            e["logo"] = (bytes(_valor(f, "logo", 3)), _valor(f, "logo_mime", 4) or "image/png")
+        out[str(_valor(f, "acta", 0))] = e
+    return out
+
+
+def leer_logo_opuesta(cur, acta: str):
+    cur.execute("SELECT logo, logo_mime FROM analisis_marca_opuesta WHERE acta = %s", (acta,))
+    f = cur.fetchone()
+    if not f or _valor(f, "logo", 0) is None:
+        return None
+    return bytes(_valor(f, "logo", 0)), _valor(f, "logo_mime", 1) or "image/png"
+
+
+def _texto_agente(e: dict):
+    """El agente de la marca del oponente tal como figura en su expediente."""
+    if e.get("particular"):
+        return "Particular (sin agente)"
+    ag = (e.get("agente") or "").strip()
+    if not ag:
+        return None
+    return f"{ag} ({e['caracter']})" if e.get("caracter") else ag
+
+
+def adjuntar_opuestas(cur, acta_propia: str, op: dict, con_logo: bool = False):
+    """Agrega a cada oposición los datos de la marca del oponente que cita su fundamento.
+    Devuelve (op, pendientes): `pendientes` son las actas citadas que todavía no se
+    consultaron en INPI. El agente de la marca del oponente (`agente_mostrar`) solo se
+    completa cuando la oposición no trae el agente del oponente."""
+    citadas = [inpi_lead.marcas_opuestas_citadas(i.get("fundamento"), acta_propia) for i in op["items"]]
+    actas = []
+    for c in citadas:
+        for a in c["actas"]:
+            if a not in actas:
+                actas.append(a)
+    actas = actas[:MAX_OPUESTAS_TOTAL]
+    guardadas = leer_opuestas(cur, actas, con_logo)
+    items = []
+    for i, c in zip(op["items"], citadas):
+        i = dict(i)
+        marcas = []
+        for a in c["actas"]:
+            if a not in actas:
+                continue
+            e = guardadas.get(a)
+            if not e:
+                continue
+            m = {"acta": a, "url": url_expediente(a), "estado": e.get("estado"), "tiene_logo": e.get("tiene_logo", False),
+                 "denominacion": e.get("denominacion"), "tipo_marca": e.get("tipo_marca"), "clase": e.get("clase"),
+                 "proteccion": e.get("proteccion"), "limitacion": e.get("limitacion"),
+                 "agente_mostrar": None if i.get("agente_oponente") else _texto_agente(e)}
+            if con_logo and e.get("logo"):
+                m["logo"] = e["logo"]
+            marcas.append(m)
+        i["marcas_opuestas"] = marcas
+        i["marca_citada"] = c["citada"]
+        items.append(i)
+    pendientes = [a for a in actas if a not in guardadas]
+    return dict(op, items=items), pendientes
+
+
+def pendientes_de_snapshot(cur, acta: str, snapshot) -> list:
+    """Actas de marcas de oponentes citadas por una consulta ya guardada que aún no se leyeron."""
+    snap = snapshot
+    if isinstance(snap, str):
+        try:
+            snap = json.loads(snap)
+        except ValueError:
+            return []
+    if not isinstance(snap, dict) or not isinstance(snap.get("items"), list):
+        return []
+    actas = actas_opuestas(snap["items"], acta)
+    return [a for a in actas if a not in leer_opuestas(cur, actas)]
 
 
 def guardar_logo(cur, acta: str, logo):
@@ -439,25 +573,51 @@ def generar_pdf(datos) -> bytes:
     marca_n = estilo("marca_n", "b", 13, 18, TA_LEFT, pres.COLOR_TITULO)
     cuerpo = estilo("cuerpo", alin=TA_JUSTIFY)
     fundamento = estilo("fundamento", size=10, leading=14, alin=TA_JUSTIFY, leftIndent=18.7)
+    opuesta = estilo("opuesta", size=10, leading=14, leftIndent=18.7)
     vineta = estilo("vineta", alin=TA_JUSTIFY, leftIndent=18.7, bulletIndent=6, bulletFontName=F["r"],
                     bulletFontSize=11 * esc)
 
     ANCHO = 520.1 - 75.4
     LOGO_W, LOGO_H = 150.0, 90.0   # caja máxima del logo (se achica sin deformarlo)
 
-    def imagen_logo(logo):
+    def imagen_logo(logo, caja_w=None, caja_h=None):
         """El logo ajustado a la caja, o None si no hay o no se puede leer."""
         if not logo:
             return None
         try:
             ancho, alto_px = ImageReader(io.BytesIO(logo[0])).getSize()
-            k = min(LOGO_W / ancho, LOGO_H / alto_px)
+            k = min((caja_w or LOGO_W) / ancho, (caja_h or LOGO_H) / alto_px)
             img = Image(io.BytesIO(logo[0]), width=ancho * k, height=alto_px * k)
             img.hAlign = "RIGHT"
             return img
         except Exception:  # noqa: BLE001 — un logo ilegible no tiene que impedir el PDF
             log.warning("No se pudo dibujar el logo de la marca en el PDF", exc_info=True)
             return None
+
+    OPUESTA_LOGO_W, OPUESTA_LOGO_H = 90.0, 56.0   # el logo de la marca del oponente va más chico
+
+    def link_acta(acta, url):
+        x = _xml(acta)
+        return f'<a href="{escape(url, {chr(34): "&quot;"})}" color="{pres.COLOR_SUBTITULO}">{x}</a>' if url else x
+
+    def bloque_opuesta(mo):
+        """Datos de la marca de un oponente (la que cita el fundamento de su oposición)."""
+        acta_x = link_acta(mo["acta"], mo.get("url"))
+        if mo.get("estado") == "no_existe":
+            return [Paragraph(f"<b>Marca del oponente:</b> Acta {acta_x} (no se encontró el expediente en INPI)", opuesta)]
+        ps = [Paragraph(f"<b>Marca del oponente:</b> {_xml(mo.get('denominacion') or 'sin denominación')} · Acta {acta_x}", opuesta)]
+        for etiqueta, clave in (("Tipo de marca", "tipo_marca"), ("Clase", "clase"), ("Protección", "proteccion"),
+                                ("Limitaciones", "limitacion"), ("Agente", "agente_mostrar")):
+            if mo.get(clave):
+                ps.append(Paragraph(f"<b>{etiqueta}:</b> {_xml(mo[clave])}", opuesta))
+        img = imagen_logo(mo.get("logo"), OPUESTA_LOGO_W, OPUESTA_LOGO_H)
+        if img is None:
+            return ps
+        t = Table([[ps, img]], colWidths=[ANCHO - OPUESTA_LOGO_W - 12, OPUESTA_LOGO_W + 12])
+        t.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP"), ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                               ("RIGHTPADDING", (0, 0), (-1, -1), 0), ("TOPPADDING", (0, 0), (-1, -1), 0),
+                               ("BOTTOMPADDING", (0, 0), (-1, -1), 0)]))
+        return [t]
 
     h = [Paragraph("Análisis de marcas" if varias else "Análisis de marca", titulo), Spacer(1, 22)]
 
@@ -518,6 +678,12 @@ def generar_pdf(datos) -> bytes:
             h.append(Paragraph(_xml(linea_oposicion(i)), dato_op, bulletText=f"{k}."))
             if i.get("fundamento"):
                 h.append(Paragraph(f"<b>Fundamento:</b> {_xml(i['fundamento'])}", fundamento))
+                h.append(Spacer(1, 4))
+            for mo in i.get("marcas_opuestas") or []:
+                h.extend(bloque_opuesta(mo))
+                h.append(Spacer(1, 4))
+            if i.get("marca_citada") and not i.get("marcas_opuestas"):
+                h.append(Paragraph(f"<b>Marca del oponente (citada en el fundamento):</b> {_xml(i['marca_citada'])}", opuesta))
                 h.append(Spacer(1, 4))
         if op["origen"] == "sistema":
             h.append(Spacer(1, 3))
