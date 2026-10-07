@@ -249,6 +249,8 @@ def crear_tablas(cur):
     # Agregadas con la modalidad (07/10/2026): 'meet' | 'llamada' | 'presencial' y el link de la videollamada.
     cur.execute("ALTER TABLE calendario_eventos ADD COLUMN IF NOT EXISTS modalidad TEXT")
     cur.execute("ALTER TABLE calendario_eventos ADD COLUMN IF NOT EXISTS meet_url TEXT")
+    # Mail de la persona a la que se le avisa (para poder avisarle también si después se cambia la fecha u hora).
+    cur.execute("ALTER TABLE calendario_eventos ADD COLUMN IF NOT EXISTS email_aviso TEXT")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_calendario_eventos_inicio ON calendario_eventos(inicio)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_calendario_eventos_actas ON calendario_eventos USING GIN (actas)")
     cur.execute(
@@ -403,6 +405,7 @@ def evento_a_fila(ev: dict, calendar: str) -> dict:
     return {
         "modalidad": modalidad,
         "meet_url": meet,
+        "email_aviso": (privadas.get("email_aviso") or "").strip() or None,
         "calendar_id": calendar,
         "google_id": ev["id"],
         "titulo": (ev.get("summary") or "").strip() or "(sin título)",
@@ -435,18 +438,18 @@ def _guardar_eventos(cur, filas: list) -> None:
         """
         INSERT INTO calendario_eventos
             (calendar_id, google_id, titulo, descripcion, lugar, inicio, fin, todo_el_dia, actas,
-             origen, creado_por, link, etag, actualizado_google, sincronizado_en, modalidad, meet_url)
+             origen, creado_por, link, etag, actualizado_google, sincronizado_en, modalidad, meet_url, email_aviso)
         VALUES
             (%(calendar_id)s, %(google_id)s, %(titulo)s, %(descripcion)s, %(lugar)s, %(inicio)s, %(fin)s,
              %(todo_el_dia)s, %(actas)s, %(origen)s, %(creado_por)s, %(link)s, %(etag)s, %(actualizado_google)s, now(),
-             %(modalidad)s, %(meet_url)s)
+             %(modalidad)s, %(meet_url)s, %(email_aviso)s)
         ON CONFLICT (calendar_id, google_id) DO UPDATE SET
             titulo = EXCLUDED.titulo, descripcion = EXCLUDED.descripcion, lugar = EXCLUDED.lugar,
             inicio = EXCLUDED.inicio, fin = EXCLUDED.fin, todo_el_dia = EXCLUDED.todo_el_dia,
             actas = EXCLUDED.actas, origen = EXCLUDED.origen, creado_por = EXCLUDED.creado_por,
             link = EXCLUDED.link, etag = EXCLUDED.etag,
             actualizado_google = EXCLUDED.actualizado_google, sincronizado_en = now(),
-            modalidad = EXCLUDED.modalidad, meet_url = EXCLUDED.meet_url
+            modalidad = EXCLUDED.modalidad, meet_url = EXCLUDED.meet_url, email_aviso = EXCLUDED.email_aviso
         """,
         filas,
     )
@@ -669,6 +672,9 @@ def _cuerpo_evento(datos: dict, usuario: str):
     privadas = {"panel": "1", "usuario": usuario or "", "actas": ",".join(actas)}
     if modalidad:
         privadas["modalidad"] = modalidad
+    email = " ".join(str(datos.get("email_aviso") or "").split())
+    if email:
+        privadas["email_aviso"] = email
     return {
         "summary": titulo,
         "description": _nota_con_actas(datos.get("descripcion"), actas),
@@ -766,6 +772,14 @@ def editar_evento(conexion, evento_id: int, datos: dict, usuario: str) -> int:
         params["conferenceDataVersion"] = 1
     if not datos.get("modalidad"):
         cuerpo["extendedProperties"]["private"]["modalidad"] = None  # en un PATCH, null borra la marca anterior
+    if "email_aviso" not in cuerpo["extendedProperties"]["private"]:
+        cuerpo["extendedProperties"]["private"]["email_aviso"] = None
+    # En un PATCH, start y end se MEZCLAN con lo que ya tiene el evento: pasar de un evento con horario a «todo el día»
+    # (o al revés) deja date y dateTime juntos y Google lo rechaza. Se anula explícitamente el que no corresponde.
+    for k in ("start", "end"):
+        t = cuerpo[k]
+        for campo in ("date", "dateTime", "timeZone"):
+            t.setdefault(campo, None)
     recurso = _pedir("PATCH", _ruta_eventos("/" + google_id), json=cuerpo, params=params)
     if quiere_meet and not meet_actual:
         recurso = _esperar_meet(google_id, recurso)
@@ -1009,6 +1023,7 @@ def evento_a_json(f: dict) -> dict:
         "link": f["link"],
         "modalidad": f.get("modalidad"),
         "meet_url": f.get("meet_url"),
+        "email_aviso": f.get("email_aviso"),
     }
 
 
@@ -1019,7 +1034,8 @@ def resolver_actas(cur, actas) -> dict:
     que vio el escaneo pero tiene agente: no es lead ni cliente) o «desconocida» (no está en la base)."""
     actas = [a for a in dict.fromkeys(actas or []) if a]
     res = {a: {"acta": a, "existe": False, "denominacion": None, "titular": None, "clave": None,
-               "cliente_id": None, "cliente": None, "tipo": "desconocida", "email": None} for a in actas}
+               "cliente_id": None, "cliente": None, "tipo": "desconocida", "email": None,
+               "en_marcas": False, "tiene_analisis": False} for a in actas}
     if not actas:
         return res
 
@@ -1035,7 +1051,14 @@ def resolver_actas(cur, actas) -> dict:
     for f in cur.fetchall():
         r = res[f["acta"]]
         r.update(existe=True, denominacion=f["denominacion"], titular=f["titular"], clave=f["clave"], tipo="lead",
-                 email=(f["email"] or "").strip() or None)
+                 email=(f["email"] or "").strip() or None, en_marcas=True)
+
+    # ¿Ya tiene análisis de marca escrito? (para el botón «Ver / Generar análisis» de la tarjeta del evento)
+    en_marcas = [a for a, r in res.items() if r["en_marcas"]]
+    if en_marcas:
+        cur.execute("SELECT acta FROM analisis_marca WHERE acta = ANY(%s) AND btrim(texto) <> ''", (en_marcas,))
+        for f in cur.fetchall():
+            res[f["acta"]]["tiene_analisis"] = True
 
     cur.execute(
         """

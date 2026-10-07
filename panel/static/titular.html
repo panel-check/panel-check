@@ -161,6 +161,7 @@
       <div class="nota">Se guarda solo mientras escribís. En el PDF, una línea en blanco separa párrafos y las líneas que empiezan con «- » salen como viñetas.</div>
       <div class="acciones">
         <button type="button" class="enviar" id="an-pdf" disabled>Exportar PDF</button>
+        <button type="button" class="secundario" id="an-link" disabled title="Copia el link del PDF: se arma en el momento con el análisis guardado, así que siempre está al día">🔗 Copiar link del PDF</button>
         <button type="button" class="secundario" id="an-mejorar" disabled>✨ Mejorar texto</button>
         <button type="button" class="plegar" id="an-deshacer" hidden>↶ Volver al texto anterior</button>
         <span class="msg" id="an-estado"></span>
@@ -235,7 +236,7 @@
 </div>
 
 <script src="/static/comun.js?v=sec1"></script>
-<script src="/static/calendario_comun.js?v=6"></script>
+<script src="/static/calendario_comun.js?v=7"></script>
 <script src="/static/crm.js"></script>
 <script>
 // "Marcar contactado" también mueve la etapa del CRM: se recargan tabla y ficha.
@@ -345,6 +346,7 @@ function pintarColaNavegacion() {
 // ── Pestañas de la ficha ──
 // Siempre abre en «Marca». El hash (#analisis, #mail, #plazos, #crm) permite linkear a una.
 const PESTANAS = ["marca", "analisis", "mail", "plazos", "crm"];
+const ACTA_PEDIDA = new URLSearchParams(location.search).get("acta");   // se lee antes de que abrirPestana cambie la URL
 let pestanaActual = "marca";
 
 function abrirPestana(id) {
@@ -874,7 +876,7 @@ async function anCargar(acta) {
   anCerrarPropuesta(); anPrevio = null; anBase = "";
   document.getElementById("an-deshacer").hidden = true;
   const area = document.getElementById("an-texto");
-  area.disabled = true; document.getElementById("an-pdf").disabled = true;
+  area.disabled = true; document.getElementById("an-pdf").disabled = true; document.getElementById("an-link").disabled = true;
   document.getElementById("an-mejorar").disabled = true;
   document.getElementById("an-datos").innerHTML = '<span class="nota">Cargando…</span>';
   anMsg("");
@@ -886,7 +888,7 @@ async function anCargar(acta) {
   }
   if (token !== anToken) return;
   area.value = d.texto; anGuardado = d.texto;
-  area.disabled = false; document.getElementById("an-pdf").disabled = false;
+  area.disabled = false; document.getElementById("an-pdf").disabled = false; document.getElementById("an-link").disabled = false;
   anIaDisponible = !!d.ia_disponible;
   document.getElementById("an-mejorar").disabled = !anIaDisponible;
   document.getElementById("an-ia-nota").textContent = anIaDisponible
@@ -926,6 +928,15 @@ async function anExportarPdf() {
   btn.disabled = false;
 }
 
+// Link al PDF del análisis (con sesión del panel): se arma en el momento con el texto guardado.
+async function anCopiarLink() {
+  if (!anActa) return;
+  await anGuardarAhora();   // que el link muestre lo último que se escribió
+  const url = `${location.origin}/api/analisis-marca/${encodeURIComponent(anActa)}/pdf`;
+  try { await navigator.clipboard.writeText(url); anMsg("Link copiado. Lo abre quien tenga sesión en el panel y siempre muestra el análisis guardado."); }
+  catch (_) { anMsg("No se pudo copiar solo. El link es: " + url, false); }
+}
+
 function anIniciar(filas) {
   anFilas = filas;
   const box = document.getElementById("an-box");
@@ -936,6 +947,8 @@ function anIniciar(filas) {
   const actual = sel.value;
   sel.innerHTML = filas.map(r => `<option value="${mlEsc(r.acta)}">${mlEsc(mlNombreMarca(r))} · acta ${mlEsc(r.acta)} · clase ${mlEsc(r.clase ?? "—")}</option>`).join("");
   if (actual && filas.some(r => r.acta === actual)) sel.value = actual;
+  // Desde el botón «Generar análisis de marca» del Calendario: …/titular/<clave>?acta=N#analisis
+  if (!anIniciado && ACTA_PEDIDA && filas.some(r => r.acta === ACTA_PEDIDA)) sel.value = ACTA_PEDIDA;
   if (!anIniciado) {
     anIniciado = true;
     sel.addEventListener("change", () => anCargar(sel.value));
@@ -944,6 +957,7 @@ function anIniciar(filas) {
       anTimer = setTimeout(anGuardarAhora, 1200);
     });
     document.getElementById("an-pdf").addEventListener("click", anExportarPdf);
+    document.getElementById("an-link").addEventListener("click", anCopiarLink);
     document.getElementById("an-mejorar").addEventListener("click", anMejorar);
     document.getElementById("an-lote-pdf").addEventListener("click", anExportarLote);
     document.getElementById("an-lote-unico").addEventListener("change", ev => {

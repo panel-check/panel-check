@@ -88,8 +88,9 @@ def crear_router(verificar_login, conexion, verificar_admin=None) -> APIRouter:
             )
 
     def _como_http(e: cal.CalendarioError):
-        # Los errores de Google (permisos, calendario no compartido) son de configuración, no del usuario.
-        codigo = 502 if isinstance(e, cal.GoogleError) else 400
+        # Los errores de Google (permisos, calendario no compartido, pedido rechazado) no son del usuario.
+        # 424 y no 502: el proxy de Railway reemplaza el cuerpo de un 502 y la pantalla perdería el motivo.
+        codigo = 424 if isinstance(e, cal.GoogleError) else 400
         return HTTPException(status_code=codigo, detail=str(e))
 
     def _redirect_uri(request: Request) -> str:
