@@ -538,10 +538,12 @@ def _xml(t: str) -> str:
     return escape(t).replace("\n", "<br/>")
 
 
-def generar_pdf(datos) -> bytes:
+def generar_pdf(datos, texto_comun=None) -> bytes:
     """El análisis en PDF (A4, con el membrete de Smarties). `datos` es una marca
     (ver datos_para_pdf) o una lista de marcas para un PDF con varias, una a continuación
-    de la otra. Si el texto es largo sigue en más hojas, todas con membrete."""
+    de la otra. Si el texto es largo sigue en más hojas, todas con membrete.
+    `texto_comun` (solo con varias marcas): el análisis es el mismo para todas, así que sale
+    UNA sola vez al final, en lugar del texto propio de cada marca."""
     from reportlab.lib.colors import HexColor
     from reportlab.lib.enums import TA_CENTER, TA_JUSTIFY, TA_LEFT
     from reportlab.lib.pagesizes import A4
@@ -555,6 +557,7 @@ def generar_pdf(datos) -> bytes:
     if not marcas:
         raise ValueError("No hay marcas para el PDF")
     varias = len(marcas) > 1
+    comun = texto_comun is not None and varias
 
     F = pres._fuentes()
     esc = F["escala"]
@@ -618,6 +621,25 @@ def generar_pdf(datos) -> bytes:
                                ("RIGHTPADDING", (0, 0), (-1, -1), 0), ("TOPPADDING", (0, 0), (-1, -1), 0),
                                ("BOTTOMPADDING", (0, 0), (-1, -1), 0)]))
         return [t]
+
+    def flujo_analisis(texto, titulo_seccion):
+        """Título «Análisis» y el texto escrito (párrafos y viñetas)."""
+        out = [Paragraph(titulo_seccion, seccion), Spacer(1, 4)]
+        bloques = _bloques_de_texto(texto)
+        if not bloques:
+            out.append(Paragraph("(Sin análisis escrito.)", chico))
+        previo = None
+        for tipo, t in bloques:
+            if tipo == "v":
+                out.append(Paragraph(_xml(t), vineta, bulletText="•"))
+                out.append(Spacer(1, 3))
+            else:
+                if previo == "v":
+                    out.append(Spacer(1, 5))  # un poco de aire al volver al texto después de una lista
+                out.append(Paragraph(_xml(t), cuerpo))
+                out.append(Spacer(1, 8))
+            previo = tipo
+        return out
 
     h = [Paragraph("Análisis de marcas" if varias else "Análisis de marca", titulo), Spacer(1, 22)]
 
@@ -689,23 +711,16 @@ def generar_pdf(datos) -> bytes:
             h.append(Spacer(1, 3))
             h.append(Paragraph("Dato del sistema: no se verificó contra el expediente de INPI.", chico))
 
-        h.append(Spacer(1, 16))
-        h.append(Paragraph("Análisis", seccion))
-        h.append(Spacer(1, 4))
-        bloques = _bloques_de_texto(d.get("texto") or "")
-        if not bloques:
-            h.append(Paragraph("(Sin análisis escrito.)", chico))
-        previo = None
-        for tipo, t in bloques:
-            if tipo == "v":
-                h.append(Paragraph(_xml(t), vineta, bulletText="•"))
-                h.append(Spacer(1, 3))
-            else:
-                if previo == "v":
-                    h.append(Spacer(1, 5))  # un poco de aire al volver al texto después de una lista
-                h.append(Paragraph(_xml(t), cuerpo))
-                h.append(Spacer(1, 8))
-            previo = tipo
+        if not comun:
+            h.append(Spacer(1, 16))
+            h.extend(flujo_analisis(d.get("texto") or "", "Análisis"))
+
+    if comun:
+        h.append(Spacer(1, 14))
+        h.append(HRFlowable(width="100%", thickness=0.6, color=HexColor(pres.COLOR_SUBTITULO)))
+        h.append(Spacer(1, 12))
+        h.append(CondPageBreak(150))
+        h.extend(flujo_analisis(texto_comun or "", f"Análisis (el mismo para las {len(marcas)} marcas)"))
 
     cuando = pres.mes_anio(_dt.date.fromisoformat(marcas[0]["fecha"]))
 

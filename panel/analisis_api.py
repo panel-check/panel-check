@@ -15,7 +15,8 @@ Rutas (todas con sesión):
   GET   /api/analisis-marca/{acta}/logo         el logo de la marca (guardado de INPI), si tiene
   GET   /api/analisis-marca-opuesta/{acta}/logo  el logo de la marca de un oponente (guardado de INPI), si tiene
   POST  /api/analisis-marca-lote/estado         de varias marcas: cuáles ya tienen análisis escrito
-  POST  /api/analisis-marca-lote/pdf            UN PDF con varias marcas (cada una con su análisis guardado)
+  POST  /api/analisis-marca-lote/pdf            UN PDF con varias marcas (cada una con su análisis guardado, o
+                                                con un mismo análisis para todas si se manda analisis_comun_de)
   POST  /api/analisis-marca/{acta}/mejorar-texto  propuesta de redacción mejorada con IA (no guarda
                                                 nada: la persona la acepta o la descarta)
 """
@@ -48,6 +49,9 @@ class PedidoPdf(BaseModel):
 
 class PedidoLote(BaseModel):
     actas: List[str] = []
+    # Si viene, el análisis es el mismo para todas las marcas: se usa el texto guardado de
+    # esta acta y sale una sola vez en el PDF (en vez del texto propio de cada marca).
+    analisis_comun_de: Optional[str] = None
 
 
 def crear_router(verificar_login, conexion) -> APIRouter:
@@ -244,13 +248,21 @@ def crear_router(verificar_login, conexion) -> APIRouter:
         actas = _actas_lote(body.actas)
         marcas = []
         with conexion() as conn, rcur(conn) as cur:
+            texto_comun = None
+            if body.analisis_comun_de:
+                de = _acta(body.analisis_comun_de)
+                _marca(cur, de)
+                texto_comun = am.leer_analisis(cur, de)["texto"]
             for acta in actas:
                 m = _marca(cur, acta)
                 guardado = am.leer_analisis(cur, acta)
                 op, _pend = am.adjuntar_opuestas(cur, acta, am.armar_oposiciones(m, guardado["oposiciones"]), con_logo=True)
                 marcas.append(am.datos_para_pdf(m, guardado["texto"], op, am.leer_logo(cur, acta), guardado["expediente"]))
+        if texto_comun is not None and len(marcas) == 1:
+            marcas[0]["texto"] = texto_comun   # con una sola marca no hay nada que compartir
+            texto_comun = None
         return Response(
-            content=am.generar_pdf(marcas), media_type="application/pdf",
+            content=am.generar_pdf(marcas, texto_comun), media_type="application/pdf",
             headers={"Content-Disposition": f"inline; filename*=UTF-8''{quote(am.nombre_archivo(marcas))}",
                      "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"})
 
