@@ -9,6 +9,18 @@
 <link rel="stylesheet" href="/static/comun.css?v=logo1" />
 <link rel="stylesheet" href="/static/calendario.css?v=5" />
 <script src="/static/sesion.js" defer></script>
+<script>
+  // Dentro del panel lateral (📞 de la barra, menu.js): sin el título de arriba (el panel ya trae el suyo)
+  // y con los links abriendo en la ventana principal.
+  if (new URLSearchParams(location.search).get("embebido") === "1") {
+    document.documentElement.classList.add("embebido");
+    document.write('<base target="_top">');
+  }
+</script>
+<style>
+  html.embebido .agendar-cab { display: none; }
+  html.embebido .agendar-main { padding: 12px 12px 24px; }
+</style>
 </head>
 <body class="agendar-pagina">
 
