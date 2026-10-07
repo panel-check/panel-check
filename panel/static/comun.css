@@ -62,16 +62,16 @@ header.app-header {
 .app-header .marca-nombre { font-size: 15px; font-weight: 600; margin: 0; letter-spacing: -0.01em; }
 /* Logo de Smarties en el encabezado, en lugar de la ® y la frase "Panel de leads".
  * El texto "Panel de leads" queda en el HTML, escondido, para lectores de pantalla.
- * En pantallas angostas se usa solo el isologo (SC) para que entren todos los botones. */
+ * Solo se muestra el logo; en pantallas angostas se achica para que entren todos los botones. */
 .app-header .marca-img { display: block; height: 40px; width: auto; }
-.app-header .marca-ico { display: none; width: 30px; height: 30px; border-radius: 7px; }
 .app-header .marca-nombre {
   position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; border: 0;
   overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap;
 }
-@media (max-width: 700px) {
-  .app-header .marca-img { display: none; }
-  .app-header .marca-ico { display: block; }
+@media (max-width: 700px) { .app-header .marca-img { height: 32px; } }
+@media (max-width: 520px) { .app-header .marca-img { height: 26px; } }
+@media (max-width: 380px) { .app-header .marca-img { height: 24px; } }
+@media (max-width: 340px) { .app-header .marca-img { height: 20px; } }
 }
 .app-header .marca:hover .marca-nombre { color: var(--azul); }
 .app-header .marca-sep { color: #c3c8d0; font-size: 18px; font-weight: 300; }
@@ -309,9 +309,8 @@ header.app-header {
   .app-header .nav a, .app-header .nav .nav-boton, .app-header .nav .nav-buscar-btn { padding: 0 3px; }
 }
 /* Celulares muy angostos: con el teléfono y Meet hay 10 botones de ícono, así que se achican un poco. */
-@media (max-width: 380px) {
+@media (max-width: 420px) {
   header.app-header { padding: 0 6px; gap: 4px; }
-  .app-header .marca-ico { width: 26px; height: 26px; }
   .app-header .nav a, .app-header .nav .nav-boton, .app-header .nav .nav-buscar-btn { padding: 0 2px; }
   .app-header .nav-ico { width: 17px; height: 17px; }
   .app-header .nav-coment { margin-left: 0; }
@@ -319,8 +318,8 @@ header.app-header {
 }
 @media (max-width: 340px) {
   .menu-usuario .mu-chev { display: none; }
+  header.app-header { padding: 0 4px; gap: 2px; }
   .app-header .nav-buscar { margin: 0; }
-  .app-header .marca-ico { width: 24px; height: 24px; }
   .app-header .nav a, .app-header .nav .nav-boton, .app-header .nav .nav-buscar-btn { padding: 0 1px; }
   .app-header .nav-ico { width: 16px; height: 16px; }
 }
