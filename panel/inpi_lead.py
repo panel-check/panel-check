@@ -16,6 +16,7 @@ sacarlos). Ese script no corre en el panel -- solo el botón "Reintentar",
 que ya tiene esos datos del boletín -- así que no se duplicó acá.
 """
 
+import base64
 import html as _html
 import io
 import re
@@ -664,12 +665,44 @@ def parsear_oposiciones(html: str) -> dict:
     return {"items": items, "error_lectura": error}
 
 
+# El expediente de INPI trae el logo de la marca embebido en la página:
+# <div id="logo" ...><a id="logo"><img src="data:image/jpg;base64,..."></a></div>.
+# Las marcas sin logo (denominativas) no tienen ese bloque.
+_RE_LOGO = re.compile(
+    r"""<div[^>]*\bid=["']logo["'][^>]*>.{0,400}?<img[^>]*\bsrc=["']data:image/(?P<tipo>[A-Za-z0-9.+-]+);base64,(?P<b64>[A-Za-z0-9+/=\s]+)["']""",
+    re.S | re.I,
+)
+_MIME_LOGO = {"jpg": "image/jpeg", "jpeg": "image/jpeg", "png": "image/png", "webp": "image/webp", "gif": "image/gif"}
+LOGO_MAX_BYTES = 5_000_000
+
+
+def extraer_logo(html_expediente: str):
+    """(bytes, mime) del logo del expediente, o None si la marca no tiene o no se
+    puede leer. No valida que sea una imagen sana: eso lo hace quien la guarda."""
+    m = _RE_LOGO.search(html_expediente or "")
+    if not m:
+        return None
+    mime = _MIME_LOGO.get(m.group("tipo").lower())
+    if not mime:
+        return None
+    b64 = re.sub(r"\s+", "", m.group("b64"))
+    if len(b64) > LOGO_MAX_BYTES * 4 // 3:
+        return None
+    try:
+        datos = base64.b64decode(b64, validate=True)
+    except ValueError:
+        return None
+    return (datos, mime) if datos else None
+
+
 def consultar_oposiciones(acta: str, s=None, timeout: int = 30) -> dict:
     """Consulta el expediente y devuelve todas las oposiciones que figuran.
     estado_consulta: "ok" | "no_existe" | "bloqueado" | "error" (con `error`
-    explicando). Hace UN pedido a INPI (el del expediente)."""
+    explicando). Hace UN pedido a INPI (el del expediente), del que salen también las
+    oposiciones y el logo de la marca (`logo`: (bytes, mime) o None)."""
     s = s or _crear_sesion()
-    out = {"acta": str(acta), "estado_consulta": "error", "error": "", "items": [], "error_lectura": False}
+    out = {"acta": str(acta), "estado_consulta": "error", "error": "", "items": [], "error_lectura": False,
+           "logo": None}
     try:
         r = _get_con_reintentos(
             lambda: s.post(
@@ -692,6 +725,7 @@ def consultar_oposiciones(acta: str, s=None, timeout: int = 30) -> dict:
         return out
     res = parsear_oposiciones(r.text)
     out.update(res)
+    out["logo"] = extraer_logo(r.text)   # (bytes, mime) o None si la marca no tiene logo
     if res["error_lectura"]:
         out["error"] = "INPI tiene oposiciones cargadas pero no se pudieron leer"
         return out

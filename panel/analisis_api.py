@@ -11,11 +11,14 @@ Rutas (todas con sesión):
   POST  /api/analisis-marca/{acta}/oposiciones  consultar INPI (un pedido) y guardar las oposiciones
   POST  /api/analisis-marca/{acta}/pdf          el PDF con el membrete de Smarties (con el texto que
                                                 se mande, o el guardado)
+  GET   /api/analisis-marca/{acta}/logo         el logo de la marca (guardado de INPI), si tiene
+  POST  /api/analisis-marca-lote/estado         de varias marcas: cuáles ya tienen análisis escrito
+  POST  /api/analisis-marca-lote/pdf            UN PDF con varias marcas (cada una con su análisis guardado)
   POST  /api/analisis-marca/{acta}/mejorar-texto  propuesta de redacción mejorada con IA (no guarda
                                                 nada: la persona la acepta o la descarta)
 """
 
-from typing import Optional
+from typing import List, Optional
 from urllib.parse import quote
 
 import psycopg2.extras
@@ -34,6 +37,10 @@ class TextoAnalisis(BaseModel):
 
 class PedidoPdf(BaseModel):
     texto: Optional[str] = None
+
+
+class PedidoLote(BaseModel):
+    actas: List[str] = []
 
 
 def crear_router(verificar_login, conexion) -> APIRouter:
@@ -59,6 +66,10 @@ def crear_router(verificar_login, conexion) -> APIRouter:
         return {
             "acta": str(m["acta"]),
             "marca": am.nombre_marca(m),
+            "clase": am.clase_texto(m),
+            "tiene_logo": guardado["tiene_logo"],
+            # Si todavía no se miró el expediente en busca del logo, la pantalla lo consulta sola.
+            "logo_consultado": guardado["logo_consultado"],
             "titular": am.titular_con_cuit(m),
             "oposiciones": {**op, "resumen": am.resumen_oposiciones(op),
                             "lineas": [am.linea_oposicion(i) for i in op["items"]]},
@@ -66,7 +77,7 @@ def crear_router(verificar_login, conexion) -> APIRouter:
             "actualizado_por": guardado["actualizado_por"],
             "actualizado_en": guardado["actualizado_en"].isoformat() if guardado["actualizado_en"] else None,
             # La primera vez que se abre una marca todavía no hay consulta a INPI guardada.
-            "consultada_en_inpi": op["origen"] == "inpi",
+            "consultada_en_inpi": op["origen"] == "inpi" and guardado["logo_consultado"],
             # El botón «Mejorar texto» solo funciona si el servidor tiene la clave de la IA.
             "ia_disponible": ia_texto.configurada(),
         }
@@ -107,6 +118,7 @@ def crear_router(verificar_login, conexion) -> APIRouter:
         if res["estado_consulta"] == "ok":
             with conexion() as conn, rcur(conn) as cur:
                 am.guardar_oposiciones(cur, acta, res["items"])
+                am.guardar_logo(cur, acta, res.get("logo"))
                 conn.commit()
         else:
             aviso = res.get("error") or "No se pudo consultar INPI"
@@ -122,14 +134,64 @@ def crear_router(verificar_login, conexion) -> APIRouter:
         with conexion() as conn, rcur(conn) as cur:
             m = _marca(cur, acta)
             guardado = am.leer_analisis(cur, acta)
+            logo = am.leer_logo(cur, acta)
         try:
             texto = am.validar_texto(body.texto) if body.texto is not None else guardado["texto"]
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
-        d = am.datos_para_pdf(m, texto, am.armar_oposiciones(m, guardado["oposiciones"]))
+        d = am.datos_para_pdf(m, texto, am.armar_oposiciones(m, guardado["oposiciones"]), logo)
         return Response(
             content=am.generar_pdf(d), media_type="application/pdf",
             headers={"Content-Disposition": f"inline; filename*=UTF-8''{quote(am.nombre_archivo(d))}",
+                     "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"})
+
+    @router.get("/api/analisis-marca/{acta}/logo")
+    def ver_logo(acta: str, _: str = Depends(verificar_login)):
+        """El logo de la marca guardado desde el expediente de INPI (404 si no tiene)."""
+        acta = _acta(acta)
+        with conexion() as conn, rcur(conn) as cur:
+            logo = am.leer_logo(cur, acta)
+        if not logo:
+            raise HTTPException(status_code=404, detail="Esta marca no tiene logo guardado")
+        return Response(content=logo[0], media_type=logo[1],
+                        headers={"Cache-Control": "private, max-age=300", "X-Content-Type-Options": "nosniff"})
+
+    def _actas_lote(actas: list) -> list:
+        """Actas válidas, sin repetir y en el orden pedido."""
+        vistas, out = set(), []
+        for a in actas:
+            a = _acta(a)
+            if a not in vistas:
+                vistas.add(a)
+                out.append(a)
+        if not out:
+            raise HTTPException(status_code=400, detail="Elegí al menos una marca")
+        if len(out) > am.MAX_MARCAS_PDF:
+            raise HTTPException(status_code=400, detail=f"Son demasiadas marcas para un PDF (máximo {am.MAX_MARCAS_PDF})")
+        return out
+
+    @router.post("/api/analisis-marca-lote/estado")
+    def estado_lote(body: PedidoLote, _: str = Depends(verificar_login)):
+        """De varias marcas, cuáles ya tienen un análisis escrito (para tildarlas solas)."""
+        actas = _actas_lote(body.actas)
+        with conexion() as conn, rcur(conn) as cur:
+            return {"marcas": am.leer_resumen_lote(cur, actas)}
+
+    @router.post("/api/analisis-marca-lote/pdf")
+    def pdf_lote(body: PedidoLote, _: str = Depends(verificar_login)):
+        """Un solo PDF con varias marcas: cada una con sus datos, su logo y su análisis
+        guardado (la pantalla guarda el texto en curso antes de pedirlo)."""
+        actas = _actas_lote(body.actas)
+        marcas = []
+        with conexion() as conn, rcur(conn) as cur:
+            for acta in actas:
+                m = _marca(cur, acta)
+                guardado = am.leer_analisis(cur, acta)
+                marcas.append(am.datos_para_pdf(m, guardado["texto"], am.armar_oposiciones(m, guardado["oposiciones"]),
+                                                am.leer_logo(cur, acta)))
+        return Response(
+            content=am.generar_pdf(marcas), media_type="application/pdf",
+            headers={"Content-Disposition": f"inline; filename*=UTF-8''{quote(am.nombre_archivo(marcas))}",
                      "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"})
 
     @router.post("/api/analisis-marca/{acta}/mejorar-texto")

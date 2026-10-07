@@ -62,6 +62,12 @@
   .an-lead .an-propuesta { border: 1px solid var(--azul); border-radius: 10px; background: #f5f8ff; padding: 12px 14px; margin-top: 14px; }
   .an-lead .an-propuesta-titulo { font-size: 13px; font-weight: 700; margin-bottom: 8px; }
   .an-lead .an-propuesta textarea { min-height: 200px; background: #fff; }
+  .an-lead .an-datos::after { content: ""; display: block; clear: both; }
+  .an-lead img.an-logo { float: right; max-width: 175px; max-height: 100px; margin: 0 0 8px 14px; border: 1px solid var(--borde); border-radius: 8px; background: #fff; padding: 4px; }
+  .an-lead .an-lote { border: 1px solid var(--borde); border-radius: 10px; background: #f9fafb; padding: 12px 14px; margin-top: 14px; }
+  .an-lead .an-lote-titulo { font-size: 13px; font-weight: 700; margin-bottom: 6px; }
+  .an-lead label.an-lote-item { display: flex; align-items: baseline; gap: 8px; font-size: 14px; font-weight: 400; color: inherit; margin: 3px 0; cursor: pointer; }
+  .an-lead label.an-lote-item .nota { margin: 0; }
   .an-lead ul.an-avisos { margin: 0 0 8px; padding: 8px 10px 8px 26px; font-size: 13px; color: #92400e; background: #fffbeb; border: 1px solid #fcd34d; border-radius: 8px; }
 </style>
 </head>
@@ -149,6 +155,15 @@
         <span class="msg" id="an-estado"></span>
       </div>
       <div class="nota" id="an-ia-nota">«Mejorar texto» manda solo este texto a un servicio de IA y te muestra una propuesta para que la revises: no cambia nada hasta que la aceptes.</div>
+      <div class="an-lote" id="an-lote" hidden>
+        <div class="an-lote-titulo">📄 PDF con varias marcas <span class="nota">(las de este titular)</span></div>
+        <div id="an-lote-lista"></div>
+        <div class="acciones">
+          <button type="button" class="enviar" id="an-lote-pdf" disabled>Exportar PDF con las marcas tildadas</button>
+          <span class="msg" id="an-lote-estado"></span>
+        </div>
+        <div class="nota">Cada marca sale con su logo, su clase, sus oposiciones y su propio análisis, una a continuación de la otra. Las que todavía no se consultaron en INPI se consultan solas antes de armar el PDF.</div>
+      </div>
       <div class="an-propuesta" id="an-propuesta" hidden>
         <div class="an-propuesta-titulo">✨ Versión mejorada <span class="nota">(podés editarla antes de usarla)</span></div>
         <ul class="an-avisos" id="an-avisos" hidden></ul>
@@ -589,6 +604,9 @@ let anIniciado = false;
 let anIaDisponible = false; // el servidor tiene la clave de la IA
 let anBase = "";            // texto que se mandó a mejorar (la propuesta se compara contra este)
 let anPrevio = null;        // texto anterior a «Usar esta versión», para poder volver
+let anSel = new Set();      // actas tildadas para el PDF con varias marcas
+let anTocadas = new Set();  // actas que la persona tildó o destildó a mano (ya no se tildan solas)
+let anEstado = {};          // por acta: {tiene_texto, consultada}
 
 function anMsg(t, ok = true) { const el = document.getElementById("an-estado"); el.textContent = t || ""; el.className = "msg " + (ok ? "ok" : "err"); }
 
@@ -599,9 +617,11 @@ function anPintarDatos(d, { consultando = false, aviso = "" } = {}) {
   if (consultando) origen = '<span class="an-origen">Consultando INPI…</span>';
   else if (op.origen === "inpi") origen = `<span class="an-origen">Verificado en INPI el ${mlEsc(mlFecha(op.consultado_en))}. <button type="button" class="plegar" id="an-verificar">↻ Verificar de nuevo</button></span>`;
   else origen = `<span class="an-origen aviso">Dato del sistema, sin verificar contra el expediente de INPI${aviso ? " (" + mlEsc(aviso) + ")" : ""}. <button type="button" class="plegar" id="an-verificar">↻ Verificar en INPI</button></span>`;
-  document.getElementById("an-datos").innerHTML = `
+  const logo = d.tiene_logo ? `<img class="an-logo" alt="Logo de la marca" src="/api/analisis-marca/${encodeURIComponent(d.acta)}/logo?v=${Date.now()}">` : "";
+  document.getElementById("an-datos").innerHTML = `${logo}
     <div class="an-fila"><span>Marca</span><strong>${mlEsc(d.marca)}</strong></div>
     <div class="an-fila"><span>Acta</span><div>${mlEsc(d.acta)}</div></div>
+    <div class="an-fila"><span>Clase</span><div>${mlEsc(d.clase)}</div></div>
     <div class="an-fila"><span>Titular</span><div>${mlEsc(d.titular)}</div></div>
     <div class="an-fila"><span>Oposiciones</span><div>${mlEsc(op.resumen)}${lineas}<div>${origen}</div></div></div>`;
   const b = document.getElementById("an-verificar");
@@ -618,6 +638,9 @@ async function anGuardarAhora() {
     const r = await apiJson(`/api/analisis-marca/${encodeURIComponent(acta)}`, "PUT", { texto });
     if (acta === anActa) {
       anGuardado = texto;
+      anEstado[acta] = { ...(anEstado[acta] || {}), tiene_texto: !!texto.trim() };
+      if (texto.trim() && !anTocadas.has(acta)) anSel.add(acta);   // escribió un análisis: entra solo al PDF con varias marcas
+      anPintarLote();
       anMsg(`Guardado ✓${r.actualizado_por ? " (" + r.actualizado_por + ", " + mlFecha(r.actualizado_en) + ")" : ""}`);
     }
     return true;
@@ -710,6 +733,84 @@ function anDeshacer() {
   anMsg("Texto anterior restaurado.");
 }
 
+// PDF con varias marcas del mismo titular: se tildan las que se quieran. Al abrir se tildan
+// solas las que ya tienen un análisis escrito (y se puede cambiar a mano).
+function anPintarLote() {
+  const box = document.getElementById("an-lote");
+  box.hidden = anFilas.length < 2;
+  if (anFilas.length < 2) return;
+  const lista = document.getElementById("an-lote-lista");
+  lista.innerHTML = anFilas.map(r => {
+    const e = anEstado[r.acta] || {};
+    const marca = e.tiene_texto ? '<span class="nota">con análisis escrito</span>' : '<span class="nota">sin análisis escrito</span>';
+    return `<label class="an-lote-item"><input type="checkbox" value="${mlEsc(r.acta)}"${anSel.has(r.acta) ? " checked" : ""}> <span>${mlEsc(mlNombreMarca(r))} · acta ${mlEsc(r.acta)} · clase ${mlEsc(r.clase ?? "—")}</span> ${marca}</label>`;
+  }).join("");
+  const n = anSel.size;
+  const b = document.getElementById("an-lote-pdf");
+  b.disabled = n === 0;
+  b.textContent = n === 0 ? "Exportar PDF con las marcas tildadas" : `Exportar PDF con ${n} marca${n === 1 ? "" : "s"}`;
+}
+
+async function anActualizarLote() {
+  if (anFilas.length < 2) { anPintarLote(); return; }
+  await anActualizarLoteEstado();
+  for (const f of anFilas) if (!anTocadas.has(f.acta) && anEstado[f.acta]?.tiene_texto) anSel.add(f.acta);
+  anPintarLote();
+}
+
+function anLoteMsg(t, ok = true) { const el = document.getElementById("an-lote-estado"); el.textContent = t || ""; el.className = "msg " + (ok ? "ok" : "err"); }
+
+async function anExportarLote() {
+  const actas = anFilas.map(f => f.acta).filter(a => anSel.has(a));
+  if (!actas.length) return;
+  const btn = document.getElementById("an-lote-pdf");
+  btn.disabled = true;
+  try {
+    anLoteMsg("Guardando…");
+    if (!(await anGuardarAhora())) throw new Error("no se pudo guardar el texto");
+    // Las marcas que nunca se miraron en INPI se consultan antes (una por vez, con pausa).
+    await anActualizarLoteEstado();
+    const faltan = actas.filter(a => !(anEstado[a] || {}).consultada);
+    let sinVerificar = 0;
+    for (let i = 0; i < faltan.length; i++) {
+      anLoteMsg(`Consultando INPI… (${i + 1} de ${faltan.length})`);
+      try {
+        const d = await apiJson(`/api/analisis-marca/${encodeURIComponent(faltan[i])}/oposiciones`, "POST");
+        if (d.aviso) sinVerificar++;
+        if (faltan[i] === anActa) anPintarDatos(d, { aviso: d.aviso || "" });
+      } catch (_) { sinVerificar++; }
+      if (i < faltan.length - 1) await new Promise(r => setTimeout(r, 1500));
+    }
+    anLoteMsg("Armando el PDF…");
+    const r = await fetch("/api/analisis-marca-lote/pdf", {
+      method: "POST", credentials: "include", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ actas }),
+    });
+    if (r.status === 401 && typeof irAlLogin === "function") irAlLogin();
+    if (!r.ok) {
+      let detalle = `${r.status}`;
+      try { detalle = (await r.json()).detail || detalle; } catch (_) {}
+      throw new Error(detalle);
+    }
+    let nombre = "Analisis de marcas.pdf";
+    const m = /filename\*=UTF-8''([^;]+)/i.exec(r.headers.get("Content-Disposition") || "");
+    if (m) { try { nombre = decodeURIComponent(m[1]); } catch (_) { /* queda el nombre genérico */ } }
+    const url = URL.createObjectURL(await r.blob());
+    const a = document.createElement("a");
+    a.href = url; a.download = nombre; document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+    anLoteMsg(sinVerificar ? `PDF descargado ✓ (en ${sinVerificar} marca${sinVerificar === 1 ? "" : "s"} INPI no respondió: salen con datos del sistema, sin verificar)` : "PDF descargado ✓");
+  } catch (e) { anLoteMsg("No se pudo armar el PDF: " + e.message, false); }
+  btn.disabled = anSel.size === 0;
+}
+
+async function anActualizarLoteEstado() {
+  try {
+    const r = await apiJson("/api/analisis-marca-lote/estado", "POST", { actas: anFilas.map(f => f.acta) });
+    anEstado = r.marcas || {};
+  } catch (_) { /* se sigue con lo que había */ }
+}
+
 async function anCargar(acta) {
   if (anActa && anActa !== acta) await anGuardarAhora();   // lo escrito en la marca anterior no se pierde
   anActa = acta;
@@ -788,6 +889,15 @@ function anIniciar(filas) {
     });
     document.getElementById("an-pdf").addEventListener("click", anExportarPdf);
     document.getElementById("an-mejorar").addEventListener("click", anMejorar);
+    document.getElementById("an-lote-pdf").addEventListener("click", anExportarLote);
+    document.getElementById("an-lote-lista").addEventListener("change", ev => {
+      const cb = ev.target; if (!cb || cb.type !== "checkbox") return;
+      anTocadas.add(cb.value);
+      if (cb.checked) anSel.add(cb.value); else anSel.delete(cb.value);
+      const n = anSel.size, b = document.getElementById("an-lote-pdf");
+      b.disabled = n === 0;
+      b.textContent = n === 0 ? "Exportar PDF con las marcas tildadas" : `Exportar PDF con ${n} marca${n === 1 ? "" : "s"}`;
+    });
     document.getElementById("an-usar").addEventListener("click", anUsarPropuesta);
     document.getElementById("an-descartar").addEventListener("click", anDescartarPropuesta);
     document.getElementById("an-deshacer").addEventListener("click", anDeshacer);
@@ -798,6 +908,7 @@ function anIniciar(filas) {
       try { fetch(`/api/analisis-marca/${encodeURIComponent(anActa)}`, { method: "PUT", credentials: "include", keepalive: true, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ texto }) }); } catch (_) { /* no es crítico */ }
     });
   }
+  anActualizarLote();
   if (anActa !== sel.value) anCargar(sel.value);   // si ya está cargada esa marca no se pisa lo que se está escribiendo
 }
 

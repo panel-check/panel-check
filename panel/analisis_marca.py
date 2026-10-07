@@ -14,23 +14,33 @@ titular con su CUIT entre paréntesis, y cuántas oposiciones tuvo y quién las
 hizo. El PDF lleva el mismo membrete (y pie) que el presupuesto de registro de
 marca: se dibuja con presupuestos.dibujar_membrete_y_pie.
 
+También guarda el logo de la marca (lo trae el mismo pedido al expediente de INPI;
+las marcas sin logo no tienen) y lo usa en la pantalla y en el PDF. El PDF puede
+llevar una marca o varias (las del mismo titular que se estén analizando).
+
 Este módulo no abre conexiones: las funciones de base reciben un cursor.
 """
 
 import datetime as _dt
 import io
 import json
+import logging
 import re
 from xml.sax.saxutils import escape
 
+import archivos_seguros
 import presupuestos as pres
+
+log = logging.getLogger(__name__)
 
 LARGO_MAX_TEXTO = 20000
 RE_ACTA = re.compile(r"^\d{4,9}$")
+MAX_MARCAS_PDF = 30      # tope de marcas en un mismo PDF
+LOGO_MAX_LADO = 800      # px: el logo se guarda reducido (alcanza de sobra para el PDF)
 
 # Columnas de `marcas` que usa el análisis.
 COLUMNAS_MARCA = (
-    "acta, tipo, denominacion, denominacion_inpi, titular, cuit, tuvo_oposicion, "
+    "acta, tipo, clase, denominacion, denominacion_inpi, titular, cuit, tuvo_oposicion, "
     "oponente_nombre, oponente_cuit, estado_oposicion, oposicion_fecha_presentacion, "
     "oposicion_fecha_notificacion, oposicion_fecha_vencimiento, oposicion_fecha_levantamiento, "
     "oposicion_agente_oponente"
@@ -50,6 +60,11 @@ def crear_tablas(cur):
         )
         """
     )
+    # Logo de la marca, tal como figura en el expediente de INPI (reducido y sin metadatos).
+    # logo_consultado_en vacío = todavía no se miró el expediente en busca del logo.
+    cur.execute("ALTER TABLE analisis_marca ADD COLUMN IF NOT EXISTS logo BYTEA")
+    cur.execute("ALTER TABLE analisis_marca ADD COLUMN IF NOT EXISTS logo_mime TEXT")
+    cur.execute("ALTER TABLE analisis_marca ADD COLUMN IF NOT EXISTS logo_consultado_en TIMESTAMPTZ")
 
 
 # ── Formatos ──────────────────────────────────────────────────────────────
@@ -162,12 +177,42 @@ def leer_marca(cur, acta: str):
 
 
 def leer_analisis(cur, acta: str) -> dict:
-    cur.execute("SELECT texto, oposiciones, actualizado_por, actualizado_en FROM analisis_marca WHERE acta = %s", (acta,))
+    cur.execute(
+        "SELECT texto, oposiciones, actualizado_por, actualizado_en, logo_consultado_en, "
+        "(logo IS NOT NULL) AS tiene_logo FROM analisis_marca WHERE acta = %s", (acta,))
     f = cur.fetchone()
     if not f:
-        return {"texto": "", "oposiciones": None, "actualizado_por": None, "actualizado_en": None}
+        return {"texto": "", "oposiciones": None, "actualizado_por": None, "actualizado_en": None,
+                "logo_consultado": False, "tiene_logo": False}
     return {"texto": _valor(f, "texto", 0) or "", "oposiciones": _valor(f, "oposiciones", 1),
-            "actualizado_por": _valor(f, "actualizado_por", 2), "actualizado_en": _valor(f, "actualizado_en", 3)}
+            "actualizado_por": _valor(f, "actualizado_por", 2), "actualizado_en": _valor(f, "actualizado_en", 3),
+            "logo_consultado": bool(_valor(f, "logo_consultado_en", 4)), "tiene_logo": bool(_valor(f, "tiene_logo", 5))}
+
+
+def leer_logo(cur, acta: str):
+    """(bytes, mime) del logo guardado, o None."""
+    cur.execute("SELECT logo, logo_mime FROM analisis_marca WHERE acta = %s", (acta,))
+    f = cur.fetchone()
+    if not f or _valor(f, "logo", 0) is None:
+        return None
+    return bytes(_valor(f, "logo", 0)), _valor(f, "logo_mime", 1) or "image/png"
+
+
+def leer_resumen_lote(cur, actas: list) -> dict:
+    """{acta: {tiene_texto, actualizado_en, consultada}}: cuáles ya tienen análisis escrito y
+    cuáles ya se consultaron en INPI (oposiciones y logo). Las que no están en la tabla no figuran."""
+    cur.execute(
+        "SELECT acta, (btrim(texto) <> '') AS tiene_texto, actualizado_en, "
+        "(oposiciones IS NOT NULL AND logo_consultado_en IS NOT NULL) AS consultada "
+        "FROM analisis_marca WHERE acta = ANY(%s)",
+        (list(actas),))
+    out = {}
+    for f in cur.fetchall():
+        e = _valor(f, "actualizado_en", 2)
+        out[str(_valor(f, "acta", 0))] = {"tiene_texto": bool(_valor(f, "tiene_texto", 1)),
+                                           "actualizado_en": e.isoformat() if e else None,
+                                           "consultada": bool(_valor(f, "consultada", 3))}
+    return out
 
 
 def validar_texto(texto) -> str:
@@ -197,10 +242,53 @@ def guardar_oposiciones(cur, acta: str, items: list) -> dict:
     return snapshot
 
 
-def datos_para_pdf(m: dict, texto: str, op: dict) -> dict:
+def preparar_logo(datos: bytes, mime: str):
+    """Valida y limpia el logo que vino de INPI: imagen nueva solo con píxeles (sin
+    metadatos), reducida a LOGO_MAX_LADO. Devuelve (bytes, mime) o None si no sirve."""
+    from PIL import Image
+
+    try:
+        limpio, mime_limpio = archivos_seguros.limpiar_imagen(datos, mime)
+        with Image.open(io.BytesIO(limpio)) as im:
+            im.load()
+            if max(im.size) <= LOGO_MAX_LADO:
+                return limpio, mime_limpio
+            im.thumbnail((LOGO_MAX_LADO, LOGO_MAX_LADO), Image.LANCZOS)
+            salida = io.BytesIO()
+            if im.mode in ("RGBA", "LA", "P"):
+                im.convert("RGBA").save(salida, "PNG", optimize=True)
+                return salida.getvalue(), "image/png"
+            im.convert("RGB").save(salida, "JPEG", quality=92, optimize=True)
+            return salida.getvalue(), "image/jpeg"
+    except Exception as e:  # noqa: BLE001 — un logo roto no debe romper el análisis
+        log.warning("Logo de INPI descartado: %s", e)
+        return None
+
+
+def guardar_logo(cur, acta: str, logo):
+    """Guarda el logo del expediente (`logo` = (bytes, mime) de inpi_lead, o None si la
+    marca no tiene). Siempre deja anotado que ya se miró el expediente."""
+    prep = preparar_logo(*logo) if logo else None
+    cur.execute(
+        "INSERT INTO analisis_marca (acta, logo, logo_mime, logo_consultado_en) VALUES (%s, %s, %s, now()) "
+        "ON CONFLICT (acta) DO UPDATE SET logo = EXCLUDED.logo, logo_mime = EXCLUDED.logo_mime, "
+        "logo_consultado_en = now()",
+        (acta, prep[0] if prep else None, prep[1] if prep else None),
+    )
+    return bool(prep)
+
+
+def clase_texto(m: dict) -> str:
+    c = m.get("clase")
+    return str(c) if c not in (None, "") else "no informada"
+
+
+def datos_para_pdf(m: dict, texto: str, op: dict, logo=None) -> dict:
     return {
         "acta": str(m["acta"]),
         "marca": nombre_marca(m),
+        "clase": clase_texto(m),
+        "logo": logo,   # (bytes, mime) o None
         "titular": titular_con_cuit(m),
         "oposiciones": op,
         "texto": texto or "",
@@ -208,7 +296,14 @@ def datos_para_pdf(m: dict, texto: str, op: dict) -> dict:
     }
 
 
-def nombre_archivo(d: dict) -> str:
+def nombre_archivo(d) -> str:
+    """Nombre del PDF. `d` es una marca (dict) o una lista de marcas."""
+    if isinstance(d, list):
+        if len(d) == 1:
+            return nombre_archivo(d[0])
+        quien = re.sub(r"[^A-Za-z0-9ÁÉÍÓÚÑáéíóúñ ]+", " ", d[0].get("titular", "").split(" (CUIT")[0])
+        quien = " ".join(quien.split())[:40]
+        return f"Analisis de marcas - {quien} - {len(d)} marcas.pdf" if quien else f"Analisis de marcas - {len(d)} marcas.pdf"
     m = re.sub(r"[^A-Za-z0-9ÁÉÍÓÚÑáéíóúñ ]+", " ", d.get("marca") or "")
     m = " ".join(m.split())[:40]
     return f"Analisis de marca - {m} - acta {d['acta']}.pdf" if m else f"Analisis de marca - acta {d['acta']}.pdf"
@@ -244,15 +339,23 @@ def _xml(t: str) -> str:
     return escape(t).replace("\n", "<br/>")
 
 
-def generar_pdf(d: dict) -> bytes:
-    """El análisis de marca en PDF (A4, con el membrete de Smarties) a partir de `d`
-    (ver datos_para_pdf). Si el texto es largo sigue en más hojas, todas con membrete."""
+def generar_pdf(datos) -> bytes:
+    """El análisis en PDF (A4, con el membrete de Smarties). `datos` es una marca
+    (ver datos_para_pdf) o una lista de marcas para un PDF con varias, una a continuación
+    de la otra. Si el texto es largo sigue en más hojas, todas con membrete."""
     from reportlab.lib.colors import HexColor
     from reportlab.lib.enums import TA_CENTER, TA_JUSTIFY, TA_LEFT
     from reportlab.lib.pagesizes import A4
     from reportlab.lib.styles import ParagraphStyle
+    from reportlab.lib.utils import ImageReader
     from reportlab.pdfgen import canvas as _canvas
-    from reportlab.platypus import BaseDocTemplate, Frame, PageTemplate, Paragraph, Spacer
+    from reportlab.platypus import (BaseDocTemplate, CondPageBreak, Frame, HRFlowable, Image, PageTemplate,
+                                    Paragraph, Spacer, Table, TableStyle)
+
+    marcas = list(datos) if isinstance(datos, (list, tuple)) else [datos]
+    if not marcas:
+        raise ValueError("No hay marcas para el PDF")
+    varias = len(marcas) > 1
 
     F = pres._fuentes()
     esc = F["escala"]
@@ -268,48 +371,89 @@ def generar_pdf(d: dict) -> bytes:
     dato_op = estilo("dato_op", leftIndent=18.7, bulletIndent=6, bulletFontName=F["r"], bulletFontSize=11 * esc)
     chico = estilo("chico", "i", 9, 12.8)
     seccion = estilo("seccion", "b", 12, 17, TA_LEFT, pres.COLOR_SUBTITULO)
+    marca_n = estilo("marca_n", "b", 13, 18, TA_LEFT, pres.COLOR_TITULO)
     cuerpo = estilo("cuerpo", alin=TA_JUSTIFY)
     vineta = estilo("vineta", alin=TA_JUSTIFY, leftIndent=18.7, bulletIndent=6, bulletFontName=F["r"],
                     bulletFontSize=11 * esc)
 
-    op = d["oposiciones"]
-    h = [Paragraph("Análisis de marca", titulo), Spacer(1, 22)]
+    ANCHO = 520.1 - 75.4
+    LOGO_W, LOGO_H = 150.0, 90.0   # caja máxima del logo (se achica sin deformarlo)
 
-    h.append(Paragraph(f"<b>Marca:</b> {_xml(d['marca'])}", dato))
-    h.append(Paragraph(f"<b>Acta:</b> {_xml(d['acta'])}", dato))
-    h.append(Paragraph(f"<b>Titular:</b> {_xml(d['titular'])}", dato))
-    h.append(Paragraph(f"<b>Oposiciones:</b> {_xml(resumen_oposiciones(op))}", dato))
-    for n, i in enumerate(op["items"], 1):
-        h.append(Paragraph(_xml(linea_oposicion(i)), dato_op, bulletText=f"{n}."))
-    if op["origen"] == "sistema":
-        h.append(Spacer(1, 3))
-        h.append(Paragraph("Dato del sistema: no se verificó contra el expediente de INPI.", chico))
+    def imagen_logo(logo):
+        """El logo ajustado a la caja, o None si no hay o no se puede leer."""
+        if not logo:
+            return None
+        try:
+            ancho, alto_px = ImageReader(io.BytesIO(logo[0])).getSize()
+            k = min(LOGO_W / ancho, LOGO_H / alto_px)
+            img = Image(io.BytesIO(logo[0]), width=ancho * k, height=alto_px * k)
+            img.hAlign = "RIGHT"
+            return img
+        except Exception:  # noqa: BLE001 — un logo ilegible no tiene que impedir el PDF
+            log.warning("No se pudo dibujar el logo de la marca en el PDF", exc_info=True)
+            return None
 
-    h.append(Spacer(1, 16))
-    h.append(Paragraph("Análisis", seccion))
-    h.append(Spacer(1, 4))
-    bloques = _bloques_de_texto(d.get("texto") or "")
-    if not bloques:
-        h.append(Paragraph("(Sin análisis escrito.)", chico))
-    previo = None
-    for tipo, t in bloques:
-        if tipo == "v":
-            h.append(Paragraph(_xml(t), vineta, bulletText="•"))
-            h.append(Spacer(1, 3))
+    h = [Paragraph("Análisis de marcas" if varias else "Análisis de marca", titulo), Spacer(1, 22)]
+
+    for n, d in enumerate(marcas, 1):
+        op = d["oposiciones"]
+        if varias:
+            if n > 1:
+                h.append(Spacer(1, 14))
+                h.append(HRFlowable(width="100%", thickness=0.6, color=HexColor(pres.COLOR_SUBTITULO)))
+                h.append(Spacer(1, 12))
+            h.append(CondPageBreak(230))
+            h.append(Paragraph(f"Marca {n} de {len(marcas)}", marca_n))
+            h.append(Spacer(1, 6))
+
+        datos_p = [
+            Paragraph(f"<b>Marca:</b> {_xml(d['marca'])}", dato),
+            Paragraph(f"<b>Acta:</b> {_xml(d['acta'])}", dato),
+            Paragraph(f"<b>Clase:</b> {_xml(d.get('clase') or 'no informada')}", dato),
+            Paragraph(f"<b>Titular:</b> {_xml(d['titular'])}", dato),
+        ]
+        img = imagen_logo(d.get("logo"))
+        if img is not None:
+            t = Table([[datos_p, img]], colWidths=[ANCHO - LOGO_W - 12, LOGO_W + 12])
+            t.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP"), ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                                   ("RIGHTPADDING", (0, 0), (-1, -1), 0), ("TOPPADDING", (0, 0), (-1, -1), 0),
+                                   ("BOTTOMPADDING", (0, 0), (-1, -1), 0)]))
+            h.append(t)
         else:
-            if previo == "v":
-                h.append(Spacer(1, 5))  # un poco de aire al volver al texto después de una lista
-            h.append(Paragraph(_xml(t), cuerpo))
-            h.append(Spacer(1, 8))
-        previo = tipo
+            h.extend(datos_p)
+        h.append(Paragraph(f"<b>Oposiciones:</b> {_xml(resumen_oposiciones(op))}", dato))
+        for k, i in enumerate(op["items"], 1):
+            h.append(Paragraph(_xml(linea_oposicion(i)), dato_op, bulletText=f"{k}."))
+        if op["origen"] == "sistema":
+            h.append(Spacer(1, 3))
+            h.append(Paragraph("Dato del sistema: no se verificó contra el expediente de INPI.", chico))
 
-    cuando = pres.mes_anio(_dt.date.fromisoformat(d["fecha"]))
+        h.append(Spacer(1, 16))
+        h.append(Paragraph("Análisis", seccion))
+        h.append(Spacer(1, 4))
+        bloques = _bloques_de_texto(d.get("texto") or "")
+        if not bloques:
+            h.append(Paragraph("(Sin análisis escrito.)", chico))
+        previo = None
+        for tipo, t in bloques:
+            if tipo == "v":
+                h.append(Paragraph(_xml(t), vineta, bulletText="•"))
+                h.append(Spacer(1, 3))
+            else:
+                if previo == "v":
+                    h.append(Spacer(1, 5))  # un poco de aire al volver al texto después de una lista
+                h.append(Paragraph(_xml(t), cuerpo))
+                h.append(Spacer(1, 8))
+            previo = tipo
+
+    cuando = pres.mes_anio(_dt.date.fromisoformat(marcas[0]["fecha"]))
 
     def decorar(c: _canvas.Canvas, doc):
         pres.dibujar_membrete_y_pie(c, cuando)
 
     buf = io.BytesIO()
-    doc = BaseDocTemplate(buf, pagesize=A4, title="Análisis de marca", author=pres.MARCA_NOMBRE)
+    doc = BaseDocTemplate(buf, pagesize=A4, title="Análisis de marcas" if varias else "Análisis de marca",
+                          author=pres.MARCA_NOMBRE)
     # Mismo arranque que el presupuesto: el título apoya su base 167.7 pt bajo el borde de arriba;
     # el marco termina antes del pie.
     arriba = 167.7 - pres.AJUSTE - titulo.fontSize
