@@ -242,9 +242,14 @@ header.app-header {
   .panel-coment { width: 100vw; min-width: 0; }
 }
 @media (max-width: 520px) {
-  header.app-header { padding: 0 12px; gap: 8px; }
+  header.app-header { padding: 0 8px; gap: 6px; }
   .app-header .marca-nombre, .app-header .marca-sep { display: none; }
-  .app-header .nav a, .app-header .nav .nav-boton { padding: 0 7px; }
+  /* Con el link «Calendario» son 10 botones de ícono: sin esto el menú se pasa del ancho de un celular. */
+  .app-header .nav { gap: 0; }
+  .app-header .nav a, .app-header .nav .nav-boton { padding: 0 5px; }
+}
+@media (max-width: 400px) {
+  .app-header .nav a, .app-header .nav .nav-boton, .app-header .nav .nav-buscar-btn { padding: 0 3px; }
 }
 
 /* ── Controles de formulario de las barras de filtros ── */
@@ -1324,6 +1329,6 @@ tr.seleccionada, tr.seleccionada.lead { background: var(--azul-claro); }
 }
 @media (max-width: 520px) {
   .app-header .nav-buscar { margin-right: 0; }
-  .app-header .nav .nav-buscar-btn { padding: 0 7px; }
+  .app-header .nav .nav-buscar-btn { padding: 0 5px; }
 }
 @media (prefers-reduced-motion: reduce) { .app-header .nav-buscar-input { transition: none; } }
