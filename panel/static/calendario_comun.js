@@ -32,6 +32,19 @@ function calFechaLarga(iso) {
   const d = calUTC(iso);
   return `${CAL_DIAS[d.getUTCDay()]} ${d.getUTCDate()} de ${CAL_MESES[d.getUTCMonth()]}`;
 }
+// Fecha y hora de ahora en Argentina: {fecha: "AAAA-MM-DD", hora: "HH:MM"}.
+function calAhora() {
+  const partes = Object.fromEntries(new Intl.DateTimeFormat("en-CA", {
+    timeZone: CAL_TZ, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hourCycle: "h23",
+  }).formatToParts(new Date()).map(p => [p.type, p.value]));
+  return { fecha: `${partes.year}-${partes.month}-${partes.day}`, hora: `${partes.hour}:${partes.minute}` };
+}
+// ¿El evento ya terminó? (los de todo el día, recién al día siguiente.) Se muestran en gris.
+function calEventoPasado(e) {
+  const a = calAhora();
+  if (e.fecha_fin < a.fecha) return true;
+  return e.fecha_fin === a.fecha && !e.todo_el_dia && !!e.hora_fin && e.hora_fin <= a.hora;
+}
 function calMinutos(hhmm) {
   const [h, m] = hhmm.split(":").map(Number);
   return h * 60 + m;
@@ -41,10 +54,11 @@ function calMinutos(hhmm) {
 // Qué tipo de color lleva un evento: cliente > lead > con acta que no está en la base > sin acta.
 function calClaseEvento(e) {
   const v = e.vinculos || [];
-  if (v.some(x => x.tipo === "cliente")) return "cliente";
-  if (v.some(x => x.tipo === "lead")) return "lead";
-  if (v.some(x => x.tipo === "desconocida")) return "sin-base";
-  return "";
+  let clase = "";
+  if (v.some(x => x.tipo === "cliente")) clase = "cliente";
+  else if (v.some(x => x.tipo === "lead")) clase = "lead";
+  else if (v.some(x => x.tipo === "desconocida")) clase = "sin-base";
+  return calEventoPasado(e) ? `${clase} pasado`.trim() : clase;
 }
 
 function calVinculoHtml(v) {
@@ -152,8 +166,8 @@ function _calAsegurarModal() {
           <label class="campo" id="mc-l-hora">Hora <input type="time" id="mc-hora" /></label>
           <label class="campo" id="mc-l-dur">Duración
             <select id="mc-dur">
-              <option value="15">15 min</option><option value="30">30 min</option><option value="45">45 min</option>
-              <option value="60" selected>1 hora</option><option value="90">1 h 30</option><option value="120">2 horas</option><option value="180">3 horas</option>
+              <option value="15">15 min</option><option value="30" selected>30 min</option><option value="45">45 min</option>
+              <option value="60">1 hora</option><option value="90">1 h 30</option><option value="120">2 horas</option><option value="180">3 horas</option>
             </select>
           </label>
           <label class="campo" id="mc-l-hasta" hidden>Hasta (inclusive) <input type="date" id="mc-hasta" /></label>
@@ -167,12 +181,17 @@ function _calAsegurarModal() {
         </fieldset>
         <p class="mc-ayuda" id="mc-meet-nota" hidden></p>
         <label class="campo" id="mc-l-lugar">Lugar <input type="text" id="mc-lugar" maxlength="300" /></label>
-        <label class="campo">Actas vinculadas (opcional)
-          <input type="text" id="mc-actas" placeholder="Ej: 4797001, 4797002" />
+        <div class="campo mc-buscador">
+          <label for="mc-buscar">Buscar la marca o el cliente (opcional)</label>
+          <input type="text" id="mc-buscar" placeholder="Escribí el nombre del negocio, del titular o el número de acta" autocomplete="off" role="combobox" aria-expanded="false" aria-controls="mc-resultados" />
+          <ul class="mc-resultados" id="mc-resultados" role="listbox" hidden></ul>
+        </div>
+        <label class="campo">Actas vinculadas
+          <input type="text" id="mc-actas" placeholder="Se completan al elegir una marca; también podés escribirlas: 4797001, 4797002" />
         </label>
         <div class="mc-marcas" id="mc-marcas" hidden></div>
         <div class="mc-vista-actas" id="mc-vista-actas" hidden></div>
-        <p class="mc-ayuda">Con el número de acta, el evento queda vinculado al lead o cliente dueño de esa marca. También sirve escribir «Acta 4797001» en las notas, incluso si lo agendás directo en Google Calendar.</p>
+        <p class="mc-ayuda">Con la acta, el evento queda vinculado al lead o cliente dueño de esa marca. También sirve escribir «Acta 4797001» en las notas, incluso si lo agendás directo en Google Calendar.</p>
         <label class="campo">Notas (opcional) <textarea id="mc-notas" rows="4" placeholder="Qué hay que hacer, qué traer…"></textarea></label>
         <div class="mc-aviso" id="mc-aviso-caja">
           <label class="check"><input type="checkbox" id="mc-avisar" /> <span id="mc-avisar-txt">Avisar por mail</span></label>
@@ -204,6 +223,7 @@ function _calAsegurarModal() {
     if (!h.value || h.value < document.getElementById("mc-fecha").value) h.value = document.getElementById("mc-fecha").value;
   });
   document.getElementById("mc-form").addEventListener("submit", _calGuardar);
+  _calEnlazarBuscador();
   document.getElementById("mc-borrar").addEventListener("click", () => {
     const ctx = _calModalCtx;
     if (!ctx || !ctx.evento) return;
@@ -220,8 +240,79 @@ function _calAsegurarModal() {
 
 function calCerrarModal() {
   const m = document.getElementById("modal-cal");
+  if (m && m.classList.contains("embebido")) return;  // en la página «Agendar llamada» el formulario no se cierra
   if (m) m.classList.remove("abierto");
   _calModalCtx = null;
+}
+
+// ── Buscador de marcas / clientes (en vivo) ──────────────────────────
+function _calEnlazarBuscador() {
+  const $ = (id) => document.getElementById(id);
+  const caja = $("mc-buscar"), lista = $("mc-resultados");
+  let temporizador = null, resultados = [], activo = -1, pedido = 0;
+
+  const cerrar = () => { lista.hidden = true; caja.setAttribute("aria-expanded", "false"); activo = -1; };
+  const pintar = () => {
+    if (!resultados.length) { cerrar(); return; }
+    lista.innerHTML = resultados.map((r, i) => `
+      <li role="option" data-i="${i}" class="${i === activo ? "activo" : ""}">
+        <span class="mc-res-nombre">${_escapeHtml(r.denominacion || "(sin nombre)")}</span>
+        <span class="mc-res-tipo ${r.tipo}">${r.tipo === "cliente" ? "cliente" : "lead"}</span>
+        <span class="mc-res-detalle">acta ${_escapeHtml(r.acta)}${r.clase ? " · clase " + _escapeHtml(String(r.clase)) : ""} · ${_escapeHtml(r.cliente || r.titular || "")}</span>
+      </li>`).join("");
+    lista.hidden = false;
+    caja.setAttribute("aria-expanded", "true");
+  };
+  const buscar = async () => {
+    const q = caja.value.trim();
+    if (q.length < 2) { resultados = []; pintar(); return; }
+    const mio = ++pedido;
+    try {
+      const r = await api(`/api/calendario/buscar?q=${encodeURIComponent(q)}`);
+      if (mio !== pedido) return;   // llegó una respuesta vieja
+      resultados = r.resultados || [];
+      activo = resultados.length ? 0 : -1;
+      if (!resultados.length) {
+        lista.innerHTML = '<li class="mc-res-vacio">No encontré ninguna marca con ese nombre. Probá con otra parte del nombre o con el número de acta.</li>';
+        lista.hidden = false;
+      } else pintar();
+    } catch (_) { cerrar(); }
+  };
+  const elegir = (r) => {
+    const actual = _calActasDelCampo();
+    if (!actual.includes(r.acta)) actual.push(r.acta);
+    $("mc-actas").value = actual.join(", ");
+    const correo = $("mc-email");
+    if (r.email && !correo.dataset.manual && !correo.value) correo.value = r.email;
+    if (!$("mc-titulo").value.trim() && r.denominacion) {
+      const mod = _calModalidad();
+      $("mc-titulo").value = `${mod === "llamada" ? "Llamada" : "Reunión"} (${r.denominacion})`;
+    }
+    caja.value = "";
+    resultados = [];
+    cerrar();
+    _calPintarChipsMarcas();
+    _calVistaPreviaActas();
+  };
+  caja.addEventListener("input", () => { clearTimeout(temporizador); temporizador = setTimeout(buscar, 220); });
+  caja.addEventListener("keydown", (ev) => {
+    if (ev.key === "ArrowDown" || ev.key === "ArrowUp") {
+      if (!resultados.length) return;
+      ev.preventDefault();
+      activo = (activo + (ev.key === "ArrowDown" ? 1 : -1) + resultados.length) % resultados.length;
+      pintar();
+    } else if (ev.key === "Enter") {
+      if (!lista.hidden && resultados[activo]) { ev.preventDefault(); elegir(resultados[activo]); }
+      else ev.preventDefault();   // Enter en el buscador no manda el formulario
+    } else if (ev.key === "Escape" && !lista.hidden) {
+      ev.preventDefault(); ev.stopPropagation(); cerrar();
+    }
+  });
+  caja.addEventListener("blur", () => setTimeout(cerrar, 180));
+  lista.addEventListener("mousedown", (ev) => {
+    const li = ev.target.closest("li[data-i]");
+    if (li) { ev.preventDefault(); elegir(resultados[+li.dataset.i]); }
+  });
 }
 
 function _calPintarTodoElDia() {
@@ -322,13 +413,16 @@ async function _calVistaPreviaActas() {
  *   marcas      → [{acta, denominacion}] para tildar rápido (ficha del titular).
  *   titulo      → título sugerido para uno nuevo.
  *   alGuardar   → se llama (sin argumentos) después de guardar o borrar. */
-async function calAbrirModal({ evento = null, fecha = null, actas = [], marcas = [], titulo = "", alGuardar = null } = {}) {
+async function calAbrirModal({ evento = null, fecha = null, actas = [], marcas = [], titulo = "", alGuardar = null, embebido = false } = {}) {
   _calAsegurarModal();
-  _calModalCtx = { evento, marcas, alGuardar };
+  _calModalCtx = { evento, marcas, alGuardar, embebido };
+  document.getElementById("modal-cal").classList.toggle("embebido", !!embebido);
   await _calCargarEstado();
   if (!_calModalCtx) return;
   const $ = (id) => document.getElementById(id);
-  $("mc-titulo-modal").textContent = evento ? "Editar evento" : "Nuevo evento";
+  $("mc-titulo-modal").textContent = evento ? "Editar evento" : (embebido ? "Agendar llamada o reunión" : "Nuevo evento");
+  $("mc-buscar").value = "";
+  $("mc-resultados").hidden = true;
   $("mc-error").hidden = true;
   $("mc-vista-actas").hidden = true;
   $("mc-borrar").hidden = !evento;
@@ -365,7 +459,7 @@ async function calAbrirModal({ evento = null, fecha = null, actas = [], marcas =
     $("mc-lugar").value = "";
     $("mc-actas").value = (actas || []).join(", ");
     $("mc-notas").value = "";
-    durSel.value = "60";
+    durSel.value = "30";
   }
   // Cómo es: Meet solo se ofrece si el panel está conectado con la cuenta de Google del estudio
   // (o si el evento ya tiene su Meet).
@@ -388,7 +482,8 @@ async function calAbrirModal({ evento = null, fecha = null, actas = [], marcas =
   _calPintarChipsMarcas();
   if ($("mc-actas").value) _calVistaPreviaActas();
   document.getElementById("modal-cal").classList.add("abierto");
-  setTimeout(() => $("mc-titulo").focus(), 50);
+  $("mc-borrar").hidden = !evento;
+  setTimeout(() => { if (_calModalCtx) $(embebido ? "mc-buscar" : "mc-titulo").focus(); }, 50);
 }
 
 async function _calGuardar(ev) {
@@ -432,7 +527,6 @@ async function _calGuardar(ev) {
   try {
     const r = ctx.evento ? await apiJson(`/api/calendario/eventos/${ctx.evento.id}`, "PUT", cuerpo)
                          : await apiJson("/api/calendario/eventos", "POST", cuerpo);
-    calCerrarModal();
     const partes = [ctx.evento ? "Evento actualizado (también en Google Calendar)" : "Evento agendado (también en Google Calendar)"];
     if (r && r.evento && r.evento.meet_url && modalidad === "meet") partes.push("videollamada de Meet creada");
     let hayError = false;
@@ -445,7 +539,8 @@ async function _calGuardar(ev) {
       }
     }
     mostrarAviso(partes.join(" · "), hayError ? "aviso" : undefined);
-    if (ctx.alGuardar) ctx.alGuardar();
+    calCerrarModal();
+    if (ctx.alGuardar) ctx.alGuardar(r);
   } catch (e) {
     $("mc-guardar").disabled = false;
     $("mc-guardar").textContent = "Guardar";

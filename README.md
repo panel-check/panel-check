@@ -60,6 +60,8 @@ El workflow `.github/workflows/pipeline.yml` corre estos 6 pasos automáticament
   `GOOGLE_OAUTH_CLIENT_SECRET` en Railway, y el botón **Conectar con Google** de la pantalla
   Calendario, que entrega el `GOOGLE_OAUTH_REFRESH_TOKEN`. Los avisos salen por Resend
   (cuenta de prospectos); la copia al equipo va a `CALENDARIO_AVISO_EQUIPO` (opcional).
+  El evento «MEET PAME / TOMI» no se muestra en el panel; `CALENDARIO_OCULTAR` (títulos
+  separados por `;`) cambia qué eventos se ocultan. `/agendar-llamada` abre solo el formulario de agendar.
 
 ### 2. Cargar los secrets en GitHub
 

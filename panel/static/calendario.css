@@ -175,3 +175,46 @@ a.cal-vinculo:hover { border-color: var(--azul); }
 .cal-aviso ol { margin: 6px 0 8px; padding-left: 20px; }
 .cal-aviso code, .cal-aviso a { overflow-wrap: anywhere; word-break: break-word; }
 .cal-aviso a.cal-btn { display: inline-block; margin-top: 6px; }
+
+/* Eventos que ya terminaron (hoy, o días anteriores en la vista de mes): en gris */
+.cal-evento.pasado, .cal-evento.lead.pasado, .cal-evento.cliente.pasado, .cal-evento.sin-base.pasado {
+  background: #f3f4f6; border-left-color: #b8bec7; color: #6b7280; opacity: .85;
+}
+.cal-evento.pasado .cal-evento-hora, .cal-evento.pasado .cal-evento-titulo, .cal-evento.pasado .cal-evento-meta a { color: #6b7280; }
+.cal-evento.pasado .cal-vinculo { filter: grayscale(1); opacity: .8; }
+.cal-chip.pasado, .cal-chip.lead.pasado, .cal-chip.cliente.pasado, .cal-chip.sin-base.pasado {
+  background: #eceef1; color: #8a919c; border-left-color: #c3c8cf;
+}
+.cal-agenda-pie { margin: 6px 0 24px; }
+
+/* Buscador de marcas del formulario */
+.modal-cal .mc-buscador { position: relative; }
+.modal-cal .mc-buscador > label { display: block; font-size: 12px; color: var(--gris); margin-bottom: 4px; }
+.modal-cal .mc-resultados {
+  position: absolute; z-index: 5; left: 0; right: 0; top: 100%; margin: 2px 0 0; padding: 4px; list-style: none;
+  background: #fff; border: 1px solid var(--borde); border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,.14);
+  max-height: 280px; overflow-y: auto;
+}
+.modal-cal .mc-resultados li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; padding: 7px 9px; border-radius: 6px; cursor: pointer; }
+.modal-cal .mc-resultados li.activo, .modal-cal .mc-resultados li:hover { background: var(--azul-claro); }
+.modal-cal .mc-res-nombre { font-weight: 600; font-size: 13.5px; }
+.modal-cal .mc-res-tipo { font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; padding: 1px 6px; border-radius: 10px; }
+.modal-cal .mc-res-tipo.cliente { background: #e6f4ea; color: #14633f; }
+.modal-cal .mc-res-tipo.lead { background: #e8f1fa; color: #0b3d6e; }
+.modal-cal .mc-res-detalle { flex-basis: 100%; font-size: 12px; color: var(--gris); }
+.modal-cal .mc-res-vacio { color: var(--gris); font-size: 12.5px; cursor: default; }
+
+/* Formulario suelto (página «Agendar llamada»): sin fondo oscuro ni botón de cerrar */
+.modal-fondo.embebido, .modal-fondo.embebido.abierto { position: static; display: block; background: none; }
+.modal-fondo.embebido .modal-caja { max-width: 640px; width: 100%; max-height: none; margin: 0 auto; box-shadow: 0 1px 4px rgba(0,0,0,.12); }
+.modal-fondo.embebido .modal-cerrar, .modal-fondo.embebido #mc-cancelar { display: none; }
+.agendar-pagina { margin: 0; background: #f4f6f9; }
+.agendar-cab { display: flex; align-items: center; gap: 10px; max-width: 640px; margin: 0 auto; padding: 16px 16px 4px; }
+.agendar-cab .marca-logo { width: 28px; height: 28px; }
+.agendar-cab b { font-size: 16px; }
+.agendar-cab a { margin-left: auto; font-size: 13px; }
+.agendar-main { max-width: 640px; margin: 0 auto; padding: 8px 16px 40px; }
+.agendar-exito { background: #e6f4ea; border: 1px solid #b7dfc4; border-radius: 10px; padding: 14px 16px; margin: 8px 0 14px; font-size: 14px; }
+.agendar-exito h3 { margin: 0 0 6px; font-size: 15px; color: #14633f; }
+.agendar-exito p { margin: 4px 0; overflow-wrap: anywhere; }
+.agendar-exito .cal-btn { margin: 6px 6px 0 0; }

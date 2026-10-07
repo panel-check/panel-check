@@ -624,13 +624,38 @@ class TextosDelAviso(unittest.TestCase):
         j = cc.evento_a_json(fila_evento(actas=["4797001"]))
         j["vinculos"] = [{"acta": "4797001", "denominacion": "LUNA", "titular": "PEREZ JUAN", "tipo": "cliente"}]
         asunto, html, texto = cc.armar_aviso(j, "agendada", True, "marcos", "juan@x.com", "https://panel.test")
-        self.assertEqual(asunto, "Se agendó: Reunión con Pérez – 8/10 16:00 hs")
-        self.assertIn("marcos agendó un evento", texto)
+        # el asunto es el título y lo primero del cuerpo, el estado y el cuándo (así se lee en la lista de la bandeja)
+        self.assertEqual(asunto, "Reunión con Pérez")
+        self.assertTrue(texto.startswith("Agendada: jueves 8 oct 2026 · 4pm – 5pm (Hora estándar de Argentina)"), texto)
+        self.assertIn("Agendó: marcos", texto)
         self.assertIn("4797001 (LUNA, PEREZ JUAN) – cliente", texto)
         self.assertIn("juan@x.com", texto)
         self.assertIn("https://panel.test/calendario", texto)
         _, _, sin = cc.armar_aviso(j, "agendada", True, "marcos", "", "https://panel.test")
         self.assertIn("no se mandó", sin)
+        self.assertEqual(cc.armar_aviso(j, "modificada", True, "marcos")[0], "Actualizada: Reunión con Pérez")
+        self.assertTrue(cc.armar_aviso(j, "modificada", True, "marcos")[2].startswith("Actualizada: jueves"))
+
+    def test_aviso_al_equipo_de_una_llamada(self):
+        j = cc.evento_a_json(fila_evento(modalidad="llamada", meet_url=None, lugar="11 5555-1234",
+                                         inicio=dt.datetime(2026, 10, 9, 13, 30, tzinfo=TZ), fin=dt.datetime(2026, 10, 9, 14, 0, tzinfo=TZ),
+                                         titulo="Llamada (OJOS DE AGUA)"))
+        asunto, _, texto = cc.armar_aviso(j, "agendada", True, "marcos")
+        self.assertEqual(asunto, "Llamada (OJOS DE AGUA)")
+        self.assertTrue(texto.startswith("Agendada: viernes 9 oct 2026 · 1:30pm – 2pm (Hora estándar de Argentina)"), texto)
+        self.assertIn("Cómo: Llamada al 11 5555-1234", texto)
+        self.assertNotIn("Link de Meet", texto)
+
+    def test_cuando_corto_como_google_calendar(self):
+        f = lambda **k: cc.cuando_corto(cc.evento_a_json(fila_evento(**k)))
+        self.assertEqual(f(inicio=dt.datetime(2026, 10, 9, 0, 0, tzinfo=TZ), fin=dt.datetime(2026, 10, 9, 0, 30, tzinfo=TZ)),
+                         "viernes 9 oct 2026 · 12am – 12:30am (Hora estándar de Argentina)")
+        self.assertEqual(f(inicio=dt.datetime(2026, 10, 9, 12, 0, tzinfo=TZ), fin=dt.datetime(2026, 10, 9, 13, 15, tzinfo=TZ)),
+                         "viernes 9 oct 2026 · 12pm – 1:15pm (Hora estándar de Argentina)")
+        self.assertEqual(f(todo_el_dia=True, inicio=dt.datetime(2026, 10, 9, tzinfo=TZ), fin=dt.datetime(2026, 10, 10, tzinfo=TZ)),
+                         "viernes 9 oct 2026 · todo el día")
+        self.assertEqual(f(todo_el_dia=True, inicio=dt.datetime(2026, 10, 9, tzinfo=TZ), fin=dt.datetime(2026, 10, 12, tzinfo=TZ)),
+                         "viernes 9 oct 2026 – domingo 11 oct 2026")
 
     def test_el_titulo_no_inyecta_html(self):
         j = cc.evento_a_json(fila_evento(titulo="<script>alert(1)</script> {{marca}}"))
@@ -684,7 +709,7 @@ class EnvioDeAvisos(unittest.TestCase):
         self.assertEqual([e[3] for e in self.enviados], [["juan@x.com"], ["estudio@gmail.com"]])
         self.assertEqual(self.enviados[0][:3], ("prospectos", "Smarties <s@x.com>", "info@x.com"))
         self.assertTrue(self.enviados[0][4].startswith("Agendamos tu reunión"))
-        self.assertTrue(self.enviados[1][4].startswith("Se agendó"))
+        self.assertEqual(self.enviados[1][4], "Reunión con Pérez")
 
     def test_sin_mail_de_la_persona_va_solo_al_equipo(self):
         r = cc.avisar(self.conexion, 7, "agendada", "marcos", "")
@@ -717,6 +742,73 @@ class EnvioDeAvisos(unittest.TestCase):
         self.assertEqual(self.enviados[0][3], ["pamela@x.com"])
         os.environ["CALENDARIO_AVISO_EQUIPO"] = "no-es-mail"
         self.assertIsNone(cc.mail_equipo())
+
+
+class EventosOcultos(unittest.TestCase):
+    def setUp(self):
+        self.env = dict(os.environ)
+        os.environ.pop("CALENDARIO_OCULTAR", None)
+
+    def tearDown(self):
+        os.environ.clear()
+        os.environ.update(self.env)
+
+    def test_por_defecto_se_oculta_el_meet_fijo(self):
+        filas = [{"titulo": t} for t in ("MEET PAME / TOMI", "meet pame/tomi", " Meet  Pame  /  Tomi ", "Reunión", "MEET PAME")]
+        self.assertEqual([f["titulo"] for f in cc._sin_ocultos(filas)], ["Reunión", "MEET PAME"])
+
+    def test_sin_tildes_ni_mayusculas(self):
+        os.environ["CALENDARIO_OCULTAR"] = "Almuerzo de Equipo; Café"
+        filas = [{"titulo": t} for t in ("ALMUERZO DE EQUIPO", "cafe", "Café con cliente")]
+        self.assertEqual([f["titulo"] for f in cc._sin_ocultos(filas)], ["Café con cliente"])
+
+    def test_vacio_no_oculta_nada(self):
+        os.environ["CALENDARIO_OCULTAR"] = ""
+        filas = [{"titulo": "MEET PAME / TOMI"}]
+        self.assertEqual(cc._sin_ocultos(filas), filas)
+
+
+class BuscadorDeMarcas(unittest.TestCase):
+    class Cur:
+        def __init__(self, filas):
+            self.filas, self.sql, self.params = filas, None, None
+
+        def execute(self, sql, params=None):
+            self.sql, self.params = " ".join(sql.split()), params
+
+        def fetchall(self):
+            return self.filas
+
+    def fila(self, acta, nombre, tipo="lead", email=None, titular="X"):
+        return {"tipo": tipo, "acta": acta, "denominacion": nombre, "titular": titular, "clase": 25, "cliente": None, "email": email}
+
+    def test_texto_muy_corto_no_busca(self):
+        cur = self.Cur([])
+        self.assertEqual(cc.buscar_marcas(cur, ""), [])
+        self.assertEqual(cc.buscar_marcas(cur, " a "), [])
+        self.assertIsNone(cur.sql)
+
+    def test_cada_palabra_es_un_patron_sin_tildes_y_con_comodines_escapados(self):
+        cur = self.Cur([])
+        cc.buscar_marcas(cur, "Ojos  de Ágüa 50%")
+        self.assertIn("%ojos%", cur.params)
+        self.assertIn("%agua%", cur.params)
+        self.assertIn("%50\\%%", cur.params)
+        self.assertEqual(len(cur.params) % 2, 0)   # los mismos patrones para clientes y para leads
+        self.assertIn("m.es_lead", cur.sql)
+
+    def test_sin_repetidas_clientes_primero_y_los_que_empiezan_igual_antes(self):
+        cur = self.Cur([self.fila("1", "AGUA OJOS"), self.fila("2", "OJOS DE AGUA"), self.fila("2", "OJOS DE AGUA", "cliente"),
+                        self.fila("3", "LOS OJOS", "cliente", email=" a@b.com ")])
+        r = cc.buscar_marcas(cur, "ojos")
+        self.assertEqual([x["acta"] for x in r].count("2"), 1)
+        # clientes antes que leads; dentro de cada grupo, primero los que empiezan con lo escrito
+        self.assertEqual([(x["acta"], x["tipo"]) for x in r], [("2", "cliente"), ("3", "cliente"), ("1", "lead")])
+        self.assertEqual({x["acta"]: x["email"] for x in r}["3"], "a@b.com")
+
+    def test_tope(self):
+        cur = self.Cur([self.fila(str(i), f"MARCA {i}") for i in range(40)])
+        self.assertEqual(len(cc.buscar_marcas(cur, "marca", limite=12)), 12)
 
 
 if __name__ == "__main__":

@@ -10,6 +10,7 @@ Rutas:
   GET    /api/calendario/eventos?desde&hasta  eventos de un rango de fechas (AAAA-MM-DD)
   GET    /api/calendario/por-actas?actas=a,b  eventos que nombran esas actas (ficha del titular)
   GET    /api/calendario/actas?actas=a,b      de quién es cada acta (vista previa del formulario)
+  GET    /api/calendario/buscar?q=texto       búsqueda en vivo de marcas por nombre, titular, cliente o acta
   POST   /api/calendario/eventos              crear (en Google y en el panel); con modalidad «meet» genera el link;
                                               con avisar=true manda el mail a la persona y la copia al equipo
   PUT    /api/calendario/eventos/{id}         editar (con avisar=true, manda el aviso de cambio)
@@ -138,6 +139,12 @@ def crear_router(verificar_login, conexion, verificar_admin=None) -> APIRouter:
             with rcur(conn) as cur:
                 info = cal.resolver_actas(cur, _lista_actas(actas))
         return {"actas": list(info.values())}
+
+    @router.get("/api/calendario/buscar")
+    def buscar(q: str = Query("", max_length=100), _: str = Depends(verificar_login)):
+        with conexion() as conn:
+            with rcur(conn) as cur:
+                return {"resultados": cal.buscar_marcas(cur, q)}
 
     def _evento_por_id(evento_id: int) -> dict:
         with conexion() as conn:
