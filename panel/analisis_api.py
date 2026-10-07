@@ -4,7 +4,7 @@ API de la pestaña «Análisis de marca» de la ficha del titular.
 Se arma con una fábrica (crear_router) para no importar app.py desde acá (app.py
 es quien importa este módulo): app.py le pasa el login y la conexión.
 
-Rutas (todas con sesión):
+Rutas (todas con sesión, salvo la del link público del PDF):
   GET   /api/analisis-marca/{acta}              datos de la marca (nombre, acta, titular con CUIT),
                                                 oposiciones y el texto guardado
   PUT   /api/analisis-marca/{acta}              guardar el texto del análisis
@@ -14,6 +14,11 @@ Rutas (todas con sesión):
                                                 se mande, o el guardado)
   GET   /api/analisis-marca/{acta}/pdf          el mismo PDF con un link: siempre con el análisis guardado
                                                 (lo abre el botón «Ver análisis de marca» del Calendario)
+  POST  /api/analisis-marca/{acta}/link         el link público del PDF (se crea la primera vez; renovar=true
+                                                genera uno nuevo y anula el anterior)
+  DELETE /api/analisis-marca/{acta}/link        anular el link público
+  GET   /api/publico/analisis-marca/{token}/pdf el PDF para quien tenga el link, SIN sesión (el código es largo,
+                                                al azar y anulable; no se puede adivinar desde el acta)
   GET   /api/analisis-marca/{acta}/logo         el logo de la marca (guardado de INPI), si tiene
   GET   /api/analisis-marca-opuesta/{acta}/logo  el logo de la marca de un oponente (guardado de INPI), si tiene
   PUT   /api/analisis-marca-lote/mismo-analisis recordar (por titular) «el mismo análisis para todas»
@@ -60,6 +65,10 @@ class PedidoLote(BaseModel):
     # Si viene, el análisis es el mismo para todas las marcas: se usa el texto guardado de
     # esta acta y sale una sola vez en el PDF (en vez del texto propio de cada marca).
     analisis_comun_de: Optional[str] = None
+
+
+class PedidoLink(BaseModel):
+    renovar: bool = False
 
 
 def crear_router(verificar_login, conexion) -> APIRouter:
@@ -214,6 +223,39 @@ def crear_router(verificar_login, conexion) -> APIRouter:
         está al día. Sirve para abrirlo desde otra pantalla (la tarjeta del evento del Calendario) o pasarlo
         al equipo (requiere sesión del panel)."""
         return _respuesta_pdf(_acta(acta), None)
+
+    @router.post("/api/analisis-marca/{acta}/link")
+    def link_publico(acta: str, body: PedidoLink = PedidoLink(), _: str = Depends(verificar_login)):
+        """El link público del PDF (se abre sin iniciar sesión). Se crea la primera vez; con
+        renovar=true se genera uno nuevo y el anterior deja de funcionar."""
+        acta = _acta(acta)
+        with conexion() as conn, rcur(conn) as cur:
+            _marca(cur, acta)
+            t = am.token_publico(cur, acta, renovar=body.renovar)
+            conn.commit()
+        return {"ruta": f"/api/publico/analisis-marca/{t}/pdf"}
+
+    @router.delete("/api/analisis-marca/{acta}/link")
+    def anular_link(acta: str, _: str = Depends(verificar_login)):
+        """Apaga el link público: deja de abrir el PDF sin sesión."""
+        acta = _acta(acta)
+        with conexion() as conn, rcur(conn) as cur:
+            habia = am.anular_token(cur, acta)
+            conn.commit()
+        return {"ok": True, "habia_link": habia}
+
+    @router.get("/api/publico/analisis-marca/{token}/pdf", include_in_schema=False)
+    def pdf_publico(token: str):
+        """El PDF del análisis guardado para quien tenga el link (sin sesión). El código es largo y
+        al azar: no se puede adivinar ni sacar del número de acta."""
+        with conexion() as conn, rcur(conn) as cur:
+            acta = am.acta_por_token(cur, token)
+        if not acta:
+            raise HTTPException(status_code=404, detail="Este link no existe o fue anulado")
+        r = _respuesta_pdf(acta, None)
+        r.headers["X-Robots-Tag"] = "noindex, nofollow"
+        r.headers["Referrer-Policy"] = "no-referrer"
+        return r
 
     @router.get("/api/analisis-marca/{acta}/logo")
     def ver_logo(acta: str, _: str = Depends(verificar_login)):

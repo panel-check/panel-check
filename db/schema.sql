@@ -475,8 +475,11 @@ CREATE TABLE IF NOT EXISTS analisis_marca (
     logo_mime        TEXT,
     logo_consultado_en TIMESTAMPTZ,
     -- Denominación, tipo de marca, limitación y publicación tal como figuran en el expediente.
-    expediente       JSONB
+    expediente       JSONB,
+    -- Link público del PDF (sin sesión): código largo al azar; NULL = sin link.
+    token_publico    TEXT
 );
+CREATE UNIQUE INDEX IF NOT EXISTS idx_analisis_marca_token ON analisis_marca(token_publico) WHERE token_publico IS NOT NULL;
 
 -- Agregado el 07/10/2026: marcas de los oponentes (la que cita el fundamento de cada
 -- oposición del «Análisis de marca»), una fila por acta: lo que figura en su expediente
