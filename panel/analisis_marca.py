@@ -26,6 +26,7 @@ import io
 import json
 import logging
 import re
+import secrets
 from xml.sax.saxutils import escape
 
 import archivos_seguros
@@ -70,6 +71,10 @@ def crear_tablas(cur):
     # Datos de la marca tal como figuran en el expediente (denominación, tipo de marca,
     # limitación, publicación). NULL = todavía no se leyeron.
     cur.execute("ALTER TABLE analisis_marca ADD COLUMN IF NOT EXISTS expediente JSONB")
+    # Link público del PDF (sin sesión): un código largo al azar, imposible de adivinar. NULL = sin link.
+    cur.execute("ALTER TABLE analisis_marca ADD COLUMN IF NOT EXISTS token_publico TEXT")
+    cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_analisis_marca_token ON analisis_marca(token_publico) "
+                "WHERE token_publico IS NOT NULL")
     # Marcas de los oponentes (la que cita el fundamento de cada oposición), una fila por acta:
     # sus datos y logo tal como figuran en su expediente de INPI. Se comparten entre análisis.
     cur.execute(
@@ -298,6 +303,41 @@ def guardar_texto(cur, acta: str, texto: str, usuario: str):
         "actualizado_en = now()",
         (acta, texto, usuario),
     )
+
+
+RE_TOKEN = re.compile(r"^[A-Za-z0-9_-]{40,64}$")
+
+
+def token_publico(cur, acta: str, renovar: bool = False) -> str:
+    """El código del link público del PDF de esta marca. Lo crea la primera vez (o si se pide
+    renovar, y entonces el link anterior deja de funcionar); después devuelve siempre el mismo."""
+    if not renovar:
+        cur.execute("SELECT token_publico FROM analisis_marca WHERE acta = %s", (acta,))
+        f = cur.fetchone()
+        t = _valor(f, "token_publico", 0) if f else None
+        if t:
+            return t
+    t = secrets.token_urlsafe(32)
+    cur.execute(
+        "INSERT INTO analisis_marca (acta, token_publico) VALUES (%s, %s) "
+        "ON CONFLICT (acta) DO UPDATE SET token_publico = EXCLUDED.token_publico",
+        (acta, t))
+    return t
+
+
+def anular_token(cur, acta: str) -> bool:
+    """Apaga el link público (el PDF vuelve a abrirse solo con sesión). True si había uno."""
+    cur.execute("UPDATE analisis_marca SET token_publico = NULL WHERE acta = %s AND token_publico IS NOT NULL", (acta,))
+    return cur.rowcount > 0
+
+
+def acta_por_token(cur, token: str):
+    """El acta a la que corresponde un código de link público, o None si no existe o fue anulado."""
+    if not token or not RE_TOKEN.match(token):
+        return None
+    cur.execute("SELECT acta FROM analisis_marca WHERE token_publico = %s", (token,))
+    f = cur.fetchone()
+    return str(_valor(f, "acta", 0)) if f else None
 
 
 def guardar_oposiciones(cur, acta: str, items: list) -> dict:
