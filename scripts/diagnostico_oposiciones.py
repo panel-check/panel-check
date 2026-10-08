@@ -25,7 +25,9 @@ Uso:
 
 import argparse
 import collections
+import datetime as dt
 import os
+import re
 import sys
 import time
 
@@ -35,6 +37,7 @@ import psycopg2.extras
 import monitor_bloqueo
 from oposiciones_expediente import (
     GRILLA_PODER,
+    dias_de_oposicion,
     es_presentacion_oposicion,
     _fecha_valida,
     _norm,
@@ -49,6 +52,8 @@ from validar_leads import (
     crear_sesion,
 )
 
+RE_DOTNET = re.compile(r"Date\((-?\d+)")
+ART = dt.timezone(dt.timedelta(hours=-3))
 TOPE_GRILLA = 50  # buscar_archivos_grilla pide limit=50 y no pagina
 
 SQL_ACTAS = """
@@ -62,11 +67,36 @@ SQL_ACTAS = """
 """
 
 
+def ts_ms(valor):
+    """Milisegundos de un campo Fecha .NET de la Grilla ("/Date(ms)/"), o None."""
+    m = RE_DOTNET.search(valor or "")
+    return int(m.group(1)) if m else None
+
+
+def fmt_fecha(valor) -> str:
+    """Fecha y hora de la Grilla en hora argentina (el portal las manda en UTC)."""
+    ms = ts_ms(valor)
+    if ms is None:
+        return str(valor)
+    return dt.datetime.fromtimestamp(ms / 1000, tz=ART).strftime("%d/%m/%Y %H:%M")
+
+
+def horas_desde_oposicion(archivos: list[dict], fila: dict):
+    """Horas entre esta fila y la presentación de oposición (Recibo + Opo.) inmediatamente
+    anterior de la Grilla, o None si no hay ninguna anterior."""
+    t = ts_ms(fila.get("Fecha"))
+    if t is None:
+        return None
+    previas = [ts_ms(a.get("Fecha")) for a in archivos if es_presentacion_oposicion(a)]
+    previas = [x for x in previas if x is not None and x <= t]
+    return (t - max(previas)) / 3_600_000 if previas else None
+
+
 def poder_en_grilla(archivos: list[dict], desde: str | None, notificacion: str | None,
                     dias_oposicion: set) -> dict:
     """Cuenta las filas de poder/gestión de la Grilla (desde `desde`) en tres grupos:
-      mismo_dia_oposicion          -- el día que se presentó una oposición (poder del
-                                      oponente: nunca descarta)
+      mismo_dia_oposicion          -- el día que se presentó una oposición o el siguiente
+                                      (poder del oponente: nunca descarta)
       entre_oposicion_y_notificar  -- otro día, pero antes de notificar al titular (o sin
                                       notificación conocida): hoy NO descarta; puede ser
                                       un gestor del titular que se suma antes de la cédula
@@ -118,6 +148,8 @@ def main():
     grupos = {g: {"actas": 0, "con_rep": 0, "sin_rep": []} for g in
               ("mismo_dia_oposicion", "entre_oposicion_y_notificar", "despues_de_notificar")}
     topadas = sin_consulta = error_lectura = revisadas = 0
+    horas_poder = []
+    actas_trabajando = []
 
     for i, fila in enumerate(actas, 1):
         if (time.time() - inicio) / 60 >= args.max_minutes:
@@ -159,10 +191,13 @@ def main():
         for k in activas:
             señales_n[k] += 1
         referencia = min([f for f in (sen["fecha_notificacion"], notif_exp) if f], default=None)
-        dias_opo = set(presentaciones) | {
-            _fecha_valida(a.get("Fecha") or "") for a in archivos if es_presentacion_oposicion(a)}
-        dias_opo.discard(None)
+        dias_opo = dias_de_oposicion(archivos, presentaciones)
         pg = poder_en_grilla(archivos, desde, referencia, dias_opo)
+        for a in archivos:
+            if any(t in _norm(f"{a.get('Indice')} {a.get('Referencia')}") for t in GRILLA_PODER):
+                horas_poder.append(horas_desde_oposicion(archivos, a))
+        if sen["trabajando"]:
+            actas_trabajando.append(acta)
         tiene_rep = titular_con_representante(exp)
         for g, n in pg.items():
             if n:
@@ -188,7 +223,10 @@ def main():
             for a in archivos:
                 f = _fecha_valida(a.get("Fecha") or "")
                 if f and f >= pub:
-                    print(f"      {a.get('Fecha')} | {a.get('Indice')} | {a.get('Referencia')}")
+                    h = horas_desde_oposicion(archivos, a) if any(
+                        t in _norm(f"{a.get('Indice')} {a.get('Referencia')}") for t in GRILLA_PODER) else None
+                    extra = f"   (+{h:.1f} h desde la oposición)" if h is not None else ""
+                    print(f"      {fmt_fecha(a.get('Fecha'))} | {a.get('Indice')} | {a.get('Referencia')}{extra}")
         time.sleep(args.delay)
 
     print("\n" + "=" * 70)
@@ -211,6 +249,14 @@ def main():
               f"{len(d['sin_rep'])} sin él")
         if d["sin_rep"]:
             print(f"      sin representante en el expediente (revisar a mano): {', '.join(d['sin_rep'])}")
+    if horas_poder:
+        con = [h for h in horas_poder if h is not None]
+        print(f"\nHoras entre la presentación de la oposición y cada poder ({len(horas_poder)} filas de poder): "
+              f"hasta 12 h: {sum(h <= 12 for h in con)}, 12-24 h: {sum(12 < h <= 24 for h in con)}, "
+              f"24-48 h: {sum(24 < h <= 48 for h in con)}, más de 48 h: {sum(h > 48 for h in con)}, "
+              f"sin oposición anterior: {len(horas_poder) - len(con)}")
+    print(f"\nActas donde se detectó 'Recibo de Ingreso' + 'Escritos de Marcas' (revisar a mano que sea del titular): "
+          f"{', '.join(actas_trabajando) or '-'}")
     print(f"\nGrillas que llegan al tope de {TOPE_GRILLA} filas (la consulta no pagina): {topadas}")
     print("\nVocabulario real (Indice | Referencia) en actas con oposición, filas desde la publicación:")
     for (ind, ref), c in vocabulario.most_common(60):

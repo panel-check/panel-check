@@ -50,9 +50,9 @@ tildes ni mayúsculas, ver _senales_grilla). Las "posteriores" son filas con fec
   - Desistimiento: "Formula Desistimiento" (Indice o Referencia) -> levantada.
   - Gestor/apoderado: "Acompaña Poder", "Ratifica Gestión en Oposición" o
     "Ratifica Gestión" -> con_apoderado (el lead se descarta), pero SOLO si es de la
-    fecha de notificación al titular o posterior y no del mismo día que la
-    presentación de una oposición: los oponentes acompañan su poder junto con su
-    oposición (acta 4759596). Un poder entre la oposición y la notificación no
+    fecha de notificación al titular o posterior y no del día de una oposición ni del
+    siguiente: los oponentes acompañan su poder junto con su oposición, a veces
+    horas después y ya en el día siguiente (actas 4759596 y 4777786). Un poder entre la oposición y la notificación no
     descarta por ahora (puede ser de un gestor del titular: se mide con
     diagnostico_oposiciones.py).
   - Oposición: "Recibo de Ingreso" + "Opo. de Marcas" (confirmado) = alguien se opuso.
@@ -249,6 +249,24 @@ def es_presentacion_oposicion(fila: dict) -> bool:
             and GRILLA_OPOSICION[1] in _norm(fila.get("Referencia")))
 
 
+def dias_de_oposicion(archivos: list[dict], presentaciones=()) -> set:
+    """Fechas ISO en que se presentó una oposición (filas "Recibo de Ingreso" + "Opo. de
+    Marcas" de la Grilla y presentaciones del expediente), MÁS el día siguiente: el
+    poder del oponente entra con su oposición, a veces horas después y ya del día
+    siguiente (la Grilla trae las fechas en UTC; ej. acta 4777786: oposición 28/09
+    18:07 ART, poder 29/09 01:59 ART)."""
+    base = set()
+    for a in archivos or []:
+        f = _fecha_valida(a.get("Fecha") or "")
+        if f and es_presentacion_oposicion(a):
+            base.add(f)
+    base.update(f for f in presentaciones if f)
+    dias = set(base)
+    for f in base:
+        dias.add((_dt.date.fromisoformat(f) + _dt.timedelta(days=1)).isoformat())
+    return dias
+
+
 def _senales_grilla(
     archivos: list[dict], desde: str | None, notificacion_expediente: str | None = None,
     presentaciones_expediente=(),
@@ -259,7 +277,7 @@ def _senales_grilla(
       desistio    -- "Formula Desistimiento" (en Indice o Referencia)
       poder       -- "Acompaña Poder", "Ratifica Gestión en Oposición" o "Ratifica Gestión",
                      solo si es de la fecha de notificación al titular o posterior y NO
-                     del mismo día que la presentación de una oposición
+                     del día de una oposición ni del siguiente
       notificada  -- filas vecinas "Vista de Marcas" y "Cédula de Notificación"
                      (fecha_notificacion = la de la primera cédula).
     Cada columna (Indice, Referencia) se compara por "contiene": INPI a veces
@@ -297,8 +315,7 @@ def _senales_grilla(
     # Un poder solo descarta si es de la notificación al titular o posterior, y no
     # del mismo día que la presentación de una oposición (poder del oponente).
     referencia = min([f for f in (fecha_notificacion, notificacion_expediente) if f], default=None)
-    dias_oposicion = {f for a, f in zip(filas, fechas) if f and es_presentacion_oposicion(a)}
-    dias_oposicion.update(f for f in presentaciones_expediente if f)
+    dias_oposicion = dias_de_oposicion(filas, presentaciones_expediente)
     poder = bool(referencia) and any(
         term in t and f and f >= referencia and f not in dias_oposicion
         for t, f in zip(textos, fechas) for term in GRILLA_PODER)

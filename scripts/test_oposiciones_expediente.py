@@ -355,6 +355,20 @@ class ReglasGrilla(unittest.TestCase):
         self.assertEqual(r["estado"], "notificada_en_plazo")
         self.assertFalse(r["representacion_confirmada"])
 
+    def test_poder_del_dia_siguiente_a_la_oposicion_no_descarta(self):
+        # Acta 4777786: oposición 28/09 18:07 ART y poder 29/09 01:59 ART (fechas UTC de la
+        # Grilla en días distintos), pero es parte de la misma presentación del oponente.
+        arch = [
+            {"Indice": "Acompaña Poder", "Referencia": "ACOMPAÑA PODER", "Fecha": "29/09/2026"},
+            {"Indice": "Recibo de Ingreso", "Referencia": "Opo. de Marcas", "Fecha": "28/09/2026"},
+            {"Indice": "Cédula de Notificación", "Referencia": "-", "Fecha": "22/09/2026"},
+            {"Indice": "Vista de Marcas", "Referencia": "-", "Fecha": "22/09/2026"},
+        ]
+        dos = "[" + opo(pres=ms("2026-09-15"))[1:-1] + "," + opo(pres=ms("2026-09-28"))[1:-1] + "]"
+        r = clasificar(pagina(opos=dos, gestion=GESTION_PARTICULAR), arch)
+        self.assertEqual(r["estado"], "notificada_en_plazo")
+        self.assertFalse(r["representacion_confirmada"])
+
     def test_acta_4759596_poder_de_un_oponente_no_descarta(self):
         # Caso real (08/10/2026): dos oposiciones (Paladini 11/09, Bruzzi 25/09), cada una
         # con su agente. El "Acompaña Poder" del 11/09 es de Paladini, que se opone.

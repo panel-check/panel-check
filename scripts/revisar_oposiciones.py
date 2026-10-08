@@ -21,7 +21,7 @@ Estado de la oposición (estado_oposicion; ver oposiciones_expediente.py):
     con_apoderado        el titular ya tiene agente/gestor según GESTION DEL TRAMITE, o
                          en la Grilla aparece "Acompaña Poder" / "Ratifica Gestión" /
                          "Ratifica Gestión en Oposición" desde que se notificó la
-                         oposición al titular (y no el mismo día que una oposición)
+                         oposición al titular (y no el día de una oposición ni el siguiente)
                          -> deja de ser lead (es_lead = false)
 
 Notificación efectiva (regla del 08/10/2026): una fila "Vista de Marcas" seguida de
@@ -33,8 +33,8 @@ Grilla posterior a la oposición), queda con es_lead = false y carácter "Apoder
 (se sumó tras la oposición)": deja de ser un posible cliente, sale de la lista de
 leads y ya no se vuelve a revisar. Antes un poder de la Grilla sin agente del titular
 quedaba como "posible apoderado" y seguía vigente; ahora descarta el lead solo si el
-poder es posterior a la notificación al titular y no del día de una oposición (los
-oponentes acompañan su poder junto con su oposición).
+poder es posterior a la notificación al titular y no del día de una oposición ni del
+siguiente (los oponentes acompañan su poder junto con su oposición).
 
 Esquema de revisión (días contados desde fecha_publicacion de ESE expediente):
   - HITOS: a los 10, 23 y 33 días se hace una revisión de cada lead. Muchas
