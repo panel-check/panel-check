@@ -9,9 +9,10 @@ usa INPI de verdad. Al final imprime:
   - de qué estado guardado a qué estado nuevo pasa cada acta (matriz de cambios),
   - el vocabulario real (Indice + Referencia) de las filas posteriores a la
     publicación en las actas con oposición, para ajustar los términos,
-  - cuántas actas tienen "Acompaña Poder"/"Ratifica Gestión" en la Grilla y, de
-    esas, cuántas tienen representante del titular según el expediente (si el
-    poder fuera casi siempre del oponente, esa regla descartaría leads buenos),
+  - los "Acompaña Poder"/"Ratifica Gestión" de la Grilla en tres momentos (el día de
+    una oposición, entre la oposición y la notificación, y después de notificar al
+    titular) y, en cada uno, cuántas actas tienen representante del titular según el
+    expediente; las que no, se listan para revisarlas a mano,
   - cuántas Grillas llegan al tope de 50 filas (la consulta no pagina).
 
 El repo es público: no se imprimen nombres ni datos de personas, solo número de
@@ -34,6 +35,7 @@ import psycopg2.extras
 import monitor_bloqueo
 from oposiciones_expediente import (
     GRILLA_PODER,
+    es_presentacion_oposicion,
     _fecha_valida,
     _norm,
     _senales_grilla,
@@ -42,7 +44,6 @@ from oposiciones_expediente import (
     titular_con_representante,
 )
 from validar_leads import (
-    _es_oposicion_de_tercero,
     buscar_archivos_grilla,
     buscar_fila_oposicion,
     crear_sesion,
@@ -61,35 +62,30 @@ SQL_ACTAS = """
 """
 
 
-def poder_en_grilla(archivos: list[dict], fecha_publicacion: str | None) -> dict:
-    """Filas de poder/gestión de la Grilla posteriores a la publicación, separadas
-    en las que caen el MISMO DÍA que una fila de oposición (típico: el abogado del
-    oponente acompaña su poder al presentar) y las posteriores a todas las
-    oposiciones. Devuelve {"mismo_dia": n, "posterior": n, "anterior": n}."""
-    fechas_opo = []
-    for a in archivos or []:
-        if _es_oposicion_de_tercero(a):
-            f = _fecha_valida(a.get("Fecha") or "")
-            if f and (not fecha_publicacion or f >= fecha_publicacion):
-                fechas_opo.append(f)
-    out = {"mismo_dia": 0, "posterior": 0, "anterior": 0}
-    if not fechas_opo:
-        return out
+def poder_en_grilla(archivos: list[dict], desde: str | None, notificacion: str | None,
+                    dias_oposicion: set) -> dict:
+    """Cuenta las filas de poder/gestión de la Grilla (desde `desde`) en tres grupos:
+      mismo_dia_oposicion          -- el día que se presentó una oposición (poder del
+                                      oponente: nunca descarta)
+      entre_oposicion_y_notificar  -- otro día, pero antes de notificar al titular (o sin
+                                      notificación conocida): hoy NO descarta; puede ser
+                                      un gestor del titular que se suma antes de la cédula
+      despues_de_notificar         -- de la notificación en adelante y de otro día que
+                                      una oposición: es lo que hoy descarta el lead"""
+    out = {"mismo_dia_oposicion": 0, "entre_oposicion_y_notificar": 0, "despues_de_notificar": 0}
     for a in archivos or []:
         texto = _norm(f"{a.get('Indice') or ''} {a.get('Referencia') or ''}")
         if not any(t in texto for t in GRILLA_PODER):
             continue
         f = _fecha_valida(a.get("Fecha") or "")
-        if not f:
+        if not f or (desde and f < desde):
             continue
-        if f in fechas_opo:
-            out["mismo_dia"] += 1
-        elif f > max(fechas_opo):
-            out["posterior"] += 1
-        elif f >= min(fechas_opo):
-            out["mismo_dia"] += 1  # entre dos oposiciones: se trata como acompañante de una
+        if f in dias_oposicion:
+            out["mismo_dia_oposicion"] += 1
+        elif notificacion and f >= notificacion:
+            out["despues_de_notificar"] += 1
         else:
-            out["anterior"] += 1
+            out["entre_oposicion_y_notificar"] += 1
     return out
 
 
@@ -118,7 +114,9 @@ def main():
     cambios = collections.Counter()
     vocabulario = collections.Counter()
     señales_n = collections.Counter()
-    poder_actas = poder_con_rep_titular = poder_mismo_dia = poder_posterior = 0
+    # por grupo de poder: actas, con representante del titular en el expediente, y las que no
+    grupos = {g: {"actas": 0, "con_rep": 0, "sin_rep": []} for g in
+              ("mismo_dia_oposicion", "entre_oposicion_y_notificar", "despues_de_notificar")}
     topadas = sin_consulta = error_lectura = revisadas = 0
 
     for i, fila in enumerate(actas, 1):
@@ -154,16 +152,25 @@ def main():
         cambios[(viejo, nuevo)] += 1
 
         desde = min([o["presentacion"] for o in exp.get("oposiciones", []) if o["presentacion"]], default=None) or pub
-        sen = _senales_grilla(archivos, desde)
+        notif_exp = min([o["notificacion"] for o in exp.get("oposiciones", []) if o["notificacion"]], default=None)
+        presentaciones = [o["presentacion"] for o in exp.get("oposiciones", []) if o["presentacion"]]
+        sen = _senales_grilla(archivos, desde, notif_exp, presentaciones)
         activas = [k for k in ("trabajando", "desistio", "poder", "notificada") if sen[k]]
         for k in activas:
             señales_n[k] += 1
-        pg = poder_en_grilla(archivos, pub)
-        if sen["poder"]:
-            poder_actas += 1
-            poder_con_rep_titular += int(titular_con_representante(exp))
-            poder_mismo_dia += int(pg["mismo_dia"] > 0)
-            poder_posterior += int(pg["posterior"] > 0)
+        referencia = min([f for f in (sen["fecha_notificacion"], notif_exp) if f], default=None)
+        dias_opo = set(presentaciones) | {
+            _fecha_valida(a.get("Fecha") or "") for a in archivos if es_presentacion_oposicion(a)}
+        dias_opo.discard(None)
+        pg = poder_en_grilla(archivos, desde, referencia, dias_opo)
+        tiene_rep = titular_con_representante(exp)
+        for g, n in pg.items():
+            if n:
+                grupos[g]["actas"] += 1
+                if tiene_rep:
+                    grupos[g]["con_rep"] += 1
+                else:
+                    grupos[g]["sin_rep"].append(acta)
 
         hay_opo = nuevo != "sin_oposicion" or bool(fila["tuvo_oposicion"]) or bool(buscar_fila_oposicion(archivos, pub))
         if hay_opo:
@@ -191,10 +198,19 @@ def main():
     for (v, n), c in sorted(cambios.items(), key=lambda kv: (-kv[1], kv[0])):
         print(f"  {c:4d}  {v} -> {n}{'' if v == n else '   (cambia)'}")
     print("\nSeñales de la Grilla detectadas (actas con oposición):", dict(señales_n))
-    print(f"\n'Acompaña Poder'/'Ratifica Gestión' en la Grilla: {poder_actas} actas")
-    print(f"  con representante del TITULAR según el expediente: {poder_con_rep_titular}")
-    print(f"  con el poder el mismo día que una oposición (probable poder del oponente): {poder_mismo_dia}")
-    print(f"  con el poder posterior a todas las oposiciones: {poder_posterior}")
+    print("\n'Acompaña Poder'/'Ratifica Gestión' en la Grilla, por momento (actas; con representante del "
+          "titular según el expediente; sin él):")
+    etiquetas = {
+        "mismo_dia_oposicion": "el día de una oposición (poder del oponente, no descarta)",
+        "entre_oposicion_y_notificar": "entre la oposición y la notificación (hoy NO descarta)",
+        "despues_de_notificar": "después de notificar al titular (hoy SÍ descarta)",
+    }
+    for g, et in etiquetas.items():
+        d = grupos[g]
+        print(f"  {et}: {d['actas']} actas, {d['con_rep']} con representante del titular, "
+              f"{len(d['sin_rep'])} sin él")
+        if d["sin_rep"]:
+            print(f"      sin representante en el expediente (revisar a mano): {', '.join(d['sin_rep'])}")
     print(f"\nGrillas que llegan al tope de {TOPE_GRILLA} filas (la consulta no pagina): {topadas}")
     print("\nVocabulario real (Indice | Referencia) en actas con oposición, filas desde la publicación:")
     for (ind, ref), c in vocabulario.most_common(60):

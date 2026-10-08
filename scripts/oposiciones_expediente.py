@@ -49,8 +49,12 @@ tildes ni mayúsculas, ver _senales_grilla). Las "posteriores" son filas con fec
     misma fila -> contestada (atendida, sale de avisos).
   - Desistimiento: "Formula Desistimiento" (Indice o Referencia) -> levantada.
   - Gestor/apoderado: "Acompaña Poder", "Ratifica Gestión en Oposición" o
-    "Ratifica Gestión" -> con_apoderado (el lead se descarta, aunque el poder
-    pueda ser del abogado del oponente).
+    "Ratifica Gestión" -> con_apoderado (el lead se descarta), pero SOLO si es de la
+    fecha de notificación al titular o posterior y no del mismo día que la
+    presentación de una oposición: los oponentes acompañan su poder junto con su
+    oposición (acta 4759596). Un poder entre la oposición y la notificación no
+    descarta por ahora (puede ser de un gestor del titular: se mide con
+    diagnostico_oposiciones.py).
   - Oposición: "Recibo de Ingreso" + "Opo. de Marcas" (confirmado) = alguien se opuso.
 
 Qué cuenta y qué no (casos reales 05/10/2026, actas 4688778, 4726688, 4748835):
@@ -102,6 +106,7 @@ TERMINOS_CONTESTACION = ("CONTEST",)
 GRILLA_TRABAJANDO = ("RECIBO DE INGRESO", "ESCRITOS DE MARCAS")  # Indice y Referencia, misma fila
 GRILLA_DESISTIMIENTO = "FORMULA DESISTIMIENTO"                    # Indice o Referencia
 GRILLA_PODER = ("ACOMPANA PODER", "RATIFICA GESTION EN OPOSICION", "RATIFICA GESTION")
+GRILLA_OPOSICION = ("RECIBO DE INGRESO", "OPO. DE MARCAS")      # Indice y Referencia: alguien se opuso
 GRILLA_NOTIF_VISTA = "VISTA DE MARCAS"                            # fila...
 GRILLA_NOTIF_CEDULA = "CEDULA DE NOTIFICACION"                    # ...seguida de esta
 
@@ -236,16 +241,36 @@ def _norm(texto) -> str:
     return " ".join(sin_tildes.upper().split())
 
 
-def _senales_grilla(archivos: list[dict], desde: str | None) -> dict:
+def es_presentacion_oposicion(fila: dict) -> bool:
+    """Fila de la Grilla que es la presentación de una oposición: Indice "Recibo de
+    Ingreso" y Referencia "Opo. de Marcas" (confirmado). Más estricta que buscar "OPO"
+    suelto, que también matchea "Ratifica Gestión en OPOsición"."""
+    return (GRILLA_OPOSICION[0] in _norm(fila.get("Indice"))
+            and GRILLA_OPOSICION[1] in _norm(fila.get("Referencia")))
+
+
+def _senales_grilla(
+    archivos: list[dict], desde: str | None, notificacion_expediente: str | None = None,
+    presentaciones_expediente=(),
+) -> dict:
     """Señales de la Grilla Digital posteriores a `desde` (presentación de la
     oposición), con las combinaciones exactas de GRILLA_* arriba:
       trabajando  -- Indice "Recibo de Ingreso" + Referencia "Escritos de Marcas"
       desistio    -- "Formula Desistimiento" (en Indice o Referencia)
-      poder       -- "Acompaña Poder", "Ratifica Gestión en Oposición" o "Ratifica Gestión"
+      poder       -- "Acompaña Poder", "Ratifica Gestión en Oposición" o "Ratifica Gestión",
+                     solo si es de la fecha de notificación al titular o posterior y NO
+                     del mismo día que la presentación de una oposición
       notificada  -- filas vecinas "Vista de Marcas" y "Cédula de Notificación"
-                     (fecha_notificacion = la de la cédula).
+                     (fecha_notificacion = la de la primera cédula).
     Cada columna (Indice, Referencia) se compara por "contiene": INPI a veces
-    agrega texto extra a la celda."""
+    agrega texto extra a la celda.
+
+    Por qué el poder exige notificación previa y no ser del día de una oposición
+    (acta 4759596, 08/10/2026): los oponentes acompañan SU poder junto con la
+    oposición, el mismo día y antes de que INPI se la notifique al titular; el del
+    titular o su gestor llega después, para contestar. Sin notificación conocida (ni
+    en la Grilla ni en el expediente) el poder no descarta: ahí manda el
+    AGENTE/CARACTER del titular en el expediente."""
     filas = []
     for a in archivos or []:
         f = _fecha_valida(a.get("Fecha") or "")
@@ -258,19 +283,31 @@ def _senales_grilla(archivos: list[dict], desde: str | None) -> dict:
 
     # La Grilla viene con lo más nuevo arriba (la cédula aparece ANTES que su vista),
     # así que el par se busca en filas vecinas en cualquier orden. La fecha de
-    # notificación es la de la cédula.
-    notificada, fecha_notificacion = False, None
+    # notificación es la de la cédula (la más antigua si hay varias).
+    fechas = [_fecha_valida(a.get("Fecha") or "") for a in filas]
+    notificada, fechas_cedula = False, []
     for k in range(len(filas) - 1):
         for vista, cedula in ((k, k + 1), (k + 1, k)):
             if GRILLA_NOTIF_VISTA in indices[vista] and GRILLA_NOTIF_CEDULA in indices[cedula]:
                 notificada = True
-                fecha_notificacion = _fecha_valida(filas[cedula].get("Fecha") or "") or fecha_notificacion
+                if fechas[cedula]:
+                    fechas_cedula.append(fechas[cedula])
+    fecha_notificacion = min(fechas_cedula, default=None)
+
+    # Un poder solo descarta si es de la notificación al titular o posterior, y no
+    # del mismo día que la presentación de una oposición (poder del oponente).
+    referencia = min([f for f in (fecha_notificacion, notificacion_expediente) if f], default=None)
+    dias_oposicion = {f for a, f in zip(filas, fechas) if f and es_presentacion_oposicion(a)}
+    dias_oposicion.update(f for f in presentaciones_expediente if f)
+    poder = bool(referencia) and any(
+        term in t and f and f >= referencia and f not in dias_oposicion
+        for t, f in zip(textos, fechas) for term in GRILLA_PODER)
 
     return {
         "trabajando": any(GRILLA_TRABAJANDO[0] in i and GRILLA_TRABAJANDO[1] in r
                           for i, r in zip(indices, referencias)),
         "desistio": any(GRILLA_DESISTIMIENTO in t for t in textos),
-        "poder": any(term in t for t in textos for term in GRILLA_PODER),
+        "poder": poder,
         "notificada": notificada,
         "fecha_notificacion": fecha_notificacion,
     }
@@ -331,7 +368,9 @@ def clasificar_estado_oposicion(
         desde = (min([x["presentacion"] for x in opos if x["presentacion"]], default=None)
                  or _fecha_valida((fila_opo_grilla or {}).get("Fecha") or "") or fecha_publicacion)
         contestada = contestacion_desde(desde)
-        senales = _senales_grilla(archivos, desde)
+        senales = _senales_grilla(
+            archivos, desde, min([x["notificacion"] for x in opos if x["notificacion"]], default=None),
+            [x["presentacion"] for x in opos])
         # Trabajando = contestación del expediente/grilla o "Recibo de Ingreso" + "Escritos de Marcas"
         trabajando = contestada or senales["trabajando"]
 

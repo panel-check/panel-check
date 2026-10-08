@@ -5,7 +5,10 @@ on:
   # Corre una vez al subir este archivo a la rama del PR; se saca antes de mergear.
   push:
     branches: ["claude/gallant-keller-514ju0"]
-    paths: [".github/workflows/diagnostico_oposiciones.yml"]
+    paths:
+      - ".github/workflows/diagnostico_oposiciones.yml"
+      - "scripts/diagnostico_oposiciones.py"
+      - "scripts/oposiciones_expediente.py"
   workflow_dispatch:
     inputs:
       dias:
