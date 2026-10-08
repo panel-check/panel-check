@@ -197,14 +197,107 @@ class Estados(unittest.TestCase):
         self.assertFalse(r["sirve"])
         self.assertTrue(r["representacion_confirmada"])
 
-    def test_poder_en_grilla_sin_agente_del_titular_es_ambiguo_y_sigue_sirviendo(self):
-        # Caso típico: el abogado del OPONENTE acompaña su poder.
-        arch = [{"Indice": "Escrito", "Referencia": "Acompaña Poder", "Fecha": "22/09/2026"}]
+    def test_poder_en_grilla_despues_de_la_oposicion_descarta_el_lead(self):
+        # Regla del 08/10/2026: "Acompaña Poder" posterior a la oposición descarta el
+        # lead, aunque el poder sea del abogado del oponente.
+        arch = [{"Indice": "Escrito", "Referencia": "Acompaña Poder ACOMPAÑA PODER", "Fecha": "22/09/2026"}]
         r = clasificar(pagina(opos=opo(), gestion=GESTION_PARTICULAR), arch)
-        self.assertEqual(r["estado"], "sin_notificar")
+        self.assertEqual(r["estado"], "con_apoderado")
+        self.assertFalse(r["sirve"])
+        self.assertTrue(r["representacion_confirmada"])
+        self.assertFalse(r["posible_apoderado"])
+
+
+class ReglasGrilla(unittest.TestCase):
+    """Combinaciones exactas de la Grilla Digital (regla del 08/10/2026)."""
+
+    def r(self, arch, gestion=GESTION_PARTICULAR, opos=None):
+        html = pagina(opos=opo() if opos is None else opos, gestion=gestion)
+        return clasificar(html, arch)
+
+    def test_notificacion_efectiva_vista_seguida_de_cedula(self):
+        arch = [
+            {"Indice": "Recibo de Ingreso", "Referencia": "Opo. de Marcas", "Fecha": "20/09/2026"},
+            {"Indice": "Vista de Marcas", "Referencia": None, "Fecha": "25/09/2026"},
+            {"Indice": "Cédula de Notificación", "Referencia": None, "Fecha": "26/09/2026"},
+        ]
+        r = self.r(arch)
+        self.assertEqual(r["estado"], "notificada_en_plazo")
         self.assertTrue(r["sirve"])
-        self.assertTrue(r["posible_apoderado"])
-        self.assertFalse(r["representacion_confirmada"])
+        self.assertEqual(r["notificacion"], "2026-09-26")
+
+    def test_cedula_no_consecutiva_no_notifica(self):
+        arch = [
+            {"Indice": "Recibo de Ingreso", "Referencia": "Opo. de Marcas", "Fecha": "20/09/2026"},
+            {"Indice": "Vista de Marcas", "Referencia": None, "Fecha": "25/09/2026"},
+            {"Indice": "Otro", "Referencia": None, "Fecha": "25/09/2026"},
+            {"Indice": "Cédula de Notificación", "Referencia": None, "Fecha": "26/09/2026"},
+        ]
+        self.assertEqual(self.r(arch)["estado"], "sin_notificar")
+
+    def test_par_anterior_a_la_presentacion_no_notifica(self):
+        arch = [
+            {"Indice": "Vista de Marcas", "Referencia": None, "Fecha": "10/09/2026"},
+            {"Indice": "Cédula de Notificación", "Referencia": None, "Fecha": "11/09/2026"},
+            {"Indice": "Recibo de Ingreso", "Referencia": "Opo. de Marcas", "Fecha": "20/09/2026"},
+        ]
+        self.assertEqual(self.r(arch)["estado"], "sin_notificar")
+
+    def test_recibo_mas_escritos_descarta_como_atendida(self):
+        arch = [
+            {"Indice": "Recibo de Ingreso", "Referencia": "Opo. de Marcas", "Fecha": "20/09/2026"},
+            {"Indice": "Recibo de Ingreso", "Referencia": "Escritos de Marcas", "Fecha": "28/09/2026"},
+        ]
+        r = self.r(arch)
+        self.assertEqual(r["estado"], "contestada")
+        self.assertFalse(r["sirve"])
+
+    def test_recibo_solo_no_descarta(self):
+        arch = [
+            {"Indice": "Recibo de Ingreso", "Referencia": "Opo. de Marcas", "Fecha": "20/09/2026"},
+            {"Indice": "Recibo de Ingreso", "Referencia": "Otra cosa", "Fecha": "28/09/2026"},
+        ]
+        self.assertEqual(self.r(arch)["estado"], "sin_notificar")
+
+    def test_formula_desistimiento_es_levantada(self):
+        arch = [
+            {"Indice": "Recibo de Ingreso", "Referencia": "Opo. de Marcas", "Fecha": "20/09/2026"},
+            {"Indice": "Formula Desistimiento", "Referencia": "FORMULA DESISTIMIENTO", "Fecha": "28/09/2026"},
+        ]
+        r = self.r(arch)
+        self.assertEqual(r["estado"], "levantada")
+        self.assertFalse(r["sirve"])
+
+    def test_palabras_sueltas_no_son_desistimiento_ni_poder(self):
+        arch = [
+            {"Indice": "Recibo de Ingreso", "Referencia": "Opo. de Marcas", "Fecha": "20/09/2026"},
+            {"Indice": "Escrito", "Referencia": "Levantamiento de vista", "Fecha": "22/09/2026"},
+            {"Indice": "Escrito", "Referencia": "Poder del abogado", "Fecha": "23/09/2026"},
+        ]
+        self.assertEqual(self.r(arch)["estado"], "sin_notificar")
+
+    def test_ratifica_gestion_en_oposicion_descarta(self):
+        arch = [
+            {"Indice": "Recibo de Ingreso", "Referencia": "Opo. de Marcas", "Fecha": "20/09/2026"},
+            {"Indice": "Ratifica Gestión en Oposición", "Referencia": "RATIFICA GESTIÓN EN OPOSICIÓN", "Fecha": "24/09/2026"},
+        ]
+        r = self.r(arch)
+        self.assertEqual(r["estado"], "con_apoderado")
+        self.assertFalse(r["sirve"])
+
+    def test_ratifica_gestion_descarta(self):
+        arch = [
+            {"Indice": "Recibo de Ingreso", "Referencia": "Opo. de Marcas", "Fecha": "20/09/2026"},
+            {"Indice": "Ratifica Gestión", "Referencia": None, "Fecha": "24/09/2026"},
+        ]
+        self.assertEqual(self.r(arch)["estado"], "con_apoderado")
+
+    def test_poder_anterior_a_la_oposicion_no_descarta(self):
+        arch = [
+            {"Indice": "Escrito", "Referencia": "Acompaña Poder", "Fecha": "01/09/2026"},
+            {"Indice": "Recibo de Ingreso", "Referencia": "Opo. de Marcas", "Fecha": "20/09/2026"},
+        ]
+        self.assertEqual(self.r(arch)["estado"], "sin_notificar")
 
     def test_oposicion_en_grilla_antes_de_estar_en_el_expediente(self):
         arch = [{"Indice": "Recibo de Ingreso", "Referencia": "Opo. de Marcas", "Fecha": "20/09/2026"}]

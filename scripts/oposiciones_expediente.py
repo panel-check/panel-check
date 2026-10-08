@@ -16,10 +16,10 @@ página. Campos de cada oposición, confirmados con las actas 4764327 y 4760629
     Motivo_Levantamiento, Fundamento_Levantamiento, Fecha_Publicacion
 
 Ojo: "Agente"/"Caracter" de la oposición son los del OPONENTE (su
-apoderado), no los del titular de la marca. Una fila "Acompaña Poder" en la
-Grilla Digital puede ser del abogado del oponente, así que NO alcanza para
-decir que el titular ya tiene representante. Lo definitivo es el bloque
-GESTION DEL TRAMITE del expediente (AGENTE/CARACTER del titular).
+apoderado), no los del titular de la marca. Lo que define que el titular tiene
+representante es el bloque GESTION DEL TRAMITE del expediente (AGENTE/CARACTER
+del titular) o una fila de poder/gestión posterior a la oposición en la Grilla
+(regla del 08/10/2026, ver abajo).
 
 Una fecha vacía viene como 01/01/0001 (/Date(-62135586000000)/): se trata
 como "sin fecha".
@@ -38,6 +38,20 @@ Estados (estado_oposicion), y si el lead "sirve" para ofrecerle ayuda:
     contestada             -- ya se presentó la contestación              no sirve
     levantada              -- oposición levantada / desistida             no sirve
     con_apoderado          -- el titular ya tiene agente/gestor           no sirve
+
+Reglas de la Grilla Digital (acordadas el 08/10/2026; combinaciones EXACTAS, sin
+tildes ni mayúsculas, ver _senales_grilla). Las "posteriores" son filas con fecha
+≥ presentación de la oposición:
+  - Notificación efectiva: una fila "Vista de Marcas" seguida (fila inmediata) de
+    "Cédula de Notificación" -> notificada_en_plazo, si todavía no hay notificación
+    en el expediente. La fecha de notificación es la de la cédula.
+  - Trabajando: Indice "Recibo de Ingreso" y Referencia "Escritos de Marcas" en la
+    misma fila -> contestada (atendida, sale de avisos).
+  - Desistimiento: "Formula Desistimiento" (Indice o Referencia) -> levantada.
+  - Gestor/apoderado: "Acompaña Poder", "Ratifica Gestión en Oposición" o
+    "Ratifica Gestión" -> con_apoderado (el lead se descarta, aunque el poder
+    pueda ser del abogado del oponente).
+  - Oposición: "Recibo de Ingreso" + "Opo. de Marcas" (confirmado) = alguien se opuso.
 
 Qué cuenta y qué no (casos reales 05/10/2026, actas 4688778, 4726688, 4748835):
   - La tabla VISTAS del expediente es HISTÓRICA: trae las vistas administrativas
@@ -61,6 +75,7 @@ TERMINOS_CONTESTACION.
 import datetime as _dt
 import json
 import re
+import unicodedata
 
 from validar_leads import (
     BASE,
@@ -80,8 +95,15 @@ ESTADOS_CERRADOS = ("contestada", "levantada", "con_apoderado")
 
 # Términos de Grilla Digital (Indice o Referencia, en mayúsculas)
 TERMINOS_CONTESTACION = ("CONTEST",)
-TERMINOS_LEVANTAMIENTO = ("DESIST", "LEVANT", "RETIRA")
-TERMINOS_PODER = ("PODER", "RATIFICA")
+
+# Señales de la Grilla Digital con COMBINACIONES EXACTAS (acordadas el 08/10/2026).
+# Se comparan con _norm(): sin tildes, mayúsculas y espacios simples. Las palabras
+# sueltas ("LEVANT", "PODER", ...) daban falsos positivos, por eso ya no se usan.
+GRILLA_TRABAJANDO = ("RECIBO DE INGRESO", "ESCRITOS DE MARCAS")  # Indice y Referencia, misma fila
+GRILLA_DESISTIMIENTO = "FORMULA DESISTIMIENTO"                    # Indice o Referencia
+GRILLA_PODER = ("ACOMPANA PODER", "RATIFICA GESTION EN OPOSICION", "RATIFICA GESTION")
+GRILLA_NOTIF_VISTA = "VISTA DE MARCAS"                            # fila...
+GRILLA_NOTIF_CEDULA = "CEDULA DE NOTIFICACION"                    # ...seguida de esta
 
 _ANIO_MINIMO = 1990  # INPI manda 01/01/0001 cuando el campo está vacío
 
@@ -207,6 +229,47 @@ def _filas_grilla_posteriores(archivos: list[dict], terminos, desde: str | None)
     return filas
 
 
+def _norm(texto) -> str:
+    """Texto para comparar con la Grilla: sin tildes, en mayúsculas y con espacios simples."""
+    sin_tildes = "".join(c for c in unicodedata.normalize("NFKD", texto or "")
+                         if not unicodedata.combining(c))
+    return " ".join(sin_tildes.upper().split())
+
+
+def _senales_grilla(archivos: list[dict], desde: str | None) -> dict:
+    """Señales de la Grilla Digital posteriores a `desde` (presentación de la
+    oposición), con las combinaciones exactas de GRILLA_* arriba:
+      trabajando  -- Indice "Recibo de Ingreso" + Referencia "Escritos de Marcas"
+      desistio    -- "Formula Desistimiento" (en Indice o Referencia)
+      poder       -- "Acompaña Poder", "Ratifica Gestión en Oposición" o "Ratifica Gestión"
+      notificada  -- fila "Vista de Marcas" seguida de "Cédula de Notificación"
+                     (fecha_notificacion = la de la cédula)."""
+    filas = []
+    for a in archivos or []:
+        f = _fecha_valida(a.get("Fecha") or "")
+        if desde and (not f or f < desde):
+            continue
+        filas.append(a)
+    indices = [_norm(a.get("Indice")) for a in filas]
+    referencias = [_norm(a.get("Referencia")) for a in filas]
+    textos = [f"{i} {r}" for i, r in zip(indices, referencias)]
+
+    notificada, fecha_notificacion = False, None
+    for k in range(len(filas) - 1):
+        if indices[k] == GRILLA_NOTIF_VISTA and indices[k + 1] == GRILLA_NOTIF_CEDULA:
+            notificada = True
+            fecha_notificacion = _fecha_valida(filas[k + 1].get("Fecha") or "") or fecha_notificacion
+
+    return {
+        "trabajando": any(i == GRILLA_TRABAJANDO[0] and r == GRILLA_TRABAJANDO[1]
+                          for i, r in zip(indices, referencias)),
+        "desistio": any(GRILLA_DESISTIMIENTO in t for t in textos),
+        "poder": any(term in t for t in textos for term in GRILLA_PODER),
+        "notificada": notificada,
+        "fecha_notificacion": fecha_notificacion,
+    }
+
+
 def _fmt(iso: str | None) -> str:
     return f"{iso[8:10]}/{iso[5:7]}/{iso[:4]}" if iso else "—"
 
@@ -244,6 +307,7 @@ def clasificar_estado_oposicion(
     base = {"estado": "sin_oposicion", "sirve": None, "detalle": "", "presentacion": None,
             "notificacion": None, "vencimiento": None, "levantamiento": None,
             "agente_oponente": None, "posible_apoderado": False, "representacion_confirmada": False}
+    senales = _senales_grilla([], None)  # se llena solo si hay oposición
 
     def contestacion_desde(desde: str | None) -> bool:
         """¿Hay una contestación POSTERIOR a `desde`? Las anteriores son de un
@@ -261,24 +325,33 @@ def clasificar_estado_oposicion(
         desde = (min([x["presentacion"] for x in opos if x["presentacion"]], default=None)
                  or _fecha_valida((fila_opo_grilla or {}).get("Fecha") or "") or fecha_publicacion)
         contestada = contestacion_desde(desde)
-        levantada_grilla = bool(_filas_grilla_posteriores(archivos, TERMINOS_LEVANTAMIENTO, desde))
+        senales = _senales_grilla(archivos, desde)
+        # Trabajando = contestación del expediente/grilla o "Recibo de Ingreso" + "Escritos de Marcas"
+        trabajando = contestada or senales["trabajando"]
 
         def estado_de(x):
-            if x["levantamiento"] or levantada_grilla:
+            if x["levantamiento"] or senales["desistio"]:
                 return "levantada"
-            if contestada:
+            if trabajando:
                 return "contestada"
             if x["vencimiento"]:
                 return "plazo_vencido" if x["vencimiento"] < hoy_iso else "notificada_en_plazo"
-            if x["notificacion"]:
+            # Notificación efectiva: "Vista de Marcas" seguida de "Cédula de Notificación"
+            if x["notificacion"] or senales["notificada"]:
                 return "notificada_en_plazo"
             return "sin_notificar"
 
         orden = ("notificada_en_plazo", "sin_notificar", "plazo_vencido", "contestada", "levantada")
         if opos:
             estado, o = sorted(((estado_de(x), x) for x in opos), key=lambda p: orden.index(p[0]))[0]
+        elif senales["desistio"]:
+            estado = "levantada"
+        elif trabajando:
+            estado = "contestada"
+        elif senales["notificada"]:
+            estado = "notificada_en_plazo"
         else:
-            estado = "contestada" if contestada else "levantada" if levantada_grilla else "oposicion_sin_detalle"
+            estado = "oposicion_sin_detalle"
     else:
         # ---- sin oposición: solo importa una vista de oficio SIN contestar
         # (la tabla del expediente manda; la fila de la Grilla es el respaldo
@@ -296,14 +369,12 @@ def clasificar_estado_oposicion(
         else:
             return base  # sin oposición, y las vistas que hubo ya están contestadas o son viejas
 
-    # Representación del titular: lo definitivo es GESTION DEL TRAMITE. Una fila
-    # de poder en la Grilla sola puede ser del abogado del oponente.
+    # Representación del titular: GESTION DEL TRAMITE del expediente, o una fila
+    # de poder/gestión posterior a la oposición en la Grilla Digital (regla acordada
+    # el 08/10/2026: descarta el lead aunque el poder pueda ser del oponente).
     confirmada = titular_con_representante(exp)
-    posible = False
-    if not confirmada:
-        posible = bool(_filas_grilla_posteriores(
-            archivos, TERMINOS_PODER, (o or {}).get("presentacion") or fecha_publicacion))
-    if confirmada:
+    representacion = confirmada or senales["poder"]
+    if representacion:
         estado = "con_apoderado"
 
     res = dict(base)
@@ -311,12 +382,12 @@ def clasificar_estado_oposicion(
         "estado": estado,
         "sirve": estado in ESTADOS_QUE_SIRVEN,
         "presentacion": o["presentacion"] if o else None,
-        "notificacion": o["notificacion"] if o else extra.get("notificacion"),
+        "notificacion": (o["notificacion"] if o else extra.get("notificacion")) or senales["fecha_notificacion"],
         "vencimiento": o["vencimiento"] if o else extra.get("vencimiento"),
         "levantamiento": o["levantamiento"] if o else None,
         "agente_oponente": o["agente_oponente"] if o else None,
-        "posible_apoderado": posible,
-        "representacion_confirmada": confirmada,
+        "posible_apoderado": False,  # ya no hay caso ambiguo: el poder de la Grilla descarta
+        "representacion_confirmada": representacion,
     })
     res["detalle"] = _detalle_legible(res, exp, hoy_iso)
     return res
@@ -337,8 +408,11 @@ def _detalle_legible(r: dict, exp: dict, hoy_iso: str = '') -> str:
     elif e == "levantada":
         t = f"Oposición levantada{' el ' + _fmt(r['levantamiento']) if r['levantamiento'] else ''}."
     elif e == "con_apoderado":
-        t = (f"El titular ya tiene representante ({(exp.get('titular_caracter') or 'agente').strip()}"
-             f"{', matrícula ' + exp['titular_matricula'] if exp.get('titular_matricula') else ''}).")
+        if titular_con_representante(exp):
+            t = (f"El titular ya tiene representante ({(exp.get('titular_caracter') or 'agente').strip()}"
+                 f"{', matrícula ' + exp['titular_matricula'] if exp.get('titular_matricula') else ''}).")
+        else:
+            t = "Ya hay un gestor/apoderado trabajando la oposición (poder o gestión posterior en la Grilla Digital)."
     elif e == "vista_pendiente":
         if r["notificacion"] and r["vencimiento"]:
             t = (f"Vista de INPI notificada el {_fmt(r['notificacion'])}, sin contestar: el titular tiene hasta el "
@@ -350,8 +424,6 @@ def _detalle_legible(r: dict, exp: dict, hoy_iso: str = '') -> str:
         t = "Oposición detectada en Grilla Digital; el expediente todavía no la lista en OPOSICIONES."
     else:
         t = ""
-    if r["posible_apoderado"]:
-        t += " Ojo: aparece un poder en la Grilla Digital, pero el titular figura sin agente (puede ser del oponente)."
     if r["agente_oponente"]:
         t += f" Agente del oponente: {r['agente_oponente']}."
     return t

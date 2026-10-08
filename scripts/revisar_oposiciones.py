@@ -13,20 +13,26 @@ Estado de la oposición (estado_oposicion; ver oposiciones_expediente.py):
     vista_pendiente      vista de oficio de INPI sin contestar
     oposicion_sin_detalle  la Grilla Digital la muestra pero el expediente todavía no
   NO SIRVEN (ya se está trabajando o ya no hay nada que hacer):
-    contestada           ya hay contestación -> se marca como "atendida" (sale de los
+    contestada           ya hay contestación, o en la Grilla "Recibo de Ingreso" +
+                         "Escritos de Marcas" -> se marca como "atendida" (sale de los
                          avisos y de los pendientes del panel)
-    levantada            la oposición se levantó / se desistió -> idem
-    con_apoderado        el titular ya tiene agente/gestor según GESTION DEL TRAMITE
+    levantada            la oposición se levantó, o en la Grilla "Formula Desistimiento"
+                         -> idem
+    con_apoderado        el titular ya tiene agente/gestor según GESTION DEL TRAMITE, o
+                         en la Grilla aparece "Acompaña Poder" / "Ratifica Gestión" /
+                         "Ratifica Gestión en Oposición" después de la oposición
                          -> deja de ser lead (es_lead = false)
 
-Cuando el expediente muestra que el titular sumó un apoderado/gestor, el lead
-pasa a es_lead = false con carácter "Apoderado/gestor (se sumó tras la
-oposición)": deja de ser un posible cliente, sale de la lista de leads y ya no
-se vuelve a revisar. Antes esto se decidía por una fila "Acompaña Poder" de la
-Grilla Digital, pero esa fila puede ser del abogado del OPONENTE; ahora el dato
-definitivo es el AGENTE/CARACTER del titular en el expediente. Una fila de poder
-sin agente del titular queda como "posible apoderado" (oposicion_posible_apoderado)
-y el lead sigue vigente.
+Notificación efectiva (regla del 08/10/2026): una fila "Vista de Marcas" seguida de
+"Cédula de Notificación" en la Grilla marca la oposición como notificada
+(notificada_en_plazo), aunque el expediente todavía no la tenga cargada.
+
+Cuando el lead pasa a "con apoderado" (por el expediente o por un poder de la
+Grilla posterior a la oposición), queda con es_lead = false y carácter "Apoderado/gestor
+(se sumó tras la oposición)": deja de ser un posible cliente, sale de la lista de
+leads y ya no se vuelve a revisar. Antes un poder de la Grilla sin agente del titular
+quedaba como "posible apoderado" y seguía vigente; ahora descarta el lead, porque el
+poder puede ser del abogado del oponente y así lo acordó el equipo.
 
 Esquema de revisión (días contados desde fecha_publicacion de ESE expediente):
   - HITOS: a los 10, 23 y 33 días se hace una revisión de cada lead. Muchas
