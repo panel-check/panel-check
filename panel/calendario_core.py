@@ -270,6 +270,18 @@ def crear_tablas(cur):
         """
     )
     cur.execute("CREATE INDEX IF NOT EXISTS idx_calendario_disponibilidad_fecha ON calendario_disponibilidad(fecha)")
+    # Días sin reuniones (feriado, cumpleaños de Pame…): un día entero que no se ofrece.
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS calendario_dias_cerrados (
+            id          BIGSERIAL PRIMARY KEY,
+            fecha       DATE NOT NULL UNIQUE,
+            motivo      TEXT NOT NULL DEFAULT '',
+            creado_por  TEXT,
+            creado_en   TIMESTAMPTZ NOT NULL DEFAULT now()
+        )
+        """
+    )
     # Mail diario «AGENDA» de las 20 hs: una fila por día de la agenda (el de mañana), para no mandarlo dos veces.
     cur.execute(
         """
@@ -1968,6 +1980,16 @@ _RE_HOY = re.compile(r"\bhoy\b")
 _RE_MANANA = re.compile(r"(?<!\bla\s)\bmanana\b")
 _RE_DIA_SEMANA = re.compile(
     rf"\b(?:(?:el|este|esta|proximo|proxima|siguiente)\s+){{0,2}}({_DIAS_RE})\b(?:\s+(?:que\s+viene|proximo|siguiente))?")
+# «miércoles 14»: el día de la semana con el número del día del mes (no «martes 8 a 15», que es un horario).
+_RE_DIA_Y_NUMERO = re.compile(
+    rf"\b({_DIAS_RE})\s+(\d{{1,2}})\b(?!\s*(?:[:/.\d]|hs?\b|(?:a|al|hasta)\s+\d|-\s*\d|y\s+\d))")
+# Días sin reuniones: «feriado», «no hay reuniones», «sin reuniones», «cerrado», «no podemos»…
+_RE_CIERRE_FRASE = re.compile(
+    r"\b(?:no\s+(?:hay|habra|tenemos|tengo|tiene|podemos|puedo|puede|atiende|atendemos|trabaja|trabajamos|estamos|estoy|esta)"
+    r"(?:\s+(?:reuniones?|disponibilidad|horarios?|turnos?|llamadas?|lugar|nada|ninguna))?"
+    r"|sin\s+(?:reuniones?|disponibilidad|horarios?|turnos?|llamadas?)"
+    r"|no\s+agendar|no\s+agendemos|ocupad[oa]\s+todo\s+el\s+dia)\b")
+_RE_CIERRE_MOTIVO = re.compile(r"\b(?:feriado|cerrad[oa]|no\s+laborable)\b")
 _RE_EL_NUMERO = re.compile(r"\bel\s+(\d{1,2})\b(?!\s*(?:[:/.]|hs?\b|(?:a|al|hasta)\s+\d|-\s*\d))")
 
 
@@ -2051,6 +2073,22 @@ def interpretar_disponibilidad(texto: str, hoy: _dt.date) -> dict:
             delta = 7
         return hoy + _dt.timedelta(days=delta)
 
+    def dia_con_numero(m):
+        objetivo, numero = _DIAS_SIN_TILDE[m.group(1)], int(m.group(2))
+        if not 1 <= numero <= 31:
+            return None
+        d = _proximo_dia_del_mes(hoy, numero)
+        if d.weekday() != objetivo:
+            adv.append(f"«{m.group(0).strip()}»: el {numero} cae {DIAS_SEMANA[d.weekday()]}, no {DIAS_SEMANA[objetivo]}. Revisá la fecha.")
+        return d
+
+    tomar(_RE_DIA_Y_NUMERO, dia_con_numero, "fecha")
+    # Las frases que cierran el día se sacan del texto (quedan sus posiciones); «feriado» se deja: es el motivo.
+    for m in list(_RE_CIERRE_FRASE.finditer(t)):
+        tokens.append((m.start(), "cierre", m.end()))
+        t = t[:m.start()] + " " * (m.end() - m.start()) + t[m.end():]
+    for m in _RE_CIERRE_MOTIVO.finditer(t):
+        tokens.append((m.start(), "cierre", m.end()))
     tomar(_RE_DIA_SEMANA, dia_semana, "semana")
     tomar(_RE_EL_NUMERO, lambda m: _proximo_dia_del_mes(hoy, int(m.group(1))) if 1 <= int(m.group(1)) <= 31 else None)
 
@@ -2080,24 +2118,63 @@ def interpretar_disponibilidad(texto: str, hoy: _dt.date) -> dict:
     grupos = []
     for tok in tokens:
         if tok[1] == "dia":
-            if not grupos or grupos[-1]["rangos"]:
-                grupos.append({"dias": [], "rangos": []})
+            if not grupos or grupos[-1]["rangos"] or (grupos[-1]["cierre"] and grupos[-1]["dias"] and not grupos[-1].get("antes")):
+                grupos.append({"dias": [], "rangos": [], "cierre": False})
             if tok[2] not in grupos[-1]["dias"]:
                 grupos[-1]["dias"].append(tok[2])
+        elif tok[1] == "cierre":
+            if not grupos:
+                grupos.append({"dias": [], "rangos": [], "cierre": False})
+            if not grupos[-1]["cierre"] and not grupos[-1]["dias"]:
+                grupos[-1]["antes"] = True   # «sin reuniones el lunes y el jueves»: los días vienen después
+            grupos[-1]["cierre"] = True
+            grupos[-1]["fin"] = tok[2]
         else:
             if not grupos:
-                grupos.append({"dias": [], "rangos": []})
+                grupos.append({"dias": [], "rangos": [], "cierre": False})
             grupos[-1]["rangos"].append((tok[2], tok[3]))
-    # «de 8 a 15 el martes»: el horario vino antes del día.
+    # «de 8 a 15 el martes» / «sin reuniones el lunes»: el horario (o el cierre) vino antes del día.
     unidos = []
     for g in grupos:
-        if unidos and not unidos[-1]["dias"] and unidos[-1]["rangos"] and g["dias"] and not g["rangos"]:
+        if (unidos and not unidos[-1]["dias"] and (unidos[-1]["rangos"] or unidos[-1]["cierre"])
+                and g["dias"] and not g["rangos"] and not g["cierre"]):
             unidos[-1]["dias"] = g["dias"]
         else:
             unidos.append(g)
 
     ventanas, vistos = [], set()
+    cierres, cerrados = [], set()
+    palabras = {}
+    for w in re.findall(r"\w+", texto or ""):
+        palabras.setdefault(_sin_tildes(w), w)
     for g in unidos:
+        if g["cierre"]:
+            if not g["dias"]:
+                adv.append("Dice que no hay reuniones pero no encontré qué día: escribilo con el día o la fecha (por ejemplo «lunes 12/10 feriado»).")
+                continue
+            if g["rangos"]:
+                adv.append(f"{', '.join(_etiqueta_dia(d) for d in g['dias'])}: dice que no hay reuniones y también un horario; tomé que no hay reuniones.")
+            # El motivo es lo que quedó escrito en esa oración sin las fechas ni las frases del cierre.
+            ini = max([m.end() for m in re.finditer(r"[.;\n]", t[:g["fin"]])] or [0])
+            sig = re.search(r"[.;\n]", t[g["fin"]:])
+            sin_horarios = _RE_RANGO.sub(lambda m: " " * len(m.group(0)), t)
+            resto = sin_horarios[ini:g["fin"] + (sig.start() if sig else len(t))]
+            ws = re.findall(r"[a-z\u00f1]+", resto)
+            relleno = {"el", "la", "los", "las", "de", "del", "que", "es", "y", "e", "por", "hay", "dia", "ya", "porque", "a", "al"}
+            while ws and ws[0] in relleno:
+                ws.pop(0)
+            while ws and ws[-1] in relleno:
+                ws.pop()
+            motivo = " ".join(palabras.get(w, w) for w in ws)
+            motivo = (motivo[:1].upper() + motivo[1:]) if motivo else ""
+            for d in g["dias"]:
+                if d < hoy:
+                    adv.append(f"{_etiqueta_dia(d)} ya pasó: no se carga.")
+                elif d not in cerrados:
+                    cerrados.add(d)
+                    cierres.append({"fecha": d.isoformat(), "motivo": motivo,
+                                    "texto": f"{_etiqueta_dia(d)}: sin reuniones" + (f" ({motivo.lower()})" if motivo else "")})
+            continue
         if g["rangos"] and not g["dias"]:
             adv.append("Hay un horario sin día: escribí también qué día es (por ejemplo «martes de 8 a 15»).")
         elif g["dias"] and not g["rangos"]:
@@ -2115,11 +2192,13 @@ def interpretar_disponibilidad(texto: str, hoy: _dt.date) -> dict:
                 ventanas.append({"fecha": d.isoformat(), "desde": _hhmm(ini), "hasta": _hhmm(fin),
                                  "texto": f"{_etiqueta_dia(d)} de {_hora_corta(ini)} a {_hora_corta(fin)}"})
     ventanas.sort(key=lambda v: (v["fecha"], v["desde"]))
+    cierres.sort(key=lambda c: c["fecha"])
     if re.search(r"\b(?:todos\s+los|cada)\b", t):
         adv.append("Esto carga solo la próxima fecha. Para repetirlo todas las semanas, usá el botón «Repetir semanalmente».")
-    if not ventanas and not adv:
-        adv.append("No entendí. Escribilo así: «próximo martes libre de 8 a 15» o «lunes 12/10 de 9 a 13 y de 15 a 18».")
-    return {"ventanas": ventanas, "advertencias": adv}
+    if not ventanas and not cierres and not adv:
+        adv.append("No entendí. Escribilo así: «próximo martes libre de 8 a 15» o «lunes 12/10 de 9 a 13 y de 15 a 18», "
+                   "o para un día sin reuniones «lunes 12/10 feriado».")
+    return {"ventanas": ventanas, "cierres": cierres, "advertencias": adv}
 
 
 # ── Guardar y consultar la disponibilidad ─────────────────────────────
@@ -2142,13 +2221,15 @@ def _validar_ventana(v: dict, hoy: _dt.date) -> tuple:
     return fecha, ini, fin
 
 
-def guardar_disponibilidad(conexion, ventanas: list, usuario: str, repetir_semanas: int = 0, hoy: _dt.date = None) -> dict:
+def guardar_disponibilidad(conexion, ventanas: list, usuario: str, repetir_semanas: int = 0, hoy: _dt.date = None, cierres: list = None) -> dict:
     """Guarda las ventanas (una por día y tramo). Con `repetir_semanas` = N, cada una se copia además a las
-    N semanas siguientes (cada copia se puede borrar por separado). Lo que ya estaba cargado no se duplica."""
+    N semanas siguientes (cada copia se puede borrar por separado). Lo que ya estaba cargado no se duplica.
+    `cierres`: días enteros sin reuniones [{fecha, motivo}] (feriado, cumpleaños…); se repiten igual."""
     hoy = hoy or _dt.datetime.now(TZ).date()
-    if not ventanas:
+    cierres = cierres or []
+    if not ventanas and not cierres:
         raise CalendarioError("No hay ninguna disponibilidad para guardar.")
-    if len(ventanas) > 60:
+    if len(ventanas) + len(cierres) > 60:
         raise CalendarioError("Son demasiadas disponibilidades de una vez (máximo 60).")
     try:
         repetir = int(repetir_semanas or 0)
@@ -2161,7 +2242,20 @@ def guardar_disponibilidad(conexion, ventanas: list, usuario: str, repetir_seman
         fecha, ini, fin = _validar_ventana(v, hoy)
         for k in range(repetir + 1):
             filas.append((fecha + _dt.timedelta(days=7 * k), _hhmm(ini), _hhmm(fin), usuario or ""))
-    nuevas = 0
+    filas_cierre = []
+    for c in cierres:
+        try:
+            fecha = _dt.date.fromisoformat(str(c.get("fecha")))
+        except (TypeError, ValueError, AttributeError):
+            raise CalendarioError("Uno de los días sin reuniones tiene la fecha mal escrita.")
+        if fecha < hoy:
+            raise CalendarioError(f"{_etiqueta_dia(fecha)} ya pasó.")
+        if (fecha - hoy).days > 400:
+            raise CalendarioError(f"{_etiqueta_dia(fecha)} está demasiado lejos (máximo 400 días).")
+        motivo = " ".join(str(c.get("motivo") or "").split())[:120]
+        for k in range(repetir + 1):
+            filas_cierre.append((fecha + _dt.timedelta(days=7 * k), motivo, usuario or ""))
+    nuevas = nuevos_cierres = 0
     with conexion() as conn:
         with conn.cursor() as cur:
             for fila in filas:
@@ -2170,14 +2264,29 @@ def guardar_disponibilidad(conexion, ventanas: list, usuario: str, repetir_seman
                     "ON CONFLICT (fecha, desde, hasta) DO NOTHING RETURNING id", fila)
                 if cur.fetchone():
                     nuevas += 1
+            for fila in filas_cierre:
+                cur.execute(
+                    "INSERT INTO calendario_dias_cerrados (fecha, motivo, creado_por) VALUES (%s, %s, %s) "
+                    "ON CONFLICT (fecha) DO UPDATE SET motivo = EXCLUDED.motivo "
+                    "WHERE calendario_dias_cerrados.motivo IS DISTINCT FROM EXCLUDED.motivo RETURNING id", fila)
+                if cur.fetchone():
+                    nuevos_cierres += 1
         conn.commit()
-    return {"creadas": nuevas, "repetidas": len(filas) - nuevas}
+    return {"creadas": nuevas, "repetidas": len(filas) - nuevas,
+            "cerrados": nuevos_cierres, "cerrados_repetidos": len(filas_cierre) - nuevos_cierres}
 
 
 def borrar_disponibilidad(conexion, ventana_id: int) -> None:
     with conexion() as conn:
         with conn.cursor() as cur:
             cur.execute("DELETE FROM calendario_disponibilidad WHERE id = %s", (ventana_id,))
+        conn.commit()
+
+
+def borrar_dia_cerrado(conexion, cierre_id: int) -> None:
+    with conexion() as conn:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM calendario_dias_cerrados WHERE id = %s", (cierre_id,))
         conn.commit()
 
 
@@ -2197,28 +2306,36 @@ def disponibilidad_del_rango(cur, desde: _dt.date, hasta: _dt.date, ahora: _dt.d
     por_dia = {}
     for f in cur.fetchall():
         por_dia.setdefault(f["fecha"].isoformat(), []).append({"id": f["id"], "desde": f["desde"].strftime("%H:%M"), "hasta": f["hasta"].strftime("%H:%M")})
-    if not por_dia:
+    cur.execute("SELECT id, fecha, motivo FROM calendario_dias_cerrados WHERE fecha BETWEEN %s AND %s ORDER BY fecha", (desde, hasta))
+    cerrados = {f["fecha"].isoformat(): {"id": f["id"], "motivo": f["motivo"] or ""} for f in cur.fetchall()}
+    if not por_dia and not cerrados:
         return []
     eventos = [e for e in listar_eventos(cur, desde, hasta)
                if e.get("tipo") != TIPO_SEGUIMIENTO and not e.get("todo_el_dia") and e.get("hora")]
     duracion, margen = duracion_reunion(), margen_reunion()
     dias = []
-    for dia in sorted(por_dia):
-        ventanas = por_dia[dia]
+    for dia in sorted(set(por_dia) | set(cerrados)):
+        ventanas = por_dia.get(dia, [])
+        cierre = cerrados.get(dia)
         del_dia = [e for e in eventos if e["fecha"] <= dia <= e["fecha_fin"]]
         ocupados = [_ocupado_del_dia(e, dia) for e in del_dia]
         no_antes = ahora.hour * 60 + ahora.minute if dia == ahora.date().isoformat() else None
+        # Un día sin reuniones no ofrece nada, aunque tenga horarios cargados.
         r = calcular_dia([(_a_min(v["desde"]), _a_min(v["hasta"])) for v in ventanas], ocupados, duracion, margen, no_antes)
+        if cierre:
+            r = {"capacidad": 0, "libres": [], "tramos": [], "agendadas": len(del_dia)}
         d = _dt.date.fromisoformat(dia)
         libres = [_hora_corta(m) for m in r["libres"]]
         dias.append({
             "fecha": dia,
+            "cerrado": cierre,
             "ventanas": ventanas,
             "reuniones": [{"id": e["id"], "titulo": e["titulo"], "hora": e["hora"], "hora_fin": e["hora_fin"]} for e in del_dia],
             "capacidad": r["capacidad"],
             "agendadas": r["agendadas"],
             "libres": libres,
             "tramos": [{"desde": _hhmm(a), "hasta": _hhmm(b)} for a, b in r["tramos"]],
-            "texto": f"{_etiqueta_dia(d)}: " + (", ".join(libres) if libres else "sin horarios libres"),
+            "texto": f"{_etiqueta_dia(d)}: " + ("sin reuniones" + (f" ({cierre['motivo'].lower()})" if cierre["motivo"] else "")
+                                               if cierre else ", ".join(libres) if libres else "sin horarios libres"),
         })
     return dias

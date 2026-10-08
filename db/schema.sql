@@ -563,6 +563,15 @@ CREATE TABLE IF NOT EXISTS calendario_disponibilidad (
 );
 CREATE INDEX IF NOT EXISTS idx_calendario_disponibilidad_fecha ON calendario_disponibilidad(fecha);
 
+-- Días enteros sin reuniones (feriado, cumpleaños…): no se ofrecen en la vista Disponibilidad.
+CREATE TABLE IF NOT EXISTS calendario_dias_cerrados (
+    id          BIGSERIAL PRIMARY KEY,
+    fecha       DATE NOT NULL UNIQUE,
+    motivo      TEXT NOT NULL DEFAULT '',
+    creado_por  TEXT,
+    creado_en   TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 -- Mail diario «AGENDA» (20 hs, reuniones y llamadas del día siguiente): una fila por día de la agenda.
 -- omitida = ese día no había ninguna reunión ni llamada y no se mandó nada.
 CREATE TABLE IF NOT EXISTS calendario_agenda_envios (

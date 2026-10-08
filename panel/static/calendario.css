@@ -335,3 +335,8 @@ details.cal-evento.plegado > .cal-evento-acciones { margin-bottom: 12px; }
   .cal-disp-fila { flex-direction: column; }
   .cal-disp-fila .cal-btn { width: 100%; }
 }
+
+/* Día sin reuniones (feriado, cumpleaños…) en la vista Disponibilidad */
+.cal-disp-dia.cerrado { border-left-color: #8a919c; background: #f6f7f9; }
+.cal-disp-dia.cerrado .cal-disp-resumen b { color: #4b5563; }
+.cal-disp-ojo { color: #8a4600; background: #fff7e0; border-radius: 8px; padding: 6px 10px; }
