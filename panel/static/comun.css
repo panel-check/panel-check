@@ -268,6 +268,16 @@ header.app-header {
 .panel-coment-cab button:hover { background: #f1f3f6; color: var(--texto); }
 .panel-coment-cab button:focus-visible { outline: none; box-shadow: var(--foco); }
 .panel-coment iframe { flex: 1; width: 100%; border: 0; background: var(--fondo); }
+.panel-coment iframe[hidden] { display: none; }
+/* Pestañas del panel «Agendar llamada» (Agendar | Disponibilidad) */
+.panel-agenda-tabs { display: flex; gap: 4px; padding: 6px 10px 0; border-bottom: 1px solid var(--borde); flex-shrink: 0; background: #fff; }
+.panel-agenda-tabs button {
+  height: 34px; padding: 0 14px; border: 0; border-bottom: 3px solid transparent; background: none; cursor: pointer;
+  font: inherit; font-size: 13.5px; font-weight: 600; color: var(--gris); border-radius: 6px 6px 0 0;
+}
+.panel-agenda-tabs button:hover { background: #f1f3f6; color: var(--texto); }
+.panel-agenda-tabs button[aria-selected="true"] { color: var(--azul); border-bottom-color: var(--azul); }
+.panel-agenda-tabs button:focus-visible { outline: none; box-shadow: var(--foco); }
 .app-header .nav-ico {
   width: 17px;
   height: 17px;

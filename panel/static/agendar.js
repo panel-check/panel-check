@@ -40,6 +40,21 @@ function abrirFormulario() {
   calAbrirModal({ embebido: true, alGuardar: (r) => { if (r && r.evento) resumenAgendado(r); abrirFormulario(); window.scrollTo({ top: 0, behavior: "smooth" }); } });
 }
 
+// Desde la pestaña «Disponibilidad» del panel lateral: tocar un horario libre completa el día y la hora del formulario.
+window.addEventListener("message", (ev) => {
+  if (ev.origin !== location.origin || !ev.data || ev.data.tipo !== "completar-turno") return;
+  const { fecha, hora } = ev.data;
+  if (!document.getElementById("mc-fecha")) return;
+  document.getElementById("mc-fecha").value = fecha;
+  document.getElementById("mc-fecha").dispatchEvent(new Event("change"));
+  document.getElementById("mc-todo").checked = false;
+  if (typeof _calPintarTodoElDia === "function") _calPintarTodoElDia();
+  document.getElementById("mc-hora").value = hora;
+  document.getElementById("mc-hora").dispatchEvent(new Event("input"));
+  document.getElementById("mc-dur").value = "30";
+  document.getElementById("mc-hora").focus();
+});
+
 (async function iniciar() {
   let estado = null;
   try { estado = await api("/api/calendario/estado"); } catch (_) {}

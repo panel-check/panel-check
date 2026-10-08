@@ -6,10 +6,23 @@
 <title>Calendario — Kom Marcas Inpi</title>
 <link rel="icon" type="image/png" href="/static/favicon.png" />
 <link rel="apple-touch-icon" href="/static/apple-touch-icon.png" />
-<link rel="stylesheet" href="/static/comun.css?v=logo1" />
-<link rel="stylesheet" href="/static/calendario.css?v=7" />
+<link rel="stylesheet" href="/static/comun.css?v=logo2" />
+<link rel="stylesheet" href="/static/calendario.css?v=8" />
 <script src="/static/sesion.js" defer></script>
-<script src="/static/menu.js?v=tel1" defer></script>
+<script>
+  // Dentro del panel lateral de 📞 (menu.js, pestaña «Disponibilidad»): sin barra de arriba, sin el estado de la
+  // conexión ni los botones de vista, y con los links abriendo en la ventana principal.
+  if (new URLSearchParams(location.search).get("embebido") === "1") {
+    document.documentElement.classList.add("embebido");
+    document.write('<base target="_top">');
+  } else {
+    document.write('<script src="/static/menu.js?v=tel2" defer><\/script>');
+  }
+</script>
+<style>
+  html.embebido .app-header, html.embebido #cal-estado, html.embebido #cal-aviso, html.embebido #cal-barra { display: none !important; }
+  html.embebido .cal-pagina { padding: 10px 10px 24px; max-width: none; }
+</style>
 </head>
 <body>
 
@@ -74,6 +87,6 @@
 
 <script src="/static/comun.js?v=sec1"></script>
 <script src="/static/calendario_comun.js?v=8"></script>
-<script src="/static/calendario.js?v=7"></script>
+<script src="/static/calendario.js?v=8"></script>
 </body>
 </html>

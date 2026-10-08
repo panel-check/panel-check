@@ -291,10 +291,17 @@
     </div>`;
   }
 
+  // Pantallas que siempre están en el ⚡ (no son búsquedas guardadas: son links fijos para todo el equipo).
+  const PANTALLAS_RAPIDAS = [{ nombre: "🗓 Disponibilidad", href: "/disponibilidad", titulo: "Los horarios libres para agendar reuniones" }];
+  function pantallasRapidas() {
+    return `<div class="acceso-titulo">Pantallas</div>` + PANTALLAS_RAPIDAS.map((p) =>
+      `<div class="acceso"><a class="acceso-link" href="${esc(p.href)}" role="menuitem" title="${esc(p.titulo)}"><span class="acceso-nombre">${esc(p.nombre)}</span></a></div>`).join("");
+  }
+
   function renderAccesos() {
     const d = acc.datos;
-    if (!d) { acc.menu.innerHTML = '<div class="acceso-vacio">Cargando…</div>'; return; }
-    let html = "";
+    if (!d) { acc.menu.innerHTML = pantallasRapidas() + '<div class="acceso-vacio">Cargando…</div>'; return; }
+    let html = pantallasRapidas();
     if (d.propios.length) {
       html += `<div class="acceso-titulo">Mis accesos</div>` + d.propios.map(itemAcceso).join("");
     } else {
@@ -456,7 +463,7 @@
       }
       const link = e.target.closest("a.acceso-link");
       // Estando en Leads, se aplican los filtros sin recargar la página.
-      if (link && typeof window.aplicarAccesoRapido === "function" && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
+      if (link && link.dataset.consulta !== undefined && typeof window.aplicarAccesoRapido === "function" && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
         e.preventDefault();
         window.aplicarAccesoRapido(link.dataset.consulta);
         cerrarMenuAccesos();
@@ -538,6 +545,25 @@
   let panelAgenda = null;
   function agendaAbierta() { return !!(panelAgenda && panelAgenda.classList.contains("abierto")); }
 
+  // Pestañas del panel: «Agendar» (el formulario) y «Disponibilidad» (los turnos libres de cada día). Cada una es
+  // su propio iframe, así lo que se escribió en el formulario no se pierde al mirar la disponibilidad.
+  let pestanaActual = "agendar";
+  const URL_PESTANA = { agendar: "/agendar-llamada?embebido=1", disponibilidad: "/disponibilidad?embebido=1" };
+  function pestanaAgenda(nombre, alAbrir) {
+    if (!panelAgenda || !URL_PESTANA[nombre]) return;
+    const cambia = nombre !== pestanaActual;
+    pestanaActual = nombre;
+    panelAgenda.querySelectorAll("button[data-pestana]").forEach((b) => b.setAttribute("aria-selected", b.dataset.pestana === nombre ? "true" : "false"));
+    panelAgenda.querySelectorAll("iframe[data-pestana]").forEach((f) => {
+      const es = f.dataset.pestana === nombre;
+      f.hidden = !es;
+      if (!es) return;
+      // La disponibilidad se vuelve a pedir cada vez que se mira (puede haberse agendado algo en la otra pestaña).
+      if (!f.getAttribute("src")) f.setAttribute("src", URL_PESTANA[nombre]);
+      else if (nombre === "disponibilidad" && (cambia || alAbrir)) { try { f.contentWindow.location.reload(); } catch (_) { f.setAttribute("src", URL_PESTANA[nombre]); } }
+    });
+  }
+
   function abrirAgenda(abrir) {
     const boton = document.querySelector(".nav-tel");
     if (!panelAgenda) {
@@ -551,14 +577,28 @@
           <strong>📅 Agendar llamada o reunión</strong>
           <button type="button" class="panel-coment-cerrar" title="Cerrar" aria-label="Cerrar Agendar llamada">✕</button>
         </div>
-        <iframe title="Agendar llamada"></iframe>`;
+        <div class="panel-agenda-tabs" role="tablist">
+          <button type="button" role="tab" data-pestana="agendar" aria-selected="true">📅 Agendar</button>
+          <button type="button" role="tab" data-pestana="disponibilidad" aria-selected="false">🗓 Disponibilidad</button>
+        </div>
+        <iframe title="Agendar llamada" data-pestana="agendar"></iframe>
+        <iframe title="Disponibilidad" data-pestana="disponibilidad" hidden></iframe>`;
       document.body.appendChild(panelAgenda);
       panelAgenda.querySelector(".panel-coment-cerrar").addEventListener("click", () => abrirAgenda(false));
+      panelAgenda.querySelectorAll("[data-pestana]").forEach((b) => {
+        if (b.tagName === "BUTTON") b.addEventListener("click", () => pestanaAgenda(b.dataset.pestana));
+      });
+      // Tocar un horario libre en «Disponibilidad» vuelve a «Agendar» con el día y la hora ya puestos.
+      window.addEventListener("message", (ev) => {
+        if (ev.origin !== location.origin || !ev.data || ev.data.tipo !== "agendar-turno") return;
+        pestanaAgenda("agendar");
+        const f = panelAgenda.querySelector('iframe[data-pestana="agendar"]');
+        if (f && f.contentWindow) f.contentWindow.postMessage({ tipo: "completar-turno", fecha: ev.data.fecha, hora: ev.data.hora }, location.origin);
+      });
     }
     if (abrir) {
       if (panelAbierto()) abrirChat(false);   // comparten el mismo lugar
-      const iframe = panelAgenda.querySelector("iframe");
-      if (!iframe.getAttribute("src")) iframe.setAttribute("src", "/agendar-llamada?embebido=1");
+      pestanaAgenda(pestanaActual, true);
     }
     void panelAgenda.offsetWidth;   // reflow para que la animación arranque aunque se haya recién creado
     panelAgenda.classList.toggle("abierto", !!abrir);

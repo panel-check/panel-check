@@ -2283,6 +2283,12 @@ def borrar_disponibilidad(conexion, ventana_id: int) -> None:
         conn.commit()
 
 
+def listar_dias_cerrados(cur, desde: _dt.date, hasta: _dt.date) -> list:
+    """Los días sin reuniones entre dos fechas: [{id, fecha, motivo}] (para marcarlos en rojo en el calendario)."""
+    cur.execute("SELECT id, fecha, motivo FROM calendario_dias_cerrados WHERE fecha BETWEEN %s AND %s ORDER BY fecha", (desde, hasta))
+    return [{"id": f["id"], "fecha": f["fecha"].isoformat(), "motivo": f["motivo"] or ""} for f in cur.fetchall()]
+
+
 def borrar_dia_cerrado(conexion, cierre_id: int) -> None:
     with conexion() as conn:
         with conn.cursor() as cur:
