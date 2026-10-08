@@ -7,7 +7,7 @@
 <link rel="icon" type="image/png" href="/static/favicon.png" />
 <link rel="apple-touch-icon" href="/static/apple-touch-icon.png" />
 <link rel="stylesheet" href="/static/comun.css?v=logo1" />
-<link rel="stylesheet" href="/static/calendario.css?v=5" />
+<link rel="stylesheet" href="/static/calendario.css?v=6" />
 <script src="/static/sesion.js" defer></script>
 <script src="/static/menu.js?v=tel1" defer></script>
 </head>
@@ -53,9 +53,11 @@
     <div class="cal-grupo" role="group" aria-label="Vista">
       <button type="button" class="cal-btn" id="cal-v-mes">Mes</button>
       <button type="button" class="cal-btn" id="cal-v-agenda">Agenda</button>
+      <button type="button" class="cal-btn" id="cal-v-disp" title="Cargar los horarios en que está libre la agente y ver cuántas reuniones entran">Disponibilidad</button>
     </div>
     <button type="button" class="cal-btn" id="cal-sync" title="Pedirle a Google lo último ahora">↻ Sincronizar</button>
     <button type="button" class="cal-btn" id="cal-agenda-mail" title="Manda ahora el mail AGENDA con las reuniones y llamadas de mañana (el mismo que sale solo a las 20 hs)">✉ Agenda de mañana</button>
+    <button type="button" class="cal-btn" id="cal-nuevo-seg" title="Un recordatorio para hacer un seguimiento: queda en el calendario (y en Google) en naranja">🔔 Recordatorio</button>
     <button type="button" class="cal-btn principal" id="cal-nuevo">＋ Nuevo evento</button>
   </div>
 
@@ -64,13 +66,14 @@
     <span class="l-lead">Vinculado a un lead</span>
     <span class="l-cliente">Vinculado a un cliente</span>
     <span class="l-sin">Acta que no está en la base</span>
+    <span class="l-seg">🔔 Recordatorio</span>
     <span>Sin acta</span>
   </div>
   <div class="cal-detalle" id="cal-detalle"></div>
 </main>
 
 <script src="/static/comun.js?v=sec1"></script>
-<script src="/static/calendario_comun.js?v=7"></script>
-<script src="/static/calendario.js?v=5"></script>
+<script src="/static/calendario_comun.js?v=8"></script>
+<script src="/static/calendario.js?v=6"></script>
 </body>
 </html>

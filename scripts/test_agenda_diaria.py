@@ -73,6 +73,7 @@ class TablaEnvios:
             def __exit__(s, *a): return False
             def cursor(s, **kw): return Cur()
             def commit(s): pass
+            def rollback(s): pass
 
         return Conn()
 
@@ -84,7 +85,9 @@ class EnvioDeLaAgenda(unittest.TestCase):
         os.environ.pop("PANEL_URL", None)
         self.tabla = TablaEnvios()
         self.eventos, self.enviados, self.falla = [], [], False
-        self.orig = (cc.eventos_de_agenda, cc.sincronizar, mc.preparar, mc.enviar)
+        self.orig = (cc.eventos_de_agenda, cc.sincronizar, mc.preparar, mc.enviar, cc.seguimientos_de_agenda)
+        self.seguimientos = []
+        cc.seguimientos_de_agenda = lambda cur, fecha: list(self.seguimientos)
         cc.eventos_de_agenda = lambda cur, fecha: list(self.eventos)
         cc.sincronizar = lambda conexion, completa=False: {}
         mc.preparar = lambda clave, dsn=None: {"cuenta": "interna", "remitente": "Avisos Panel <avisos@quieroregistrarmimarca.com.ar>",
@@ -100,7 +103,7 @@ class EnvioDeLaAgenda(unittest.TestCase):
         self.conexion = self.tabla.conexion
 
     def tearDown(self):
-        cc.eventos_de_agenda, cc.sincronizar, mc.preparar, mc.enviar = self.orig
+        cc.eventos_de_agenda, cc.sincronizar, mc.preparar, mc.enviar, cc.seguimientos_de_agenda = self.orig
         os.environ.clear(); os.environ.update(self.env)
 
     def test_con_reuniones_manda_la_agenda_desde_avisos_por_la_cuenta_interna(self):

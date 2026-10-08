@@ -17,6 +17,12 @@ Rutas:
                                               con avisar=true manda el mail a la persona y la copia al equipo
   PUT    /api/calendario/eventos/{id}         editar (con avisar=true, manda el aviso de cambio)
   DELETE /api/calendario/eventos/{id}         borrar (también en Google)
+  GET    /api/calendario/seguimientos         recordatorios pendientes (atrasados incluidos) y los hechos hace poco
+  POST   /api/calendario/eventos/{id}/hecho   marcar un recordatorio como hecho (o reabrirlo)
+  POST   /api/calendario/disponibilidad/interpretar  texto como «próximo martes libre de 8 a 15» → ventanas (no guarda nada)
+  POST   /api/calendario/disponibilidad       guardar ventanas de disponibilidad (con repetir_semanas = N, también las N semanas siguientes)
+  GET    /api/calendario/disponibilidad?desde&hasta  días con disponibilidad: horarios libres, reuniones y resumen
+  DELETE /api/calendario/disponibilidad/{id}  borrar una ventana
   GET    /api/calendario/google/conectar      (admin) empieza la conexión con la cuenta de Google del estudio (OAuth)
   GET    /api/calendario/google/callback      (admin) vuelta de Google: muestra el token para cargar en Railway
 """
@@ -56,6 +62,26 @@ class EventoEntrada(BaseModel):
     modalidad: Optional[str] = None      # «meet» | «llamada» | «presencial»
     avisar: Optional[bool] = False       # mandar el mail de aviso (a la persona, si hay mail, y la copia al equipo)
     email_aviso: Optional[str] = None    # a quién se le avisa (uno o varios separados por coma)
+    tipo: Optional[str] = "evento"       # «evento» (reunión, llamada…) | «seguimiento» (recordatorio de todo el día, con otro color)
+
+
+class HechoEntrada(BaseModel):
+    hecho: Optional[bool] = True
+
+
+class TextoDisponibilidad(BaseModel):
+    texto: str
+
+
+class VentanaEntrada(BaseModel):
+    fecha: str      # AAAA-MM-DD
+    desde: str      # HH:MM
+    hasta: str      # HH:MM
+
+
+class DisponibilidadEntrada(BaseModel):
+    ventanas: List[VentanaEntrada]
+    repetir_semanas: Optional[int] = 0   # además de la fecha, las N semanas siguientes
 
 
 class TextoAgenda(BaseModel):
@@ -207,9 +233,16 @@ def crear_router(verificar_login, conexion, verificar_admin=None) -> APIRouter:
         except Exception as e:
             return {"persona": None, "equipo": {"email": cal.mail_equipo() or "", "enviado": False, "error": str(e)[:300]}}
 
+    def _validar_tipo(datos: EventoEntrada):
+        if (datos.tipo or cal.TIPO_EVENTO) not in (cal.TIPO_EVENTO, cal.TIPO_SEGUIMIENTO):
+            raise HTTPException(status_code=400, detail="El tipo tiene que ser «evento» o «seguimiento».")
+        if datos.tipo == cal.TIPO_SEGUIMIENTO:
+            datos.avisar = False   # un recordatorio es interno: no manda mails
+
     @router.post("/api/calendario/eventos")
     def crear(datos: EventoEntrada, usuario: str = Depends(verificar_login)):
         _configurado_o_409()
+        _validar_tipo(datos)
         try:
             nuevo = cal.crear_evento(conexion, datos.dict(), usuario)
         except cal.CalendarioError as e:
@@ -219,11 +252,64 @@ def crear_router(verificar_login, conexion, verificar_admin=None) -> APIRouter:
     @router.put("/api/calendario/eventos/{evento_id}")
     def editar(evento_id: int, datos: EventoEntrada, usuario: str = Depends(verificar_login)):
         _configurado_o_409()
+        _validar_tipo(datos)
         try:
             cal.editar_evento(conexion, evento_id, datos.dict(), usuario)
         except cal.CalendarioError as e:
             raise _como_http(e)
         return {"evento": _evento_por_id(evento_id), "aviso": _avisar(evento_id, datos, "modificada", usuario)}
+
+    @router.post("/api/calendario/eventos/{evento_id}/hecho")
+    def hecho(evento_id: int, datos: HechoEntrada, _: str = Depends(verificar_login)):
+        _configurado_o_409()
+        try:
+            cal.marcar_hecho(conexion, evento_id, bool(datos.hecho if datos.hecho is not None else True))
+        except cal.CalendarioError as e:
+            raise _como_http(e)
+        return {"evento": _evento_por_id(evento_id)}
+
+    @router.get("/api/calendario/seguimientos")
+    def seguimientos(_: str = Depends(verificar_login)):
+        with conexion() as conn:
+            with rcur(conn) as cur:
+                return {"hoy": _dt.datetime.now(cal.TZ).date().isoformat(), "seguimientos": cal.listar_seguimientos(cur)}
+
+    # ── Disponibilidad horaria ───────────────────────────────────────
+
+    @router.post("/api/calendario/disponibilidad/interpretar")
+    def disponibilidad_interpretar(datos: TextoDisponibilidad, _: str = Depends(verificar_login)):
+        texto = (datos.texto or "").strip()
+        if not texto:
+            raise HTTPException(status_code=400, detail="Escribí la disponibilidad, por ejemplo: próximo martes libre de 8 a 15.")
+        if len(texto) > 1000:
+            raise HTTPException(status_code=400, detail="El texto es demasiado largo (máximo 1000 caracteres).")
+        return cal.interpretar_disponibilidad(texto, _dt.datetime.now(cal.TZ).date())
+
+    @router.post("/api/calendario/disponibilidad")
+    def disponibilidad_guardar(datos: DisponibilidadEntrada, usuario: str = Depends(verificar_login)):
+        try:
+            return cal.guardar_disponibilidad(conexion, [v.dict() for v in datos.ventanas], usuario, datos.repetir_semanas or 0)
+        except cal.CalendarioError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+
+    @router.get("/api/calendario/disponibilidad")
+    def disponibilidad(desde: str = "", hasta: str = "", _: str = Depends(verificar_login)):
+        hoy = _dt.datetime.now(cal.TZ).date()
+        d0 = _fecha(desde, "desde") if desde else hoy
+        d1 = _fecha(hasta, "hasta") if hasta else hoy + _dt.timedelta(days=56)
+        if d1 < d0:
+            raise HTTPException(status_code=400, detail="«hasta» es anterior a «desde»")
+        if (d1 - d0).days > MAX_DIAS_RANGO:
+            raise HTTPException(status_code=400, detail=f"El rango es demasiado largo (máximo {MAX_DIAS_RANGO} días)")
+        with conexion() as conn:
+            with rcur(conn) as cur:
+                dias = cal.disponibilidad_del_rango(cur, d0, d1)
+        return {"dias": dias, "duracion": cal.duracion_reunion(), "margen": cal.margen_reunion()}
+
+    @router.delete("/api/calendario/disponibilidad/{ventana_id}")
+    def disponibilidad_borrar(ventana_id: int, _: str = Depends(verificar_login)):
+        cal.borrar_disponibilidad(conexion, ventana_id)
+        return {"ok": True}
 
     @router.delete("/api/calendario/eventos/{evento_id}")
     def borrar(evento_id: int, _: str = Depends(verificar_login)):

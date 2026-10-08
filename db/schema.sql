@@ -533,6 +533,9 @@ ALTER TABLE calendario_eventos ADD COLUMN IF NOT EXISTS modalidad TEXT;
 ALTER TABLE calendario_eventos ADD COLUMN IF NOT EXISTS meet_url TEXT;
 -- Mail de la persona a la que se avisa del evento (para poder avisarle si después se cambia).
 ALTER TABLE calendario_eventos ADD COLUMN IF NOT EXISTS email_aviso TEXT;
+-- Recordatorios (seguimientos): eventos de todo el día marcados tipo='seguimiento'; hecho = ya cumplido.
+ALTER TABLE calendario_eventos ADD COLUMN IF NOT EXISTS tipo TEXT NOT NULL DEFAULT 'evento';
+ALTER TABLE calendario_eventos ADD COLUMN IF NOT EXISTS hecho BOOLEAN NOT NULL DEFAULT false;
 CREATE INDEX IF NOT EXISTS idx_calendario_eventos_inicio ON calendario_eventos(inicio);
 CREATE INDEX IF NOT EXISTS idx_calendario_eventos_actas ON calendario_eventos USING GIN (actas);
 
@@ -547,6 +550,18 @@ CREATE TABLE IF NOT EXISTS calendario_estado (
     ultimo_cambios     INTEGER,
     CONSTRAINT calendario_estado_una_fila CHECK (id = 1)
 );
+
+-- Disponibilidad horaria cargada como texto («próximo martes libre de 8 a 15»): un tramo libre por fila.
+CREATE TABLE IF NOT EXISTS calendario_disponibilidad (
+    id          BIGSERIAL PRIMARY KEY,
+    fecha       DATE NOT NULL,
+    desde       TIME NOT NULL,
+    hasta       TIME NOT NULL,
+    creado_por  TEXT,
+    creado_en   TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (fecha, desde, hasta)
+);
+CREATE INDEX IF NOT EXISTS idx_calendario_disponibilidad_fecha ON calendario_disponibilidad(fecha);
 
 -- Mail diario «AGENDA» (20 hs, reuniones y llamadas del día siguiente): una fila por día de la agenda.
 -- omitida = ese día no había ninguna reunión ni llamada y no se mandó nada.
