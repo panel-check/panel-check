@@ -53,6 +53,7 @@ function calMinutos(hhmm) {
 // ── Vínculos con actas ───────────────────────────────────────────────
 // Qué tipo de color lleva un evento: cliente > lead > con acta que no está en la base > sin acta.
 function calClaseEvento(e) {
+  if (e.tipo === "seguimiento") return e.hecho ? "seguimiento hecho" : "seguimiento";
   const v = e.vinculos || [];
   let clase = "";
   if (v.some(x => x.tipo === "cliente")) clase = "cliente";
@@ -88,6 +89,10 @@ function calVinculosHtml(e) {
 
 // ── Tarjeta de un evento ─────────────────────────────────────────────
 function calHoraTexto(e) {
+  if (e.tipo === "seguimiento") {
+    const atrasado = !e.hecho && e.fecha < calHoy();
+    return e.hecho ? "🔔 Recordatorio · hecho" : atrasado ? "🔔 Recordatorio · atrasado" : "🔔 Recordatorio";
+  }
   if (e.todo_el_dia) return e.fecha_fin !== e.fecha ? `Todo el día (hasta el ${calFechaLarga(e.fecha_fin)})` : "Todo el día";
   if (e.fecha_fin !== e.fecha) return `${e.hora} → ${calFechaLarga(e.fecha_fin)} ${e.hora_fin}`;
   return `${e.hora} – ${e.hora_fin}`;
@@ -121,10 +126,25 @@ function calAnalisisHtml(e) {
   }).join("");
 }
 
+function calAccionesHtml(e) {
+  if (e.tipo === "seguimiento") {
+    return `
+      <button type="button" class="cal-btn chico ${e.hecho ? "" : "principal"}" data-cal-hecho="${e.id}" data-hecho="${e.hecho ? "0" : "1"}" title="${e.hecho ? "Volver a dejarlo pendiente" : "Ya se hizo: en Google Calendar queda en gris"}">${e.hecho ? "↺ Reabrir" : "✓ Hecho"}</button>
+      <button type="button" class="cal-btn chico" data-cal-editar="${e.id}">Editar</button>
+      <button type="button" class="cal-btn chico peligro" data-cal-borrar="${e.id}">Borrar</button>`;
+  }
+  return `
+      ${calAnalisisHtml(e)}
+      ${e.texto_whatsapp ? `<button type="button" class="cal-btn chico" data-cal-wsp="${e.id}" title="Un texto con el día, la hora y cómo es, para pasárselo a la persona por WhatsApp">💬 Texto para WhatsApp</button>` : ""}
+      ${e.todo_el_dia ? "" : `<button type="button" class="cal-btn chico" data-cal-seg="${e.id}" title="Crear un recordatorio para hacerle el seguimiento (queda en el calendario, de otro color)">🔔 Recordatorio</button>`}
+      <button type="button" class="cal-btn chico" data-cal-editar="${e.id}">Editar</button>
+      <button type="button" class="cal-btn chico peligro" data-cal-borrar="${e.id}">Borrar</button>`;
+}
+
 function calTarjetaHtml(e, { fechaCorta = false, plegado = false, abierto = false } = {}) {
   const clase = calClaseEvento(e);
   const donde = calComoHtml(e);
-  const quien = e.origen === "panel" && e.creado_por ? `Agendado desde el panel por ${_escapeHtml(e.creado_por)}` : "";
+  const quien = e.origen === "panel" && e.creado_por ? `${e.tipo === "seguimiento" ? "Creado" : "Agendado"} desde el panel por ${_escapeHtml(e.creado_por)}` : "";
   const meta = [donde, quien].filter(Boolean).join(" · ");
   const dia = fechaCorta ? `${_escapeHtml(calFechaLarga(e.fecha))} · ` : "";
   const cab = `<span class="cal-evento-hora">${dia}${_escapeHtml(calHoraTexto(e))}</span><span class="cal-evento-titulo">${_escapeHtml(e.titulo)}</span>`;
@@ -135,10 +155,7 @@ function calTarjetaHtml(e, { fechaCorta = false, plegado = false, abierto = fals
     ${meta ? `<p class="cal-evento-meta">${meta}</p>` : ""}
     ${calVinculosHtml(e)}
     ${e.descripcion ? `<p class="cal-evento-notas">${_escapeHtml(e.descripcion)}</p>` : ""}
-    <div class="cal-evento-acciones">
-      ${calAnalisisHtml(e)}
-      <button type="button" class="cal-btn chico" data-cal-editar="${e.id}">Editar</button>
-      <button type="button" class="cal-btn chico peligro" data-cal-borrar="${e.id}">Borrar</button>
+    <div class="cal-evento-acciones">${calAccionesHtml(e)}
     </div>
   ${plegado ? "</details>" : "</div>"}`;
 }
@@ -154,6 +171,108 @@ function calEnlazarTarjetas(cont, porId, alCambiar, opciones = {}) {
     const e = porId[b.dataset.calBorrar];
     if (e) calBorrar(e, alCambiar);
   }));
+  cont.querySelectorAll("[data-cal-hecho]").forEach(b => b.addEventListener("click", async () => {
+    const quiere = b.dataset.hecho === "1";
+    b.disabled = true;
+    try {
+      await apiJson(`/api/calendario/eventos/${b.dataset.calHecho}/hecho`, "POST", { hecho: quiere });
+      mostrarAviso(quiere ? "Recordatorio hecho ✓ (en Google Calendar queda en gris)" : "Recordatorio reabierto");
+      if (alCambiar) alCambiar();
+    } catch (err) {
+      b.disabled = false;
+      mostrarAviso(`No se pudo actualizar el recordatorio: ${err.message}`, "aviso");
+    }
+  }));
+  cont.querySelectorAll("[data-cal-wsp]").forEach(b => b.addEventListener("click", () => {
+    const e = porId[b.dataset.calWsp];
+    if (e) calMostrarWhatsApp(e);
+  }));
+  cont.querySelectorAll("[data-cal-seg]").forEach(b => b.addEventListener("click", () => {
+    const e = porId[b.dataset.calSeg];
+    if (!e) return;
+    const marca = (e.vinculos || []).find(v => v.denominacion);
+    calAbrirModal({
+      ...opciones, recordatorio: true, actas: e.actas || [], titulo: `Seguimiento: ${marca ? marca.denominacion : e.titulo}`,
+      fecha: calSumarDias(calHoy(), 3), alGuardar: alCambiar,
+    });
+  }));
+}
+
+// ── Texto para WhatsApp ──────────────────────────────────────────────
+// Link de WhatsApp a partir de un teléfono argentino escrito como venga; con el texto ya escrito.
+// Sin teléfono abre WhatsApp para elegir el chat. Mismo criterio que crm.js (crmLinkWhatsApp).
+function calLinkWhatsApp(tel, texto) {
+  let d = (tel || "").replace(/\D/g, "");
+  let base = "https://wa.me/";
+  if (d.length >= 8) {
+    if (d.startsWith("00")) d = d.slice(2);
+    if (d.startsWith("54")) {
+      if (!d.startsWith("549") && d.length === 12) d = "549" + d.slice(2);
+    } else {
+      if (d.startsWith("0")) d = d.slice(1);
+      if (d.length === 12) d = d.replace(/^(\d{2,4})15(\d{6,8})$/, "$1$2");
+      d = "549" + d;
+    }
+    base += d;
+  }
+  return `${base}?text=${encodeURIComponent(texto || "")}`;
+}
+
+function _calAsegurarModalWsp() {
+  if (document.getElementById("modal-wsp")) return;
+  const div = document.createElement("div");
+  div.id = "modal-wsp";
+  div.className = "modal-fondo";
+  div.innerHTML = `
+    <div class="modal-caja modal-cal modal-wsp" onclick="event.stopPropagation()">
+      <button type="button" class="modal-cerrar" id="mw-x" aria-label="Cerrar">&times;</button>
+      <h3 id="mw-titulo">💬 Texto para WhatsApp</h3>
+      <p class="mc-ayuda" id="mw-ayuda">Copialo y pegalo en el chat, o abrí WhatsApp con el texto ya escrito. Podés ajustarlo antes.</p>
+      <textarea id="mw-texto" rows="10"></textarea>
+      <div class="acciones-modal">
+        <button type="button" class="cal-btn" id="mw-cerrar">Cerrar</button>
+        <span style="flex:1"></span>
+        <a class="cal-btn" id="mw-abrir" target="_blank" rel="noopener" style="text-decoration:none;display:inline-flex;align-items:center">Abrir WhatsApp ↗</a>
+        <button type="button" class="cal-btn principal" id="mw-copiar">Copiar texto</button>
+      </div>
+    </div>`;
+  div.addEventListener("click", calCerrarModalWsp);
+  document.body.appendChild(div);
+  document.addEventListener("keydown", (ev) => { if (ev.key === "Escape") calCerrarModalWsp(); });
+  document.getElementById("mw-x").addEventListener("click", calCerrarModalWsp);
+  document.getElementById("mw-cerrar").addEventListener("click", calCerrarModalWsp);
+  document.getElementById("mw-texto").addEventListener("input", _calActualizarLinkWsp);
+  document.getElementById("mw-copiar").addEventListener("click", async () => {
+    const t = document.getElementById("mw-texto");
+    const b = document.getElementById("mw-copiar");
+    try { await navigator.clipboard.writeText(t.value); }
+    catch (_) { t.select(); document.execCommand("copy"); }
+    b.textContent = "¡Copiado!";
+    setTimeout(() => { b.textContent = "Copiar texto"; }, 1800);
+  });
+}
+
+let _calWspTel = "";
+function _calActualizarLinkWsp() {
+  document.getElementById("mw-abrir").href = calLinkWhatsApp(_calWspTel, document.getElementById("mw-texto").value);
+}
+
+function calCerrarModalWsp() {
+  const m = document.getElementById("modal-wsp");
+  if (m) m.classList.remove("abierto");
+}
+
+/* Muestra el texto de WhatsApp de un evento (ev.texto_whatsapp, armado por el servidor).
+ * Si la reunión es una llamada, el teléfono anotado en «lugar» se usa para abrir ese chat. */
+function calMostrarWhatsApp(ev, { recienAgendado = false } = {}) {
+  if (!ev || !ev.texto_whatsapp) return;
+  _calAsegurarModalWsp();
+  _calWspTel = ev.modalidad === "llamada" ? (ev.lugar || "") : "";
+  document.getElementById("mw-titulo").textContent = recienAgendado ? "✔ Agendado · 💬 Texto para WhatsApp" : "💬 Texto para WhatsApp";
+  document.getElementById("mw-texto").value = ev.texto_whatsapp;
+  document.getElementById("mw-copiar").textContent = "Copiar texto";
+  _calActualizarLinkWsp();
+  document.getElementById("modal-wsp").classList.add("abierto");
 }
 
 async function calBorrar(e, alBorrar) {
@@ -205,17 +324,25 @@ function _calAsegurarModal() {
               <option value="60">1 hora</option><option value="90">1 h 30</option><option value="120">2 horas</option><option value="180">3 horas</option>
             </select>
           </label>
-          <label class="campo" id="mc-l-hasta" hidden>Hasta (inclusive) <input type="date" id="mc-hasta" /></label>
+          <label class="campo solo-evento" id="mc-l-hasta" hidden>Hasta (inclusive) <input type="date" id="mc-hasta" /></label>
         </div>
-        <label class="check"><input type="checkbox" id="mc-todo" /> Todo el día</label>
-        <fieldset class="mc-como" id="mc-como">
+        <div class="mc-rapidas solo-seg" id="mc-rapidas" role="group" aria-label="Fecha rápida">
+          <span>Recordármelo:</span>
+          <button type="button" data-dias="1">mañana</button>
+          <button type="button" data-dias="3">en 3 días</button>
+          <button type="button" data-dias="7">en 1 semana</button>
+          <button type="button" data-dias="14">en 2 semanas</button>
+          <button type="button" data-dias="30">en 1 mes</button>
+        </div>
+        <label class="check solo-evento" id="mc-l-todo"><input type="checkbox" id="mc-todo" /> Todo el día</label>
+        <fieldset class="mc-como solo-evento" id="mc-como">
           <legend>Cómo es</legend>
           <label><input type="radio" name="mc-mod" value="meet" /> 🎥 Videollamada (Meet)</label>
           <label><input type="radio" name="mc-mod" value="llamada" /> 📞 Llamada</label>
           <label><input type="radio" name="mc-mod" value="presencial" /> 📍 Presencial</label>
         </fieldset>
-        <p class="mc-ayuda" id="mc-meet-nota" hidden></p>
-        <label class="campo" id="mc-l-lugar">Lugar <input type="text" id="mc-lugar" maxlength="300" /></label>
+        <p class="mc-ayuda solo-evento" id="mc-meet-nota" hidden></p>
+        <label class="campo solo-evento" id="mc-l-lugar">Lugar <input type="text" id="mc-lugar" maxlength="300" /></label>
         <div class="campo mc-buscador">
           <label for="mc-buscar">Buscar la marca o el cliente (opcional)</label>
           <input type="text" id="mc-buscar" placeholder="Escribí el nombre del negocio, del titular o el número de acta" autocomplete="off" role="combobox" aria-expanded="false" aria-controls="mc-resultados" />
@@ -228,7 +355,8 @@ function _calAsegurarModal() {
         <div class="mc-vista-actas" id="mc-vista-actas" hidden></div>
         <p class="mc-ayuda">Con la acta, el evento queda vinculado al lead o cliente dueño de esa marca. También sirve escribir «Acta 4797001» en las notas, incluso si lo agendás directo en Google Calendar.</p>
         <label class="campo">Notas (opcional) <textarea id="mc-notas" rows="4" placeholder="Qué hay que hacer, qué traer…"></textarea></label>
-        <div class="mc-aviso" id="mc-aviso-caja">
+        <p class="mc-ayuda solo-seg">El recordatorio queda en el calendario como un evento de todo el día, en naranja, y también en Google Calendar. Mientras no lo marques como hecho se ve en «Recordatorios» y llega en el mail AGENDA de las 20 hs.</p>
+        <div class="mc-aviso solo-evento" id="mc-aviso-caja">
           <label class="check"><input type="checkbox" id="mc-avisar" /> <span id="mc-avisar-txt">Avisar por mail</span></label>
           <label class="campo" id="mc-l-email">Mail de la persona (si lo dejás vacío, el aviso va solo al equipo)
             <input type="text" id="mc-email" placeholder="persona@mail.com" />
@@ -261,6 +389,12 @@ function _calAsegurarModal() {
   document.getElementById("mc-fecha").addEventListener("change", () => {
     const h = document.getElementById("mc-hasta");
     if (!h.value || h.value < document.getElementById("mc-fecha").value) h.value = document.getElementById("mc-fecha").value;
+  });
+  document.getElementById("mc-rapidas").addEventListener("click", (ev) => {
+    const b = ev.target.closest("button[data-dias]");
+    if (!b) return;
+    document.getElementById("mc-fecha").value = calSumarDias(calHoy(), +b.dataset.dias);
+    document.getElementById("mc-fecha").dispatchEvent(new Event("change"));
   });
   document.getElementById("mc-form").addEventListener("submit", _calGuardar);
   document.getElementById("mc-titulo").addEventListener("input", (ev) => { delete ev.target.dataset.auto; });
@@ -298,7 +432,8 @@ function _calTituloAuto() {
   if (t.value.trim() && !t.dataset.auto) return;              // lo escribió la persona
   const nombre = _calMarcaTitulo;
   if (!nombre && !t.dataset.auto) return;                     // sin marca no se inventa un título
-  t.value = (_CAL_BASE_TITULO[_calModalidad()] || "Reunión") + (nombre ? ` (${nombre})` : "");
+  const base = _calModalCtx && _calModalCtx.recordatorio ? "Seguimiento" : (_CAL_BASE_TITULO[_calModalidad()] || "Reunión");
+  t.value = base + (nombre ? ` (${nombre})` : "");
   t.dataset.auto = "1";
 }
 
@@ -645,14 +780,20 @@ async function _calVistaPreviaActas() {
  *   marcas      → [{acta, denominacion}] para tildar rápido (ficha del titular).
  *   titulo      → título sugerido para uno nuevo.
  *   alGuardar   → se llama (sin argumentos) después de guardar o borrar. */
-async function calAbrirModal({ evento = null, fecha = null, actas = [], marcas = [], titulo = "", alGuardar = null, embebido = false } = {}) {
+async function calAbrirModal({ evento = null, fecha = null, hora = null, duracion = null, actas = [], marcas = [], titulo = "", alGuardar = null,
+                               embebido = false, recordatorio = false } = {}) {
   _calAsegurarModal();
-  _calModalCtx = { evento, marcas, alGuardar, embebido };
+  // recordatorio: el mismo formulario, sin hora, modalidad ni aviso por mail (un evento de todo el día con otro color).
+  const seg = !!recordatorio || !!(evento && evento.tipo === "seguimiento");
+  _calModalCtx = { evento, marcas, alGuardar, embebido, recordatorio: seg };
   document.getElementById("modal-cal").classList.toggle("embebido", !!embebido);
+  document.getElementById("modal-cal").classList.toggle("modo-seg", seg);
   await _calCargarEstado();
   if (!_calModalCtx) return;
   const $ = (id) => document.getElementById(id);
-  $("mc-titulo-modal").textContent = evento ? "Editar evento" : (embebido ? "Agendar llamada o reunión" : "Nuevo evento");
+  $("mc-titulo-modal").textContent = seg ? (evento ? "Editar recordatorio" : "🔔 Nuevo recordatorio")
+    : (evento ? "Editar evento" : (embebido ? "Agendar llamada o reunión" : "Nuevo evento"));
+  $("mc-titulo").placeholder = seg ? "Ej: Llamar a Pérez por el presupuesto" : "Ej: Reunión con Pérez";
   $("mc-buscar").value = "";
   $("mc-resultados").hidden = true;
   $("mc-error").hidden = true;
@@ -662,7 +803,7 @@ async function calAbrirModal({ evento = null, fecha = null, actas = [], marcas =
   $("mc-guardar").textContent = "Guardar";
   delete $("mc-titulo").dataset.auto;
   _calMarcaTitulo = null; _calNombreTexto = null;
-  _calIAReiniciar(!evento, embebido);
+  _calIAReiniciar(!evento && !seg, embebido);
 
   const durSel = $("mc-dur");
   [...durSel.querySelectorAll("option[data-extra]")].forEach(o => o.remove());
@@ -689,13 +830,14 @@ async function calAbrirModal({ evento = null, fecha = null, actas = [], marcas =
     $("mc-titulo").value = titulo || "";
     $("mc-fecha").value = fecha || calHoy();
     $("mc-todo").checked = false;
-    $("mc-hora").value = "";
+    $("mc-hora").value = hora || "";
     $("mc-hasta").value = $("mc-fecha").value;
     $("mc-lugar").value = "";
     $("mc-actas").value = (actas || []).join(", ");
     $("mc-notas").value = "";
-    durSel.value = "30";
+    durSel.value = duracion && [...durSel.options].some(o => +o.value === +duracion) ? String(duracion) : "30";
   }
+  if (seg) $("mc-todo").checked = true;   // un recordatorio es siempre de todo el día
   // Cómo es: Meet solo se ofrece si el panel está conectado con la cuenta de Google del estudio
   // (o si el evento ya tiene su Meet).
   const puedeMeet = !!(_calEstado && _calEstado.puede_meet) || !!(evento && evento.meet_url);
@@ -711,7 +853,7 @@ async function calAbrirModal({ evento = null, fecha = null, actas = [], marcas =
   delete correo.dataset.manual;
   if (evento && evento.email_aviso) { correo.value = evento.email_aviso; correo.dataset.manual = "1"; }
   delete $("mc-avisar").dataset.manual;
-  $("mc-avisar").checked = !evento;
+  $("mc-avisar").checked = !evento && !seg;
   $("mc-avisar-txt").textContent = evento ? "Avisar del cambio por mail" : "Avisar por mail (a la persona y al equipo)";
   _calPintarModalidad();
   _calPintarTodoElDia();
@@ -730,16 +872,17 @@ async function _calGuardar(ev) {
   const error = (t) => { $("mc-error").textContent = t; $("mc-error").hidden = false; };
   $("mc-error").hidden = true;
 
+  const seg = !!(_calModalCtx && _calModalCtx.recordatorio);
   const titulo = $("mc-titulo").value.trim();
-  const todo = $("mc-todo").checked;
-  const hora = $("mc-hora").value;
-  if (!titulo) return error("Poné un título.");
+  const todo = seg || $("mc-todo").checked;
+  const hora = seg ? "" : $("mc-hora").value;
+  if (!titulo) return error(seg ? "Poné de qué es el recordatorio." : "Poné un título.");
   if (!$("mc-fecha").value) return error("Elegí la fecha.");
   if (!todo && !hora) return error("Poné la hora, o tildá «Todo el día».");
   if (todo && $("mc-hasta").value && $("mc-hasta").value < $("mc-fecha").value) return error("«Hasta» no puede ser anterior a la fecha de inicio.");
-  const modalidad = _calModalidad();
-  const avisar = $("mc-avisar").checked;
-  const email = $("mc-email").value.trim();
+  const modalidad = seg ? null : _calModalidad();
+  const avisar = seg ? false : $("mc-avisar").checked;
+  const email = seg ? "" : $("mc-email").value.trim();
   if (avisar && email && !email.split(/[,;\s]+/).filter(Boolean).every(m => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(m))) return error("El mail de la persona no es válido.");
   const actas = _calActasDelCampo();
   const mala = actas.find(a => !/^\d{4,9}$/.test(a));
@@ -751,9 +894,10 @@ async function _calGuardar(ev) {
     hora: todo ? null : hora,
     duracion_min: +$("mc-dur").value,
     todo_el_dia: todo,
-    fecha_fin: todo && $("mc-hasta").value && $("mc-hasta").value !== $("mc-fecha").value ? $("mc-hasta").value : null,
+    fecha_fin: !seg && todo && $("mc-hasta").value && $("mc-hasta").value !== $("mc-fecha").value ? $("mc-hasta").value : null,
     descripcion: $("mc-notas").value,
-    lugar: modalidad === "meet" ? "" : $("mc-lugar").value,
+    lugar: seg || modalidad === "meet" ? "" : $("mc-lugar").value,
+    tipo: seg ? "seguimiento" : "evento",
     actas: [...new Set(actas)],
     modalidad,
     avisar,
@@ -761,12 +905,15 @@ async function _calGuardar(ev) {
     email_aviso: email && email.split(/[,;\s]+/).filter(Boolean).every(m => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(m)) ? email : null,
   };
   const ctx = _calModalCtx || {};
+  // Si es una reunión nueva, o se cambió cuándo o cómo es, al terminar se ofrece el texto para pasarlo por WhatsApp.
+  const ofrecerWsp = !seg && !ctx.embebido && (!ctx.evento || _calCambioHorario());
   $("mc-guardar").disabled = true;
   $("mc-guardar").textContent = "Guardando…";
   try {
     const r = ctx.evento ? await apiJson(`/api/calendario/eventos/${ctx.evento.id}`, "PUT", cuerpo)
                          : await apiJson("/api/calendario/eventos", "POST", cuerpo);
-    const partes = [ctx.evento ? "Evento actualizado (también en Google Calendar)" : "Evento agendado (también en Google Calendar)"];
+    const partes = [seg ? (ctx.evento ? "Recordatorio actualizado" : "Recordatorio guardado") + " (también en Google Calendar, en naranja)"
+                        : (ctx.evento ? "Evento actualizado (también en Google Calendar)" : "Evento agendado (también en Google Calendar)")];
     if (r && r.evento && r.evento.meet_url && modalidad === "meet") partes.push("videollamada de Meet creada");
     let hayError = false;
     const av = r && r.aviso;
@@ -780,6 +927,7 @@ async function _calGuardar(ev) {
     mostrarAviso(partes.join(" · "), hayError ? "aviso" : undefined);
     calCerrarModal();
     if (ctx.alGuardar) ctx.alGuardar(r);
+    if (ofrecerWsp && r && r.evento) calMostrarWhatsApp(r.evento, { recienAgendado: !ctx.evento });
   } catch (e) {
     $("mc-guardar").disabled = false;
     $("mc-guardar").textContent = "Guardar";
@@ -804,14 +952,16 @@ async function calAgendaFicha(rows, titular) {
   } catch (_) { /* si falla, se muestra vacío */ }
 
   const hoy = calHoy();
-  const proximos = eventos.filter(e => e.fecha_fin >= hoy);
-  const pasados = eventos.filter(e => e.fecha_fin < hoy).reverse();
+  // Los recordatorios pendientes se ven siempre (los atrasados también); los hechos, con lo anterior.
+  const vigente = (e) => e.tipo === "seguimiento" ? !e.hecho : e.fecha_fin >= hoy;
+  const proximos = eventos.filter(vigente);
+  const pasados = eventos.filter(e => !vigente(e)).reverse();
   const porId = Object.fromEntries(eventos.map(e => [String(e.id), e]));
   const habilitado = estado && estado.configurado;
   cont.innerHTML = `<div class="cal-ficha">
     <div class="cal-ficha-cab">
       <h4>📅 Agenda de este titular</h4>
-      ${habilitado ? '<button type="button" class="cal-btn principal chico" id="cal-ficha-nuevo">＋ Agendar</button>' : ""}
+      ${habilitado ? '<button type="button" class="cal-btn principal chico" id="cal-ficha-nuevo">＋ Agendar</button><button type="button" class="cal-btn chico" id="cal-ficha-seg" title="Un recordatorio para hacerle el seguimiento: queda en el calendario, de otro color">🔔 Recordatorio</button>' : ""}
       <a class="cal-btn chico" href="/calendario" style="text-decoration:none;display:inline-flex;align-items:center">Ver calendario</a>
     </div>
     ${!habilitado ? '<p class="cal-nota">El calendario todavía no está conectado con Google Calendar. Ver «Calendario» en el menú.</p>'
@@ -825,6 +975,15 @@ async function calAgendaFicha(rows, titular) {
     actas: actas.length ? [actas[0]] : [],
     marcas: marcas.slice(0, 12),
     titulo: titular ? `Reunión ${titular}` : "",
+    alGuardar: recargar,
+  }));
+  const seg = document.getElementById("cal-ficha-seg");
+  if (seg) seg.addEventListener("click", () => calAbrirModal({
+    recordatorio: true,
+    fecha: calSumarDias(hoy, 3),
+    actas: actas.length ? [actas[0]] : [],
+    marcas: marcas.slice(0, 12),
+    titulo: titular ? `Seguimiento ${titular}` : "",
     alGuardar: recargar,
   }));
   calEnlazarTarjetas(cont, porId, recargar, { marcas: marcas.slice(0, 12) });

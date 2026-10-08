@@ -251,6 +251,25 @@ def crear_tablas(cur):
     cur.execute("ALTER TABLE calendario_eventos ADD COLUMN IF NOT EXISTS meet_url TEXT")
     # Mail de la persona a la que se le avisa (para poder avisarle también si después se cambia la fecha u hora).
     cur.execute("ALTER TABLE calendario_eventos ADD COLUMN IF NOT EXISTS email_aviso TEXT")
+    # Recordatorios / seguimientos (08/10/2026): eventos de «todo el día» con otro color en Google.
+    # tipo: 'evento' (reunión, llamada…) | 'seguimiento'; hecho: el recordatorio ya se cumplió.
+    cur.execute("ALTER TABLE calendario_eventos ADD COLUMN IF NOT EXISTS tipo TEXT NOT NULL DEFAULT 'evento'")
+    cur.execute("ALTER TABLE calendario_eventos ADD COLUMN IF NOT EXISTS hecho BOOLEAN NOT NULL DEFAULT false")
+    # Disponibilidad horaria que pasa la agente: ventanas «ese día estoy libre de tal a tal hora».
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS calendario_disponibilidad (
+            id          BIGSERIAL PRIMARY KEY,
+            fecha       DATE NOT NULL,
+            desde       TIME NOT NULL,
+            hasta       TIME NOT NULL,
+            creado_por  TEXT,
+            creado_en   TIMESTAMPTZ NOT NULL DEFAULT now(),
+            UNIQUE (fecha, desde, hasta)
+        )
+        """
+    )
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_calendario_disponibilidad_fecha ON calendario_disponibilidad(fecha)")
     # Mail diario «AGENDA» de las 20 hs: una fila por día de la agenda (el de mañana), para no mandarlo dos veces.
     cur.execute(
         """
@@ -386,6 +405,14 @@ def _fecha_hora(valor: dict):
 
 MODALIDADES = ("meet", "llamada", "presencial")
 
+# Recordatorios / seguimientos: eventos de «todo el día» marcados en Google (propiedad privada «tipo»)
+# con otro color. Pendiente = naranja (Mandarina); hecho = gris (Grafito).
+TIPO_EVENTO = "evento"
+TIPO_SEGUIMIENTO = "seguimiento"
+ICONO_SEGUIMIENTO = "🔔"
+COLOR_SEGUIMIENTO = "6"
+COLOR_SEGUIMIENTO_HECHO = "8"
+
 
 def meet_de_evento(ev: dict):
     """Link de la videollamada de Meet de un evento de Google (o None)."""
@@ -416,13 +443,20 @@ def evento_a_fila(ev: dict, calendar: str) -> dict:
         modalidad = "meet"
     elif modalidad == "meet":
         modalidad = None  # le sacaron el Meet desde Google
+    titulo = (ev.get("summary") or "").strip() or "(sin título)"
+    es_seguimiento = privadas.get("tipo") == TIPO_SEGUIMIENTO
+    if es_seguimiento:
+        # En Google el título lleva la campanita para reconocerlo de un vistazo; en el panel la pone el estilo.
+        titulo = titulo.replace(ICONO_SEGUIMIENTO, "", 1).strip() or "(sin título)"
     return {
-        "modalidad": modalidad,
-        "meet_url": meet,
-        "email_aviso": (privadas.get("email_aviso") or "").strip() or None,
+        "modalidad": None if es_seguimiento else modalidad,
+        "meet_url": None if es_seguimiento else meet,
+        "email_aviso": None if es_seguimiento else ((privadas.get("email_aviso") or "").strip() or None),
+        "tipo": TIPO_SEGUIMIENTO if es_seguimiento else TIPO_EVENTO,
+        "hecho": bool(es_seguimiento and privadas.get("hecho") == "1"),
         "calendar_id": calendar,
         "google_id": ev["id"],
-        "titulo": (ev.get("summary") or "").strip() or "(sin título)",
+        "titulo": titulo,
         "descripcion": texto_plano(ev.get("description") or ""),
         "lugar": (ev.get("location") or "").strip() or None,
         "inicio": inicio,
@@ -452,18 +486,20 @@ def _guardar_eventos(cur, filas: list) -> None:
         """
         INSERT INTO calendario_eventos
             (calendar_id, google_id, titulo, descripcion, lugar, inicio, fin, todo_el_dia, actas,
-             origen, creado_por, link, etag, actualizado_google, sincronizado_en, modalidad, meet_url, email_aviso)
+             origen, creado_por, link, etag, actualizado_google, sincronizado_en, modalidad, meet_url, email_aviso,
+             tipo, hecho)
         VALUES
             (%(calendar_id)s, %(google_id)s, %(titulo)s, %(descripcion)s, %(lugar)s, %(inicio)s, %(fin)s,
              %(todo_el_dia)s, %(actas)s, %(origen)s, %(creado_por)s, %(link)s, %(etag)s, %(actualizado_google)s, now(),
-             %(modalidad)s, %(meet_url)s, %(email_aviso)s)
+             %(modalidad)s, %(meet_url)s, %(email_aviso)s, %(tipo)s, %(hecho)s)
         ON CONFLICT (calendar_id, google_id) DO UPDATE SET
             titulo = EXCLUDED.titulo, descripcion = EXCLUDED.descripcion, lugar = EXCLUDED.lugar,
             inicio = EXCLUDED.inicio, fin = EXCLUDED.fin, todo_el_dia = EXCLUDED.todo_el_dia,
             actas = EXCLUDED.actas, origen = EXCLUDED.origen, creado_por = EXCLUDED.creado_por,
             link = EXCLUDED.link, etag = EXCLUDED.etag,
             actualizado_google = EXCLUDED.actualizado_google, sincronizado_en = now(),
-            modalidad = EXCLUDED.modalidad, meet_url = EXCLUDED.meet_url, email_aviso = EXCLUDED.email_aviso
+            modalidad = EXCLUDED.modalidad, meet_url = EXCLUDED.meet_url, email_aviso = EXCLUDED.email_aviso,
+            tipo = EXCLUDED.tipo, hecho = EXCLUDED.hecho
         """,
         filas,
     )
@@ -672,7 +708,33 @@ def _nota_con_actas(descripcion: str, actas: list) -> str:
     return descripcion
 
 
-def _cuerpo_evento(datos: dict, usuario: str):
+def _cuerpo_seguimiento(datos: dict, usuario: str, hecho: bool = False):
+    """Cuerpo de Google para un recordatorio: evento de todo el día, con la campanita en el título,
+    de otro color (naranja; gris si ya está hecho) y marcado en las propiedades privadas."""
+    titulo = " ".join((datos.get("titulo") or "").replace(ICONO_SEGUIMIENTO, "").split())
+    if not titulo:
+        raise CalendarioError("Poné de qué es el recordatorio.")
+    if len(titulo) > 200:
+        raise CalendarioError("El título es demasiado largo (máximo 200 letras).")
+    actas = _normalizar_actas(datos.get("actas"))
+    start, end, _ = _inicio_fin_google({"fecha": datos.get("fecha"), "todo_el_dia": True})
+    privadas = {"panel": "1", "usuario": usuario or "", "actas": ",".join(actas), "tipo": TIPO_SEGUIMIENTO}
+    if hecho:
+        privadas["hecho"] = "1"
+    return {
+        "summary": f"{ICONO_SEGUIMIENTO} {titulo}",
+        "description": _nota_con_actas(datos.get("descripcion"), actas),
+        "location": "",
+        "start": start,
+        "end": end,
+        "colorId": COLOR_SEGUIMIENTO_HECHO if hecho else COLOR_SEGUIMIENTO,
+        "extendedProperties": {"private": privadas},
+    }
+
+
+def _cuerpo_evento(datos: dict, usuario: str, hecho: bool = False):
+    if (datos.get("tipo") or TIPO_EVENTO) == TIPO_SEGUIMIENTO:
+        return _cuerpo_seguimiento(datos, usuario, hecho)
     titulo = " ".join((datos.get("titulo") or "").split())
     if not titulo:
         raise CalendarioError("Poné un título para el evento.")
@@ -742,6 +804,8 @@ def crear_evento(conexion, datos: dict, usuario: str) -> int:
     «meet», Google genera la videollamada y su link queda guardado en el evento."""
     cuerpo = _cuerpo_evento(datos, usuario)
     params = {"sendUpdates": "none"}
+    if (datos.get("tipo") or TIPO_EVENTO) == TIPO_SEGUIMIENTO:
+        datos = {**datos, "modalidad": None}   # un recordatorio no es una reunión: sin Meet ni modalidad
     if datos.get("modalidad") == "meet":
         _exigir_meet_posible()
         cuerpo["conferenceData"] = _pedir_meet()
@@ -768,13 +832,17 @@ def _google_id_de(conexion, evento_id: int) -> str:
 def editar_evento(conexion, evento_id: int, datos: dict, usuario: str) -> int:
     with conexion() as conn:
         with conn.cursor() as cur:
-            cur.execute("SELECT google_id, meet_url FROM calendario_eventos WHERE id = %s AND calendar_id = %s",
+            cur.execute("SELECT google_id, meet_url, tipo, hecho FROM calendario_eventos WHERE id = %s AND calendar_id = %s",
                         (evento_id, calendar_id()))
             fila = cur.fetchone()
     if not fila:
         raise CalendarioError("Ese evento ya no existe (puede que lo hayan borrado desde Google Calendar).")
-    google_id, meet_actual = fila[0], fila[1]
-    cuerpo = _cuerpo_evento(datos, usuario)
+    google_id, meet_actual, tipo_actual, hecho_actual = fila[0], fila[1], fila[2] or TIPO_EVENTO, bool(fila[3])
+    # El tipo no cambia al editar: un recordatorio sigue siendo recordatorio (y conserva si está hecho).
+    datos = {**datos, "tipo": tipo_actual}
+    if tipo_actual == TIPO_SEGUIMIENTO:
+        datos["modalidad"] = None
+    cuerpo = _cuerpo_evento(datos, usuario, hecho=hecho_actual)
     params = {"sendUpdates": "none"}
     quiere_meet = datos.get("modalidad") == "meet"
     if quiere_meet and not meet_actual:
@@ -811,6 +879,50 @@ def borrar_evento(conexion, evento_id: int) -> None:
         with conn.cursor() as cur:
             cur.execute("DELETE FROM calendario_eventos WHERE id = %s", (evento_id,))
         conn.commit()
+
+
+def marcar_hecho(conexion, evento_id: int, hecho: bool = True) -> int:
+    """Marca un recordatorio como hecho (o lo reabre). En Google queda en gris (o vuelve al naranja)."""
+    with conexion() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT google_id, tipo FROM calendario_eventos WHERE id = %s AND calendar_id = %s",
+                        (evento_id, calendar_id()))
+            fila = cur.fetchone()
+    if not fila:
+        raise CalendarioError("Ese recordatorio ya no existe (puede que lo hayan borrado desde Google Calendar).")
+    if (fila[1] or TIPO_EVENTO) != TIPO_SEGUIMIENTO:
+        raise CalendarioError("Solo los recordatorios se marcan como hechos.")
+    cuerpo = {"colorId": COLOR_SEGUIMIENTO_HECHO if hecho else COLOR_SEGUIMIENTO,
+              "extendedProperties": {"private": {"hecho": "1" if hecho else None}}}
+    recurso = _pedir("PATCH", _ruta_eventos("/" + fila[0]), json=cuerpo, params={"sendUpdates": "none"})
+    return _guardar_resultado(conexion, recurso)
+
+
+# ── Texto para pasar por WhatsApp ──────────────────────────────────────
+
+def texto_whatsapp(ev: dict) -> str:
+    """El texto con los datos de una reunión, listo para pegar en WhatsApp (o abrir el chat con él).
+    `ev` es un evento ya convertido con evento_a_json. Dice qué, cuándo y cómo; con la videollamada
+    incluye el link de Meet."""
+    d0 = _dt.date.fromisoformat(ev["fecha"])
+    lineas = ["Hola! Te paso los datos de nuestra reunión con Smarties Consultora:", ""]
+    lineas.append(f"📅 {_fecha_larga(d0)}")
+    if not ev.get("todo_el_dia") and ev.get("hora"):
+        lineas.append(f"🕘 De {ev['hora']} a {ev['hora_fin']} hs (hora de Argentina)")
+    lugar = (ev.get("lugar") or "").strip()
+    modalidad = ev.get("modalidad")
+    if modalidad == "meet" or ev.get("meet_url"):
+        lineas.append("🎥 Videollamada por Google Meet")
+        if ev.get("meet_url"):
+            lineas.append(f"🔗 {ev['meet_url']}")
+    elif modalidad == "llamada":
+        lineas.append(f"📞 Te llamamos por teléfono al {lugar}" if lugar else "📞 Te llamamos por teléfono")
+    elif modalidad == "presencial":
+        lineas.append(f"📍 En persona: {lugar}" if lugar else "📍 En persona")
+    elif lugar:
+        lineas.append(f"📍 {lugar}")
+    lineas += ["", "Si necesitás cambiar el horario, avisame por acá. ¡Saludos!"]
+    return "\n".join(lineas)
 
 
 # ── Avisos por mail (a la persona y copia al equipo) ───────────────────
@@ -1062,6 +1174,19 @@ def _como_agenda(ev: dict) -> tuple:
     return "SIN ESPECIFICAR (llamada o Meet)", lugar
 
 
+def seguimientos_de_agenda(cur, fecha: _dt.date) -> list:
+    """Los recordatorios pendientes que hay que mirar ese día: los de esa fecha y los atrasados."""
+    cur.execute(
+        """
+        SELECT * FROM calendario_eventos
+        WHERE calendar_id = %s AND tipo = %s AND NOT hecho AND inicio < %s
+        ORDER BY inicio, id
+        """,
+        (calendar_id(), TIPO_SEGUIMIENTO, _dt.datetime.combine(fecha + _dt.timedelta(days=1), _dt.time(0, 0), tzinfo=TZ)),
+    )
+    return _con_vinculos(cur, [evento_a_json(f) for f in _sin_ocultos(cur.fetchall())])
+
+
 def _marcas_agenda(ev: dict) -> str:
     etiquetas = {"cliente": "cliente", "lead": "lead", "tercero": "tercero"}
     out = []
@@ -1074,11 +1199,19 @@ def _marcas_agenda(ev: dict) -> str:
     return "; ".join(out)
 
 
-def armar_agenda(fecha: _dt.date, eventos: list, panel_url: str = "") -> tuple:
+def _fecha_corta_ar(iso: str) -> str:
+    d = _dt.date.fromisoformat(iso)
+    return f"{d.day}/{d.month}"
+
+
+def armar_agenda(fecha: _dt.date, eventos: list, panel_url: str = "", seguimientos: list = None) -> tuple:
     """(asunto, html, texto) del mail AGENDA: horarios de las reuniones y llamadas del día, con
     cómo es cada una (Meet / llamada / presencial) bien a la vista. `eventos` ya vienen filtrados
-    y ordenados por hora (eventos_de_agenda)."""
+    y ordenados por hora (eventos_de_agenda). `seguimientos`: recordatorios pendientes de ese día
+    y atrasados (seguimientos_de_agenda); van en un bloque aparte, después de las reuniones."""
     import mails_core as mc
+
+    seguimientos = seguimientos or []
 
     e = _html.escape
     panel = f"{(panel_url or mc.DEFAULT_PANEL).rstrip('/')}/calendario"
@@ -1090,7 +1223,13 @@ def armar_agenda(fecha: _dt.date, eventos: list, panel_url: str = "") -> tuple:
         k = {"meet": "Meet", "llamada": "llamada", "presencial": "presencial"}.get(ev.get("modalidad"), "sin especificar")
         cuentas[k] = cuentas.get(k, 0) + 1
     resumen = ", ".join(f"{c} {k}" for k, c in cuentas.items())
-    titulo = f"{_fecha_larga(fecha)}: {n} {'reunión o llamada' if n == 1 else 'reuniones y llamadas'}" + (f" ({resumen})" if n > 1 else "")
+    ns = len(seguimientos)
+    partes_titulo = []
+    if n or not ns:
+        partes_titulo.append(f"{n} {'reunión o llamada' if n == 1 else 'reuniones y llamadas'}" + (f" ({resumen})" if n > 1 else ""))
+    if ns:
+        partes_titulo.append(f"{ns} {'recordatorio' if ns == 1 else 'recordatorios'}")
+    titulo = f"{_fecha_larga(fecha)}: " + " y ".join(partes_titulo)
 
     bloques, lineas = [], [f"AGENDA · {titulo}", ""]
     for ev in eventos:
@@ -1119,6 +1258,27 @@ def armar_agenda(fecha: _dt.date, eventos: list, panel_url: str = "") -> tuple:
         if persona:
             lineas.append(f"  Mail de la persona: {persona}")
         lineas.append("")
+    if seguimientos:
+        filas_seg = []
+        lineas.append("RECORDATORIOS")
+        for sg in seguimientos:
+            marcas = _marcas_agenda(sg)
+            atrasado = sg["fecha"] < fecha.isoformat()
+            cuando = f"atrasado, era del {_fecha_corta_ar(sg['fecha'])}" if atrasado else "para ese día"
+            filas_seg.append(
+                '<tr><td style="padding:10px 16px;border-bottom:1px solid #eaecf0">'
+                f'<div style="font-size:15px;font-weight:700;color:#9a4d00">{ICONO_SEGUIMIENTO} {e(sg["titulo"])}</div>'
+                f'<div style="font-size:13px;color:#475467;margin-top:2px">{e(cuando)}</div>'
+                + (f'<div style="font-size:13px;color:#475467">Marca: {e(marcas)}</div>' if marcas else "")
+                + (f'<div style="font-size:13px;color:#475467">{e(sg["descripcion"])}</div>' if sg.get("descripcion") else "")
+                + "</td></tr>")
+            lineas.append(f"{ICONO_SEGUIMIENTO} {sg['titulo']} ({cuando})")
+            if marcas:
+                lineas.append(f"  Marca: {marcas}")
+        lineas.append("")
+        bloques.append(
+            '<tr><td style="padding:12px 16px 4px;font-size:12px;font-weight:700;color:#9a4d00;letter-spacing:.06em">RECORDATORIOS</td></tr>'
+            + "".join(filas_seg))
     lineas.append(f"Calendario: {panel}")
     html_ = f"""<!doctype html>
 <html><body style="margin:0;background:#f2f4f7;font-family:Arial,Helvetica,sans-serif">
@@ -1142,7 +1302,9 @@ def ejemplo_agenda(panel_url: str = "") -> tuple:
         {**base, "hora": "11:30", "hora_fin": "12:00", "titulo": "Reunión virtual (DON LUIS)", "modalidad": "meet", "meet_url": "https://meet.google.com/abc-defg-hij",
          "vinculos": [{"acta": "3901234", "denominacion": "DON LUIS", "titular": "Panadería Don Luis", "tipo": "cliente"}], "email_aviso": "luis@ejemplo.com"},
     ]
-    asunto, html_, _ = armar_agenda(manana, eventos, panel_url)
+    seguimientos = [{**base, "titulo": "Preguntarle si vio el presupuesto", "modalidad": None, "descripcion": "",
+                     "vinculos": [{"acta": "4797123", "denominacion": "LUNA NUEVA", "titular": "María Gómez", "tipo": "lead"}]}]
+    asunto, html_, _ = armar_agenda(manana, eventos, panel_url, seguimientos)
     return asunto, html_
 
 
@@ -1195,7 +1357,13 @@ def enviar_agenda(conexion, fecha: _dt.date = None, manual: bool = False) -> dic
         with conexion() as conn:
             with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
                 eventos = eventos_de_agenda(cur, fecha)
-        if not eventos:
+                try:
+                    seguimientos = seguimientos_de_agenda(cur, fecha)
+                except Exception as e:   # sin los recordatorios el mail sale igual, con las reuniones
+                    print(f"[agenda] no se pudieron leer los recordatorios: {e}")
+                    conn.rollback()
+                    seguimientos = []
+        if not eventos and not seguimientos:
             if not manual:
                 _cerrar_envio(conexion, fecha, omitida=True, cantidad=0)
             return {"estado": "sin_eventos", "fecha": fecha.isoformat(), "cantidad": 0}
@@ -1203,12 +1371,13 @@ def enviar_agenda(conexion, fecha: _dt.date = None, manual: bool = False) -> dic
         if not cfg["destinatarios"]:
             raise CalendarioError("Falta el destinatario de la agenda diaria (pestaña Mails → Agenda diaria).")
         panel_url = (os.environ.get("PANEL_URL") or mc.DEFAULT_PANEL).rstrip("/")
-        asunto, html_, texto = armar_agenda(fecha, eventos, panel_url)
+        asunto, html_, texto = armar_agenda(fecha, eventos, panel_url, seguimientos)
         mc.enviar(cfg["cuenta"], cfg["remitente"], cfg["responder_a"], cfg["destinatarios"], asunto, html_, texto)
         para = ", ".join(cfg["destinatarios"])
         if not manual:
             _cerrar_envio(conexion, fecha, enviado_en=_dt.datetime.now(_dt.timezone.utc), cantidad=len(eventos), destinatarios=para, error=None)
-        return {"estado": "enviada", "fecha": fecha.isoformat(), "cantidad": len(eventos), "asunto": asunto, "destinatarios": para}
+        return {"estado": "enviada", "fecha": fecha.isoformat(), "cantidad": len(eventos),
+                "recordatorios": len(seguimientos), "asunto": asunto, "destinatarios": para}
     except Exception as e:
         if not manual:
             try:
@@ -1264,7 +1433,7 @@ def evento_a_json(f: dict) -> dict:
         ultimo = fin.date()
         if fin.time() == _dt.time(0, 0) and fin > ini:
             ultimo = (fin - _dt.timedelta(days=1)).date()
-    return {
+    out = {
         "id": f["id"],
         "titulo": f["titulo"],
         "descripcion": f["descripcion"] or "",
@@ -1281,7 +1450,12 @@ def evento_a_json(f: dict) -> dict:
         "modalidad": f.get("modalidad"),
         "meet_url": f.get("meet_url"),
         "email_aviso": f.get("email_aviso"),
+        "tipo": f.get("tipo") or TIPO_EVENTO,
+        "hecho": bool(f.get("hecho")),
     }
+    if out["tipo"] != TIPO_SEGUIMIENTO and not out["todo_el_dia"]:
+        out["texto_whatsapp"] = texto_whatsapp(out)   # para pasarle los datos a la persona por WhatsApp
+    return out
 
 
 def resolver_actas(cur, actas) -> dict:
@@ -1662,3 +1836,389 @@ def estado(cur) -> dict:
         "ultimo_cambios": f.get("ultimo_cambios"),
         "sondeo_segundos": SONDEO_SEGUNDOS,
     }
+
+
+# ── Recordatorios (lista para el panel) ────────────────────────────────
+
+def listar_seguimientos(cur, hechos_dias: int = 14, limite: int = 300) -> list:
+    """Los recordatorios pendientes (de cualquier fecha: los atrasados también) y los que se
+    marcaron como hechos en los últimos `hechos_dias`, en orden de fecha, con sus vínculos."""
+    desde_hechos = _dt.datetime.now(TZ) - _dt.timedelta(days=hechos_dias)
+    cur.execute(
+        """
+        SELECT * FROM calendario_eventos
+        WHERE calendar_id = %s AND tipo = %s AND (NOT hecho OR inicio >= %s)
+        ORDER BY inicio, id
+        LIMIT %s
+        """,
+        (calendar_id(), TIPO_SEGUIMIENTO, desde_hechos, limite),
+    )
+    return _con_vinculos(cur, [evento_a_json(f) for f in _sin_ocultos(cur.fetchall())])
+
+
+# ── Disponibilidad horaria ─────────────────────────────────────────────
+# La agente pasa «el martes estoy libre de 8 a 15» y el panel calcula cuántas reuniones entran
+# y qué horarios quedan libres, descontando lo ya agendado. Una reunión dura 30 minutos y entre
+# una y otra se dejan 15 (se cambia con CALENDARIO_REUNION_MIN y CALENDARIO_MARGEN_MIN).
+
+def _entero_env(nombre: str, defecto: int, minimo: int, maximo: int) -> int:
+    try:
+        v = int((os.environ.get(nombre) or "").strip())
+    except ValueError:
+        return defecto
+    return v if minimo <= v <= maximo else defecto
+
+
+def duracion_reunion() -> int:
+    return _entero_env("CALENDARIO_REUNION_MIN", 30, 5, 240)
+
+
+def margen_reunion() -> int:
+    return _entero_env("CALENDARIO_MARGEN_MIN", 15, 0, 120)
+
+
+def _a_min(hhmm: str) -> int:
+    h, m = [int(x) for x in str(hhmm).split(":")[:2]]
+    return h * 60 + m
+
+
+def _hhmm(minutos: int) -> str:
+    return f"{minutos // 60:02d}:{minutos % 60:02d}"
+
+
+def _hora_corta(minutos: int) -> str:
+    """480 → «8:00»; 525 → «8:45»."""
+    return f"{minutos // 60}:{minutos % 60:02d}"
+
+
+def unir_ventanas(ventanas) -> list:
+    """[(ini, fin)] en minutos → ordenadas y sin solapes (las que se tocan o se pisan se juntan)."""
+    unidas = []
+    for ini, fin in sorted((a, b) for a, b in ventanas if b > a):
+        if unidas and ini <= unidas[-1][1]:
+            unidas[-1] = (unidas[-1][0], max(unidas[-1][1], fin))
+        else:
+            unidas.append((ini, fin))
+    return unidas
+
+
+def _restar(libres: list, a: int, b: int) -> list:
+    salida = []
+    for x, y in libres:
+        if b <= x or a >= y:
+            salida.append((x, y))
+            continue
+        if a > x:
+            salida.append((x, a))
+        if b < y:
+            salida.append((b, y))
+    return salida
+
+
+def turnos_en(tramos, duracion: int, margen: int) -> list:
+    """Horarios de inicio (en minutos) de las reuniones que entran en esos tramos, una atrás de otra:
+    cada una dura `duracion` y entre dos reuniones queda `margen`."""
+    turnos = []
+    for ini, fin in tramos:
+        t = ini
+        while t + duracion <= fin:
+            turnos.append(t)
+            t += duracion + margen
+    return turnos
+
+
+def calcular_dia(ventanas, ocupados, duracion: int = None, margen: int = None, no_antes: int = None) -> dict:
+    """Qué pasa un día. `ventanas` y `ocupados`: listas de (inicio, fin) en minutos desde las 0:00.
+    Cada reunión ocupada se agranda `margen` minutos de cada lado (para no pegar la siguiente), pero el
+    borde de la ventana no pide margen. `no_antes`: hoy no se ofrece lo que ya pasó.
+    Devuelve {capacidad, libres, tramos, agendadas}: cuántas reuniones entran en la ventana vacía, los
+    horarios de inicio libres, los tramos que quedan libres y cuántas reuniones ya hay dentro de la ventana."""
+    duracion = duracion or duracion_reunion()
+    margen = margen_reunion() if margen is None else margen
+    unidas = unir_ventanas(ventanas)
+    tramos = list(unidas)
+    for ini, fin in ocupados:
+        tramos = _restar(tramos, ini - margen, fin + margen)
+    if no_antes is not None:
+        tramos = [(max(a, no_antes), b) for a, b in tramos if b > no_antes]
+    agendadas = sum(1 for ini, fin in ocupados if any(ini < b and fin > a for a, b in unidas))
+    return {
+        "capacidad": len(turnos_en(unidas, duracion, margen)),
+        "libres": turnos_en(tramos, duracion, margen),
+        "tramos": [(a, b) for a, b in tramos if b - a >= duracion],
+        "agendadas": agendadas,
+    }
+
+
+# ── Interpretar «próximo martes libre de 8 a 15» ──────────────────────
+
+_MESES_SIN_TILDE = {m: i + 1 for i, m in enumerate(
+    ("enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"))}
+_MESES_SIN_TILDE["setiembre"] = 9
+_DIAS_SIN_TILDE = {"lunes": 0, "martes": 1, "miercoles": 2, "jueves": 3, "viernes": 4, "sabado": 5, "domingo": 6}
+_DIAS_RE = "|".join(_DIAS_SIN_TILDE)
+_MESES_RE = "|".join(_MESES_SIN_TILDE)
+_HORA_RE = r"(\d{1,2})(?:[:.h](\d{2}))?\s*(?:hs?\b\.?|horas\b)?"
+_RE_RANGO = re.compile(
+    rf"(?<![\d:./])(?:(?:desde|de)\s+)?(?:las?\s+)?{_HORA_RE}(?:\s*[-–—]\s*|\s+(?:a|al|hasta)\s+)(?:las?\s+)?{_HORA_RE}(?![\d:])")
+_RE_FECHA_NUM = re.compile(r"(?<![\d:./])(\d{1,2})/(\d{1,2})(?:/(\d{4}|\d{2}))?(?![\d:/])")
+_RE_FECHA_MES = re.compile(rf"\b(?:el\s+)?(\d{{1,2}})\s+de\s+({_MESES_RE})(?:\s+de(?:l)?\s+(\d{{4}}))?\b")
+_RE_PASADO_MANANA = re.compile(r"\bpasado\s+manana\b")
+_RE_HOY = re.compile(r"\bhoy\b")
+_RE_MANANA = re.compile(r"(?<!\bla\s)\bmanana\b")
+_RE_DIA_SEMANA = re.compile(
+    rf"\b(?:(?:el|este|esta|proximo|proxima|siguiente)\s+){{0,2}}({_DIAS_RE})\b(?:\s+(?:que\s+viene|proximo|siguiente))?")
+_RE_EL_NUMERO = re.compile(r"\bel\s+(\d{1,2})\b(?!\s*(?:[:/.]|hs?\b|(?:a|al|hasta)\s+\d|-\s*\d))")
+
+
+def _sin_tildes(texto: str) -> str:
+    import unicodedata
+
+    t = unicodedata.normalize("NFD", texto or "")
+    return "".join(c for c in t if unicodedata.category(c) != "Mn").lower()
+
+
+def _fecha_del_dia(hoy: _dt.date, dia: int, mes: int, anio: int = None) -> _dt.date:
+    """dd/mm sin año: este año, o el que viene si ya pasó."""
+    if anio is not None:
+        return _dt.date(anio, mes, dia)
+    d = _dt.date(hoy.year, mes, dia)
+    return d if d >= hoy else _dt.date(hoy.year + 1, mes, dia)
+
+
+def _proximo_dia_del_mes(hoy: _dt.date, dia: int) -> _dt.date:
+    """«el 14»: el próximo día 14 desde hoy (hoy mismo si hoy es 14; el mes que viene si ya pasó)."""
+    anio, mes = hoy.year, hoy.month
+    for _ in range(14):
+        try:
+            d = _dt.date(anio, mes, dia)
+            if d >= hoy:
+                return d
+        except ValueError:
+            pass   # ese mes no tiene el día 31, por ejemplo
+        mes += 1
+        if mes > 12:
+            mes, anio = 1, anio + 1
+    raise ValueError("fecha")
+
+
+def _etiqueta_dia(d: _dt.date) -> str:
+    return f"{DIAS_SEMANA[d.weekday()]} {d.day}/{d.month}"
+
+
+def interpretar_disponibilidad(texto: str, hoy: _dt.date) -> dict:
+    """De un texto escrito a mano («próximo martes libre de 8 a 15», «lunes y jueves de 9 a 13, miércoles
+    de 14 a 18», «mañana 10 a 12 y de 15 a 17», «el 14 de octubre de 8:30 a 12») a las ventanas que
+    entendió: {ventanas: [{fecha, desde, hasta, texto}], advertencias: [...]}. No guarda nada.
+    Un día solo («martes») es el próximo martes desde hoy (hoy mismo si hoy es martes); con «próximo»,
+    «que viene» o «siguiente» es siempre uno posterior a hoy."""
+    t = _sin_tildes(texto)
+    adv, tokens = [], []   # tokens: (posición, "dia", fecha) | (posición, "rango", ini, fin)
+
+    def tomar(regex, convertir, tipo="fecha"):
+        nonlocal t
+        for m in list(regex.finditer(t)):
+            try:
+                fecha = convertir(m)
+            except ValueError:
+                adv.append(f"«{m.group(0).strip()}» no es una fecha válida.")
+                fecha = None
+            if fecha is not None:
+                tokens.append((m.start(), "dia", fecha, tipo, m.end()))
+            t = t[:m.start()] + " " * (m.end() - m.start()) + t[m.end():]
+
+    # «de la mañana» no es el día de mañana; «3 de la tarde» son las 15.
+    t = re.sub(r"(?<=\d)(\s*hs?)?\s+de\s+la\s+(?:manana|madrugada)\b", r"\1", t)
+    t = re.sub(r"(\d{1,2})((?::\d{2})?)(\s*hs?)?\s+de\s+la\s+(?:tarde|noche)\b",
+               lambda m: f"{(int(m.group(1)) % 12) + 12}{m.group(2)}{m.group(3) or ''}", t)
+
+    def anio_de(g):
+        if not g:
+            return None
+        n = int(g)
+        return n + 2000 if n < 100 else n
+
+    tomar(_RE_FECHA_NUM, lambda m: _fecha_del_dia(hoy, int(m.group(1)), int(m.group(2)), anio_de(m.group(3))))
+    tomar(_RE_FECHA_MES, lambda m: _fecha_del_dia(hoy, int(m.group(1)), _MESES_SIN_TILDE[m.group(2)], anio_de(m.group(3))))
+    tomar(_RE_PASADO_MANANA, lambda m: hoy + _dt.timedelta(days=2))
+    tomar(_RE_HOY, lambda m: hoy)
+    tomar(_RE_MANANA, lambda m: hoy + _dt.timedelta(days=1))
+
+    def dia_semana(m):
+        objetivo = _DIAS_SIN_TILDE[m.group(1)]
+        delta = (objetivo - hoy.weekday()) % 7
+        if delta == 0 and re.search(r"proxim|siguiente|que\s+viene", m.group(0)):
+            delta = 7
+        return hoy + _dt.timedelta(days=delta)
+
+    tomar(_RE_DIA_SEMANA, dia_semana, "semana")
+    tomar(_RE_EL_NUMERO, lambda m: _proximo_dia_del_mes(hoy, int(m.group(1))) if 1 <= int(m.group(1)) <= 31 else None)
+
+    for m in _RE_RANGO.finditer(t):
+        h1, m1, h2, m2 = int(m.group(1)), int(m.group(2) or 0), int(m.group(3)), int(m.group(4) or 0)
+        if h2 <= h1 and h2 < 12 and not m.group(4) and h2 + 12 > h1:
+            h2 += 12   # «de 8 a 3» → de 8 a 15
+        if h1 > 23 or h2 > 23 or m1 > 59 or m2 > 59:
+            adv.append(f"«{m.group(0).strip()}» no parece un horario válido.")
+            continue
+        ini, fin = h1 * 60 + m1, h2 * 60 + m2
+        if fin <= ini:
+            adv.append(f"«{m.group(0).strip()}»: la hora de fin tiene que ser después de la de inicio.")
+            continue
+        tokens.append((m.start(), "rango", ini, fin))
+    tokens.sort(key=lambda x: x[0])
+    # «sábado 17/10»: el nombre del día y la fecha son lo mismo; manda la fecha.
+    sin_repetir = []
+    for i, tok in enumerate(tokens):
+        sig = tokens[i + 1] if i + 1 < len(tokens) else None
+        if tok[1] == "dia" and tok[3] == "semana" and sig and sig[1] == "dia" and sig[3] == "fecha" and sig[0] - tok[4] <= 3:
+            continue
+        sin_repetir.append(tok)
+    tokens = sin_repetir
+
+    # Se arman grupos «días → horarios»: «lunes y jueves de 9 a 13 y de 15 a 17» es un grupo con dos días y dos horarios.
+    grupos = []
+    for tok in tokens:
+        if tok[1] == "dia":
+            if not grupos or grupos[-1]["rangos"]:
+                grupos.append({"dias": [], "rangos": []})
+            if tok[2] not in grupos[-1]["dias"]:
+                grupos[-1]["dias"].append(tok[2])
+        else:
+            if not grupos:
+                grupos.append({"dias": [], "rangos": []})
+            grupos[-1]["rangos"].append((tok[2], tok[3]))
+    # «de 8 a 15 el martes»: el horario vino antes del día.
+    unidos = []
+    for g in grupos:
+        if unidos and not unidos[-1]["dias"] and unidos[-1]["rangos"] and g["dias"] and not g["rangos"]:
+            unidos[-1]["dias"] = g["dias"]
+        else:
+            unidos.append(g)
+
+    ventanas, vistos = [], set()
+    for g in unidos:
+        if g["rangos"] and not g["dias"]:
+            adv.append("Hay un horario sin día: escribí también qué día es (por ejemplo «martes de 8 a 15»).")
+        elif g["dias"] and not g["rangos"]:
+            adv.append(f"No encontré el horario de {', '.join(_etiqueta_dia(d) for d in g['dias'])}: escribilo así, «de 8 a 15».")
+        for d in g["dias"]:
+            for ini, fin in g["rangos"]:
+                if d < hoy:
+                    adv.append(f"{_etiqueta_dia(d)} ya pasó: no se carga.")
+                    continue
+                if (d, ini, fin) in vistos:
+                    continue
+                vistos.add((d, ini, fin))
+                if fin - ini < duracion_reunion():
+                    adv.append(f"{_etiqueta_dia(d)} de {_hora_corta(ini)} a {_hora_corta(fin)}: es más corto que una reunión ({duracion_reunion()} min).")
+                ventanas.append({"fecha": d.isoformat(), "desde": _hhmm(ini), "hasta": _hhmm(fin),
+                                 "texto": f"{_etiqueta_dia(d)} de {_hora_corta(ini)} a {_hora_corta(fin)}"})
+    ventanas.sort(key=lambda v: (v["fecha"], v["desde"]))
+    if re.search(r"\b(?:todos\s+los|cada)\b", t):
+        adv.append("Esto carga solo la próxima fecha. Para repetirlo todas las semanas, usá el botón «Repetir semanalmente».")
+    if not ventanas and not adv:
+        adv.append("No entendí. Escribilo así: «próximo martes libre de 8 a 15» o «lunes 12/10 de 9 a 13 y de 15 a 18».")
+    return {"ventanas": ventanas, "advertencias": adv}
+
+
+# ── Guardar y consultar la disponibilidad ─────────────────────────────
+
+MAX_SEMANAS_REPETIR = 12
+
+
+def _validar_ventana(v: dict, hoy: _dt.date) -> tuple:
+    try:
+        fecha = _dt.date.fromisoformat(str(v.get("fecha")))
+        ini, fin = _a_min(v.get("desde")), _a_min(v.get("hasta"))
+    except (TypeError, ValueError, AttributeError):
+        raise CalendarioError("Una de las disponibilidades tiene la fecha o la hora mal escrita.")
+    if not (0 <= ini < fin <= 24 * 60 - 1):
+        raise CalendarioError(f"{_etiqueta_dia(fecha)}: la hora de fin tiene que ser después de la de inicio.")
+    if fecha < hoy:
+        raise CalendarioError(f"{_etiqueta_dia(fecha)} ya pasó.")
+    if (fecha - hoy).days > 400:
+        raise CalendarioError(f"{_etiqueta_dia(fecha)} está demasiado lejos (máximo 400 días).")
+    return fecha, ini, fin
+
+
+def guardar_disponibilidad(conexion, ventanas: list, usuario: str, repetir_semanas: int = 0, hoy: _dt.date = None) -> dict:
+    """Guarda las ventanas (una por día y tramo). Con `repetir_semanas` = N, cada una se copia además a las
+    N semanas siguientes (cada copia se puede borrar por separado). Lo que ya estaba cargado no se duplica."""
+    hoy = hoy or _dt.datetime.now(TZ).date()
+    if not ventanas:
+        raise CalendarioError("No hay ninguna disponibilidad para guardar.")
+    if len(ventanas) > 60:
+        raise CalendarioError("Son demasiadas disponibilidades de una vez (máximo 60).")
+    try:
+        repetir = int(repetir_semanas or 0)
+    except (TypeError, ValueError):
+        repetir = 0
+    if not 0 <= repetir <= MAX_SEMANAS_REPETIR:
+        raise CalendarioError(f"Se puede repetir hasta {MAX_SEMANAS_REPETIR} semanas.")
+    filas = []
+    for v in ventanas:
+        fecha, ini, fin = _validar_ventana(v, hoy)
+        for k in range(repetir + 1):
+            filas.append((fecha + _dt.timedelta(days=7 * k), _hhmm(ini), _hhmm(fin), usuario or ""))
+    nuevas = 0
+    with conexion() as conn:
+        with conn.cursor() as cur:
+            for fila in filas:
+                cur.execute(
+                    "INSERT INTO calendario_disponibilidad (fecha, desde, hasta, creado_por) VALUES (%s, %s, %s, %s) "
+                    "ON CONFLICT (fecha, desde, hasta) DO NOTHING RETURNING id", fila)
+                if cur.fetchone():
+                    nuevas += 1
+        conn.commit()
+    return {"creadas": nuevas, "repetidas": len(filas) - nuevas}
+
+
+def borrar_disponibilidad(conexion, ventana_id: int) -> None:
+    with conexion() as conn:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM calendario_disponibilidad WHERE id = %s", (ventana_id,))
+        conn.commit()
+
+
+def _ocupado_del_dia(ev: dict, dia: str) -> tuple:
+    """(inicio, fin) en minutos de lo que un evento ocupa ese día (los que cruzan medianoche, recortados)."""
+    ini = _a_min(ev["hora"]) if ev["fecha"] == dia else 0
+    fin = _a_min(ev["hora_fin"]) if ev["fecha_fin"] == dia else 24 * 60
+    return ini, fin
+
+
+def disponibilidad_del_rango(cur, desde: _dt.date, hasta: _dt.date, ahora: _dt.datetime = None) -> list:
+    """Para cada día con disponibilidad cargada entre `desde` y `hasta`: las ventanas, las reuniones que ya
+    hay, los horarios libres y un resumen. Los recordatorios y los eventos de todo el día no ocupan horario."""
+    ahora = (ahora or _dt.datetime.now(TZ)).astimezone(TZ)
+    cur.execute("SELECT id, fecha, desde, hasta FROM calendario_disponibilidad WHERE fecha BETWEEN %s AND %s ORDER BY fecha, desde",
+                (desde, hasta))
+    por_dia = {}
+    for f in cur.fetchall():
+        por_dia.setdefault(f["fecha"].isoformat(), []).append({"id": f["id"], "desde": f["desde"].strftime("%H:%M"), "hasta": f["hasta"].strftime("%H:%M")})
+    if not por_dia:
+        return []
+    eventos = [e for e in listar_eventos(cur, desde, hasta)
+               if e.get("tipo") != TIPO_SEGUIMIENTO and not e.get("todo_el_dia") and e.get("hora")]
+    duracion, margen = duracion_reunion(), margen_reunion()
+    dias = []
+    for dia in sorted(por_dia):
+        ventanas = por_dia[dia]
+        del_dia = [e for e in eventos if e["fecha"] <= dia <= e["fecha_fin"]]
+        ocupados = [_ocupado_del_dia(e, dia) for e in del_dia]
+        no_antes = ahora.hour * 60 + ahora.minute if dia == ahora.date().isoformat() else None
+        r = calcular_dia([(_a_min(v["desde"]), _a_min(v["hasta"])) for v in ventanas], ocupados, duracion, margen, no_antes)
+        d = _dt.date.fromisoformat(dia)
+        libres = [_hora_corta(m) for m in r["libres"]]
+        dias.append({
+            "fecha": dia,
+            "ventanas": ventanas,
+            "reuniones": [{"id": e["id"], "titulo": e["titulo"], "hora": e["hora"], "hora_fin": e["hora_fin"]} for e in del_dia],
+            "capacidad": r["capacidad"],
+            "agendadas": r["agendadas"],
+            "libres": libres,
+            "tramos": [{"desde": _hhmm(a), "hasta": _hhmm(b)} for a, b in r["tramos"]],
+            "texto": f"{_etiqueta_dia(d)}: " + (", ".join(libres) if libres else "sin horarios libres"),
+        })
+    return dias

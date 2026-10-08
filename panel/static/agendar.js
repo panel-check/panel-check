@@ -23,9 +23,12 @@ function resumenAgendado(r) {
       <p>${_escapeHtml(cuando)}</p>
       ${meet}
       ${lineas.map(l => `<p>${l}</p>`).join("")}
+      ${e.texto_whatsapp ? '<button type="button" class="cal-btn chico principal" id="ag-wsp" title="Un texto con el día, la hora y cómo es, para pasárselo a la persona por WhatsApp">💬 Texto para WhatsApp</button>' : ""}
       <a class="cal-btn chico" href="/calendario">Ver en el calendario</a>
     </div>`;
   $ag("ag-exito").hidden = false;
+  const wsp = $ag("ag-wsp");
+  if (wsp) wsp.addEventListener("click", () => calMostrarWhatsApp(e, { recienAgendado: true }));
   const copiar = $ag("ag-copiar");
   if (copiar) copiar.addEventListener("click", async () => {
     try { await navigator.clipboard.writeText(e.meet_url); copiar.textContent = "¡Copiado!"; }

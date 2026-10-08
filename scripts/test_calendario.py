@@ -552,14 +552,14 @@ class ModalidadYMeet(unittest.TestCase):
     def test_editar_de_horario_a_todo_el_dia_anula_lo_que_sobra(self):
         """Causa del 502: en un PATCH start/end se mezclan con lo que ya tiene el evento; con date y dateTime juntos Google rechaza."""
         self.respuestas = [{"id": "g1"}]
-        cc.editar_evento(self.conexion_con(("g1", None)), 7,
+        cc.editar_evento(self.conexion_con(("g1", None, "evento", False)), 7,
                          {"titulo": "CUMPLE", "fecha": "2026-10-14", "fecha_fin": "2026-10-15", "todo_el_dia": True}, "marcos")
         cuerpo = self.pedidos[-1][2]
         self.assertEqual(cuerpo["start"], {"date": "2026-10-14", "dateTime": None, "timeZone": None})
         self.assertEqual(cuerpo["end"], {"date": "2026-10-16", "dateTime": None, "timeZone": None})   # el fin de Google es exclusivo
         # y al revés: de todo el día a un horario
         self.respuestas = [{"id": "g1"}]
-        cc.editar_evento(self.conexion_con(("g1", None)), 7, self.DATOS, "marcos")
+        cc.editar_evento(self.conexion_con(("g1", None, "evento", False)), 7, self.DATOS, "marcos")
         cuerpo = self.pedidos[-1][2]
         self.assertIsNone(cuerpo["start"]["date"])
         self.assertEqual(cuerpo["start"]["dateTime"], "2026-10-08T16:00:00-03:00")
@@ -576,36 +576,36 @@ class ModalidadYMeet(unittest.TestCase):
         self.assertIsNone(cc.evento_a_fila(ev("b"), "c")["email_aviso"])
         # al editar sin mail, se borra el que había
         self.respuestas = [{"id": "g1"}]
-        cc.editar_evento(self.conexion_con(("g1", None)), 7, self.DATOS, "marcos")
+        cc.editar_evento(self.conexion_con(("g1", None, "evento", False)), 7, self.DATOS, "marcos")
         self.assertIsNone(self.pedidos[-1][2]["extendedProperties"]["private"]["email_aviso"])
         self.respuestas = [{"id": "g1"}]
-        cc.editar_evento(self.conexion_con(("g1", None)), 7, {**self.DATOS, "email_aviso": "a@b.com"}, "marcos")
+        cc.editar_evento(self.conexion_con(("g1", None, "evento", False)), 7, {**self.DATOS, "email_aviso": "a@b.com"}, "marcos")
         self.assertEqual(self.pedidos[-1][2]["extendedProperties"]["private"]["email_aviso"], "a@b.com")
 
     def test_editar_agrega_saca_o_conserva_el_meet(self):
         self.conectar_oauth()
         # tenía llamada y pasa a Meet: se pide la sala
         self.respuestas = [{"id": "g1", "hangoutLink": "https://meet.google.com/x"}]
-        cc.editar_evento(self.conexion_con(("g1", None)), 7, {**self.DATOS, "modalidad": "meet"}, "marcos")
+        cc.editar_evento(self.conexion_con(("g1", None, "evento", False)), 7, {**self.DATOS, "modalidad": "meet"}, "marcos")
         _, _, cuerpo, params = self.pedidos[-1]
         self.assertIn("createRequest", cuerpo["conferenceData"])
         self.assertEqual(params["conferenceDataVersion"], 1)
         # ya tenía Meet y sigue siendo Meet: no se toca la sala
         self.respuestas = [{"id": "g1", "hangoutLink": "https://meet.google.com/x"}]
-        cc.editar_evento(self.conexion_con(("g1", "https://meet.google.com/x")), 7, {**self.DATOS, "modalidad": "meet"}, "marcos")
+        cc.editar_evento(self.conexion_con(("g1", "https://meet.google.com/x", "evento", False)), 7, {**self.DATOS, "modalidad": "meet"}, "marcos")
         _, _, cuerpo, params = self.pedidos[-1]
         self.assertNotIn("conferenceData", cuerpo)
         self.assertNotIn("conferenceDataVersion", params)
         # tenía Meet y pasa a llamada: se saca la videollamada y la marca anterior
         self.respuestas = [{"id": "g1"}]
-        cc.editar_evento(self.conexion_con(("g1", "https://meet.google.com/x")), 7, {**self.DATOS, "modalidad": "llamada"}, "marcos")
+        cc.editar_evento(self.conexion_con(("g1", "https://meet.google.com/x", "evento", False)), 7, {**self.DATOS, "modalidad": "llamada"}, "marcos")
         _, _, cuerpo, params = self.pedidos[-1]
         self.assertIn("conferenceData", cuerpo)
         self.assertIsNone(cuerpo["conferenceData"])
         self.assertEqual(params["conferenceDataVersion"], 1)
         # sin modalidad: se borra la marca vieja
         self.respuestas = [{"id": "g1"}]
-        cc.editar_evento(self.conexion_con(("g1", None)), 7, self.DATOS, "marcos")
+        cc.editar_evento(self.conexion_con(("g1", None, "evento", False)), 7, self.DATOS, "marcos")
         self.assertIn("modalidad", self.pedidos[-1][2]["extendedProperties"]["private"])
         self.assertIsNone(self.pedidos[-1][2]["extendedProperties"]["private"]["modalidad"])
 
