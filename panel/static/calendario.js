@@ -392,7 +392,7 @@ function dispPintarLista() {
     return;
   }
   cont.innerHTML = `<div class="cal-disp-cab">
-      <p class="cal-nota">Cada reunión dura ${duracion} min y entre una y otra se dejan ${margen}. Tocá un horario para agendar. Lo agendado se descuenta solo; los recordatorios y los eventos de todo el día no ocupan horario.</p>
+      <p class="cal-nota cal-nota-disp">Reuniones de ${duracion} min con ${margen} de margen. Tocá un horario para agendar; lo agendado se descuenta solo.</p>
       <button type="button" class="cal-btn chico" id="disp-copiar-todo">📋 Copiar todos los días</button>
     </div>${dias.map(d => dispDiaHtml(d, duracion)).join("")}`;
 }
@@ -474,7 +474,11 @@ function pintarDisponibilidad() {
     $("cal-vista").innerHTML = `
       <section class="cal-disp-carga">
         <h3>Cargar disponibilidad</h3>
-        <p class="cal-nota">Escribí lo que te pasó la agente, como lo dirías: <i>próximo martes libre de 8 a 15</i> · <i>lunes y jueves de 9 a 13</i> · <i>mañana de 10 a 12 y de 15 a 17</i> · <i>el 14 de octubre de 8:30 a 12</i>. Para un día sin reuniones: <i>lunes 12/10 feriado</i> · <i>miércoles 14 sin reuniones, cumple de Pame</i>.</p>
+        <p class="cal-nota">Escribilo como lo dirías, con horarios o con días sin reuniones.
+          <details class="cal-ejemplos"><summary>Ver ejemplos</summary>
+            <i>próximo martes libre de 8 a 15</i><i>lunes y jueves de 9 a 13</i><i>mañana de 10 a 12 y de 15 a 17</i><i>el 14 de octubre de 8:30 a 12</i>
+            <i>lunes 12/10 feriado</i><i>miércoles 14 sin reuniones, cumple de Pame</i>
+          </details></p>
         <div class="cal-disp-fila">
           <input type="text" id="disp-texto" maxlength="1000" placeholder="próximo martes libre de 8 a 15" autocomplete="off">
           <button type="button" class="cal-btn principal" id="disp-ir">Interpretar</button>

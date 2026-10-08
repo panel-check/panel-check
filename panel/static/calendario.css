@@ -333,6 +333,7 @@ details.cal-evento.plegado > .cal-evento-acciones { margin-bottom: 12px; }
 .cal-turno:focus-visible { outline: none; box-shadow: var(--foco); }
 @media (max-width: 760px) {
   .cal-disp-fila { flex-direction: column; }
+  .cal-disp-fila input { flex: none; width: 100%; }
   .cal-disp-fila .cal-btn { width: 100%; }
 }
 
@@ -351,3 +352,15 @@ details.cal-evento.plegado > .cal-evento-acciones { margin-bottom: 12px; }
 .cal-sin-reu-aviso { margin: 0 0 8px; padding: 7px 10px; border-radius: 8px; background: #fde2e2; color: #b42318; font-size: 13px; }
 .cal-disp-dia.cerrado { border-left-color: var(--rojo); background: #fff7f7; }
 .cal-disp-dia.cerrado .cal-disp-resumen b { color: #b42318; }
+
+/* Ejemplos de lo que se puede escribir: plegados para no ocupar lugar */
+.cal-ejemplos { margin-top: 4px; }
+.cal-ejemplos summary { cursor: pointer; color: var(--azul); font-size: 12.5px; }
+.cal-ejemplos i { display: block; margin: 2px 0 0 12px; }
+/* Panel lateral (pestaña Disponibilidad): más compacto */
+html.embebido .cal-disp-carga { padding: 10px 12px; margin-bottom: 12px; }
+html.embebido .cal-disp-carga h3 { font-size: 14px; }
+html.embebido .cal-nota-disp { font-size: 12px; margin: 0 0 8px; }
+html.embebido .cal-disp-cab { flex-direction: column; align-items: flex-start; gap: 6px; }
+html.embebido .cal-disp-dia { padding: 10px 12px; }
+html.embebido .cal-disp-dia h3 { font-size: 14px; }
