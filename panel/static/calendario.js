@@ -327,7 +327,23 @@ function dispBarra(d) {
           <div class="cal-disp-ejes"><span>${dispHora(ini)}</span><span>${dispHora(fin)}</span></div>`;
 }
 
+function dispDiaCerradoHtml(d) {
+  const hoy = calHoy();
+  const c = d.cerrado;
+  const aviso = d.reuniones.length
+    ? `<p class="cal-disp-reuniones cal-disp-ojo">⚠ Ese día ya hay ${d.reuniones.length === 1 ? "una reunión agendada" : `${d.reuniones.length} reuniones agendadas`}: ${d.reuniones.map(r => `<b>${esc(r.hora)}–${esc(r.hora_fin)}</b> ${esc(r.titulo)}`).join(" · ")}</p>` : "";
+  return `<article class="cal-disp-dia cerrado ${d.fecha === hoy ? "hoy" : ""}">
+    <header>
+      <h3>${esc(calFechaLarga(d.fecha))}${d.fecha === hoy ? " · hoy" : ""}</h3>
+      <span class="cal-disp-resumen"><b>🚫 Sin reuniones${c.motivo ? ` · ${esc(c.motivo)}` : ""}</b></span>
+    </header>
+    ${aviso}
+    <div class="cal-disp-chips"><button type="button" class="cal-btn chico" data-borrar-cierre="${c.id}" title="Vuelve a ofrecer este día">Habilitar de nuevo este día</button></div>
+  </article>`;
+}
+
 function dispDiaHtml(d, duracion) {
+  if (d.cerrado) return dispDiaCerradoHtml(d);
   const hoy = calHoy();
   const turnos = d.libres.length
     ? d.libres.map(h => `<button type="button" class="cal-turno" data-turno="${esc(h)}" data-dia="${esc(d.fecha)}" title="Agendar una reunión de ${duracion} min a las ${esc(h)}">${esc(h)}</button>`).join("")
@@ -368,10 +384,12 @@ function dispPintarPrevia() {
   const p = est.propuesta;
   if (!p) { cont.innerHTML = ""; return; }
   const avisos = p.advertencias.length ? `<ul class="cal-disp-avisos">${p.advertencias.map(a => `<li>${esc(a)}</li>`).join("")}</ul>` : "";
-  if (!p.ventanas.length) { cont.innerHTML = `<div class="cal-disp-previa">${avisos}</div>`; return; }
+  const cierres = p.cierres || [];
+  if (!p.ventanas.length && !cierres.length) { cont.innerHTML = `<div class="cal-disp-previa">${avisos}</div>`; return; }
   cont.innerHTML = `<div class="cal-disp-previa">
     <p><b>Entendí:</b></p>
-    <ul class="cal-disp-entendido">${p.ventanas.map((v, i) => `<li><span>${esc(v.texto)}</span><button type="button" class="cal-btn chico" data-quitar="${i}" title="No cargar este">✕</button></li>`).join("")}</ul>
+    <ul class="cal-disp-entendido">${p.ventanas.map((v, i) => `<li><span>${esc(v.texto)}</span><button type="button" class="cal-btn chico" data-quitar="${i}" title="No cargar este">✕</button></li>`).join("")}${
+      cierres.map((c, i) => `<li><span>🚫 ${esc(c.texto)}</span><button type="button" class="cal-btn chico" data-quitar-cierre="${i}" title="No cargar este">✕</button></li>`).join("")}</ul>
     ${avisos}
     <div class="cal-disp-acciones">
       <button type="button" class="cal-btn principal" id="disp-guardar">Guardar</button>
@@ -401,14 +419,18 @@ async function dispInterpretar() {
 
 async function dispGuardar(repetir) {
   const p = est.propuesta;
-  if (!p || !p.ventanas.length) return;
+  if (!p || !(p.ventanas.length || (p.cierres || []).length)) return;
   const semanas = repetir ? Math.max(1, Math.min(12, +$("disp-rep").value || 4)) : 0;
   for (const id of ["disp-guardar", "disp-guardar-rep"]) { const b = $(id); if (b) b.disabled = true; }
   try {
     const r = await apiJson("/api/calendario/disponibilidad", "POST", {
-      ventanas: p.ventanas.map(({ fecha, desde, hasta }) => ({ fecha, desde, hasta })), repetir_semanas: semanas,
+      ventanas: p.ventanas.map(({ fecha, desde, hasta }) => ({ fecha, desde, hasta })),
+      cierres: (p.cierres || []).map(({ fecha, motivo }) => ({ fecha, motivo })), repetir_semanas: semanas,
     });
-    mostrarAviso(`Disponibilidad guardada (${r.creadas} horario${r.creadas === 1 ? "" : "s"}${r.repetidas ? `, ${r.repetidas} ya estaba${r.repetidas === 1 ? "" : "n"} cargado${r.repetidas === 1 ? "" : "s"}` : ""})`);
+    const partes = [];
+    if (p.ventanas.length) partes.push(`${r.creadas} horario${r.creadas === 1 ? "" : "s"}${r.repetidas ? `, ${r.repetidas} ya estaba${r.repetidas === 1 ? "" : "n"} cargado${r.repetidas === 1 ? "" : "s"}` : ""}`);
+    if ((p.cierres || []).length) partes.push(`${r.cerrados + r.cerrados_repetidos} día${r.cerrados + r.cerrados_repetidos === 1 ? "" : "s"} sin reuniones`);
+    mostrarAviso(`Disponibilidad guardada (${partes.join("; ")})`);
     est.propuesta = null;
     $("disp-texto").value = "";
     dispPintarPrevia();
@@ -433,7 +455,7 @@ function pintarDisponibilidad() {
     $("cal-vista").innerHTML = `
       <section class="cal-disp-carga">
         <h3>Cargar disponibilidad</h3>
-        <p class="cal-nota">Escribí lo que te pasó la agente, como lo dirías: <i>próximo martes libre de 8 a 15</i> · <i>lunes y jueves de 9 a 13</i> · <i>mañana de 10 a 12 y de 15 a 17</i> · <i>el 14 de octubre de 8:30 a 12</i>.</p>
+        <p class="cal-nota">Escribí lo que te pasó la agente, como lo dirías: <i>próximo martes libre de 8 a 15</i> · <i>lunes y jueves de 9 a 13</i> · <i>mañana de 10 a 12 y de 15 a 17</i> · <i>el 14 de octubre de 8:30 a 12</i>. Para un día sin reuniones: <i>lunes 12/10 feriado</i> · <i>miércoles 14 sin reuniones, cumple de Pame</i>.</p>
         <div class="cal-disp-fila">
           <input type="text" id="disp-texto" maxlength="1000" placeholder="próximo martes libre de 8 a 15" autocomplete="off">
           <button type="button" class="cal-btn principal" id="disp-ir">Interpretar</button>
@@ -447,13 +469,15 @@ function pintarDisponibilidad() {
       if (ev.key !== "Enter") return;
       ev.preventDefault();
       // Enter una vez interpreta; con lo entendido a la vista y el texto sin cambios, Enter otra vez guarda.
-      if (est.propuesta && est.propuesta.ventanas.length && est.propuesta.texto === $("disp-texto").value.trim()) dispGuardar(false);
+      if (est.propuesta && (est.propuesta.ventanas.length || (est.propuesta.cierres || []).length) && est.propuesta.texto === $("disp-texto").value.trim()) dispGuardar(false);
       else dispInterpretar();
     });
     $("disp-texto").addEventListener("input", () => { if (est.propuesta && est.propuesta.texto !== $("disp-texto").value.trim()) { est.propuesta = null; dispPintarPrevia(); } });
     $("disp-previa").addEventListener("click", (ev) => {
       const q = ev.target.closest("[data-quitar]");
       if (q) { est.propuesta.ventanas.splice(+q.dataset.quitar, 1); dispPintarPrevia(); return; }
+      const qc = ev.target.closest("[data-quitar-cierre]");
+      if (qc) { est.propuesta.cierres.splice(+qc.dataset.quitarCierre, 1); dispPintarPrevia(); return; }
       if (ev.target.closest("#disp-guardar")) dispGuardar(false);
       else if (ev.target.closest("#disp-guardar-rep")) dispGuardar(true);
       else if (ev.target.closest("#disp-cancelar")) { est.propuesta = null; dispPintarPrevia(); }
@@ -469,6 +493,12 @@ function pintarDisponibilidad() {
         if (!confirm("¿Quitar este horario de disponibilidad?")) return;
         try { await apiJson(`/api/calendario/disponibilidad/${borrar.dataset.borrarVentana}`, "DELETE"); cargar(); }
         catch (e) { mostrarAviso(`No se pudo borrar: ${e.message}`, "aviso"); }
+        return;
+      }
+      const habilitar = ev.target.closest("[data-borrar-cierre]");
+      if (habilitar) {
+        try { await apiJson(`/api/calendario/disponibilidad/cierre/${habilitar.dataset.borrarCierre}`, "DELETE"); cargar(); }
+        catch (e) { mostrarAviso(`No se pudo habilitar: ${e.message}`, "aviso"); }
         return;
       }
       const copiarDia = ev.target.closest("[data-copiar-dia]");

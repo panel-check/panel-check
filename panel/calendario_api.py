@@ -23,6 +23,7 @@ Rutas:
   POST   /api/calendario/disponibilidad       guardar ventanas de disponibilidad (con repetir_semanas = N, también las N semanas siguientes)
   GET    /api/calendario/disponibilidad?desde&hasta  días con disponibilidad: horarios libres, reuniones y resumen
   DELETE /api/calendario/disponibilidad/{id}  borrar una ventana
+  DELETE /api/calendario/disponibilidad/cierre/{id}  volver a habilitar un día marcado sin reuniones
   GET    /api/calendario/google/conectar      (admin) empieza la conexión con la cuenta de Google del estudio (OAuth)
   GET    /api/calendario/google/callback      (admin) vuelta de Google: muestra el token para cargar en Railway
 """
@@ -79,8 +80,14 @@ class VentanaEntrada(BaseModel):
     hasta: str      # HH:MM
 
 
+class CierreEntrada(BaseModel):
+    fecha: str                       # AAAA-MM-DD: día entero sin reuniones
+    motivo: Optional[str] = ""
+
+
 class DisponibilidadEntrada(BaseModel):
-    ventanas: List[VentanaEntrada]
+    ventanas: List[VentanaEntrada] = []
+    cierres: List[CierreEntrada] = []
     repetir_semanas: Optional[int] = 0   # además de la fecha, las N semanas siguientes
 
 
@@ -288,7 +295,8 @@ def crear_router(verificar_login, conexion, verificar_admin=None) -> APIRouter:
     @router.post("/api/calendario/disponibilidad")
     def disponibilidad_guardar(datos: DisponibilidadEntrada, usuario: str = Depends(verificar_login)):
         try:
-            return cal.guardar_disponibilidad(conexion, [v.dict() for v in datos.ventanas], usuario, datos.repetir_semanas or 0)
+            return cal.guardar_disponibilidad(conexion, [v.dict() for v in datos.ventanas], usuario, datos.repetir_semanas or 0,
+                                           cierres=[c.dict() for c in datos.cierres])
         except cal.CalendarioError as e:
             raise HTTPException(status_code=400, detail=str(e))
 
@@ -305,6 +313,11 @@ def crear_router(verificar_login, conexion, verificar_admin=None) -> APIRouter:
             with rcur(conn) as cur:
                 dias = cal.disponibilidad_del_rango(cur, d0, d1)
         return {"dias": dias, "duracion": cal.duracion_reunion(), "margen": cal.margen_reunion()}
+
+    @router.delete("/api/calendario/disponibilidad/cierre/{cierre_id}")
+    def disponibilidad_cierre_borrar(cierre_id: int, _: str = Depends(verificar_login)):
+        cal.borrar_dia_cerrado(conexion, cierre_id)
+        return {"ok": True}
 
     @router.delete("/api/calendario/disponibilidad/{ventana_id}")
     def disponibilidad_borrar(ventana_id: int, _: str = Depends(verificar_login)):

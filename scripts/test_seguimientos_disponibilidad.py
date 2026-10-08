@@ -56,6 +56,69 @@ class Interprete(unittest.TestCase):
         self.assertEqual(r["ventanas"], [])
 
 
+class DiasSinReuniones(unittest.TestCase):
+    def interpretar(self, texto):
+        return cc.interpretar_disponibilidad(texto, HOY)
+
+    def test_feriado_y_cumple_con_su_motivo(self):
+        r = self.interpretar("lunes 12/10 feriado, no hay reuniones . miercoles 14 cumple de pame, sin reuniones")
+        self.assertEqual(r["ventanas"], [])
+        self.assertEqual(r["advertencias"], [])
+        self.assertEqual([(c["fecha"], c["motivo"]) for c in r["cierres"]],
+                         [("2026-10-12", "Feriado"), ("2026-10-14", "Cumple de pame")])
+
+    def test_mezcla_horarios_y_dias_cerrados(self):
+        r = self.interpretar("martes 8 a 15, miércoles sin reuniones por médico")
+        self.assertEqual([v["fecha"] for v in r["ventanas"]], ["2026-10-13"])
+        self.assertEqual([(c["fecha"], c["motivo"]) for c in r["cierres"]], [("2026-10-14", "Médico")])
+
+    def test_el_cierre_puede_ir_antes_de_los_dias(self):
+        r = self.interpretar("sin reuniones el lunes y el viernes 16")
+        self.assertEqual([c["fecha"] for c in r["cierres"]], ["2026-10-12", "2026-10-16"])
+
+    def test_libre_sigue_siendo_disponibilidad(self):
+        r = self.interpretar("próximo martes libre de 8 a 15")
+        self.assertEqual((len(r["ventanas"]), r["cierres"]), (1, []))
+
+    def test_dia_con_numero_avisa_si_no_coincide(self):
+        r = self.interpretar("martes 14 sin reuniones")
+        self.assertTrue(any("cae miércoles" in a for a in r["advertencias"]))
+
+    def test_se_guardan_y_se_repiten(self):
+        ejecutadas = []
+        r = cc.guardar_disponibilidad(conexion_falsa([(1,), (2,)], ejecutadas), [], "marcos", 1, hoy=HOY,
+                                      cierres=[{"fecha": "2026-10-12", "motivo": "Feriado"}])
+        self.assertEqual([p[0].isoformat() for _, p in ejecutadas], ["2026-10-12", "2026-10-19"])
+        self.assertEqual((r["cerrados"], r["cerrados_repetidos"]), (2, 0))
+
+    def test_cierre_en_el_pasado_falla(self):
+        with self.assertRaises(cc.CalendarioError):
+            cc.guardar_disponibilidad(conexion_falsa(), [], "m", 0, hoy=HOY, cierres=[{"fecha": "2026-10-01"}])
+
+
+class VistaConDiaCerrado(unittest.TestCase):
+    def test_un_dia_cerrado_no_ofrece_horarios_y_avisa_de_lo_agendado(self):
+        class Cur:
+            def execute(s, sql, params=None): s.sql = sql
+            def fetchall(s):
+                if "calendario_dias_cerrados" in s.sql:
+                    return [{"id": 5, "fecha": dt.date(2026, 10, 12), "motivo": "Feriado"}]
+                return [{"id": 1, "fecha": dt.date(2026, 10, 12), "desde": dt.time(8), "hasta": dt.time(15)},
+                        {"id": 2, "fecha": dt.date(2026, 10, 13), "desde": dt.time(8), "hasta": dt.time(15)}]
+        orig = cc.listar_eventos
+        cc.listar_eventos = lambda cur, d0, d1: [{"id": 9, "titulo": "Reunión", "fecha": "2026-10-12", "fecha_fin": "2026-10-12",
+                                                  "hora": "10:00", "hora_fin": "10:30", "todo_el_dia": False, "tipo": "evento"}]
+        try:
+            dias = cc.disponibilidad_del_rango(Cur(), dt.date(2026, 10, 8), dt.date(2026, 11, 1), ahora=dt.datetime(2026, 10, 8, 9, tzinfo=cc.TZ))
+        finally:
+            cc.listar_eventos = orig
+        lunes, martes = dias
+        self.assertEqual((lunes["cerrado"]["motivo"], lunes["libres"], lunes["capacidad"], len(lunes["reuniones"])), ("Feriado", [], 0, 1))
+        self.assertIn("sin reuniones (feriado)", lunes["texto"])
+        self.assertIsNone(martes["cerrado"])
+        self.assertEqual(martes["capacidad"], 9)
+
+
 class Calculo(unittest.TestCase):
     def test_ventana_vacia_8_a_15_entran_9(self):
         r = cc.calcular_dia([(480, 900)], [], 30, 15)
@@ -189,11 +252,11 @@ class GuardarDisponibilidad(unittest.TestCase):
         r = cc.guardar_disponibilidad(conexion_falsa([(1,), (2,), (3,)], ejecutadas), [self.V], "marcos", 2, hoy=HOY)
         fechas = [p[0].isoformat() for _, p in ejecutadas]
         self.assertEqual(fechas, ["2026-10-13", "2026-10-20", "2026-10-27"])
-        self.assertEqual(r, {"creadas": 3, "repetidas": 0})
+        self.assertEqual((r["creadas"], r["repetidas"]), (3, 0))
 
     def test_lo_ya_cargado_no_se_duplica(self):
         r = cc.guardar_disponibilidad(conexion_falsa([]), [self.V], "marcos", 0, hoy=HOY)
-        self.assertEqual(r, {"creadas": 0, "repetidas": 1})
+        self.assertEqual((r["creadas"], r["repetidas"]), (0, 1))
 
     def test_validaciones(self):
         for args in (([], 0), ([self.V], 99), ([self.V] * 61, 0)):
