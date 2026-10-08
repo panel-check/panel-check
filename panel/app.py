@@ -3295,6 +3295,12 @@ def pagina_calendario(_: str = Depends(verificar_pagina)):
     return FileResponse(os.path.join(os.path.dirname(__file__), "static", "calendario.html"))
 
 
+@app.get("/disponibilidad")
+def pagina_disponibilidad(_: str = Depends(verificar_pagina)):
+    """La pantalla Calendario abierta directo en la vista Disponibilidad (acceso rápido ⚡ del menú)."""
+    return FileResponse(os.path.join(os.path.dirname(__file__), "static", "calendario.html"))
+
+
 @app.get("/agendar-llamada")
 def pagina_agendar_llamada(_: str = Depends(verificar_pagina)):
     """Solo el formulario para agendar (para dejarlo como acceso rápido)."""

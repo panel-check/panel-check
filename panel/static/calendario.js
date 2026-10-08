@@ -8,8 +8,13 @@ const esc = _escapeHtml;
 const AGENDA_PASO = 30;       // días que se suman cada vez que se pide «ver más» en la agenda
 const AGENDA_MAXIMO = 120;    // tope del servidor para un pedido
 
+const EMBEBIDO = document.documentElement.classList.contains("embebido");   // panel lateral de 📞 (pestaña Disponibilidad)
+// /disponibilidad abre directo la vista Disponibilidad (y en el panel lateral, siempre).
+const VISTA_INICIAL = (EMBEBIDO || location.pathname.replace(/\/+$/, "") === "/disponibilidad") ? "disponibilidad" : "agenda";
+
 const est = {
-  vista: "agenda",         // "agenda" (por defecto: desde hoy hacia adelante) | "mes" | "disponibilidad"
+  cerrados: {},            // días sin reuniones del rango visible: {fecha: {id, motivo}}
+  vista: VISTA_INICIAL,         // "agenda" (por defecto: desde hoy hacia adelante) | "mes" | "disponibilidad"
   seguimientos: [],        // recordatorios pendientes (y los hechos hace poco), para la agenda
   disp: null,              // disponibilidad cargada: {dias, duracion, margen}
   propuesta: null,         // lo que entendió el servidor de un texto de disponibilidad, antes de guardarlo
@@ -67,6 +72,9 @@ async function cargar({ silencioso = false } = {}) {
     }
     const { desde, hasta } = rangoVisible();
     est.eventos = (await api(`/api/calendario/eventos?desde=${desde}&hasta=${hasta}`)).eventos;
+    try {
+      est.cerrados = Object.fromEntries((await api(`/api/calendario/dias-cerrados?desde=${desde}&hasta=${hasta}`)).dias.map(d => [d.fecha, d]));
+    } catch (_) { est.cerrados = {}; }
     if (est.vista === "agenda") {
       try { est.seguimientos = (await api("/api/calendario/seguimientos")).seguimientos; } catch (_) { est.seguimientos = []; }
     }
@@ -216,14 +224,22 @@ function pintarMes(porDia) {
     for (let c = 0; c < 7; c++) {
       const dia = calSumarDias(desde, s * 7 + c);
       const lista = porDia[dia] || [];
-      const clases = ["cal-dia", dia.slice(0, 7) !== mesActual ? "otro-mes" : "", dia === hoy ? "hoy" : "", dia === est.elegido ? "elegido" : ""].filter(Boolean).join(" ");
+      const cerrado = est.cerrados[dia];
+      const clases = ["cal-dia", dia.slice(0, 7) !== mesActual ? "otro-mes" : "", dia === hoy ? "hoy" : "", dia === est.elegido ? "elegido" : "", cerrado ? "sin-reuniones" : ""].filter(Boolean).join(" ");
+      const marca = cerrado ? `<span class="cal-sin-reu" title="Sin reuniones${cerrado.motivo ? `: ${esc(cerrado.motivo)}` : ""}">🚫 Sin reuniones${cerrado.motivo ? ` · ${esc(cerrado.motivo)}` : ""}</span>` : "";
       const visibles = lista.slice(0, 3).map(chipHtml).join("");
       const mas = lista.length > 3 ? `<button type="button" class="cal-mas" data-mas="${dia}">+${lista.length - 3} más</button>` : "";
-      celdas += `<div class="${clases}" data-dia="${dia}"><span class="cal-num">${+dia.slice(8)}</span>${visibles}${mas}</div>`;
+      celdas += `<div class="${clases}" data-dia="${dia}"><span class="cal-num">${+dia.slice(8)}</span>${marca}${visibles}${mas}</div>`;
     }
     semanas += `<div class="cal-semana">${celdas}</div>`;
   }
   $("cal-vista").innerHTML = `<div class="cal-mes"><div class="cal-semana-cab">${cab}</div>${semanas}</div>`;
+}
+
+function sinReunionesHtml(dia) {
+  const c = est.cerrados[dia];
+  if (!c) return "";
+  return `<p class="cal-sin-reu-aviso">🚫 <b>Sin reuniones este día</b>${c.motivo ? ` · ${esc(c.motivo)}` : ""}${(est.eventos.some(e => e.tipo !== "seguimiento" && !e.todo_el_dia && e.fecha <= dia && dia <= e.fecha_fin)) ? " (ya hay algo agendado, revisalo)" : ""}</p>`;
 }
 
 function pintarDetalle(porDia) {
@@ -233,6 +249,7 @@ function pintarDetalle(porDia) {
       <h3>${esc(calFechaLarga(est.elegido))}</h3>
       <button type="button" class="cal-btn chico" id="cal-nuevo-dia">＋ Agendar este día</button>
     </div>
+    ${sinReunionesHtml(est.elegido)}
     ${lista.length ? lista.map(e => calTarjetaHtml(e)).join("") : '<p class="cal-vacio">No hay nada agendado este día.</p>'}`;
   const porId = Object.fromEntries(est.eventos.map(e => [String(e.id), e]));
   calEnlazarTarjetas($("cal-detalle"), porId, () => cargar());
@@ -242,6 +259,7 @@ function pintarDetalle(porDia) {
 function pintarAgenda(porDia) {
   const hoy = calHoy();
   const dias = Object.keys(porDia).filter(d => d >= hoy);
+  for (const d of Object.keys(est.cerrados)) if (d >= hoy && !dias.includes(d)) dias.push(d);   // los días sin reuniones también figuran
   if (!dias.includes(hoy)) dias.unshift(hoy);   // hoy siempre figura, aunque no haya nada
   dias.sort();
   // Hoy: primero lo que falta (completo) y debajo lo que ya pasó, cerrado en una línea (se despliega al tocarlo).
@@ -259,6 +277,7 @@ function pintarAgenda(porDia) {
   const dia = (d) => `
     <div class="cal-agenda-dia ${d === hoy ? "hoy" : ""}">
       <h3>${esc(calFechaLarga(d))}${d === hoy ? " · hoy" : ""}</h3>
+      ${sinReunionesHtml(d)}
       ${d === hoy ? cuerpoHoy(porDia[d] || [])
         : (porDia[d] || []).map(e => calTarjetaHtml(e)).join("")}
     </div>`;
@@ -484,6 +503,11 @@ function pintarDisponibilidad() {
     });
     $("disp-lista").addEventListener("click", async (ev) => {
       const turno = ev.target.closest("[data-turno]");
+      if (turno && EMBEBIDO) {
+        // En el panel lateral el formulario es la pestaña «Agendar»: se le pasa el día y la hora.
+        parent.postMessage({ tipo: "agendar-turno", fecha: turno.dataset.dia, hora: turno.dataset.turno.padStart(5, "0") }, location.origin);
+        return;
+      }
       if (turno) {
         calAbrirModal({ fecha: turno.dataset.dia, hora: turno.dataset.turno.padStart(5, "0"), duracion: est.disp.duracion, alGuardar: () => cargar() });
         return;

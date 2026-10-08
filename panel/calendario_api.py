@@ -23,6 +23,7 @@ Rutas:
   POST   /api/calendario/disponibilidad       guardar ventanas de disponibilidad (con repetir_semanas = N, también las N semanas siguientes)
   GET    /api/calendario/disponibilidad?desde&hasta  días con disponibilidad: horarios libres, reuniones y resumen
   DELETE /api/calendario/disponibilidad/{id}  borrar una ventana
+  GET    /api/calendario/dias-cerrados?desde&hasta  los días marcados «sin reuniones» (se pintan en rojo en el calendario)
   DELETE /api/calendario/disponibilidad/cierre/{id}  volver a habilitar un día marcado sin reuniones
   GET    /api/calendario/google/conectar      (admin) empieza la conexión con la cuenta de Google del estudio (OAuth)
   GET    /api/calendario/google/callback      (admin) vuelta de Google: muestra el token para cargar en Railway
@@ -313,6 +314,17 @@ def crear_router(verificar_login, conexion, verificar_admin=None) -> APIRouter:
             with rcur(conn) as cur:
                 dias = cal.disponibilidad_del_rango(cur, d0, d1)
         return {"dias": dias, "duracion": cal.duracion_reunion(), "margen": cal.margen_reunion()}
+
+    @router.get("/api/calendario/dias-cerrados")
+    def dias_cerrados(desde: str = "", hasta: str = "", _: str = Depends(verificar_login)):
+        hoy = _dt.datetime.now(cal.TZ).date()
+        d0 = _fecha(desde, "desde") if desde else hoy
+        d1 = _fecha(hasta, "hasta") if hasta else d0 + _dt.timedelta(days=60)
+        if d1 < d0 or (d1 - d0).days > MAX_DIAS_RANGO:
+            raise HTTPException(status_code=400, detail="El rango de fechas no es válido")
+        with conexion() as conn:
+            with rcur(conn) as cur:
+                return {"dias": cal.listar_dias_cerrados(cur, d0, d1)}
 
     @router.delete("/api/calendario/disponibilidad/cierre/{cierre_id}")
     def disponibilidad_cierre_borrar(cierre_id: int, _: str = Depends(verificar_login)):

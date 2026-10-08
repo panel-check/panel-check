@@ -119,6 +119,15 @@ class VistaConDiaCerrado(unittest.TestCase):
         self.assertEqual(martes["capacidad"], 9)
 
 
+class ListarDiasCerrados(unittest.TestCase):
+    def test_devuelve_fecha_y_motivo(self):
+        class Cur:
+            def execute(s, sql, params=None): s.params = params
+            def fetchall(s): return [{"id": 5, "fecha": dt.date(2026, 10, 12), "motivo": "Feriado"}, {"id": 6, "fecha": dt.date(2026, 10, 14), "motivo": None}]
+        r = cc.listar_dias_cerrados(Cur(), dt.date(2026, 10, 1), dt.date(2026, 11, 1))
+        self.assertEqual(r, [{"id": 5, "fecha": "2026-10-12", "motivo": "Feriado"}, {"id": 6, "fecha": "2026-10-14", "motivo": ""}])
+
+
 class Calculo(unittest.TestCase):
     def test_ventana_vacia_8_a_15_entran_9(self):
         r = cc.calcular_dia([(480, 900)], [], 30, 15)
