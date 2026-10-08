@@ -226,6 +226,26 @@ class ReglasGrilla(unittest.TestCase):
         self.assertTrue(r["sirve"])
         self.assertEqual(r["notificacion"], "2026-09-26")
 
+    def test_orden_real_de_la_grilla_cedula_antes_que_vista(self):
+        # La Grilla viene con lo más nuevo arriba (captura del 08/10/2026): la cédula
+        # aparece ANTES que su vista, y el texto puede traer algo extra.
+        arch = [
+            {"Indice": "Cédula de Notificación", "Referencia": "-", "Fecha": "30/09/2026"},
+            {"Indice": "Vista de Marcas", "Referencia": "-", "Fecha": "30/09/2026"},
+            {"Indice": "Formulario", "Referencia": "-", "Fecha": "25/09/2026"},
+            {"Indice": "Recibo de Ingreso", "Referencia": "Opo. de Marcas", "Fecha": "25/09/2026"},
+        ]
+        r = clasificar(pagina(opos=opo(pres=ms("2026-09-25")), gestion=GESTION_PARTICULAR), arch)
+        self.assertEqual(r["estado"], "notificada_en_plazo")
+        self.assertEqual(r["notificacion"], "2026-09-30")
+
+    def test_texto_extra_en_la_celda_igual_matchea(self):
+        arch = [
+            {"Indice": "Recibo de Ingreso", "Referencia": "Opo. de Marcas", "Fecha": "20/09/2026"},
+            {"Indice": "Recibo de Ingreso (digital)", "Referencia": "Escritos de Marcas - Nº 123", "Fecha": "28/09/2026"},
+        ]
+        self.assertEqual(self.r(arch)["estado"], "contestada")
+
     def test_cedula_no_consecutiva_no_notifica(self):
         arch = [
             {"Indice": "Recibo de Ingreso", "Referencia": "Opo. de Marcas", "Fecha": "20/09/2026"},

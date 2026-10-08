@@ -909,6 +909,7 @@ le asigna un puntaje de prioridad. Después sigue a cada marca a lo largo del ti
             <tr><th>Agregar marca manualmente</th><td>Carga al panel un acta puntual que no vino por boletín ni por el escaneo (desde GitHub Actions).</td></tr>
             
             <tr><th>Inspeccionar acta</th><td>Diagnóstico: muestra qué devuelve INPI para un acta, para revisar un caso raro (desde GitHub Actions).</td></tr>
+            <tr><th>Diagnóstico de oposiciones</th><td>Diagnóstico de solo lectura (no escribe en la base), desde GitHub Actions («Diagnóstico de oposiciones»): para los leads publicados en los últimos N días (por defecto 60, hasta 150 actas) consulta la Grilla Digital y el expediente de INPI, calcula el estado de la oposición con las reglas actuales y lo compara con el que muestra el panel. El log lista las actas que cambian de estado, las filas de la Grilla de las que tienen oposición, el vocabulario real que usa INPI (Indice + Referencia) y cuántos «Acompaña Poder» hay en actas donde el titular no tiene representante según el expediente. Sirve para revisar los términos de las reglas.</td></tr>
             <tr><th>Comparar extracción Apify vs local</th><td>Diagnóstico: para un boletín dado, compara las marcas que salen leyendo el PDF con Apify contra leerlo directamente, para verificar que el respaldo de lectura da lo mismo (desde GitHub Actions).</td></tr>
             <tr><th>Probar alarma de bloqueo</th><td>Manda un mail de prueba del aviso de bloqueo, para ver cómo llega (desde GitHub Actions).</td></tr>
           </tbody>

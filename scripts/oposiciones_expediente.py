@@ -242,8 +242,10 @@ def _senales_grilla(archivos: list[dict], desde: str | None) -> dict:
       trabajando  -- Indice "Recibo de Ingreso" + Referencia "Escritos de Marcas"
       desistio    -- "Formula Desistimiento" (en Indice o Referencia)
       poder       -- "Acompaña Poder", "Ratifica Gestión en Oposición" o "Ratifica Gestión"
-      notificada  -- fila "Vista de Marcas" seguida de "Cédula de Notificación"
-                     (fecha_notificacion = la de la cédula)."""
+      notificada  -- filas vecinas "Vista de Marcas" y "Cédula de Notificación"
+                     (fecha_notificacion = la de la cédula).
+    Cada columna (Indice, Referencia) se compara por "contiene": INPI a veces
+    agrega texto extra a la celda."""
     filas = []
     for a in archivos or []:
         f = _fecha_valida(a.get("Fecha") or "")
@@ -254,14 +256,18 @@ def _senales_grilla(archivos: list[dict], desde: str | None) -> dict:
     referencias = [_norm(a.get("Referencia")) for a in filas]
     textos = [f"{i} {r}" for i, r in zip(indices, referencias)]
 
+    # La Grilla viene con lo más nuevo arriba (la cédula aparece ANTES que su vista),
+    # así que el par se busca en filas vecinas en cualquier orden. La fecha de
+    # notificación es la de la cédula.
     notificada, fecha_notificacion = False, None
     for k in range(len(filas) - 1):
-        if indices[k] == GRILLA_NOTIF_VISTA and indices[k + 1] == GRILLA_NOTIF_CEDULA:
-            notificada = True
-            fecha_notificacion = _fecha_valida(filas[k + 1].get("Fecha") or "") or fecha_notificacion
+        for vista, cedula in ((k, k + 1), (k + 1, k)):
+            if GRILLA_NOTIF_VISTA in indices[vista] and GRILLA_NOTIF_CEDULA in indices[cedula]:
+                notificada = True
+                fecha_notificacion = _fecha_valida(filas[cedula].get("Fecha") or "") or fecha_notificacion
 
     return {
-        "trabajando": any(i == GRILLA_TRABAJANDO[0] and r == GRILLA_TRABAJANDO[1]
+        "trabajando": any(GRILLA_TRABAJANDO[0] in i and GRILLA_TRABAJANDO[1] in r
                           for i, r in zip(indices, referencias)),
         "desistio": any(GRILLA_DESISTIMIENTO in t for t in textos),
         "poder": any(term in t for t in textos for term in GRILLA_PODER),
