@@ -791,6 +791,17 @@ def _pedir_meet():
     return {"createRequest": {"requestId": uuid.uuid4().hex, "conferenceSolutionKey": {"type": "hangoutsMeet"}}}
 
 
+INVITADO_MEET = "marcaskom@gmail.com"
+
+
+def _invitados_meet() -> list:
+    """Quien queda siempre invitado a los Meet que genera el panel, para entrar sin esperar que lo admitan.
+    Se cambia con CALENDARIO_INVITADO_MEET (vacío = no invitar a nadie). Con sendUpdates=none no sale mail."""
+    mail = os.environ.get("CALENDARIO_INVITADO_MEET")
+    mail = INVITADO_MEET if mail is None else mail.strip()
+    return [{"email": mail}] if mail else []
+
+
 def _exigir_meet_posible():
     if not puede_meet():
         raise CalendarioError(
@@ -822,6 +833,8 @@ def crear_evento(conexion, datos: dict, usuario: str) -> int:
         _exigir_meet_posible()
         cuerpo["conferenceData"] = _pedir_meet()
         params["conferenceDataVersion"] = 1
+        if _invitados_meet():
+            cuerpo["attendees"] = _invitados_meet()
     recurso = _pedir("POST", _ruta_eventos(), json=cuerpo, params=params)
     if datos.get("modalidad") == "meet":
         recurso = _esperar_meet(recurso["id"], recurso)
@@ -861,6 +874,8 @@ def editar_evento(conexion, evento_id: int, datos: dict, usuario: str) -> int:
         _exigir_meet_posible()
         cuerpo["conferenceData"] = _pedir_meet()
         params["conferenceDataVersion"] = 1
+        if _invitados_meet():
+            cuerpo["attendees"] = _invitados_meet()
     elif not quiere_meet and meet_actual:
         cuerpo["conferenceData"] = None  # se saca la videollamada del evento
         params["conferenceDataVersion"] = 1
