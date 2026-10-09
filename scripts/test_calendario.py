@@ -503,7 +503,7 @@ class ModalidadYMeet(unittest.TestCase):
         self.assertIn("Conectar con Google", str(m.exception))
         self.assertEqual(self.pedidos, [])
 
-    def test_crear_con_meet_pide_la_sala_y_no_invita_a_nadie(self):
+    def test_crear_con_meet_pide_la_sala_e_invita_al_mail_fijo_sin_avisarle(self):
         self.conectar_oauth()
         self.respuestas = [{"id": "g1", "hangoutLink": "https://meet.google.com/x"}]
         self.assertEqual(cc.crear_evento(None, {**self.DATOS, "modalidad": "meet"}, "marcos"), 7)
@@ -513,7 +513,13 @@ class ModalidadYMeet(unittest.TestCase):
         pedido = cuerpo["conferenceData"]["createRequest"]
         self.assertEqual(pedido["conferenceSolutionKey"], {"type": "hangoutsMeet"})
         self.assertTrue(pedido["requestId"])
-        self.assertNotIn("attendees", cuerpo)
+        self.assertEqual(cuerpo["attendees"], [{"email": "marcaskom@gmail.com"}])
+        self.assertEqual(params["sendUpdates"], "none")   # se invita sin mandar mail
+
+    def test_llamada_no_invita_a_nadie(self):
+        self.respuestas = [{"id": "g1"}]
+        cc.crear_evento(None, {**self.DATOS, "modalidad": "llamada"}, "marcos")
+        self.assertNotIn("attendees", self.pedidos[0][2])
 
     def test_si_el_link_tarda_se_vuelve_a_pedir(self):
         self.conectar_oauth()
@@ -589,13 +595,20 @@ class ModalidadYMeet(unittest.TestCase):
         cc.editar_evento(self.conexion_con(("g1", None, "evento", False)), 7, {**self.DATOS, "modalidad": "meet"}, "marcos")
         _, _, cuerpo, params = self.pedidos[-1]
         self.assertIn("createRequest", cuerpo["conferenceData"])
+        self.assertEqual(cuerpo["attendees"], [{"email": "marcaskom@gmail.com"}])
         self.assertEqual(params["conferenceDataVersion"], 1)
         # ya tenía Meet y sigue siendo Meet: no se toca la sala
-        self.respuestas = [{"id": "g1", "hangoutLink": "https://meet.google.com/x"}]
+        self.respuestas = [{"id": "g1"}, {"id": "g1", "hangoutLink": "https://meet.google.com/x"}]
         cc.editar_evento(self.conexion_con(("g1", "https://meet.google.com/x", "evento", False)), 7, {**self.DATOS, "modalidad": "meet"}, "marcos")
         _, _, cuerpo, params = self.pedidos[-1]
         self.assertNotIn("conferenceData", cuerpo)
         self.assertNotIn("conferenceDataVersion", params)
+        self.assertEqual(cuerpo["attendees"], [{"email": "marcaskom@gmail.com"}])
+        # si ya había invitados, se conservan y no se duplica el fijo
+        self.respuestas = [{"id": "g1", "attendees": [{"email": "x@y.com"}, {"email": "MarcasKom@gmail.com"}]},
+                           {"id": "g1", "hangoutLink": "https://meet.google.com/x"}]
+        cc.editar_evento(self.conexion_con(("g1", "https://meet.google.com/x", "evento", False)), 7, {**self.DATOS, "modalidad": "meet"}, "marcos")
+        self.assertEqual([a["email"] for a in self.pedidos[-1][2]["attendees"]], ["x@y.com", "MarcasKom@gmail.com"])
         # tenía Meet y pasa a llamada: se saca la videollamada y la marca anterior
         self.respuestas = [{"id": "g1"}]
         cc.editar_evento(self.conexion_con(("g1", "https://meet.google.com/x", "evento", False)), 7, {**self.DATOS, "modalidad": "llamada"}, "marcos")
