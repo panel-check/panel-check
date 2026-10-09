@@ -1076,12 +1076,14 @@ def armar_aviso(ev: dict, accion: str = "agendada", para_equipo: bool = False, u
     }
     meet = "* **Videollamada (link):** {{link_meet}}\n" if ev.get("meet_url") else ""
     if not para_equipo:
+        # Escrito como un mail común de una persona (sin lista, negritas ni el link largo de Google
+        # Calendar, con un solo link: el de Meet) para que Gmail lo ponga en Principal y no en Promociones.
         asunto = f"{verbo_persona} tu reunión: {{{{titulo}}}}"
-        intro = ("Te confirmamos que agendamos una reunión con Smarties Consultora." if accion == "agendada"
-                 else "Actualizamos los datos de tu reunión con Smarties Consultora.")
-        cuerpo = (f"Hola:\n\n{intro}\n\n"
-                  "* **Qué:** {{titulo}}\n* **Cuándo:** {{cuando}}\n* **Cómo:** {{como}}\n" + meet.rstrip("\n") +
-                  f"\n\n[Sumarla a mi calendario]({datos['link_cal']})"
+        intro = ("Te confirmamos que agendamos una reunión con Smarties Consultora" if accion == "agendada"
+                 else "Actualizamos los datos de tu reunión con Smarties Consultora")
+        cuerpo = (f"Hola:\n\n{intro}: {{{{titulo}}}}.\n\n"
+                  "Será el {{cuando}}. {{como}}." +
+                  ("\n\nEste es el link para entrar a la videollamada:\n{{link_meet}}" if ev.get("meet_url") else "") +
                   "\n\nSi necesitás cambiar el horario, respondé este mail.\n\nSaludos,\nSmarties Consultora")
     else:
         # Para el equipo el mail se arma para leerlo en la lista de la bandeja: el asunto es el título del
