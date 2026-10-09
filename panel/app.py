@@ -1362,6 +1362,26 @@ def total_pre_boletin(_: str = Depends(verificar_login)):
             return {"total": cur.fetchone()[0]}
 
 
+def _dias_restantes_oposicion(fecha) -> int | None:
+    """Días que le quedan a un boletín para recibir oposiciones (30 días desde
+    su publicación). 0 o menos = plazo cerrado. None si no hay fecha legible."""
+    if not fecha:
+        return None
+    import datetime as _dt
+    if isinstance(fecha, _dt.datetime):
+        d = fecha.date()
+    elif isinstance(fecha, _dt.date):
+        d = fecha
+    else:
+        txt = str(fecha).split("T")[0]
+        try:
+            d = _dt.datetime.strptime(txt, "%d/%m/%Y").date() if "/" in txt else _dt.date.fromisoformat(txt)
+        except ValueError:
+            return None
+    hoy = _dt.datetime.now(_dt.timezone(_dt.timedelta(hours=-3))).date()
+    return 30 - (hoy - d).days
+
+
 @app.get("/api/boletines/completo")
 def listar_boletines_completo(_: str = Depends(verificar_login)):
     """Para la sección /boletines: cruza el listado completo de boletines
@@ -1386,15 +1406,27 @@ def listar_boletines_completo(_: str = Depends(verificar_login)):
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
             cur.execute("SELECT numero, fecha, total_marcas, estado, procesado_en FROM boletines")
             importados = {f["numero"]: f for f in cur.fetchall()}
+            cur.execute(
+                "SELECT boletin, COUNT(*) FILTER (WHERE es_lead IS TRUE) AS leads, "
+                "COUNT(*) FILTER (WHERE es_lead IS FALSE) AS con_agente FROM marcas "
+                "WHERE boletin IS NOT NULL GROUP BY boletin"
+            )
+            conteos = {f["boletin"]: f for f in cur.fetchall()}
 
     numeros = {b["numero"] for b in de_inpi} | set(importados.keys())
     filas = []
     for numero in numeros:
         de_inpi_fila = next((b for b in de_inpi if b["numero"] == numero), None)
         importado_fila = importados.get(numero)
+        fecha = (importado_fila or {}).get("fecha") or (de_inpi_fila or {}).get("fecha")
+        dias_plazo = _dias_restantes_oposicion(fecha)
+        cuenta = conteos.get(numero)
         filas.append({
             "numero": numero,
-            "fecha": (importado_fila or {}).get("fecha") or (de_inpi_fila or {}).get("fecha"),
+            "fecha": fecha,
+            "dias_plazo_oposicion": dias_plazo,  # <= 0: el plazo ya cerró; None: sin fecha
+            "leads": cuenta["leads"] if cuenta else None,
+            "con_agente": cuenta["con_agente"] if cuenta else None,
             "importado": bool(importado_fila) and importado_fila["estado"] == "procesado",
             "estado": (importado_fila or {}).get("estado"),
             "total_marcas": (importado_fila or {}).get("total_marcas"),

@@ -8,7 +8,7 @@
 <link rel="apple-touch-icon" href="/static/apple-touch-icon.png" />
 <link rel="stylesheet" href="/static/comun.css?v=logo2" />
 <style>
-  .contenido { max-width: 820px; margin: 24px auto 60px; padding: 0 20px; }
+  .contenido { max-width: 1040px; margin: 24px auto 60px; padding: 0 20px; }
   .aviso-boletines {
     margin-bottom: 16px;
     padding: 8px 12px;
@@ -26,6 +26,9 @@
   .estado-badge-b { display: inline-block; padding: 2px 9px; border-radius: 10px; font-size: 11px; font-weight: 600; }
   .estado-badge-b.importado { background: #e6f4ea; color: var(--verde); }
   .estado-badge-b.no-importado { background: #eef0f2; color: var(--gris); }
+  .estado-badge-b.plazo-abierto { background: #fff4e0; color: #b26a00; }
+  .estado-badge-b.plazo-cerrado { background: #eef0f2; color: var(--gris); }
+  td.num, th.num { text-align: right !important; }
   .estado-badge-b.error { background: #fde8e8; color: var(--rojo); }
   button.importar-boletin, button.buscar-opo {
     padding: 4px 10px;
@@ -95,6 +98,15 @@ function filaBoletin(b) {
     ? `<a class="link-boletin" href="/?boletin=${encodeURIComponent(b.numero)}">${_escapeHtml(b.numero)}</a>`
     : `<strong>${_escapeHtml(b.numero)}</strong>`;
   const total = b.total_marcas != null ? b.total_marcas : "—";
+  const d = b.dias_plazo_oposicion;
+  let plazo = "—";
+  if (b.importado && d != null) {
+    plazo = d <= 0
+      ? '<span class="estado-badge-b plazo-cerrado" title="Pasaron 30 días desde la publicación: ya no recibe oposiciones">🔒 Plazo cerrado</span>'
+      : `<span class="estado-badge-b plazo-abierto" title="Todavía puede recibir oposiciones">Abierto · ${d} ${d === 1 ? "día" : "días"}</span>`;
+  }
+  const leads = b.importado && b.leads != null ? b.leads : "—";
+  const conAgente = b.importado && b.con_agente != null ? b.con_agente : "—";
   const accion = b.importado
     ? `<button type="button" class="buscar-opo" data-numero="${_escapeHtml(b.numero)}" title="Revisa en INPI si los leads de este boletín tienen oposición (también sirve si ya venció el plazo de 30 días)">Buscar oposiciones</button>`
     : `<button type="button" class="importar-boletin" data-numero="${_escapeHtml(b.numero)}">Importar</button>`;
@@ -103,7 +115,10 @@ function filaBoletin(b) {
       <td>${link}</td>
       <td>${formatFecha(b.fecha)}</td>
       <td>${badge}</td>
-      <td>${total}</td>
+      <td class="num">${total}</td>
+      <td class="num">${leads}</td>
+      <td class="num">${conAgente}</td>
+      <td>${plazo}</td>
       <td>${accion}</td>
     </tr>
   `;
@@ -118,7 +133,7 @@ async function cargar() {
       ${aviso}
       <table class="tabla-boletines">
         <thead>
-          <tr><th>Número</th><th>Fecha</th><th>Estado</th><th>Marcas</th><th></th></tr>
+          <tr><th>Número</th><th>Fecha</th><th>Estado</th><th class="num">Marcas</th><th class="num" title="Sin agente ni apoderado">Leads</th><th class="num">Con agente</th><th>Plazo de oposición</th><th></th></tr>
         </thead>
         <tbody>${data.boletines.map(filaBoletin).join("")}</tbody>
       </table>
