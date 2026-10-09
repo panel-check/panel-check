@@ -45,6 +45,11 @@ El workflow `.github/workflows/pipeline.yml` corre estos 6 pasos automáticament
   pestaña **Mails** del panel (tablas `mails_config` y `mails_bajas`); las API
   keys nunca se guardan en la base. `RESEND_FROM` y `NOTIFICAR_A` quedan como
   respaldo si no hay nada guardado.
+- **Kan (tareas, reemplaza a Trello)** — tablero de tareas de código abierto, autohospedado en
+  Railway (proyecto `Kom-Tareas-Kan`: servicio Web con la imagen `ghcr.io/kanbn/kan` + Postgres).
+  El menú del panel tiene «Tareas» (`/tareas`), que redirige a Kan; la dirección se cambia con
+  `KAN_URL` en el servicio del panel. Las migraciones se corren una vez con la imagen
+  `ghcr.io/kanbn/kan-migrate`. Claude actualiza las minutas por el MCP `@kan/mcp`.
 - **Google Calendar** — pantalla **Calendario** del panel, sincronizada en las dos
   direcciones con el calendario de Google del estudio (`panel/calendario_core.py`).
   En Google Cloud: proyecto con la *Google Calendar API* habilitada y una **cuenta
