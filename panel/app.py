@@ -357,6 +357,8 @@ def _correr_alters_panel(cur):
     cur.execute(
         "ALTER TABLE marcas ADD COLUMN IF NOT EXISTS revisado_oposicion_en TIMESTAMPTZ"
     )
+    # Última búsqueda manual de oposiciones del boletín (botón de /boletines)
+    cur.execute("ALTER TABLE boletines ADD COLUMN IF NOT EXISTS oposiciones_buscadas_en TIMESTAMPTZ")
     # Esquema de revisión a los 10/23/33 días (ver revisar_oposiciones.py)
     cur.execute("ALTER TABLE marcas ADD COLUMN IF NOT EXISTS opo_chequeos INTEGER")
     cur.execute("ALTER TABLE marcas ADD COLUMN IF NOT EXISTS opo_ultimo_chequeo_en TIMESTAMPTZ")
@@ -1404,7 +1406,8 @@ def listar_boletines_completo(_: str = Depends(verificar_login)):
 
     with conexion() as conn:
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-            cur.execute("SELECT numero, fecha, total_marcas, estado, procesado_en FROM boletines")
+            cur.execute("SELECT numero, fecha, total_marcas, estado, procesado_en, "
+                        "oposiciones_buscadas_en FROM boletines")
             importados = {f["numero"]: f for f in cur.fetchall()}
             cur.execute(
                 "SELECT boletin, COUNT(*) FILTER (WHERE es_lead IS TRUE) AS leads, "
@@ -1431,6 +1434,7 @@ def listar_boletines_completo(_: str = Depends(verificar_login)):
             "estado": (importado_fila or {}).get("estado"),
             "total_marcas": (importado_fila or {}).get("total_marcas"),
             "procesado_en": (importado_fila or {}).get("procesado_en"),
+            "oposiciones_buscadas_en": (importado_fila or {}).get("oposiciones_buscadas_en"),
         })
     filas.sort(key=lambda f: int(f["numero"]), reverse=True)
     return {"boletines": filas, "aviso": aviso}
