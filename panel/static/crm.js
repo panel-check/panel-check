@@ -179,10 +179,17 @@ function _crmHtmlCabecera(d, opciones = {}) {
   const marcaOpo = (!d.cliente && l.es_lead && l.oposicion_sin_apoderado)
     ? (d.marcas.find(m => conOpo(m) && m.email) || d.marcas.find(conOpo))
     : null;
+  // La Grilla Digital se ofrece SIEMPRE que el titular tenga alguna marca con oposición,
+  // aunque ya se haya mandado el mail, la oposición esté atendida, tenga gestor/apoderado o
+  // sea cliente: ahorra pasos para mirar el historial del acta. Con varias marcas con
+  // oposición va un botón por marca (primero la que se está atendiendo).
+  const marcasGrilla = d.marcas.filter(m => m.tuvo_oposicion === true)
+    .sort((a, b) => (b === marcaOpo) - (a === marcaOpo));
+  const botonesGrilla = marcasGrilla.map(m => `<button type="button" class="crm-btn-gestor" data-accion="ver-grilla-opo" data-acta-opo="${crmEsc(m.acta)}" title="Abre directo la Grilla Digital del acta ${crmEsc(m.acta)} (archivos del expediente: formularios, oposiciones, publicación...)">🗂 Ver Grilla Digital${marcasGrilla.length > 1 ? ` · acta ${crmEsc(m.acta)}` : ""}</button>`);
   if (marcaOpo) {
     const nombreMarca = marcaOpo.denominacion_inpi || marcaOpo.denominacion || marcaOpo.acta;
     botones.push(`<button type="button" class="crm-btn-gestor" data-accion="ver-acta-opo" data-acta-opo="${crmEsc(marcaOpo.acta)}" title="Abre el expediente en el portal de INPI (ahí está el botón GRILLA DIGITAL con el historial del acta)">🔎 Ver acta ${crmEsc(marcaOpo.acta)} en INPI</button>`);
-    botones.push(`<button type="button" class="crm-btn-gestor" data-accion="ver-grilla-opo" data-acta-opo="${crmEsc(marcaOpo.acta)}" title="Abre directo la Grilla Digital del acta (archivos del expediente: formularios, oposiciones, publicación...)">🗂 Ver Grilla Digital</button>`);
+    botones.push(...botonesGrilla);
     if (typeof opciones.mailOposicion === "function") {
       const ayudaMail = marcaOpo.email
         ? `Manda el mail «Recibió una oposición» de la marca ${nombreMarca} a ${marcaOpo.email} (pide confirmación antes de enviar)`
@@ -190,6 +197,7 @@ function _crmHtmlCabecera(d, opciones = {}) {
       botones.push(`<button type="button" class="crm-btn-primario" data-accion="mail-oposicion" data-acta-opo="${crmEsc(marcaOpo.acta)}" title="${crmEsc(ayudaMail)}">✉ Enviar mail de oposición</button><span class="crm-gris" id="estado-mail-opo"></span>`);
     }
   }
+  if (!marcaOpo) botones.push(...botonesGrilla);  // sin lead pendiente: igual queda el atajo a la Grilla
   if (!d.cliente && d.lead) botones.push(`<button type="button" class="${marcaOpo ? "crm-btn-gestor" : "crm-btn-primario"}" data-accion="convertir" title="Pasa sus marcas a la cartera (con vigilancia) y marca el lead como «Cliente».">Convertir en cliente</button>`);
   if (!d.cliente && l.es_lead) botones.push('<button type="button" class="crm-btn-gestor" data-accion="con-gestor" title="Si el titular ya trabaja con un gestor/apoderado: deja de ser lead y pasa a «con agente». Se puede deshacer.">Tiene gestor/apoderado</button>');
   const acciones = botones.length ? `<div class="crm-acciones-resultado">${botones.join("")}</div>` : "";
@@ -336,8 +344,7 @@ function _crmConectarFicha(cont) {
   // Atajos del lead con oposición: ver el expediente en INPI y mandar el mail de oposición.
   const btnVerActa = uno('[data-accion="ver-acta-opo"]');
   if (btnVerActa) btnVerActa.addEventListener("click", () => abrirActa(btnVerActa.dataset.actaOpo));
-  const btnVerGrilla = uno('[data-accion="ver-grilla-opo"]');
-  if (btnVerGrilla) btnVerGrilla.addEventListener("click", () => abrirGrilla(btnVerGrilla.dataset.actaOpo));
+  todos('[data-accion="ver-grilla-opo"]').forEach(b => b.addEventListener("click", () => abrirGrilla(b.dataset.actaOpo)));
   const btnMailOpo = uno('[data-accion="mail-oposicion"]');
   if (btnMailOpo) btnMailOpo.addEventListener("click", async () => {
     btnMailOpo.disabled = true;
