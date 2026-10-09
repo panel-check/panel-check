@@ -197,14 +197,209 @@ class Estados(unittest.TestCase):
         self.assertFalse(r["sirve"])
         self.assertTrue(r["representacion_confirmada"])
 
-    def test_poder_en_grilla_sin_agente_del_titular_es_ambiguo_y_sigue_sirviendo(self):
-        # Caso típico: el abogado del OPONENTE acompaña su poder.
-        arch = [{"Indice": "Escrito", "Referencia": "Acompaña Poder", "Fecha": "22/09/2026"}]
+    def test_poder_en_grilla_despues_de_notificar_al_titular_descarta_el_lead(self):
+        # Un "Acompaña Poder" posterior a la notificación al titular es de su gestor.
+        arch = [
+            {"Indice": "Acompaña Poder", "Referencia": "ACOMPAÑA PODER", "Fecha": "02/10/2026"},
+            {"Indice": "Cédula de Notificación", "Referencia": "-", "Fecha": "26/09/2026"},
+            {"Indice": "Vista de Marcas", "Referencia": "-", "Fecha": "26/09/2026"},
+        ]
+        r = clasificar(pagina(opos=opo(), gestion=GESTION_PARTICULAR), arch)
+        self.assertEqual(r["estado"], "con_apoderado")
+        self.assertFalse(r["sirve"])
+        self.assertTrue(r["representacion_confirmada"])
+        self.assertFalse(r["posible_apoderado"])
+
+    def test_poder_en_grilla_sin_notificacion_no_descarta(self):
+        # Sin notificación conocida el poder es del oponente: manda el expediente.
+        arch = [{"Indice": "Acompaña Poder", "Referencia": "ACOMPAÑA PODER", "Fecha": "22/09/2026"}]
         r = clasificar(pagina(opos=opo(), gestion=GESTION_PARTICULAR), arch)
         self.assertEqual(r["estado"], "sin_notificar")
         self.assertTrue(r["sirve"])
-        self.assertTrue(r["posible_apoderado"])
         self.assertFalse(r["representacion_confirmada"])
+
+    def test_poder_en_grilla_con_notificacion_del_expediente(self):
+        n, v = "\\/Date(%d)\\/" % ms("2026-09-26"), "\\/Date(%d)\\/" % ms("2026-10-26")
+        arch = [{"Indice": "Ratifica Gestión", "Referencia": "-", "Fecha": "01/10/2026"}]
+        r = clasificar(pagina(opos=opo(notif=n, venc=v), gestion=GESTION_PARTICULAR), arch)
+        self.assertEqual(r["estado"], "con_apoderado")
+
+
+class ReglasGrilla(unittest.TestCase):
+    """Combinaciones exactas de la Grilla Digital (regla del 08/10/2026)."""
+
+    def r(self, arch, gestion=GESTION_PARTICULAR, opos=None):
+        html = pagina(opos=opo() if opos is None else opos, gestion=gestion)
+        return clasificar(html, arch)
+
+    def test_notificacion_efectiva_vista_seguida_de_cedula(self):
+        arch = [
+            {"Indice": "Recibo de Ingreso", "Referencia": "Opo. de Marcas", "Fecha": "20/09/2026"},
+            {"Indice": "Vista de Marcas", "Referencia": None, "Fecha": "25/09/2026"},
+            {"Indice": "Cédula de Notificación", "Referencia": None, "Fecha": "26/09/2026"},
+        ]
+        r = self.r(arch)
+        self.assertEqual(r["estado"], "notificada_en_plazo")
+        self.assertTrue(r["sirve"])
+        self.assertEqual(r["notificacion"], "2026-09-26")
+
+    def test_orden_real_de_la_grilla_cedula_antes_que_vista(self):
+        # La Grilla viene con lo más nuevo arriba (captura del 08/10/2026): la cédula
+        # aparece ANTES que su vista, y el texto puede traer algo extra.
+        arch = [
+            {"Indice": "Cédula de Notificación", "Referencia": "-", "Fecha": "30/09/2026"},
+            {"Indice": "Vista de Marcas", "Referencia": "-", "Fecha": "30/09/2026"},
+            {"Indice": "Formulario", "Referencia": "-", "Fecha": "25/09/2026"},
+            {"Indice": "Recibo de Ingreso", "Referencia": "Opo. de Marcas", "Fecha": "25/09/2026"},
+        ]
+        r = clasificar(pagina(opos=opo(pres=ms("2026-09-25")), gestion=GESTION_PARTICULAR), arch)
+        self.assertEqual(r["estado"], "notificada_en_plazo")
+        self.assertEqual(r["notificacion"], "2026-09-30")
+
+    def test_texto_extra_en_la_celda_igual_matchea(self):
+        arch = [
+            {"Indice": "Recibo de Ingreso", "Referencia": "Opo. de Marcas", "Fecha": "20/09/2026"},
+            {"Indice": "Recibo de Ingreso (digital)", "Referencia": "Escritos de Marcas - Nº 123", "Fecha": "28/09/2026"},
+        ]
+        self.assertEqual(self.r(arch)["estado"], "contestada")
+
+    def test_cedula_no_consecutiva_no_notifica(self):
+        arch = [
+            {"Indice": "Recibo de Ingreso", "Referencia": "Opo. de Marcas", "Fecha": "20/09/2026"},
+            {"Indice": "Vista de Marcas", "Referencia": None, "Fecha": "25/09/2026"},
+            {"Indice": "Otro", "Referencia": None, "Fecha": "25/09/2026"},
+            {"Indice": "Cédula de Notificación", "Referencia": None, "Fecha": "26/09/2026"},
+        ]
+        self.assertEqual(self.r(arch)["estado"], "sin_notificar")
+
+    def test_par_anterior_a_la_presentacion_no_notifica(self):
+        arch = [
+            {"Indice": "Vista de Marcas", "Referencia": None, "Fecha": "10/09/2026"},
+            {"Indice": "Cédula de Notificación", "Referencia": None, "Fecha": "11/09/2026"},
+            {"Indice": "Recibo de Ingreso", "Referencia": "Opo. de Marcas", "Fecha": "20/09/2026"},
+        ]
+        self.assertEqual(self.r(arch)["estado"], "sin_notificar")
+
+    def test_recibo_mas_escritos_descarta_como_atendida(self):
+        arch = [
+            {"Indice": "Recibo de Ingreso", "Referencia": "Opo. de Marcas", "Fecha": "20/09/2026"},
+            {"Indice": "Recibo de Ingreso", "Referencia": "Escritos de Marcas", "Fecha": "28/09/2026"},
+        ]
+        r = self.r(arch)
+        self.assertEqual(r["estado"], "contestada")
+        self.assertFalse(r["sirve"])
+
+    def test_recibo_solo_no_descarta(self):
+        arch = [
+            {"Indice": "Recibo de Ingreso", "Referencia": "Opo. de Marcas", "Fecha": "20/09/2026"},
+            {"Indice": "Recibo de Ingreso", "Referencia": "Otra cosa", "Fecha": "28/09/2026"},
+        ]
+        self.assertEqual(self.r(arch)["estado"], "sin_notificar")
+
+    def test_formula_desistimiento_es_levantada(self):
+        arch = [
+            {"Indice": "Recibo de Ingreso", "Referencia": "Opo. de Marcas", "Fecha": "20/09/2026"},
+            {"Indice": "Formula Desistimiento", "Referencia": "FORMULA DESISTIMIENTO", "Fecha": "28/09/2026"},
+        ]
+        r = self.r(arch)
+        self.assertEqual(r["estado"], "levantada")
+        self.assertFalse(r["sirve"])
+
+    def test_palabras_sueltas_no_son_desistimiento_ni_poder(self):
+        arch = [
+            {"Indice": "Recibo de Ingreso", "Referencia": "Opo. de Marcas", "Fecha": "20/09/2026"},
+            {"Indice": "Escrito", "Referencia": "Levantamiento de vista", "Fecha": "22/09/2026"},
+            {"Indice": "Escrito", "Referencia": "Poder del abogado", "Fecha": "23/09/2026"},
+        ]
+        self.assertEqual(self.r(arch)["estado"], "sin_notificar")
+
+    # Notificación al titular (Grilla, más nuevo arriba), anterior a los poderes de abajo
+    NOTIFICADA = [
+        {"Indice": "Cédula de Notificación", "Referencia": "-", "Fecha": "22/09/2026"},
+        {"Indice": "Vista de Marcas", "Referencia": "-", "Fecha": "22/09/2026"},
+    ]
+
+    def test_ratifica_gestion_en_oposicion_descarta(self):
+        arch = [
+            {"Indice": "Ratifica Gestión en Oposición", "Referencia": "RATIFICA GESTIÓN EN OPOSICIÓN", "Fecha": "24/09/2026"},
+        ] + self.NOTIFICADA
+        r = self.r(arch)
+        self.assertEqual(r["estado"], "con_apoderado")
+        self.assertFalse(r["sirve"])
+
+    def test_ratifica_gestion_descarta(self):
+        arch = [{"Indice": "Ratifica Gestión", "Referencia": None, "Fecha": "24/09/2026"}] + self.NOTIFICADA
+        self.assertEqual(self.r(arch)["estado"], "con_apoderado")
+
+    def test_poder_antes_de_la_notificacion_es_del_oponente(self):
+        # Mismo día que la oposición, antes de que se notifique al titular.
+        arch = [
+            {"Indice": "Acompaña Poder", "Referencia": "ACOMPAÑA PODER", "Fecha": "20/09/2026"},
+            {"Indice": "Recibo de Ingreso", "Referencia": "Opo. de Marcas", "Fecha": "20/09/2026"},
+        ] + self.NOTIFICADA
+        r = self.r(arch)
+        self.assertEqual(r["estado"], "notificada_en_plazo")
+        self.assertTrue(r["sirve"])
+
+    def test_poder_del_dia_de_una_oposicion_posterior_a_la_notificacion_no_descarta(self):
+        # Un tercer oponente se presenta después de notificado el titular y acompaña su
+        # poder el mismo día: sigue siendo poder de un oponente.
+        arch = [
+            {"Indice": "Recibo de Ingreso", "Referencia": "Opo. de Marcas", "Fecha": "28/09/2026"},
+            {"Indice": "Acompaña Poder", "Referencia": "ACOMPAÑA PODER", "Fecha": "28/09/2026"},
+            {"Indice": "Cédula de Notificación", "Referencia": "-", "Fecha": "22/09/2026"},
+            {"Indice": "Vista de Marcas", "Referencia": "-", "Fecha": "22/09/2026"},
+        ]
+        dos = "[" + opo(pres=ms("2026-09-15"))[1:-1] + "," + opo(pres=ms("2026-09-28"))[1:-1] + "]"
+        r = clasificar(pagina(opos=dos, gestion=GESTION_PARTICULAR), arch)
+        self.assertEqual(r["estado"], "notificada_en_plazo")
+        self.assertFalse(r["representacion_confirmada"])
+
+    def test_poder_del_dia_siguiente_a_la_oposicion_no_descarta(self):
+        # Acta 4777786: oposición 28/09 18:07 ART y poder 29/09 01:59 ART (fechas UTC de la
+        # Grilla en días distintos), pero es parte de la misma presentación del oponente.
+        arch = [
+            {"Indice": "Acompaña Poder", "Referencia": "ACOMPAÑA PODER", "Fecha": "29/09/2026"},
+            {"Indice": "Recibo de Ingreso", "Referencia": "Opo. de Marcas", "Fecha": "28/09/2026"},
+            {"Indice": "Cédula de Notificación", "Referencia": "-", "Fecha": "22/09/2026"},
+            {"Indice": "Vista de Marcas", "Referencia": "-", "Fecha": "22/09/2026"},
+        ]
+        dos = "[" + opo(pres=ms("2026-09-15"))[1:-1] + "," + opo(pres=ms("2026-09-28"))[1:-1] + "]"
+        r = clasificar(pagina(opos=dos, gestion=GESTION_PARTICULAR), arch)
+        self.assertEqual(r["estado"], "notificada_en_plazo")
+        self.assertFalse(r["representacion_confirmada"])
+
+    def test_acta_4759596_poder_de_un_oponente_no_descarta(self):
+        # Caso real (08/10/2026): dos oposiciones (Paladini 11/09, Bruzzi 25/09), cada una
+        # con su agente. El "Acompaña Poder" del 11/09 es de Paladini, que se opone.
+        # La vista/cédula del 30/09 notificó la oposición al titular (sin agente).
+        arch = [
+            {"Indice": "Cédula de Notificación", "Referencia": "-", "Fecha": "30/09/2026"},
+            {"Indice": "Vista de Marcas", "Referencia": "-", "Fecha": "30/09/2026"},
+            {"Indice": "Formulario", "Referencia": "-", "Fecha": "25/09/2026"},
+            {"Indice": "Recibo de Ingreso", "Referencia": "Opo. de Marcas", "Fecha": "25/09/2026"},
+            {"Indice": "Formulario", "Referencia": "-", "Fecha": "11/09/2026"},
+            {"Indice": "Acompaña Poder", "Referencia": "ACOMPAÑA PODER", "Fecha": "11/09/2026"},
+            {"Indice": "Recibo de Ingreso", "Referencia": "Opo. de Marcas", "Fecha": "11/09/2026"},
+            {"Indice": "Hoja Publicacion", "Referencia": "11104", "Fecha": "26/08/2026"},
+            {"Indice": "Orden de Publicación", "Referencia": "-", "Fecha": "19/08/2026"},
+            {"Indice": "Formulario", "Referencia": "-", "Fecha": "03/08/2026"},
+        ]
+        dos = "[" + opo(pres=ms("2026-09-11"), agente=1287)[1:-1] + "," + opo(pres=ms("2026-09-25"), agente=2469)[1:-1] + "]"
+        html = pagina(opos=dos, vistas=vista(fecha="2026-09-30", notif="2026-09-30", venc=None),
+                      gestion=GESTION_PARTICULAR)
+        r = clasificar_estado_oposicion(parsear_expediente(html), arch, "2026-08-26", HOY)
+        self.assertEqual(r["estado"], "notificada_en_plazo")
+        self.assertTrue(r["sirve"])
+        self.assertFalse(r["representacion_confirmada"])
+        self.assertEqual(r["notificacion"], "2026-09-30")
+
+    def test_poder_anterior_a_la_oposicion_no_descarta(self):
+        arch = [
+            {"Indice": "Escrito", "Referencia": "Acompaña Poder", "Fecha": "01/09/2026"},
+            {"Indice": "Recibo de Ingreso", "Referencia": "Opo. de Marcas", "Fecha": "20/09/2026"},
+        ]
+        self.assertEqual(self.r(arch)["estado"], "sin_notificar")
 
     def test_oposicion_en_grilla_antes_de_estar_en_el_expediente(self):
         arch = [{"Indice": "Recibo de Ingreso", "Referencia": "Opo. de Marcas", "Fecha": "20/09/2026"}]

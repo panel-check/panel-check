@@ -1,0 +1,54 @@
+name: "Diagnóstico de oposiciones (solo lectura)"
+
+on:
+  workflow_dispatch:
+    inputs:
+      dias:
+        description: "Leads publicados en los últimos N días (default 60)"
+        required: false
+        default: "60"
+      limite:
+        description: "Tope de actas a diagnosticar (default 150)"
+        required: false
+        default: "150"
+      max_minutes:
+        description: "Minutos máximos de esta corrida (default 20)"
+        required: false
+        default: "20"
+
+permissions:
+  contents: read
+
+# Un solo carril contra INPI (ver revisar_oposiciones.yml).
+concurrency:
+  group: inpi-lane
+  cancel-in-progress: false
+
+jobs:
+  diagnostico:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+      RESEND_FROM: ${{ secrets.RESEND_FROM }}
+      NOTIFICAR_A: ${{ secrets.NOTIFICAR_A }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Instalar dependencias
+        run: pip install -r requirements.txt
+
+      - name: Diagnosticar oposiciones (no escribe en la base)
+        run: |
+          cd scripts
+          python3 diagnostico_oposiciones.py \
+            --dias "${{ inputs.dias || '60' }}" \
+            --limite "${{ inputs.limite || '150' }}" \
+            --max-minutes "${{ inputs.max_minutes || '20' }}"
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL || secrets.DATABASE_PUBLIC_URL }}
+          PYTHONUNBUFFERED: "1"

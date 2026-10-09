@@ -521,6 +521,43 @@ async function mandarMailOposicion(acta) {
   mlAlCambiarMarca();  // completa «Para» con el mail de esa marca y actualiza la vista previa
   const res = await mlEnviar();
   if (res.estado === "error") alert(`No se pudo mandar el mail: ${res.texto}`);
+  else if (res.estado === "ok") pasarAlSiguienteTitular();
+}
+
+// ── Pasar a la siguiente ficha después de mandar el mail de oposición ──
+// Marca con una oposición que todavía hay que atender: mismo criterio que usa el
+// botón «Enviar mail de oposición» del CRM (crm.js, conOpo).
+function mlOposicionVigente(r) {
+  return r.tuvo_oposicion === true && r.es_lead === true && r.oposicion_atendida !== true && r.oposicion_sirve !== false;
+}
+
+// Qué hacer después de mandar el mail. `filas` son todas las marcas de este CUIT, `cola` la
+// lista desde la que se abrió la ficha (comun.js) y `actual` la ruta de esta ficha.
+//   revisar  -> el CUIT tiene varias marcas con oposición: NO se pasa sola, se revisan a mano
+//   ir       -> hay una ficha siguiente en la lista: se abre
+//   ultima   -> era la última ficha de la lista
+//   quedarse -> la ficha no se abrió desde una lista: no hay a dónde pasar
+function decidirPasoSiguiente(filas, cola, actual) {
+  const pendientes = filas.filter(mlOposicionVigente).length;
+  if (pendientes > 1) return { accion: "revisar", cantidad: pendientes };
+  const i = cola && Array.isArray(cola.links) ? cola.links.findIndex(h => decodeURIComponent(h) === actual) : -1;
+  if (i < 0) return { accion: "quedarse" };
+  const href = cola.links[i + 1];
+  return href ? { accion: "ir", href } : { accion: "ultima" };
+}
+
+function pasarAlSiguienteTitular() {
+  let cola = null;
+  try { cola = JSON.parse(sessionStorage.getItem("colaTitulares") || "null"); } catch (_) { /* sin lista: no pasa */ }
+  const paso = decidirPasoSiguiente(mlFilas, cola, decodeURIComponent(location.pathname));
+  if (paso.accion === "revisar") {
+    mostrarAviso(`Mail enviado ✓. Este CUIT tiene ${paso.cantidad} marcas con oposición: no paso a la siguiente para que las revises a mano.`, "aviso");
+  } else if (paso.accion === "ultima") {
+    mostrarAviso("Mail enviado ✓. Era la última ficha de la lista.");
+  } else if (paso.accion === "ir") {
+    mostrarAviso("Mail enviado ✓. Paso a la siguiente ficha…");
+    setTimeout(() => { location.href = paso.href; }, 1200);  // el tiempo justo para ver el aviso
+  }
 }
 
 // «✓ Ya se le mandó el …» al lado del botón de la cabecera.
