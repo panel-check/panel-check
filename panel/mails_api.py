@@ -12,7 +12,8 @@ cambios y tocar la lista de bajas, además, administrador.
   POST   /api/mails/{clave}/enviar          mandar la plantilla (tal como está guardada) a un lead, a mano
   GET    /api/mails/enviados?internos=      mails de la cuenta de prospectos de Resend (y de la interna, con
                                             internos=true), cruzados con el registro del panel y con su tipo
-  GET    /api/mails/envios?actas=a,b        historial de mails mandados a esas actas (con aperturas y clics)
+  GET    /api/mails/cupo-hoy                mails mandados hoy por cuenta de Resend vs. el límite diario (100)
+  GET    /api/mails/envios?actas=a,b       historial de mails mandados a esas actas (con aperturas y clics)
   GET    /api/mails/envios/{id}/adjunto     el PDF del presupuesto que se mandó en ese envío (se arma de nuevo con sus datos)
   GET    /api/mails/{clave}/presupuesto     datos del presupuesto (montos, vigencia, transferencia) y qué falta cargar
   POST   /api/mails/{clave}/presupuesto     guardar los datos del presupuesto (administrador)
@@ -347,6 +348,17 @@ def crear_router(verificar_login, verificar_admin, conexion, registrar_en_crm=No
                     siguiente[cuenta] = r["data"][-1]["id"]
         items.sort(key=lambda it: it.get("enviado_en") or "", reverse=True)
         return {"avisos": avisos, "items": items, "siguiente": siguiente, "tipos": mc.tipos_de_mail()}
+
+    @router.get("/api/mails/cupo-hoy")
+    def cupo_hoy(_: str = Depends(verificar_login)):
+        """Mails mandados hoy (día UTC) por cada cuenta de Resend, contra el límite diario del plan free."""
+        out = {}
+        for cuenta in ("prospectos", "interna"):
+            try:
+                out[cuenta] = mc.contar_enviados_hoy(cuenta)
+            except ValueError as e:
+                out[cuenta] = {"error": str(e)}
+        return out
 
     def _respaldo_panel(cur):
         """Si no se puede listar Resend: lo que se mandó desde el panel."""

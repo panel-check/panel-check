@@ -1018,6 +1018,41 @@ def listar_resend(cuenta: str, limite: int = 50, despues_de: str = None) -> dict
     return {"data": j.get("data") or [], "has_more": bool(j.get("has_more"))}
 
 
+LIMITE_DIARIO_RESEND = 100  # plan free de Resend
+
+
+def _fecha_resend(texto: str):
+    """created_at de Resend ("2026-10-09 14:03:11.123+00") → datetime con zona, o None."""
+    from datetime import datetime, timezone
+    try:
+        d = datetime.fromisoformat((texto or "").replace(" ", "T").replace("Z", "+00:00"))
+    except ValueError:
+        try:
+            d = datetime.fromisoformat((texto or "").replace(" ", "T")[:19])
+        except ValueError:
+            return None
+    return d if d.tzinfo else d.replace(tzinfo=timezone.utc)
+
+
+def contar_enviados_hoy(cuenta: str) -> dict:
+    """Cuántos mails mandó esa cuenta de Resend hoy (día UTC, que es el que usa
+    Resend para el límite diario). Recorre el listado hasta pasar la medianoche UTC."""
+    from datetime import datetime, timezone
+    inicio = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+    total, despues = 0, None
+    for _ in range(10):  # tope de seguridad: 1000 mails
+        r = listar_resend(cuenta, 100, despues)
+        for x in r["data"]:
+            f = _fecha_resend(x.get("created_at"))
+            if f is not None and f < inicio:
+                return {"enviados": total, "limite": LIMITE_DIARIO_RESEND}
+            total += 1
+        if not r["has_more"] or not r["data"]:
+            break
+        despues = r["data"][-1]["id"]
+    return {"enviados": total, "limite": LIMITE_DIARIO_RESEND}
+
+
 def esta_de_baja(cur, email: str) -> bool:
     cur.execute("SELECT 1 FROM mails_bajas WHERE email = %s", ((email or "").strip().lower(),))
     return cur.fetchone() is not None
