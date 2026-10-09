@@ -1225,6 +1225,7 @@ tr.crm-fila:hover { background: var(--azul-claro); }
 }
 .filtros .bol-pop button.bol-item:hover { background: #f3f4f6; color: var(--texto); border: 0; }
 .filtros .bol-pop button.bol-item.sel { background: var(--azul-claro); color: var(--azul-oscuro); font-weight: 600; }
+.filtros .bol-pop button.bol-item.bol-todo-mes { color: var(--azul); font-weight: 600; }
 .bol-item .bol-n { font-variant-numeric: tabular-nums; min-width: 52px; }
 .bol-item .bol-f { color: var(--gris); font-size: 12.5px; flex: 1; }
 .bol-item .bol-t { color: var(--gris); font-size: 12.5px; font-variant-numeric: tabular-nums; }

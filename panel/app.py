@@ -1096,6 +1096,10 @@ def _consulta_marcas(f: dict) -> dict:
         # Marcas detectadas por el escaneo directo de actas que todavía no
         # salieron en ningún boletín (ver scripts/escanear_actas_nuevas.py).
         condiciones.append("boletin IS NULL")
+    elif (f["boletin"] or "").startswith("mes:"):
+        # Todos los boletines publicados en un mes ("mes:2026-10").
+        condiciones.append("boletin IN (SELECT numero FROM boletines WHERE to_char(fecha, 'YYYY-MM') = %s)")
+        valores.append(f["boletin"][4:])
     elif f["boletin"]:
         condiciones.append("boletin = %s")
         valores.append(f["boletin"])
