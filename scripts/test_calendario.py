@@ -658,6 +658,10 @@ class TextosDelAviso(unittest.TestCase):
             self.assertIn("https://meet.google.com/abc-defg-hij", t)
             self.assertNotIn("{{", t)
         self.assertNotIn("marcos", texto)  # el mail a la persona no cuenta quién lo agendó
+        # sin lista, negritas ni link de Google Calendar: un mail común para que caiga en Principal
+        self.assertNotIn("<ul", html)
+        self.assertNotIn("<strong>", html)
+        self.assertNotIn("calendar.google.com", html + texto)
         self.assertEqual(cc.armar_aviso(j, "modificada", False, "marcos")[0], "Actualizamos tu reunión: Reunión con Pérez")
 
     def test_aviso_sin_meet_no_muestra_link_vacio(self):
