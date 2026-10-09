@@ -24,6 +24,8 @@ Variables de entorno:
                       con Google Calendar): el contenido completo del .json de
                       la cuenta de servicio y el ID del calendario. Sin esto la
                       sección muestra cómo conectarlo. Ver calendario_core.py.
+    KAN_URL         - opcional, dirección de Kan (tablero de tareas) a la que
+                      lleva la pestaña "Tareas" del menú (/tareas).
     GITHUB_TOKEN    - opcional, para la sección "Automatizaciones" (/crons):
                       un Personal Access Token (fine-grained) con permiso
                       "Actions: Read-only" sobre este repo. Sin esto, esa
@@ -507,6 +509,8 @@ COLUMNAS_MARCA = """
 """
 
 RE_CUIT_VALIDO = re.compile(r"^\d{10,11}$")
+
+KAN_URL_DEFECTO = "https://fulfilling-achievement-production-7586.up.railway.app"
 
 # --- Sección "Automatizaciones" (/crons) -----------------------------------
 # GitHub reporta esta org/repo con mayúscula/guiones distintos según la API
@@ -3297,6 +3301,13 @@ def pagina_crm(_: str = Depends(verificar_pagina)):
 @app.get("/calendario")
 def pagina_calendario(_: str = Depends(verificar_pagina)):
     return FileResponse(os.path.join(os.path.dirname(__file__), "static", "calendario.html"))
+
+
+@app.get("/tareas")
+def pagina_tareas(_: str = Depends(verificar_pagina)):
+    """Tablero de tareas: lleva a Kan (alternativa open source a Trello, autohospedada en Railway)."""
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse(os.environ.get("KAN_URL") or KAN_URL_DEFECTO)
 
 
 @app.get("/disponibilidad")

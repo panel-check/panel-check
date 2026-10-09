@@ -199,6 +199,7 @@
     <a href="/crm" title="CRM"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="5" height="16" rx="1.5"/><rect x="10" y="4" width="5" height="11" rx="1.5"/><rect x="17" y="4" width="4" height="7" rx="1.5"/></svg><span class="nav-txt">CRM</span></a>
     <a href="/clientes" title="Clientes"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M16 20v-1.5a3.5 3.5 0 0 0-3.5-3.5h-5A3.5 3.5 0 0 0 4 18.5V20"/><circle cx="10" cy="8" r="3.5"/><path d="M20 20v-1.5a3.5 3.5 0 0 0-2.5-3.35M15 4.6a3.5 3.5 0 0 1 0 6.8"/></svg><span class="nav-txt">Clientes</span></a>
     <a href="/calendario" title="Calendario"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg><span class="nav-txt">Calendario</span></a>
+    <a href="/tareas" target="_blank" rel="noopener" title="Tareas (Kan)"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="m8 12 3 3 5-6"/></svg><span class="nav-txt">Tareas</span></a>
     <div class="nav-grupo">
       <button type="button" class="nav-boton activa" aria-haspopup="true" aria-expanded="false" title="Más"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1.2"/><circle cx="12" cy="12" r="1.2"/><circle cx="19" cy="12" r="1.2"/></svg><span class="nav-txt">Más</span><svg class="nav-chev" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button>
       <div class="nav-sub nav-sub-der" role="menu">
@@ -530,6 +531,14 @@
       <li><strong>💬 Texto para WhatsApp:</strong> apenas se agenda una reunión (o se le cambia el día o el horario) el panel muestra un cuadro con el texto listo —qué, qué día, a qué hora, cómo es (con el link de Meet, el teléfono o el lugar)— con los botones <strong>Copiar</strong> y <strong>Abrir WhatsApp</strong> (si hay un teléfono en el evento, abre el chat con esa persona y el texto ya escrito). También se puede pedir en cualquier momento con el botón <strong>💬 Texto para WhatsApp</strong> de la tarjeta de cada reunión y desde el resumen de <strong>/agendar-llamada</strong>. El texto se puede corregir antes de copiarlo.</li>
       <li><strong>Importante:</strong> el vínculo sale del texto de la nota. Para desvincular un evento hay que sacar la línea «Acta N» de la nota (en Google o al editarlo en el panel). Los avisos por mail son los del panel, no invitaciones de Google: si el evento se agenda directo en Google Calendar, ahí las invitaciones las manda Google a los invitados que se agreguen (y el panel lo copia, con su link de Meet si lo tiene), pero no sale el mail del panel ni la copia al estudio.</li>
       <li><strong>Si dice «Calendario sin configurar»</strong> o aparece un cartel rojo, el panel no logra hablar con Google: la pantalla muestra qué falta (ver <em>Manual del sistema → Calendario</em>). Mientras tanto se siguen viendo los últimos eventos copiados.</li>
+    </ul>
+
+    <h2>✅ Tareas (Kan)</h2>
+    <p>Las tareas del estudio (lo que antes estaba en Trello) viven en <strong>Kan</strong>, un tablero de tarjetas tipo Trello que instalamos nosotros en Railway (código abierto, sin costo de licencia, con todas sus funciones). En la barra de arriba, <strong>Tareas</strong> (✔) lo abre en una pestaña nueva.</p>
+    <ul>
+      <li><strong>Primera vez:</strong> entrá a Tareas, creá tu cuenta con mail y clave (Kan tiene sus propios usuarios, distintos de los del panel) y creá o importá los tableros. Para traer los tableros de Trello: en Kan, <em>Settings → Integrations → Trello</em> (hace falta una API key de Trello del equipo).</li>
+      <li><strong>Uso:</strong> tableros con listas y tarjetas que se arrastran, etiquetas, miembros, fechas de vencimiento, comentarios, adjuntos y registro de actividad.</li>
+      <li><strong>Minutas con Claude:</strong> Claude actualiza las tareas de las minutas directamente en Kan (por la conexión MCP de Kan), igual que antes lo hacía en Trello.</li>
     </ul>
 
     <h2>💬 Chat interno</h2>
@@ -884,6 +893,7 @@ le asigna un puntaje de prioridad. Después sigue a cada marca a lo largo del ti
         <h2>Herramientas manuales</h2>
         <table class="tabla-glosario">
           <tbody>
+            <tr><th>Tareas con Claude (Kan)</th><td>Claude actualiza las tareas de las minutas en Kan por su servidor MCP (<code>@kan/mcp</code>), configurado con <code>KAN_BASE_URL</code> (dirección de Kan) y un <code>KAN_API_TOKEN</code> creado en Kan → Settings → API Keys. Importar tableros de Trello: Kan → Settings → Integrations → Trello.</td></tr>
             <tr><th>Reintentar (en la ficha)</th><td>Vuelve a consultar en vivo un expediente puntual y actualiza carácter, email, CUIT y score.</td></tr>
             <tr><th>Importar boletín</th><td>En <strong>Más → Automatizaciones → Boletines</strong> se ven todos los boletines de marcas nuevas publicados por INPI y cuáles ya están cargados. El botón Importar procesa uno puntual (por ejemplo, del historial) sin esperar al pipeline (espera su turno si hay otro proceso de INPI corriendo).</td></tr>
             <tr><th>Búsqueda rápida (🔍)</th><td>Lupa al principio de la barra de arriba, en todas las pantallas (la agrega <code>menu.js</code>). Al hacer clic se desliza un campo; con Enter abre Leads con <code>?q=…&amp;es_lead=todos&amp;contactado=todos</code>, es decir, buscando en todas las marcas (acta, CUIT, mail, marca, titular). Estando en Leads se aplica sin recargar la página. En el servidor, cualquier búsqueda por texto ignora además los filtros Lead y Contactado (<code>_consulta_marcas</code>).</td></tr>
@@ -967,6 +977,10 @@ le asigna un puntaje de prioridad. Después sigue a cada marca a lo largo del ti
               trajo cada uno, con el botón para importar los que falten.</p>
           </div>
           <div class="tarjeta-mini">
+            <h4>Tareas (<code>/tareas</code>)</h4>
+            <p>Acceso de la barra de arriba a <strong>Kan</strong>, el tablero de tareas del estudio (reemplaza a Trello). <code>/tareas</code> redirige a la dirección de Kan (variable <code>KAN_URL</code> del servicio del panel en Railway; por defecto la del servicio de Kan) y se abre en una pestaña nueva. Kan es una aplicación aparte (servicio «Web» + Postgres en el proyecto de Railway <em>Kom-Tareas-Kan</em>), con sus propios usuarios y su propia base; no usa la base del panel.</p>
+          </div>
+          <div class="tarjeta-mini">
             <h4>Chat (ícono de chat, <code>/comentarios</code>)</h4>
             <p>Mensajes internos entre las personas del equipo, generales o vinculados a un número de acta, dirigidos a
               alguien puntual o a todos. Se pueden responder y marcar como resueltos. Cada fila del panel tiene un botón
@@ -998,6 +1012,7 @@ le asigna un puntaje de prioridad. Después sigue a cada marca a lo largo del ti
         <h2>Glosario</h2>
         <table class="tabla-glosario">
           <tbody>
+            <tr><th>Kan</th><td>Tablero de tareas tipo Trello, de código abierto, que el estudio aloja en Railway. Se abre desde <strong>Tareas</strong> en la barra de arriba.</td></tr>
             <tr><th>Acta</th><td>Número único que identifica una solicitud de marca en INPI.</td></tr>
             <tr><th>Boletín</th><td>Publicación de INPI con las solicitudes de marca nuevas. Salen varios por semana; desde la publicación corren los 30 días para oponerse.</td></tr>
             <tr><th>Pre-boletín</th><td>Marca detectada por el escaneo de actas que todavía no salió publicada en un boletín.</td></tr>
