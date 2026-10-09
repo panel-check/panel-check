@@ -47,7 +47,7 @@ El workflow `.github/workflows/pipeline.yml` corre estos 6 pasos automáticament
   respaldo si no hay nada guardado.
 - **Kan (tareas, reemplaza a Trello)** — tablero de tareas de código abierto, autohospedado en
   Railway (proyecto `Kom-Tareas-Kan`: servicio Web con la imagen `ghcr.io/kanbn/kan` + Postgres).
-  El menú del panel tiene «Tareas» (`/tareas`), que redirige a Kan; la dirección se cambia con
+  El menú del panel tiene «Tareas» (`/tareas`), que muestra Kan adentro del panel (iframe); la dirección se cambia con
   `KAN_URL` en el servicio del panel. Las migraciones se corren una vez con la imagen
   `ghcr.io/kanbn/kan-migrate`. Claude actualiza las minutas por el MCP `@kan/mcp`.
 - **Google Calendar** — pantalla **Calendario** del panel, sincronizada en las dos

@@ -15,6 +15,17 @@ ajenos, <base> trucado) queda bloqueado: si algún día se colara código en una
 página, no podría cargar nada de afuera ni mandar datos a otro dominio.
 """
 
+import os
+
+
+KAN_URL_DEFECTO = "https://fulfilling-achievement-production-7586.up.railway.app"
+
+
+def kan_url() -> str:
+    """Dirección de Kan (tablero de tareas), sin barra final."""
+    return (os.environ.get("KAN_URL") or KAN_URL_DEFECTO).rstrip("/")
+
+
 CSP = "; ".join([
     "default-src 'self'",
     "script-src 'self' 'unsafe-inline' https://challenges.cloudflare.com",
@@ -22,7 +33,7 @@ CSP = "; ".join([
     "font-src 'self' data: https://fonts.gstatic.com",
     "img-src 'self' data: blob:",
     "connect-src 'self'",
-    "frame-src 'self' blob: https://challenges.cloudflare.com",
+    f"frame-src 'self' blob: https://challenges.cloudflare.com {kan_url()}",
     "object-src 'none'",
     "base-uri 'self'",
     "form-action 'self' https://portaltramites.inpi.gob.ar",
