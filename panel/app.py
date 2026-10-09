@@ -60,6 +60,7 @@ import auth_api
 import calendario_api
 import calendario_core
 import cartera
+import seguridad
 import cartera_api
 import formularios_api
 import mails_api
@@ -509,8 +510,6 @@ COLUMNAS_MARCA = """
 """
 
 RE_CUIT_VALIDO = re.compile(r"^\d{10,11}$")
-
-KAN_URL_DEFECTO = "https://fulfilling-achievement-production-7586.up.railway.app"
 
 # --- Sección "Automatizaciones" (/crons) -----------------------------------
 # GitHub reporta esta org/repo con mayúscula/guiones distintos según la API
@@ -3305,9 +3304,11 @@ def pagina_calendario(_: str = Depends(verificar_pagina)):
 
 @app.get("/tareas")
 def pagina_tareas(_: str = Depends(verificar_pagina)):
-    """Tablero de tareas: lleva a Kan (alternativa open source a Trello, autohospedada en Railway)."""
-    from fastapi.responses import RedirectResponse
-    return RedirectResponse(os.environ.get("KAN_URL") or KAN_URL_DEFECTO)
+    """Tablero de tareas: Kan (alternativa open source a Trello, autohospedada en Railway) adentro del panel."""
+    ruta = os.path.join(os.path.dirname(__file__), "static", "tareas.html")
+    with open(ruta, encoding="utf-8") as f:
+        html = f.read().replace("__KAN_URL__", seguridad.kan_url())
+    return Response(html, media_type="text/html")
 
 
 @app.get("/disponibilidad")
