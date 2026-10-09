@@ -298,6 +298,10 @@ function refrescarBotonBoletin() {
     const b = bol.lista.find(x => x.numero === v);
     txt = b && b.dia ? `${v} · ${b.dia}/${String(b.mes).padStart(2, "0")}/${b.anio}` : v;
   }
+  if (v.startsWith("mes:")) {
+    const [a, m] = v.slice(4).split("-").map(Number);
+    txt = `${MESES_ES[m - 1]} ${a} (todo el mes)`;
+  }
   document.getElementById("bol-btn-txt").textContent = txt;
   btn.classList.toggle("con-valor", v !== "");
 }
@@ -336,10 +340,12 @@ function renderSelectorBoletin() {
     const titulo = k === "sin-fecha" ? "Sin fecha" : `${MESES_ES[items[0].mes - 1]} ${items[0].anio}`;
     const marcas = items.reduce((s, b) => s + (Number(b.total) || 0), 0);
     // Abierto: el mes del boletín elegido, o el más reciente si no hay ninguno elegido.
-    const abierto = items.some(b => b.numero === sel) || (primero && !bol.lista.some(b => b.numero === sel && visibles.includes(b)));
+    const claveMes = k === "sin-fecha" ? "" : `mes:${k}`;
+    const abierto = (claveMes && claveMes === sel) || items.some(b => b.numero === sel) || (primero && !bol.lista.some(b => b.numero === sel && visibles.includes(b)));
     primero = false;
     html += `<details class="bol-mes"${abierto ? " open" : ""}>
       <summary><span>${_escapeHtml(titulo)}</span><small>${items.length} ${items.length === 1 ? "boletín" : "boletines"} · ${fmtMiles(marcas)} marcas</small></summary>
+      ${claveMes ? `<button type="button" class="bol-item bol-todo-mes${claveMes === sel ? " sel" : ""}" data-v="${claveMes}">Ver todo ${_escapeHtml(titulo)}</button>` : ""}
       ${items.map(b => `<button type="button" class="bol-item${b.numero === sel ? " sel" : ""}" data-v="${_escapeHtml(b.numero)}">
         <span class="bol-n">${_escapeHtml(b.numero)}</span>
         <span class="bol-f">${b.dia ? `${b.dia}/${String(b.mes).padStart(2, "0")}` : ""}</span>
@@ -378,6 +384,14 @@ async function cargarFiltrosIniciales() {
     const opt = document.createElement("option");
     opt.value = b.numero;
     opt.textContent = `${b.numero} (${b.total_marcas ?? "?"})`;
+    selB.appendChild(opt);
+  });
+  // Una opción por mes ("mes:2026-10") para ver todos los boletines del mes juntos.
+  const meses = [...new Set(boletines.map(b => /^(\d{4}-\d{2})/.exec(b.fecha || "")?.[1]).filter(Boolean))];
+  meses.forEach(m => {
+    const opt = document.createElement("option");
+    opt.value = `mes:${m}`;
+    opt.textContent = `Mes ${m}`;
     selB.appendChild(opt);
   });
   iniciarSelectorBoletin(boletines);
