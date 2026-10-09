@@ -27,7 +27,7 @@
   .estado-badge-b.importado { background: #e6f4ea; color: var(--verde); }
   .estado-badge-b.no-importado { background: #eef0f2; color: var(--gris); }
   .estado-badge-b.error { background: #fde8e8; color: var(--rojo); }
-  button.importar-boletin {
+  button.importar-boletin, button.buscar-opo {
     padding: 4px 10px;
     border-radius: 6px;
     border: 1px solid var(--azul);
@@ -36,8 +36,8 @@
     font-size: 12px;
     cursor: pointer;
   }
-  button.importar-boletin:hover { background: var(--azul-claro); }
-  button.importar-boletin:disabled { border-color: var(--borde); color: var(--gris); cursor: default; background: #fafbfc; }
+  button.importar-boletin:hover, button.buscar-opo:hover { background: var(--azul-claro); }
+  button.importar-boletin:disabled, button.buscar-opo:disabled { border-color: var(--borde); color: var(--gris); cursor: default; background: #fafbfc; }
 </style>
 <script src="/static/sesion.js" defer></script>
 <script src="/static/menu.js?v=tel2" defer></script>
@@ -96,7 +96,7 @@ function filaBoletin(b) {
     : `<strong>${_escapeHtml(b.numero)}</strong>`;
   const total = b.total_marcas != null ? b.total_marcas : "—";
   const accion = b.importado
-    ? ""
+    ? `<button type="button" class="buscar-opo" data-numero="${_escapeHtml(b.numero)}" title="Revisa en INPI si los leads de este boletín tienen oposición (también sirve si ya venció el plazo de 30 días)">Buscar oposiciones</button>`
     : `<button type="button" class="importar-boletin" data-numero="${_escapeHtml(b.numero)}">Importar</button>`;
   return `
     <tr>
@@ -126,8 +126,27 @@ async function cargar() {
     contenido.querySelectorAll(".importar-boletin").forEach((b) => {
       b.addEventListener("click", () => importar(b));
     });
+    contenido.querySelectorAll(".buscar-opo").forEach((b) => {
+      b.addEventListener("click", () => buscarOposiciones(b));
+    });
   } catch (e) {
     contenido.innerHTML = `<p style="color:var(--rojo);">No se pudo cargar (${e.message}).</p>`;
+  }
+}
+
+async function buscarOposiciones(boton) {
+  const numero = boton.dataset.numero;
+  if (!confirm(`¿Buscar oposiciones en los leads del boletín ${numero}? Tarda unos 12 segundos por lead; los avisos por mail salen a las 07:30.`)) return;
+  boton.disabled = true;
+  boton.textContent = "Disparando…";
+  try {
+    await api(`/api/boletines/${encodeURIComponent(numero)}/buscar-oposiciones`, { method: "POST" });
+    boton.textContent = "Disparado ✓";
+    boton.insertAdjacentHTML("afterend", ' <a class="ayuda" href="/crons" style="font-size:12px;">ver progreso ↗</a>');
+  } catch (e) {
+    boton.disabled = false;
+    boton.textContent = "Buscar oposiciones";
+    alert(`No se pudo disparar: ${e.message}`);
   }
 }
 

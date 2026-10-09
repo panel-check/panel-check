@@ -532,10 +532,11 @@ GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN")
 # "cron" tiene que coincidir con el schedule del .yml (UTC); "horario" es el
 # mismo horario en hora Argentina, escrito para humanos.
 # Leads publicados que todavía tienen pendiente alguno de sus hitos de revisión
-# (10, 23 y 33 días). Los ya revisados con el esquema viejo cuentan como hechos.
+# (10, 23 y 33 días) y todavía están dentro del plazo de oposición (hasta 35 días
+# desde la publicación). Los ya revisados con el esquema viejo cuentan como hechos.
 _SQL_OPOSICIONES_PENDIENTES = (
     "SELECT COUNT(*) FROM marcas WHERE es_lead = true AND fecha_publicacion IS NOT NULL "
-    "AND fecha_publicacion <= current_date - 10 AND ("
+    "AND fecha_publicacion <= current_date - 10 AND fecha_publicacion >= current_date - 35 AND ("
     "COALESCE(opo_chequeos, CASE WHEN revisado_oposicion_en IS NOT NULL THEN 3 ELSE 0 END) < 1 "
     "OR (COALESCE(opo_chequeos, CASE WHEN revisado_oposicion_en IS NOT NULL THEN 3 ELSE 0 END) < 2 "
     "AND fecha_publicacion <= current_date - 23) "
@@ -601,8 +602,8 @@ GRUPOS_AUTOMATIZACIONES = [
             {
                 "nombre": "Oposiciones y vistas",
                 "descripcion": "Revisa a cada lead a los 10, 23 y 33 días de su publicación en el boletín "
-                               "(muchas oposiciones llegan antes de los 30 días) y vuelve a mirar seguido los que "
-                               "ya tienen una oposición. El mail de aviso sale a las 7:30.",
+                               "(muchas oposiciones llegan antes de los 30 días; pasado el plazo ya no busca) y vuelve a "
+                               "mirar seguido los que ya tienen una oposición. El mail de aviso sale a las 7:30.",
                 "horario": "Todos los días, 22 hs",
                 "metricas": [
                     {"sql": "SELECT COUNT(*) FROM marcas WHERE es_lead = true AND tuvo_oposicion = true "
@@ -1418,6 +1419,34 @@ def importar_boletin(numero: str, _: str = Depends(verificar_login)):
         f"https://api.github.com/repos/{GITHUB_REPO}/actions/workflows/pipeline.yml/dispatches",
         headers={"Authorization": f"token {GITHUB_TOKEN}", "Accept": "application/vnd.github+json"},
         json={"ref": "main", "inputs": {"boletin": numero}},
+        timeout=15,
+    )
+    if r.status_code == 204:
+        return {"ok": True}
+    if r.status_code in (403, 404):
+        raise HTTPException(
+            status_code=502,
+            detail="GitHub rechazó el disparo manual — el GITHUB_TOKEN del panel necesita permiso "
+                   "\"Actions: Read and write\".",
+        )
+    raise HTTPException(status_code=502, detail=f"GitHub devolvió {r.status_code}: {r.text[:200]}")
+
+
+@app.post("/api/boletines/{numero}/buscar-oposiciones")
+def buscar_oposiciones_boletin(numero: str, _: str = Depends(verificar_login)):
+    """Búsqueda MANUAL de oposiciones sobre los leads de un boletín: dispara
+    revisar_oposiciones.yml con el input `boletin`. Sirve también para boletines
+    cuyo plazo de oposición (30 días) ya venció: el proceso diario no los mira,
+    pero acá se puede pedir a mano."""
+    if not numero.isdigit():
+        raise HTTPException(status_code=400, detail="Número de boletín inválido")
+    if not GITHUB_TOKEN:
+        raise HTTPException(status_code=400, detail="Falta configurar GITHUB_TOKEN en el panel")
+
+    r = requests.post(
+        f"https://api.github.com/repos/{GITHUB_REPO}/actions/workflows/revisar_oposiciones.yml/dispatches",
+        headers={"Authorization": f"token {GITHUB_TOKEN}", "Accept": "application/vnd.github+json"},
+        json={"ref": "main", "inputs": {"boletin": numero, "max_minutes": "330"}},
         timeout=15,
     )
     if r.status_code == 204:
