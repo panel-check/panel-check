@@ -12,6 +12,12 @@
   .env-filtros { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
   .env-filtros input, .env-filtros select { padding: 8px 10px; border: 1px solid var(--borde-control); border-radius: 8px; font: inherit; font-size: 14px; background: #fff; }
   .env-filtros input[type=text] { flex: 1; min-width: 220px; }
+  .cupo-hoy { display: flex; flex-wrap: wrap; gap: 8px 20px; align-items: center; margin: 0 0 12px; font-size: 14px; color: #344054; }
+  .cupo-hoy .barra { width: 120px; height: 8px; background: #eaecf0; border-radius: 4px; overflow: hidden; display: inline-block; vertical-align: middle; margin: 0 6px; }
+  .cupo-hoy .barra i { display: block; height: 100%; background: #12b76a; }
+  .cupo-hoy .alto .barra i { background: #f79009; }
+  .cupo-hoy .lleno .barra i { background: #d92d20; }
+  .cupo-hoy .sub { font-size: 12px; color: var(--gris); }
   .toggle-internos { display: flex; align-items: center; gap: 6px; font-size: 14px; color: #344054; cursor: pointer; user-select: none; }
   .toggle-internos input { width: 16px; height: 16px; margin: 0; cursor: pointer; }
   .toggle-internos .sub { font-size: 12px; color: var(--gris); }
@@ -154,6 +160,7 @@
       cualquier otro lado), del más nuevo al más viejo. Los avisos al equipo y las pruebas quedan ocultos: se ven tildando
       <em>Mostrar mails internos</em>.</p>
     <div id="env-aviso"></div>
+    <div id="env-cupo" class="cupo-hoy"></div>
     <div class="env-filtros">
       <input type="text" id="env-buscar" placeholder="Buscar por mail, asunto, marca o titular" />
       <select id="env-estado">
@@ -678,6 +685,7 @@ async function cargarEnviados(mas = false) {
   const msg = document.getElementById("env-msg");
   const internos = document.getElementById("env-internos").checked;
   msg.textContent = "Cargando…"; msg.className = "msg ok";
+  if (!mas) cargarCupo();
   const params = new URLSearchParams();
   if (internos) params.set("internos", "true");
   if (mas) {
@@ -699,6 +707,19 @@ async function cargarEnviados(mas = false) {
     pintarOpcionesTipo();
     pintarEnviados();
   } catch (e) { msg.textContent = e.message; msg.className = "msg err"; if (!mas) document.getElementById("env-tabla").innerHTML = ""; }
+}
+async function cargarCupo() {
+  const caja = document.getElementById("env-cupo");
+  try {
+    const r = await api("/api/mails/cupo-hoy");
+    caja.innerHTML = [["prospectos", "Prospectos"], ["interna", "Internos"]].map(([k, nombre]) => {
+      const c = r[k];
+      if (!c || c.error) return `<span class="sub" title="${esc(c ? c.error : "")}">${nombre}: sin datos</span>`;
+      const pct = Math.min(100, Math.round(c.enviados * 100 / c.limite));
+      const clase = c.enviados >= c.limite ? "lleno" : (pct >= 80 ? "alto" : "");
+      return `<span class="${clase}"><strong>${nombre}:</strong> ${c.enviados} de ${c.limite} hoy<span class="barra"><i style="width:${pct}%"></i></span></span>`;
+    }).join("") + '<span class="sub">Límite diario del plan free de Resend; se reinicia a las 21:00 (hora Argentina).</span>';
+  } catch (e) { caja.innerHTML = ""; }
 }
 ["env-buscar", "env-estado", "env-origen", "env-tipo"].forEach(id => document.getElementById(id).addEventListener("input", pintarEnviados));
 document.getElementById("env-internos").addEventListener("change", () => { pintarOpcionesTipo(); cargarEnviados(false); });
