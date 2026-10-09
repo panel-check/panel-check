@@ -112,8 +112,8 @@ function filaBoletin(b) {
   if (b.oposiciones_buscadas_en) {
     const f = new Date(b.oposiciones_buscadas_en);
     if (!isNaN(f)) {
-      const txt = f.toLocaleString("es-AR", { timeZone: "America/Argentina/Buenos_Aires", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: false });
-      ultima = `<div class="ultima-busqueda" title="Última vez que se buscó con el botón, terminada">Última búsqueda: ${txt}</div>`;
+      const txt = f.toLocaleString("es-AR", { timeZone: "America/Argentina/Buenos_Aires", day: "2-digit", month: "2-digit", year: "numeric" });
+      ultima = `<div class="ultima-busqueda" title="Última vez que se buscó con el botón">Última búsqueda: ${txt}</div>`;
     }
   }
   const accion = b.importado
