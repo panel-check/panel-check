@@ -92,7 +92,7 @@ function badgeRevisionOposicion(row) {
   const corta = d.toLocaleDateString("es-AR", opciones);
   const larga = d.toLocaleDateString("es-AR", { ...opciones, year: "numeric" });
   const hito = Math.min(row.opo_chequeos ?? 0, 3);
-  const detalle = `Oposición revisada por última vez el ${larga} · revisión ${hito} de 3 (a los 10, 23 y 33 días de la publicación)`
+  const detalle = `Oposición revisada por última vez el ${larga} · revisión ${hito} de 3 (a los 10, 23 y 33 días de la publicación; pasado el plazo de oposición ya no se busca)`
     + (row.tuvo_oposicion === true ? " · con oposición: se sigue mirando" : "");
   return `<span class="tooltip badge sin-dato">🔎 ${corta}<span class="globo">${detalle}</span></span>`;
 }

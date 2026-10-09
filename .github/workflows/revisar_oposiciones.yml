@@ -3,8 +3,9 @@ name: "Oposiciones y vistas"
 on:
   schedule:
     # Todos los días a las 01:00 UTC (22:00 ART), después del escaneo del turno A.
-    # Revisa a cada lead a los 10, 23 y 33 días de su publicación y vuelve a mirar
-    # los que tienen oposición (ver revisar_oposiciones.py). El mail de aviso
+    # Revisa a cada lead a los 10, 23 y 33 días de su publicación (el plazo para
+    # oponerse es de 30 días: pasados ~35 ya no se busca) y sigue el trámite de los
+    # que tienen oposición (ver revisar_oposiciones.py). El mail de aviso
     # sale a las 07:30 ART (avisos_manana.yml).
     - cron: "0 1 * * *"
   workflow_dispatch:
@@ -15,6 +16,10 @@ on:
         default: "30"
       limit:
         description: "Tope de actas a revisar en esta corrida (dejar vacío = todas)"
+        required: false
+        default: ""
+      boletin:
+        description: "Búsqueda manual: número de boletín cuyos leads se revisan TODOS, aunque ya haya vencido el plazo de oposición (dejar vacío = proceso diario normal)"
         required: false
         default: ""
       reverificar_apoderados:
@@ -57,6 +62,7 @@ jobs:
           cd scripts
           args="--max-minutes ${{ inputs.max_minutes || '30' }}"
           if [ -n "${{ inputs.limit }}" ]; then args="$args --limit ${{ inputs.limit }}"; fi
+          if [ -n "${{ inputs.boletin }}" ]; then args="$args --boletin ${{ inputs.boletin }}"; fi
           if [ "${{ inputs.reverificar_apoderados }}" = "true" ]; then args="$args --reverificar-apoderados"; fi
           python3 revisar_oposiciones.py $args
         env:

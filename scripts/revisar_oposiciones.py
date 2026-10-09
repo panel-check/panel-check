@@ -95,6 +95,8 @@ from validar_leads import (
 
 
 HITOS = (10, 23, 33)          # días desde la publicación en que se revisa cada lead
+VENTANA_BUSQUEDA_HASTA = 35   # pasado este día NO se busca más si hay oposición (el plazo es de 30 días;
+                              # los 5 extra cubren la demora de INPI en cargarla y corridas atrasadas)
 RECHEQUEO_DIARIO_HASTA = 33   # con oposición que sirve: todos los días hasta este día...
 RECHEQUEO_CADA_3_HASTA = 60   # ...y cada 3 días hasta este otro
 
@@ -110,9 +112,15 @@ SQL_PENDIENTES = f"""
       AND fecha_publicacion IS NOT NULL
       AND fecha_publicacion <= CURRENT_DATE - {HITOS[0]}
       AND (
-        COALESCE(opo_chequeos, 0) < 1
-        OR (COALESCE(opo_chequeos, 0) < 2 AND fecha_publicacion <= CURRENT_DATE - {HITOS[1]})
-        OR (COALESCE(opo_chequeos, 0) < 3 AND fecha_publicacion <= CURRENT_DATE - {HITOS[2]})
+        -- Búsqueda de oposiciones: solo dentro del plazo. Un boletín que salió hace más
+        -- de VENTANA_BUSQUEDA_HASTA días ya no puede recibir oposiciones, así que no
+        -- entra en el proceso diario (se puede buscar a mano desde /boletines).
+        (fecha_publicacion >= CURRENT_DATE - {VENTANA_BUSQUEDA_HASTA} AND (
+          COALESCE(opo_chequeos, 0) < 1
+          OR (COALESCE(opo_chequeos, 0) < 2 AND fecha_publicacion <= CURRENT_DATE - {HITOS[1]})
+          OR (COALESCE(opo_chequeos, 0) < 3 AND fecha_publicacion <= CURRENT_DATE - {HITOS[2]})
+        ))
+        -- Seguimiento de una oposición YA detectada (cambia de estado hasta que se resuelve)
         OR (
           tuvo_oposicion IS TRUE
           AND contactado IS NOT TRUE
@@ -137,6 +145,19 @@ SQL_PENDIENTES = f"""
              fecha_publicacion DESC
 """
 
+
+# Búsqueda manual (--boletin): todos los leads de ESE boletín, sin importar la edad
+# ni los hitos cumplidos. La dispara el botón «Buscar oposiciones» de /boletines.
+SQL_DE_BOLETIN = """
+    SELECT acta, titular, fecha_publicacion,
+           (CURRENT_DATE - fecha_publicacion) AS edad,
+           oponente_nombre, tuvo_oposicion
+    FROM marcas
+    WHERE es_lead = true
+      AND fecha_publicacion IS NOT NULL
+      AND boletin = %s
+    ORDER BY acta
+"""
 
 CARACTER_APODERADO = "Apoderado/gestor (se sumó tras la oposición)"
 
@@ -251,6 +272,8 @@ def main():
     )
     ap.add_argument("--delay", type=float, default=1.5, help="segundos entre acta y acta (freno de mano)")
     ap.add_argument("--limit", type=int, default=None, help="tope de actas a revisar, útil para pruebas")
+    ap.add_argument("--boletin", default=None,
+                    help="búsqueda manual: revisa TODOS los leads de este boletín, aunque ya haya vencido el plazo")
     ap.add_argument("--reverificar-apoderados", action="store_true",
                     help="reverifica los leads pasados a 'con apoderado' solo por la Grilla Digital")
     ap.add_argument("--dry-run", action="store_true", help="con --reverificar-apoderados: no escribe")
@@ -309,13 +332,19 @@ def main():
         conn.commit()
 
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-            cur.execute(SQL_PENDIENTES)
+            if args.boletin:
+                cur.execute(SQL_DE_BOLETIN, (args.boletin,))
+            else:
+                cur.execute(SQL_PENDIENTES)
             pendientes = cur.fetchall()
 
         if args.limit:
             pendientes = pendientes[: args.limit]
 
-        print(f"Leads con revisión de oposición pendiente (hitos {HITOS[0]}/{HITOS[1]}/{HITOS[2]} días + rechequeos): {len(pendientes)}")
+        if args.boletin:
+            print(f"Búsqueda manual de oposiciones en el boletín {args.boletin}: {len(pendientes)} leads")
+        else:
+            print(f"Leads con revisión de oposición pendiente (hitos {HITOS[0]}/{HITOS[1]}/{HITOS[2]} días + rechequeos): {len(pendientes)}")
 
         s = crear_sesion()
         con_oposicion = 0
@@ -353,7 +382,7 @@ def main():
             # se pide cuando hay algo que clasificar: oposición/vista en la Grilla,
             # una oposición que ya se venía siguiendo, o el último hito (33 días),
             # como control cruzado por si la Grilla no la mostró.
-            if fila_opo or fila.get("tuvo_oposicion") or hito_por_edad(edad) >= len(HITOS):
+            if args.boletin or fila_opo or fila.get("tuvo_oposicion") or hito_por_edad(edad) >= len(HITOS):
                 exp = consultar_expediente(s, acta)
                 if exp.get("bloqueado"):
                     sin_consulta += 1
