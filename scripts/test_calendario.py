@@ -598,11 +598,17 @@ class ModalidadYMeet(unittest.TestCase):
         self.assertEqual(cuerpo["attendees"], [{"email": "marcaskom@gmail.com"}])
         self.assertEqual(params["conferenceDataVersion"], 1)
         # ya tenía Meet y sigue siendo Meet: no se toca la sala
-        self.respuestas = [{"id": "g1", "hangoutLink": "https://meet.google.com/x"}]
+        self.respuestas = [{"id": "g1"}, {"id": "g1", "hangoutLink": "https://meet.google.com/x"}]
         cc.editar_evento(self.conexion_con(("g1", "https://meet.google.com/x", "evento", False)), 7, {**self.DATOS, "modalidad": "meet"}, "marcos")
         _, _, cuerpo, params = self.pedidos[-1]
         self.assertNotIn("conferenceData", cuerpo)
         self.assertNotIn("conferenceDataVersion", params)
+        self.assertEqual(cuerpo["attendees"], [{"email": "marcaskom@gmail.com"}])
+        # si ya había invitados, se conservan y no se duplica el fijo
+        self.respuestas = [{"id": "g1", "attendees": [{"email": "x@y.com"}, {"email": "MarcasKom@gmail.com"}]},
+                           {"id": "g1", "hangoutLink": "https://meet.google.com/x"}]
+        cc.editar_evento(self.conexion_con(("g1", "https://meet.google.com/x", "evento", False)), 7, {**self.DATOS, "modalidad": "meet"}, "marcos")
+        self.assertEqual([a["email"] for a in self.pedidos[-1][2]["attendees"]], ["x@y.com", "MarcasKom@gmail.com"])
         # tenía Meet y pasa a llamada: se saca la videollamada y la marca anterior
         self.respuestas = [{"id": "g1"}]
         cc.editar_evento(self.conexion_con(("g1", "https://meet.google.com/x", "evento", False)), 7, {**self.DATOS, "modalidad": "llamada"}, "marcos")

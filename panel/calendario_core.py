@@ -876,6 +876,11 @@ def editar_evento(conexion, evento_id: int, datos: dict, usuario: str) -> int:
         params["conferenceDataVersion"] = 1
         if _invitados_meet():
             cuerpo["attendees"] = _invitados_meet()
+    elif quiere_meet and _invitados_meet():
+        # Meet ya existente: se suma el invitado fijo conservando a los que ya estaban (un PATCH reemplaza la lista).
+        actuales = (_pedir("GET", _ruta_eventos("/" + google_id)) or {}).get("attendees") or []
+        mails = {(a.get("email") or "").lower() for a in actuales}
+        cuerpo["attendees"] = actuales + [i for i in _invitados_meet() if i["email"].lower() not in mails]
     elif not quiere_meet and meet_actual:
         cuerpo["conferenceData"] = None  # se saca la videollamada del evento
         params["conferenceDataVersion"] = 1
