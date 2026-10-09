@@ -55,6 +55,7 @@ ALTER TABLE marcas ADD COLUMN IF NOT EXISTS reintento_ultimo_en TIMESTAMPTZ;
 ALTER TABLE marcas ADD COLUMN IF NOT EXISTS fecha_publicacion DATE;
 ALTER TABLE marcas ADD COLUMN IF NOT EXISTS tuvo_oposicion BOOLEAN;
 ALTER TABLE marcas ADD COLUMN IF NOT EXISTS detalle_oposicion TEXT;
+ALTER TABLE boletines ADD COLUMN IF NOT EXISTS oposiciones_buscadas_en TIMESTAMPTZ;  -- última búsqueda manual completa (botón de /boletines)
 ALTER TABLE marcas ADD COLUMN IF NOT EXISTS revisado_oposicion_en TIMESTAMPTZ;
 -- Esquema de revisión a los 10/23/33 días + rechequeos (revisar_oposiciones.py)
 ALTER TABLE marcas ADD COLUMN IF NOT EXISTS opo_chequeos INTEGER;            -- hitos cumplidos (0-3)

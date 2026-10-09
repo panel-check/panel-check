@@ -208,6 +208,9 @@ NUEVAS_COLUMNAS = (
     ("estado_oposicion_version", "INTEGER"),
 )
 
+# Cuándo terminó la última búsqueda manual completa de un boletín (botón de /boletines)
+SQL_COLUMNA_BOLETIN = "ALTER TABLE boletines ADD COLUMN IF NOT EXISTS oposiciones_buscadas_en TIMESTAMPTZ"
+
 
 def hito_por_edad(edad: int) -> int:
     """Cuántos hitos (1-3) ya cumplió un lead con esta antigüedad en días."""
@@ -218,6 +221,7 @@ def asegurar_columnas(conn):
     with conn.cursor() as cur:
         for col, tipo in NUEVAS_COLUMNAS:
             cur.execute(f"ALTER TABLE marcas ADD COLUMN IF NOT EXISTS {col} {tipo}")
+        cur.execute(SQL_COLUMNA_BOLETIN)
     conn.commit()
 
 
@@ -338,6 +342,7 @@ def main():
                 cur.execute(SQL_PENDIENTES)
             pendientes = cur.fetchall()
 
+        pendientes_todos = pendientes
         if args.limit:
             pendientes = pendientes[: args.limit]
 
@@ -352,12 +357,15 @@ def main():
         revisadas = 0
         sin_consulta = 0
         por_estado: dict[str, int] = {}
+        cortada = False
         for i, fila in enumerate(pendientes, 1):
             if args.max_minutes and (time.time() - inicio) / 60 >= args.max_minutes:
                 print(f"Se llegó al tope de {args.max_minutes:g} minutos: el resto sigue en la próxima corrida.")
+                cortada = True
                 break
             if monitor_bloqueo.debe_cortar():
                 print("Se corta la corrida por bloqueos seguidos de INPI: el resto sigue en la próxima.")
+                cortada = True
                 break
             revisadas += 1
             edad = int(fila["edad"])
@@ -513,6 +521,15 @@ def main():
               f"({sin_consulta} sin poder consultar). Con oposición/vista detectada: {con_oposicion}.")
         if por_estado:
             print("Por estado: " + ", ".join(f"{k}={v}" for k, v in sorted(por_estado.items())))
+        if args.boletin:
+            # Se anota solo si la búsqueda manual revisó TODOS los leads del boletín.
+            if cortada or sin_consulta or len(pendientes) < len(pendientes_todos):
+                print("La búsqueda manual no llegó a revisar todos los leads: no se anota la fecha en /boletines.")
+            else:
+                with conn.cursor() as cur:
+                    cur.execute("UPDATE boletines SET oposiciones_buscadas_en = now() WHERE numero = %s",
+                                (args.boletin,))
+                conn.commit()
         registrar("revisar_oposiciones.yml", {
             "revisadas": revisadas - sin_consulta, "con_oposicion": con_oposicion,
             "sin_oposicion": revisadas - sin_consulta - con_oposicion,

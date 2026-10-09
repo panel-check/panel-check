@@ -28,6 +28,7 @@
   .estado-badge-b.no-importado { background: #eef0f2; color: var(--gris); }
   .estado-badge-b.plazo-abierto { background: #fff4e0; color: #b26a00; }
   .estado-badge-b.plazo-cerrado { background: #eef0f2; color: var(--gris); }
+  .ultima-busqueda { font-size: 11px; color: var(--gris); margin-top: 3px; }
   td.num, th.num { text-align: right !important; }
   .estado-badge-b.error { background: #fde8e8; color: var(--rojo); }
   button.importar-boletin, button.buscar-opo {
@@ -107,8 +108,16 @@ function filaBoletin(b) {
   }
   const leads = b.importado && b.leads != null ? b.leads : "—";
   const conAgente = b.importado && b.con_agente != null ? b.con_agente : "—";
+  let ultima = "";
+  if (b.oposiciones_buscadas_en) {
+    const f = new Date(b.oposiciones_buscadas_en);
+    if (!isNaN(f)) {
+      const txt = f.toLocaleString("es-AR", { timeZone: "America/Argentina/Buenos_Aires", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: false });
+      ultima = `<div class="ultima-busqueda" title="Última vez que se buscó con el botón, terminada">Última búsqueda: ${txt}</div>`;
+    }
+  }
   const accion = b.importado
-    ? `<button type="button" class="buscar-opo" data-numero="${_escapeHtml(b.numero)}" title="Revisa en INPI si los leads de este boletín tienen oposición (también sirve si ya venció el plazo de 30 días)">Buscar oposiciones</button>`
+    ? `<button type="button" class="buscar-opo" data-numero="${_escapeHtml(b.numero)}" title="Revisa en INPI si los leads de este boletín tienen oposición (también sirve si ya venció el plazo de 30 días)">Buscar oposiciones</button>${ultima}`
     : `<button type="button" class="importar-boletin" data-numero="${_escapeHtml(b.numero)}">Importar</button>`;
   return `
     <tr>
