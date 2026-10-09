@@ -34,6 +34,10 @@ Esquema de revisión (días contados desde fecha_publicacion de ESE expediente):
   - Si hay oposición que todavía sirve, se vuelve a mirar TODOS LOS DÍAS hasta el
     día 33 y cada 3 días hasta el día 60 (el estado cambia: se notifica, vence el
     plazo, el titular contesta o suma un representante).
+  - Los rechequeos diarios / cada 3 días se saltean los leads ya marcados como
+    "contactado" en el panel: ya se les ofreció ayuda, no hace falta seguir
+    mirando. Los 3 hitos (10/23/33) se hacen igual. Si se desmarca "contactado",
+    vuelve a rechequearse.
   - Los leads con oposición detectada antes de existir el estado (estado_oposicion
     vacío) se completan en la próxima corrida, sin importar la antigüedad.
   - Contadores en marcas: opo_chequeos (0-3, hitos cumplidos),
@@ -111,6 +115,7 @@ SQL_PENDIENTES = f"""
         OR (COALESCE(opo_chequeos, 0) < 3 AND fecha_publicacion <= CURRENT_DATE - {HITOS[2]})
         OR (
           tuvo_oposicion IS TRUE
+          AND contactado IS NOT TRUE
           AND representacion_posterior_oposicion IS NOT TRUE
           AND oposicion_atendida IS NOT TRUE
           AND COALESCE(estado_oposicion, '') NOT IN ({_CERRADOS_SQL})
@@ -175,6 +180,7 @@ NUEVAS_COLUMNAS = (
     ("oposicion_fecha_presentacion", "DATE"), ("oposicion_fecha_notificacion", "DATE"),
     ("oposicion_fecha_vencimiento", "DATE"), ("oposicion_fecha_levantamiento", "DATE"),
     ("oposicion_agente_oponente", "TEXT"), ("oposicion_posible_apoderado", "BOOLEAN"),
+    ("contactado", "BOOLEAN"),  # lo crea el panel; el rechequeo lo usa para saltear contactados
     ("con_gestor_manual", "BOOLEAN"),  # lo crea el panel; lo usa --reverificar-apoderados
     # 2 = clasificado con las reglas actuales (contestación solo si es posterior a la
     # oposición). Las contestadas/levantadas de versiones anteriores se recalculan.
