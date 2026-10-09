@@ -14,6 +14,7 @@ La página tiene que describir siempre el sistema completo tal como está.
 Los crons de los workflows están en UTC; en la ayuda van en hora Argentina (UTC-3).
 
 ## Entrega de cambios
-Al terminar un cambio, subirlo a la rama de trabajo y abrir el pull request
-hacia la rama principal sin esperar que lo pidan (el usuario no lo hace a mano).
-Avisar el link del PR.
+Al terminar un cambio, subirlo a la rama de trabajo, abrir el pull request
+hacia `main` y mergearlo (squash) sin esperar que lo pidan: el usuario no lo
+hace a mano y Railway despliega desde `main`. Después revisar que el deploy
+en Railway salga bien y avisar el link del PR.
