@@ -359,6 +359,12 @@ def _correr_alters_panel(cur):
     )
     # Última búsqueda manual de oposiciones del boletín (botón de /boletines)
     cur.execute("ALTER TABLE boletines ADD COLUMN IF NOT EXISTS oposiciones_buscadas_en TIMESTAMPTZ")
+    # Los boletines 11114, 11115 y 11116 se buscaron a mano el 09/10/2026, antes de que
+    # se guardara la fecha. Solo se completa si está vacía (no pisa búsquedas posteriores).
+    cur.execute(
+        "UPDATE boletines SET oposiciones_buscadas_en = '2026-10-09 12:00:00-03' "
+        "WHERE numero IN ('11114', '11115', '11116') AND oposiciones_buscadas_en IS NULL"
+    )
     # Esquema de revisión a los 10/23/33 días (ver revisar_oposiciones.py)
     cur.execute("ALTER TABLE marcas ADD COLUMN IF NOT EXISTS opo_chequeos INTEGER")
     cur.execute("ALTER TABLE marcas ADD COLUMN IF NOT EXISTS opo_ultimo_chequeo_en TIMESTAMPTZ")
