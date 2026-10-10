@@ -49,6 +49,7 @@ jobs:
 
       - name: Poner la fecha de presentación real (ficha del acta) en las marcas pre-boletín
         run: |
+          set -o pipefail
           cd scripts
           args=""
           if [ -n "${{ inputs.limit }}" ]; then args="$args --limit ${{ inputs.limit }}"; fi
