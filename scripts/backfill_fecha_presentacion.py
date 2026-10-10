@@ -21,7 +21,8 @@ from validar_leads import BASE, _get_con_reintentos, crear_sesion, datos_general
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--limit", type=int, default=None)
-    ap.add_argument("--delay", type=float, default=1.5)
+    ap.add_argument("--delay", type=float, default=1.0)
+    ap.add_argument("--max-minutes", type=float, default=None, help="corta solo pasados estos minutos (lo ya corregido queda guardado)")
     ap.add_argument("--dry-run", action="store_true", help="solo muestra los cambios, no guarda")
     args = ap.parse_args()
 
@@ -40,8 +41,14 @@ def main():
 
     s = crear_sesion()
     cambiadas = sin_dato = 0
-    for fila in pendientes:
+    inicio = time.time()
+    for n, fila in enumerate(pendientes, 1):
         acta = fila["acta"]
+        if args.max_minutes and (time.time() - inicio) > args.max_minutes * 60:
+            print(f"Tope de {args.max_minutes} min alcanzado: se corta acá (lo ya corregido quedó guardado)")
+            break
+        if n % 25 == 0:
+            print(f"  [{n}/{len(pendientes)}] {(time.time() - inicio) / n:.1f} s por marca")
         nueva = None
         try:
             r = _get_con_reintentos(lambda: s.post(
@@ -55,8 +62,8 @@ def main():
             print(f"  {acta}: error {e}")
         if not nueva:
             sin_dato += 1
-        elif str(fila["fecha_presentacion"]) != nueva:
-            print(f"  {acta}: {fila['fecha_presentacion']} -> {nueva}")
+        elif str(fila["fecha_presentacion"])[:10] != nueva:
+            print(f"  {acta}: {str(fila['fecha_presentacion'])[:10]} -> {nueva}")
             if not args.dry_run:
                 with conn.cursor() as cur:
                     cur.execute("UPDATE marcas SET fecha_presentacion = %s WHERE acta = %s", (nueva, acta))
