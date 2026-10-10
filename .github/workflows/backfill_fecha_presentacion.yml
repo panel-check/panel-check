@@ -4,13 +4,13 @@ on:
   workflow_dispatch:
     inputs:
       dry_run:
-        description: "Solo mostrar los cambios en el log, sin guardar (true/false)"
+        description: "true = solo mostrar los cambios, sin guardar. Para corregir de verdad, dejar en false"
         required: false
-        default: "true"
+        default: "false"
       max_minutes:
-        description: "Cortar solo a los N minutos (dejar vacío = sin tope, máx. 120). Lo ya corregido queda guardado"
+        description: "Minutos que corre cada tanda (después se vuelve a lanzar sola con las marcas que faltan)"
         required: false
-        default: ""
+        default: "110"
       desde_acta:
         description: "Seguir desde este acta (inclusive). Si una corrida se cortó, el final de su log dice con cuál seguir"
         required: false
@@ -22,6 +22,7 @@ on:
 
 permissions:
   contents: read
+  actions: write   # para volver a lanzarse sola con las marcas que faltan
 
 # Un solo carril contra INPI: si hay otro proceso de INPI corriendo, este espera su turno.
 concurrency:
@@ -48,13 +49,30 @@ jobs:
 
       - name: Poner la fecha de presentación real (ficha del acta) en las marcas pre-boletín
         run: |
+          set -o pipefail
           cd scripts
           args=""
           if [ -n "${{ inputs.limit }}" ]; then args="$args --limit ${{ inputs.limit }}"; fi
           if [ -n "${{ inputs.desde_acta }}" ]; then args="$args --desde-acta ${{ inputs.desde_acta }}"; fi
           if [ -n "${{ inputs.max_minutes }}" ]; then args="$args --max-minutes ${{ inputs.max_minutes }}"; fi
           if [ "${{ inputs.dry_run }}" = "true" ]; then args="$args --dry-run"; fi
-          python3 backfill_fecha_presentacion.py $args
+          python3 backfill_fecha_presentacion.py $args 2>&1 | tee ../salida.log
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL || secrets.DATABASE_PUBLIC_URL }}
           PYTHONUNBUFFERED: "1"
+
+      # Si la tanda se cortó por tiempo, el script dice con qué acta seguir: se vuelve a
+      # lanzar solo, así no hace falta hacerlo a mano hasta terminar todas las marcas.
+      - name: Seguir con la próxima tanda (automático)
+        if: ${{ inputs.dry_run != 'true' }}
+        run: |
+          SIGUE=$(grep -oP 'desde_acta = \K[0-9]+' salida.log | tail -1 || true)
+          if [ -n "$SIGUE" ]; then
+            echo "Lanzando la próxima tanda desde el acta $SIGUE"
+            gh workflow run backfill_fecha_presentacion.yml \
+              -f dry_run=false -f max_minutes="${{ inputs.max_minutes }}" -f desde_acta="$SIGUE"
+          else
+            echo "Terminó: no quedan marcas por revisar."
+          fi
+        env:
+          GH_TOKEN: ${{ github.token }}
