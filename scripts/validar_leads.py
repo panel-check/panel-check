@@ -599,6 +599,24 @@ def fecha_publicacion_de_archivos(archivos: list[dict]) -> str | None:
     return _parsear_fecha_grilla(fila["Fecha"])
 
 
+def fecha_presentacion_de_archivos(archivos: list[dict]) -> str | None:
+    """Fecha de PRESENTACIÓN según Grilla Digital: la fila "Recibo de Ingreso"
+    cuya Referencia es "Solicitud de marcas" (la de la solicitud original, no
+    la de una oposición). Si hubiera más de una, la más antigua. None si no
+    está. Es la fecha real de ingreso: la de DATOS GENERALES de la ficha puede
+    no coincidir (acta 4797200: Grilla 29/09/2026)."""
+    fechas = []
+    for a in archivos:
+        if (a.get("Indice") or "").strip().upper() != "RECIBO DE INGRESO":
+            continue
+        if "SOLICITUD DE MARCA" not in (a.get("Referencia") or "").upper():
+            continue
+        f = _parsear_fecha_grilla(a.get("Fecha") or "")
+        if f:
+            fechas.append(f)
+    return min(fechas) if fechas else None
+
+
 # Sección RESOLUCIÓN de la misma página de /MarcasConsultas/Resultado (la
 # que ya se pide para leer CARACTER/CUIT — no cuesta un request aparte).
 # Confirmado a mano contra un caso real (acta 4534497, marca "Concedida"):
@@ -950,6 +968,9 @@ def revisar_acta(s: requests.Session, acta: str, timeout: int = 30, html_previo:
             return resultado
 
         resultado["fecha_publicacion"] = fecha_publicacion_de_archivos(archivos)
+        fecha_pres_grilla = fecha_presentacion_de_archivos(archivos)
+        if fecha_pres_grilla:
+            resultado["fecha_presentacion_formulario"] = fecha_pres_grilla
         resultado["tuvo_oposicion"], resultado["detalle_oposicion"] = detectar_oposicion(
             archivos, resultado["fecha_publicacion"]
         )
