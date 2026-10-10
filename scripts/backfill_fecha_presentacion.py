@@ -23,6 +23,7 @@ def main():
     ap.add_argument("--limit", type=int, default=None)
     ap.add_argument("--delay", type=float, default=1.0)
     ap.add_argument("--max-minutes", type=float, default=None, help="corta solo pasados estos minutos (lo ya corregido queda guardado)")
+    ap.add_argument("--desde-acta", default=None, help="seguir desde este número de acta (inclusive); el log dice con cuál retomar")
     ap.add_argument("--dry-run", action="store_true", help="solo muestra los cambios, no guarda")
     args = ap.parse_args()
 
@@ -33,7 +34,11 @@ def main():
 
     conn = psycopg2.connect(database_url)
     with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-        cur.execute("SELECT acta, fecha_presentacion FROM marcas WHERE boletin IS NULL ORDER BY acta")
+        cur.execute(
+            "SELECT acta, fecha_presentacion FROM marcas WHERE boletin IS NULL "
+            "AND (%s::text IS NULL OR acta::bigint >= %s::bigint) ORDER BY acta::bigint",
+            (args.desde_acta, args.desde_acta),
+        )
         pendientes = cur.fetchall()
     if args.limit:
         pendientes = pendientes[: args.limit]
@@ -46,6 +51,7 @@ def main():
         acta = fila["acta"]
         if args.max_minutes and (time.time() - inicio) > args.max_minutes * 60:
             print(f"Tope de {args.max_minutes} min alcanzado: se corta acá (lo ya corregido quedó guardado)")
+            print(f"Para seguir, correr de nuevo con desde_acta = {acta}")
             break
         if n % 25 == 0:
             print(f"  [{n}/{len(pendientes)}] {(time.time() - inicio) / n:.1f} s por marca")
