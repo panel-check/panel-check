@@ -1,0 +1,47 @@
+name: Estimar demora hasta la publicación (manual)
+
+on:
+  workflow_dispatch:
+    inputs:
+      muestra:
+        description: "Cuántas marcas publicadas mirar, elegidas al azar"
+        required: false
+        default: "50"
+      meses:
+        description: "Solo marcas presentadas en los últimos N meses (0 = todas)"
+        required: false
+        default: "6"
+
+permissions:
+  contents: read
+
+# Un solo carril contra INPI: si hay otro proceso de INPI corriendo, este espera su turno.
+concurrency:
+  group: inpi-lane
+  cancel-in-progress: false
+
+jobs:
+  estimar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+      RESEND_FROM: ${{ secrets.RESEND_FROM }}
+      NOTIFICAR_A: ${{ secrets.NOTIFICAR_A }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Instalar dependencias
+        run: pip install -r requirements.txt
+
+      - name: Medir días entre Recibo de Ingreso y Hoja Publicación
+        run: |
+          cd scripts
+          python3 estimar_demora_publicacion.py --muestra "${{ inputs.muestra }}" --meses "${{ inputs.meses }}"
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL || secrets.DATABASE_PUBLIC_URL }}
+          PYTHONUNBUFFERED: "1"
