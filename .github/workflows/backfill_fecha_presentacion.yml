@@ -11,6 +11,10 @@ on:
         description: "Cortar solo a los N minutos (dejar vacío = sin tope, máx. 120). Lo ya corregido queda guardado"
         required: false
         default: ""
+      desde_acta:
+        description: "Seguir desde este acta (inclusive). Si una corrida se cortó, el final de su log dice con cuál seguir"
+        required: false
+        default: ""
       limit:
         description: "Tope de marcas a revisar en esta corrida (dejar vacío = todas)"
         required: false
@@ -47,6 +51,7 @@ jobs:
           cd scripts
           args=""
           if [ -n "${{ inputs.limit }}" ]; then args="$args --limit ${{ inputs.limit }}"; fi
+          if [ -n "${{ inputs.desde_acta }}" ]; then args="$args --desde-acta ${{ inputs.desde_acta }}"; fi
           if [ -n "${{ inputs.max_minutes }}" ]; then args="$args --max-minutes ${{ inputs.max_minutes }}"; fi
           if [ "${{ inputs.dry_run }}" = "true" ]; then args="$args --dry-run"; fi
           python3 backfill_fecha_presentacion.py $args
