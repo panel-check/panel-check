@@ -190,7 +190,14 @@ function _crmHtmlCabecera(d, opciones = {}) {
       botones.push(`<button type="button" class="crm-btn-primario" data-accion="mail-oposicion" data-acta-opo="${crmEsc(marcaOpo.acta)}" title="${crmEsc(ayudaMail)}">✉ Enviar mail de oposición</button><span class="crm-gris" id="estado-mail-opo"></span>`);
     }
   }
-  if (!d.cliente && d.lead) botones.push(`<button type="button" class="${marcaOpo ? "crm-btn-gestor" : "crm-btn-primario"}" data-accion="convertir" title="Pasa sus marcas a la cartera (con vigilancia) y marca el lead como «Cliente».">Convertir en cliente</button>`);
+  // Lead con marcas pre-boletín (todavía sin publicar): atajos al expediente y a la Grilla
+  // Digital de la primera de ellas, para revisarla en INPI sin buscar el acta a mano.
+  const marcaPre = (!marcaOpo && !d.cliente && l.pre_boletin) ? d.marcas.find(m => !m.boletin) : null;
+  if (marcaPre) {
+    botones.push(`<button type="button" class="crm-btn-gestor" data-accion="ver-acta-opo" data-acta-opo="${crmEsc(marcaPre.acta)}" title="Abre el expediente en el portal de INPI">🔎 Ver acta ${crmEsc(marcaPre.acta)} en INPI</button>`);
+    botones.push(`<button type="button" class="crm-btn-gestor" data-accion="ver-grilla-opo" data-acta-opo="${crmEsc(marcaPre.acta)}" title="Abre directo la Grilla Digital del acta (archivos del expediente)">🗂 Ver Grilla Digital</button>`);
+  }
+  if (!d.cliente && d.lead) botones.push(`<button type="button" class="${marcaOpo || marcaPre ? "crm-btn-gestor" : "crm-btn-primario"}" data-accion="convertir" title="Pasa sus marcas a la cartera (con vigilancia) y marca el lead como «Cliente».">Convertir en cliente</button>`);
   if (!d.cliente && l.es_lead) botones.push('<button type="button" class="crm-btn-gestor" data-accion="con-gestor" title="Si el titular ya trabaja con un gestor/apoderado: deja de ser lead y pasa a «con agente». Se puede deshacer.">Tiene gestor/apoderado</button>');
   const acciones = botones.length ? `<div class="crm-acciones-resultado">${botones.join("")}</div>` : "";
 

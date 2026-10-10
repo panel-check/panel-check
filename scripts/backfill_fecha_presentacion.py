@@ -1,0 +1,65 @@
+"""
+Corrige `fecha_presentacion` de las marcas PRE-BOLETÍN (boletin IS NULL) con la
+fecha del "Recibo de Ingreso / Solicitud de marcas" de Grilla Digital, que es
+la fecha real de presentación (la de DATOS GENERALES de la ficha puede diferir).
+
+Uso:
+    DATABASE_URL=... python3 backfill_fecha_presentacion.py [--limit N] [--delay 1.5] [--dry-run]
+"""
+
+import argparse
+import os
+import sys
+import time
+
+import psycopg2
+import psycopg2.extras
+
+from validar_leads import buscar_archivos_grilla, crear_sesion, fecha_presentacion_de_archivos
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("--limit", type=int, default=None)
+    ap.add_argument("--delay", type=float, default=1.5)
+    ap.add_argument("--dry-run", action="store_true", help="solo muestra los cambios, no guarda")
+    args = ap.parse_args()
+
+    database_url = os.environ.get("DATABASE_URL") or os.environ.get("DATABASE_PUBLIC_URL")
+    if not database_url:
+        print("Falta DATABASE_URL (o DATABASE_PUBLIC_URL)", file=sys.stderr)
+        sys.exit(1)
+
+    conn = psycopg2.connect(database_url)
+    with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+        cur.execute("SELECT acta, fecha_presentacion FROM marcas WHERE boletin IS NULL ORDER BY acta")
+        pendientes = cur.fetchall()
+    if args.limit:
+        pendientes = pendientes[: args.limit]
+    print(f"Marcas pre-boletín a revisar: {len(pendientes)}")
+
+    s = crear_sesion()
+    cambiadas = sin_dato = 0
+    for fila in pendientes:
+        acta = fila["acta"]
+        try:
+            archivos = buscar_archivos_grilla(s, acta)
+        except Exception as e:  # noqa: BLE001
+            print(f"  {acta}: error {e}")
+            archivos = []
+        nueva = fecha_presentacion_de_archivos(archivos)
+        if not nueva:
+            sin_dato += 1
+        elif str(fila["fecha_presentacion"]) != nueva:
+            print(f"  {acta}: {fila['fecha_presentacion']} -> {nueva}")
+            if not args.dry_run:
+                with conn.cursor() as cur:
+                    cur.execute("UPDATE marcas SET fecha_presentacion = %s WHERE acta = %s", (nueva, acta))
+                conn.commit()
+            cambiadas += 1
+        time.sleep(args.delay)
+    print(f"Corregidas: {cambiadas} · sin dato en Grilla: {sin_dato}")
+
+
+if __name__ == "__main__":
+    main()
