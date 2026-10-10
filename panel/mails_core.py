@@ -235,6 +235,20 @@ CATALOGO = {
         "env_remitente": "RESEND_FROM",
         "env_destinatarios": "NOTIFICAR_A",
     },
+    "consultas_web": {
+        "grupo": "interno",
+        "nombre": "Consulta de marca desde la web",
+        "descripcion": "Un mail por cada marca que alguien verifica en el formulario del home de la web, con el resultado y sus datos de contacto "
+                       "(también avisa cuando deja una consulta adicional).",
+        "cuenta": "interna",
+        "remitente": DEFAULT_FROM_INTERNO,
+        "responder_a": "",
+        # Responde solo al email que dejó la persona en el formulario.
+        "responder_a_automatico": "el email de la persona que hizo la consulta",
+        "destinatarios": DEFAULT_TO_INTERNO,
+        "env_remitente": "RESEND_FROM",
+        "env_destinatarios": "NOTIFICAR_A",
+    },
     "bloqueo": {
         "grupo": "interno",
         "nombre": "INPI está bloqueando",
@@ -902,6 +916,7 @@ _ASUNTOS_INTERNOS = [
     ("oposiciones", re.compile(r"con oposición o vista nueva", re.I)),
     ("cartera", re.compile(r"^Cartera y vigilancia", re.I)),
     ("formularios", re.compile(r"Formulario recibido", re.I)),
+    ("consultas_web", re.compile(r"^Consulta web", re.I)),
     ("bloqueo", re.compile(r"INPI está bloqueando", re.I)),
     ("agenda", re.compile(r"^AGENDA\b")),
 ]

@@ -360,7 +360,13 @@ def origen_valido(request: Request) -> bool:
         return True  # clientes que no son navegadores (curl, scripts)
     host_origen = (urlsplit(origen).netloc or "").lower()
     hosts = {(request.headers.get("host") or "").lower(), (request.headers.get("x-forwarded-host") or "").lower()}
-    return host_origen in hosts
+    if host_origen in hosts:
+        return True
+    # Única excepción: el verificador de marca del home de la web (otro dominio) puede mandar
+    # sus pedidos públicos. Solo esas rutas y solo desde los sitios de VERIFICADOR_ORIGENES;
+    # cualquier otro origen distinto sigue rechazado.
+    import verificador_core
+    return verificador_core.es_ruta_cruzada(request.url.path) and verificador_core.origen_permitido(origen)
 
 
 def describir_dispositivo(ua: str) -> str:

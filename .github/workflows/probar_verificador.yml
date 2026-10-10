@@ -1,0 +1,40 @@
+name: Probar verificador de marca (manual)
+
+# Corre el verificador de la web contra INPI de verdad, sin guardar nada ni mandar mails.
+# Ver scripts/probar_verificador.py. El resultado se lee en los «anotados» de la corrida.
+on:
+  workflow_dispatch:
+    inputs:
+      marcas:
+        description: "Marcas a probar, separadas por coma (máximo 6). Siempre se prueba también NIKE como control."
+        required: true
+        default: "Smarties,Kasa"
+
+permissions:
+  contents: read
+
+# Un solo carril contra INPI: si hay otro proceso de INPI corriendo, este espera su turno.
+concurrency:
+  group: inpi-lane
+  cancel-in-progress: false
+
+jobs:
+  probar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Instalar dependencias
+        run: pip install -r requirements.txt
+
+      - name: Probar el verificador
+        run: |
+          cd scripts
+          python3 probar_verificador.py "$MARCAS"
+        env:
+          PYTHONUNBUFFERED: "1"
+          MARCAS: ${{ inputs.marcas }}
