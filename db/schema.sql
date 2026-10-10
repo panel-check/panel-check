@@ -584,3 +584,55 @@ CREATE TABLE IF NOT EXISTS calendario_agenda_envios (
     destinatarios TEXT,
     error         TEXT
 );
+
+-- Verificador de marcas del sitio web (Más → Consultas web). Una fila por consulta de la gente.
+-- veredicto: pendiente | disponible | con_similares | no_disponible | error.  estado: nueva | revisada.
+CREATE TABLE IF NOT EXISTS verificaciones_marca (
+    id               SERIAL PRIMARY KEY,
+    codigo           TEXT NOT NULL UNIQUE,
+    creada_en        TIMESTAMPTZ NOT NULL DEFAULT now(),
+    marca            TEXT NOT NULL,
+    actividad        TEXT,
+    nombre           TEXT,
+    email            TEXT,
+    telefono         TEXT,
+    web              TEXT,
+    veredicto        TEXT NOT NULL DEFAULT 'pendiente',
+    exactos          INTEGER NOT NULL DEFAULT 0,
+    similares        INTEGER NOT NULL DEFAULT 0,
+    muestras         JSONB NOT NULL DEFAULT '[]'::jsonb,
+    posible_mas      BOOLEAN NOT NULL DEFAULT false,
+    error            TEXT,
+    desde_cache      BOOLEAN NOT NULL DEFAULT false,
+    consultada_en    TIMESTAMPTZ,
+    origen           TEXT,
+    ip               TEXT,
+    estado           TEXT NOT NULL DEFAULT 'nueva',
+    revisado_por     TEXT,
+    revisado_en      TIMESTAMPTZ,
+    aviso_enviado_en TIMESTAMPTZ,
+    aviso_error      TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_verif_marca_creada ON verificaciones_marca(creada_en DESC);
+
+-- Preguntas adicionales que la persona deja después de ver el resultado.
+CREATE TABLE IF NOT EXISTS verificaciones_marca_consultas (
+    id               SERIAL PRIMARY KEY,
+    verificacion_id  INTEGER REFERENCES verificaciones_marca(id) ON DELETE CASCADE,
+    creada_en        TIMESTAMPTZ NOT NULL DEFAULT now(),
+    marca            TEXT,
+    nombre           TEXT,
+    email            TEXT,
+    pregunta         TEXT NOT NULL,
+    ip               TEXT,
+    aviso_enviado_en TIMESTAMPTZ,
+    aviso_error      TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_verif_consultas_verif ON verificaciones_marca_consultas(verificacion_id);
+
+-- Caché de 24 hs de las búsquedas en INPI por nombre normalizado.
+CREATE TABLE IF NOT EXISTS verificaciones_marca_cache (
+    clave          TEXT PRIMARY KEY,
+    filas          JSONB NOT NULL,
+    consultada_en  TIMESTAMPTZ NOT NULL DEFAULT now()
+);

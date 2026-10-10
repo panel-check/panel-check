@@ -3,34 +3,27 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Tareas — Panel de leads</title>
+<title>Consultas web — Kom Marcas Inpi</title>
 <link rel="icon" type="image/png" href="/static/favicon.png" />
 <link rel="apple-touch-icon" href="/static/apple-touch-icon.png" />
 <link rel="stylesheet" href="/static/comun.css?v=logo2" />
-<style>
-  html, body { height: 100%; }
-  body { display: flex; flex-direction: column; }
-  .barra-kan { display: flex; justify-content: flex-end; gap: 12px; padding: 4px 14px; font-size: 12px; }
-  .marco-kan { flex: 1; width: 100%; min-height: 400px; border: 0; background: white; }
-</style>
 <script src="/static/sesion.js" defer></script>
 <script src="/static/menu.js?v=tel2" defer></script>
 </head>
 <body>
 
-
 <header class="app-header">
   <a class="marca" href="/" title="Volver al panel de leads"><img class="marca-img" src="/static/logo-smarties-header.png" alt="Smarties Consultora" width="90" height="40" /><span class="marca-nombre">Panel de leads</span></a>
   <span class="marca-sep">/</span>
-  <h1>Tareas</h1>
+  <h1>Consultas web</h1>
   <nav class="nav">
     <a href="/" title="Leads"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5h18M3 12h18M3 19h12"/></svg><span class="nav-txt">Leads</span></a>
     <a href="/crm" title="CRM"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="5" height="16" rx="1.5"/><rect x="10" y="4" width="5" height="11" rx="1.5"/><rect x="17" y="4" width="4" height="7" rx="1.5"/></svg><span class="nav-txt">CRM</span></a>
     <a href="/clientes" title="Clientes"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M16 20v-1.5a3.5 3.5 0 0 0-3.5-3.5h-5A3.5 3.5 0 0 0 4 18.5V20"/><circle cx="10" cy="8" r="3.5"/><path d="M20 20v-1.5a3.5 3.5 0 0 0-2.5-3.35M15 4.6a3.5 3.5 0 0 1 0 6.8"/></svg><span class="nav-txt">Clientes</span></a>
     <a href="/calendario" title="Calendario"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg><span class="nav-txt">Calendario</span></a>
-    <a href="/tareas" class="activa" aria-current="page" title="Tareas (Kan)"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="m8 12 3 3 5-6"/></svg><span class="nav-txt">Tareas</span></a>
+    <a href="/tareas" title="Tareas (Kan)"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="m8 12 3 3 5-6"/></svg><span class="nav-txt">Tareas</span></a>
     <div class="nav-grupo">
-      <button type="button" class="nav-boton" aria-haspopup="true" aria-expanded="false" title="Más"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1.2"/><circle cx="12" cy="12" r="1.2"/><circle cx="19" cy="12" r="1.2"/></svg><span class="nav-txt">Más</span><svg class="nav-chev" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button>
+      <button type="button" class="nav-boton activa" aria-haspopup="true" aria-expanded="false" title="Más"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1.2"/><circle cx="12" cy="12" r="1.2"/><circle cx="19" cy="12" r="1.2"/></svg><span class="nav-txt">Más</span><svg class="nav-chev" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button>
       <div class="nav-sub nav-sub-der" role="menu">
         <div class="nav-sub-grupo">
           <button type="button" class="nav-sub-boton" aria-haspopup="true" aria-expanded="false" title="Automatizaciones"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg><span class="nav-sub-txt">Automatizaciones</span><svg class="nav-chev nav-chev-lado" viewBox="0 0 24 24" aria-hidden="true"><path d="m15 6-6 6 6 6"/></svg></button>
@@ -39,20 +32,35 @@
             <a href="/crons" role="menuitem"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg><span class="nav-sub-txt">Crons</span></a>
           </div>
         </div>
-        <a href="/consultas-web" role="menuitem"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg><span class="nav-sub-txt">Consultas web</span></a>
+        <a href="/consultas-web" role="menuitem" class="activa" aria-current="page"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg><span class="nav-sub-txt">Consultas web</span></a>
         <a href="/mails" role="menuitem"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/></svg><span class="nav-sub-txt">Mails</span></a>
-        <a href="/ayuda" role="menuitem"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.6v.6"/><path d="M12 17h.01"/></svg><span class="nav-sub-txt">Ayuda</span></a>
+        <a href="/ayuda#clientes" role="menuitem"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.6v.6"/><path d="M12 17h.01"/></svg><span class="nav-sub-txt">Ayuda</span></a>
       </div>
     </div>
     <button type="button" class="nav-boton nav-coment" id="link-comentarios" title="Chat" aria-label="Chat" aria-expanded="false"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H8l-5 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg><span class="nav-badge"></span></button>
   </nav>
 </header>
 
-<div class="barra-kan">
-  <span>Si no te deja iniciar sesión acá adentro, usá el link de al lado.</span>
-  <a href="__KAN_URL__" target="_blank" rel="noopener">Abrir Kan en una pestaña nueva ↗</a>
+<div class="cl-vista" id="consultas-web">
+  <div class="cl-barra">
+    <label>Mostrar<select id="cw-estado">
+      <option value="">Todas</option><option value="nueva" selected>Nuevas (sin revisar)</option><option value="revisada">Revisadas</option></select></label>
+    <label>Resultado<select id="cw-veredicto">
+      <option value="">Todos</option><option value="no_disponible">Marca ocupada</option><option value="con_similares">Con marcas similares</option>
+      <option value="disponible">Sin coincidencias</option><option value="error">INPI no respondió</option></select></label>
+    <label>Buscar<input id="cw-q" type="search" placeholder="Marca, nombre o e-mail" /></label>
+  </div>
+  <div id="cw-lista"></div>
 </div>
-<iframe class="marco-kan" src="__KAN_URL__" title="Kan — tareas" allow="clipboard-write; fullscreen"></iframe>
 
+<div class="modal-fondo" id="modal-consulta">
+  <div class="modal-caja modal-crm" onclick="event.stopPropagation()">
+    <button type="button" class="modal-cerrar" title="Cerrar">&times;</button>
+    <div id="modal-consulta-contenido"></div>
+  </div>
+</div>
+
+<script src="/static/comun.js?v=sec1"></script>
+<script src="/static/consultas_web.js"></script>
 </body>
 </html>
