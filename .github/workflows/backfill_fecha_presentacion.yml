@@ -12,7 +12,7 @@ on:
         required: false
         default: "110"
       desde_acta:
-        description: "Seguir desde este acta (inclusive). Si una corrida se cortó, el final de su log dice con cuál seguir"
+        description: "Normalmente dejar vacío: sigue solo desde la última marca revisada. Poner 0 para empezar de nuevo desde el principio"
         required: false
         default: ""
       limit:
@@ -61,18 +61,16 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL || secrets.DATABASE_PUBLIC_URL }}
           PYTHONUNBUFFERED: "1"
 
-      # Si la tanda se cortó por tiempo, el script dice con qué acta seguir: se vuelve a
-      # lanzar solo, así no hace falta hacerlo a mano hasta terminar todas las marcas.
+      # Si la tanda se cortó por tiempo y quedan marcas, se vuelve a lanzar sola (el script
+      # recuerda hasta qué acta llegó), hasta terminar todas.
       - name: Seguir con la próxima tanda (automático)
         if: ${{ inputs.dry_run != 'true' }}
         run: |
-          SIGUE=$(grep -oP 'desde_acta = \K[0-9]+' salida.log | tail -1 || true)
-          if [ -n "$SIGUE" ]; then
-            echo "Lanzando la próxima tanda desde el acta $SIGUE"
-            gh workflow run backfill_fecha_presentacion.yml \
-              -f dry_run=false -f max_minutes="${{ inputs.max_minutes }}" -f desde_acta="$SIGUE"
+          if grep -q '^QUEDAN_MARCAS' salida.log; then
+            echo "Lanzando la próxima tanda"
+            gh workflow run backfill_fecha_presentacion.yml -f dry_run=false -f max_minutes="${{ inputs.max_minutes }}"
           else
-            echo "Terminó: no quedan marcas por revisar."
+            echo "No quedan marcas por revisar (o no se pudo leer INPI): no se lanza otra tanda."
           fi
         env:
           GH_TOKEN: ${{ github.token }}
