@@ -15,7 +15,7 @@ import time
 import psycopg2
 import psycopg2.extras
 
-from validar_leads import buscar_archivos_grilla, crear_sesion, fecha_presentacion_de_archivos
+from validar_leads import BASE, _get_con_reintentos, crear_sesion, datos_generales_de_pagina
 
 
 def main():
@@ -42,12 +42,17 @@ def main():
     cambiadas = sin_dato = 0
     for fila in pendientes:
         acta = fila["acta"]
+        nueva = None
         try:
-            archivos = buscar_archivos_grilla(s, acta)
+            r = _get_con_reintentos(lambda: s.post(
+                f"{BASE}/MarcasConsultas/Resultado",
+                headers={"Referer": f"{BASE}/MarcasConsultas/Grilla"},
+                data={"acta": acta}, timeout=30,
+            ))
+            if "Web Page Blocked" not in r.text and "Attack ID" not in r.text:
+                nueva = datos_generales_de_pagina(r.text)["fecha_presentacion"]
         except Exception as e:  # noqa: BLE001
             print(f"  {acta}: error {e}")
-            archivos = []
-        nueva = fecha_presentacion_de_archivos(archivos)
         if not nueva:
             sin_dato += 1
         elif str(fila["fecha_presentacion"]) != nueva:
@@ -58,7 +63,7 @@ def main():
                 conn.commit()
             cambiadas += 1
         time.sleep(args.delay)
-    print(f"Corregidas: {cambiadas} · sin dato en Grilla: {sin_dato}")
+    print(f"Corregidas: {cambiadas} · sin dato en la ficha: {sin_dato}")
 
 
 if __name__ == "__main__":

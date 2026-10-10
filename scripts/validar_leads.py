@@ -599,24 +599,6 @@ def fecha_publicacion_de_archivos(archivos: list[dict]) -> str | None:
     return _parsear_fecha_grilla(fila["Fecha"])
 
 
-def fecha_presentacion_de_archivos(archivos: list[dict]) -> str | None:
-    """Fecha de PRESENTACIÓN según Grilla Digital: la fila "Recibo de Ingreso"
-    cuya Referencia es "Solicitud de marcas" (la de la solicitud original, no
-    la de una oposición). Si hubiera más de una, la más antigua. None si no
-    está. Es la fecha real de ingreso: la de DATOS GENERALES de la ficha puede
-    no coincidir (acta 4797200: Grilla 29/09/2026)."""
-    fechas = []
-    for a in archivos:
-        if (a.get("Indice") or "").strip().upper() != "RECIBO DE INGRESO":
-            continue
-        if "SOLICITUD DE MARCA" not in (a.get("Referencia") or "").upper():
-            continue
-        f = _parsear_fecha_grilla(a.get("Fecha") or "")
-        if f:
-            fechas.append(f)
-    return min(fechas) if fechas else None
-
-
 # Sección RESOLUCIÓN de la misma página de /MarcasConsultas/Resultado (la
 # que ya se pide para leer CARACTER/CUIT — no cuesta un request aparte).
 # Confirmado a mano contra un caso real (acta 4534497, marca "Concedida"):
@@ -796,9 +778,13 @@ def datos_generales_de_pagina(pagina: str) -> dict:
     m_tipo = re.search(r"TIPO DE MARCA\s*:\s*(Denominativa|Mixta|Figurativa|Tridimensional)", bloque, re.I)
     if m_tipo:
         out["tipo"] = TIPOS_MARCA_INVERSO.get(m_tipo.group(1).upper())
-    m_pres = re.search(r"PRESENTACI[ÓO]N\s*:\s*(\d{1,2}/\d{1,2}/\d{4})", bloque, re.I)
-    if m_pres:
-        out["fecha_presentacion"] = _fecha_ddmmyyyy_a_iso(m_pres.group(1))
+    # La ficha dice "PRESENTACIÓN: 29/09/2026 11:53:01". Si el recorte de la sección no la
+    # trae (el HTML cambió o se recortó otro bloque), se busca en toda la página.
+    for texto in (bloque, _texto_sin_tags(pagina)):
+        m_pres = re.search(r"PRESENTACI[ÓO]N\s*:\s*(\d{1,2}/\d{1,2}/\d{4})", texto, re.I)
+        if m_pres:
+            out["fecha_presentacion"] = _fecha_ddmmyyyy_a_iso(m_pres.group(1))
+            break
     return out
 
 
@@ -813,9 +799,8 @@ def datos_generales_de_formulario(texto: str) -> dict:
     m_tipo = re.search(r"TIPO DE MARCA\s*:\s*([A-Z])", texto)
     if m_tipo:
         out["tipo"] = m_tipo.group(1)
-    m_fecha = re.search(r"FECHA DE CARGA\s*:\s*(\d{1,2}/\d{1,2}/\d{4})", texto)
-    if m_fecha:
-        out["fecha_presentacion"] = _fecha_ddmmyyyy_a_iso(m_fecha.group(1))
+    # "FECHA DE CARGA" del Formulario NO es la fecha de presentación (puede diferir
+    # de la de la ficha): no se usa como respaldo, es preferible dejarla vacía.
     return out
 
 
@@ -968,9 +953,6 @@ def revisar_acta(s: requests.Session, acta: str, timeout: int = 30, html_previo:
             return resultado
 
         resultado["fecha_publicacion"] = fecha_publicacion_de_archivos(archivos)
-        fecha_pres_grilla = fecha_presentacion_de_archivos(archivos)
-        if fecha_pres_grilla:
-            resultado["fecha_presentacion_formulario"] = fecha_pres_grilla
         resultado["tuvo_oposicion"], resultado["detalle_oposicion"] = detectar_oposicion(
             archivos, resultado["fecha_publicacion"]
         )
