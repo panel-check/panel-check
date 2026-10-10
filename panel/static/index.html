@@ -195,7 +195,7 @@
 </div>
 
 <div class="contenedor-tabla">
-<table>
+<table id="tabla-marcas">
   <thead>
     <tr>
       <th class="col-sel"><input type="checkbox" id="sel-todo" title="Seleccionar todas las marcas de esta página" aria-label="Seleccionar todas las marcas de esta página" /></th>
@@ -205,13 +205,14 @@
       <th data-col="titular" onclick="ordenarPor('titular')">Titular</th>
       <th>Lead</th>
       <th>Email</th>
-      <th data-col="fecha_publicacion" onclick="ordenarPor('fecha_publicacion')" title="Fecha de publicación en el boletín (o de presentación, si todavía no se verificó). Vacía en las marcas pre-boletín.">Fecha Boletín</th>
+      <th class="col-boletin" data-col="fecha_publicacion" onclick="ordenarPor('fecha_publicacion')" title="Fecha de publicación en el boletín (o de presentación, si todavía no se verificó). Vacía en las marcas pre-boletín.">Fecha Boletín</th>
+      <th class="col-present" data-col="fecha_presentacion" onclick="ordenarPor('fecha_presentacion')" title="Fecha de presentación de la solicitud en INPI. Clic para ordenar: la primera vez muestra las más viejas primero.">Fecha present.</th>
       <th data-col="fecha_concesion" onclick="ordenarPor('fecha_concesion')" title="Fecha en que INPI concedió la marca">Fecha Concedida</th>
       <th></th>
     </tr>
   </thead>
   <tbody id="tbody">
-    <tr><td colspan="10" class="vacio">Cargando...</td></tr>
+    <tr><td colspan="11" class="vacio">Cargando...</td></tr>
   </tbody>
 </table>
 </div>
@@ -711,7 +712,8 @@ function ordenarPor(col) {
     estado.order = estado.order === "desc" ? "asc" : "desc";
   } else {
     estado.sort = col;
-    estado.order = "desc";
+    // Fecha de presentación: la primera vez va de la más vieja a la más nueva.
+    estado.order = col === "fecha_presentacion" ? "asc" : "desc";
   }
   cargar(estado.offset);
 }
@@ -768,9 +770,10 @@ function filaHtml(r, { flecha = false, oculta = false, idGrupo = null, cantidadR
       <td class="titular" title="${_escapeHtml(r.titular || "")}">${celdaTitular}</td>
       <td>${badgeLead(r)} ${crmSlot(claveTitular(r))} ${badgePreBoletin(r)} ${badgeOposicion(r)} ${badgeRevisionOposicion(r)} ${badgeEstadoTramite(r)}</td>
       <td class="celda-email">${celdaEmailIcono(r)}</td>
-      <td>${fechaPublicacionOFallback(r)}</td>
+      <td class="col-boletin">${fechaPublicacionOFallback(r)}</td>
+      <td class="col-present">${fmtFecha(r.fecha_presentacion) || "—"}</td>
       <td>${fmtFecha(r.fecha_concesion) || "—"}</td>
-      <td class="celda-acciones">${botonComentarios(r.acta)} <a class="abrir" href="${hrefTitular}" target="_blank" title="Ver ficha completa del titular (boletín ${_escapeHtml(r.boletin || "sin boletín todavía")}, acta ${_escapeHtml(r.acta)})">Abrir</a></td>
+      <td class="celda-acciones">${botonComentarios(r.acta)} <button type="button" class="abrir" onclick="abrirGrilla('${_idSeguro(r.acta)}')" title="Abrir la Grilla Digital del acta ${_escapeHtml(r.acta)} en INPI">Grilla</button> <a class="abrir" href="${hrefTitular}" target="_blank" title="Ver ficha completa del titular (boletín ${_escapeHtml(r.boletin || "sin boletín todavía")}, acta ${_escapeHtml(r.acta)})">Abrir</a></td>
     </tr>
   `;
 }
@@ -1031,8 +1034,12 @@ async function cargar(offset) {
     seleccion.actas.clear();
     seleccion.todoElFiltro = false;
   }
-  document.getElementById("tbody").innerHTML = '<tr><td colspan="10" class="vacio">Cargando...</td></tr>';
+  document.getElementById("tbody").innerHTML = '<tr><td colspan="11" class="vacio">Cargando...</td></tr>';
   const params = filtrosActuales();
+  // Solo pre-boletín: no hay Fecha Boletín, se muestra la de presentación.
+  const soloPre = params.boletin === "pre";
+  document.getElementById("tabla-marcas").classList.toggle("solo-pre", soloPre);
+  if (soloPre && estado.sort === "fecha_publicacion") { estado.sort = "fecha_presentacion"; params.sort = estado.sort; }
   actualizarURL();
   marcarFiltrosActivos();
   const data = await api(`/api/marcas?${qs(params)}`);
@@ -1050,7 +1057,7 @@ async function cargar(offset) {
   const tbody = document.getElementById("tbody");
   gruposPagina = {};
   if (data.rows.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="10" class="vacio">No hay resultados con estos filtros.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="11" class="vacio">No hay resultados con estos filtros.</td></tr>';
   } else {
     tbody.innerHTML = agruparPorTitular(data.rows).map((grupo, i) => {
       const idGrupo = `g${estado.offset}_${i}`;

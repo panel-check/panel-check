@@ -265,10 +265,10 @@ function filaHtml(r) {
       <td class="denominacion" title="${_escapeHtml(r.denominacion_inpi || r.denominacion || "")}">${_escapeHtml(r.denominacion_inpi || r.denominacion || "") || `<em>${sinNombre(r.tipo)}</em>`}</td>
       <td>${badgeLead(r)} ${badgeOposicion(r)} ${badgeRevisionOposicion(r)}</td>
       <td>${celdaEmail(r)}</td>
-      <td>${fechaPublicacionOFallback(r)}</td>
+      <td>${fechaPublicacionOFallback(r) || (!r.boletin && r.fecha_presentacion ? `${fmtFecha(r.fecha_presentacion)} <span class="nota">(present.)</span>` : "")}</td>
       <td>${fmtFecha(r.fecha_concesion) || "—"}</td>
       <td>${badgeEstadoTramite(r, true)}</td>
-      <td class="celda-acciones">${botonComentarios(r.acta)} <button class="contactar ${r.contactado ? "marcado" : ""}" onclick="marcarContactado('${_idSeguro(r.acta)}', ${!!r.contactado})">
+      <td class="celda-acciones">${botonComentarios(r.acta)} <button type="button" class="contactar" onclick="abrirGrilla('${_idSeguro(r.acta)}')" title="Abrir la Grilla Digital del acta en INPI">Grilla</button> <button class="contactar ${r.contactado ? "marcado" : ""}" onclick="marcarContactado('${_idSeguro(r.acta)}', ${!!r.contactado})">
         ${r.contactado ? "✓ Contactado" : "Marcar"}
       </button></td>
     </tr>

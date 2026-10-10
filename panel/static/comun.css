@@ -1414,3 +1414,7 @@ tr.seleccionada, tr.seleccionada.lead { background: var(--azul-claro); }
   .app-header .nav .nav-buscar-btn { padding: 0 5px; }
 }
 @media (prefers-reduced-motion: reduce) { .app-header .nav-buscar-input { transition: none; } }
+
+/* Lista de marcas: "Fecha present." solo con el filtro Pre-boletín; "Fecha Boletín" en el resto. */
+#tabla-marcas:not(.solo-pre) .col-present,
+#tabla-marcas.solo-pre .col-boletin { display: none; }

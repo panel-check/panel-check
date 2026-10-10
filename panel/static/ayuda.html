@@ -265,7 +265,7 @@
     </ul>
 
     <h2>🆕 Pre-boletín</h2>
-    <p>Son marcas encontradas por el <strong>escaneo de actas nuevas</strong>: INPI numera cada solicitud el día que se presenta, y el sistema prueba esos números todas las noches (y con un sondeo corto de día), semanas antes de que la marca salga en un boletín. Solo se guardan las que no tienen agente (leads). Como todavía no se publicaron, no tienen número de boletín ni "Fecha Boletín" (esa columna queda vacía); para verlas juntas, elegí <strong>🆕 Pre-boletín</strong> en el filtro Boletín.</p>
+    <p>Son marcas encontradas por el <strong>escaneo de actas nuevas</strong>: INPI numera cada solicitud el día que se presenta, y el sistema prueba esos números todas las noches (y con un sondeo corto de día), semanas antes de que la marca salga en un boletín. Solo se guardan las que no tienen agente (leads). Como todavía no se publicaron, no tienen número de boletín ni "Fecha Boletín"; para verlas juntas, elegí <strong>🆕 Pre-boletín</strong> en el filtro Boletín. En ese modo la lista cambia la columna "Fecha Boletín" por <strong>Fecha present.</strong> (la fecha de presentación de la solicitud en INPI); un clic en ese encabezado ordena de la <strong>más vieja a la más nueva</strong> (otro clic invierte). Cada fila tiene el botón <strong>Grilla</strong> (abre la Grilla Digital del acta en INPI), también en la ficha del titular, que además muestra la fecha de presentación (con «(present.)») en las marcas pre-boletín.</p>
     <p>Cuando la marca sale en su boletín, deja de ser pre-boletín y se completa con los datos del boletín (ahí recién aparece la Fecha Boletín), sin duplicarse. Las oposiciones se empiezan a revisar recién desde esa publicación.</p>
 
     <h2>"(nombre pendiente)" y "(figurativa, sin texto)"</h2>
@@ -393,7 +393,7 @@
     <p>Importante: solo cuenta una vista/oposición fechada en o después de la publicación vigente en el boletín. Una vista vieja, de una presentación anterior ya resuelta, no se muestra — no es una alerta nueva.</p>
 
     <h2>Estado del trámite y fechas</h2>
-    <p>Cuando INPI ya resolvió una marca, aparece el badge <strong>✓ CONCEDIDA</strong> (o DENEGADA) en el detalle por titular, con la fecha de concesión y de vencimiento en el tooltip. La columna "Fecha Boletín" es la fecha de publicación (la que cuenta para el plazo de oposición) y <strong>queda vacía en las marcas pre-boletín</strong>: la fecha aparece recién cuando la marca sale en un boletín y se actualiza; "Fecha Concedida" es un dato aparte, que solo se completa una vez que INPI resuelve.</p>
+    <p>Cuando INPI ya resolvió una marca, aparece el badge <strong>✓ CONCEDIDA</strong> (o DENEGADA) en el detalle por titular, con la fecha de concesión y de vencimiento en el tooltip. La columna "Fecha Boletín" es la fecha de publicación (la que cuenta para el plazo de oposición) y <strong>queda vacía en las marcas pre-boletín</strong> (con el filtro Pre-boletín la lista muestra "Fecha present." en su lugar): la fecha aparece recién cuando la marca sale en un boletín y se actualiza; "Fecha Concedida" es un dato aparte, que solo se completa una vez que INPI resuelve.</p>
 
     <h2>Contactado</h2>
     <p>Es un estado propio del panel — el pipeline que carga los boletines nunca lo toca. Queda con la fecha en que se marcó. Ahora va de la mano con el <strong>CRM</strong>:</p>
@@ -1016,6 +1016,7 @@ le asigna un puntaje de prioridad. Después sigue a cada marca a lo largo del ti
             <tr><th>Acta</th><td>Número único que identifica una solicitud de marca en INPI.</td></tr>
             <tr><th>Boletín</th><td>Publicación de INPI con las solicitudes de marca nuevas. Salen varios por semana; desde la publicación corren los 30 días para oponerse.</td></tr>
             <tr><th>Pre-boletín</th><td>Marca detectada por el escaneo de actas que todavía no salió publicada en un boletín.</td></tr>
+            <tr><th>Fecha present.</th><td>Fecha de presentación de la solicitud en INPI. En la lista de Leads reemplaza a "Fecha Boletín" cuando se filtra solo Pre-boletín, y se puede ordenar de la más vieja a la más nueva.</td></tr>
             <tr><th>Mixta / Figurativa</th><td>Tipos de marca con logo. La Mixta tiene texto dentro del logo (el nombre se recupera de INPI); la Figurativa es solo dibujo y puede no tener nombre.</td></tr>
             <tr><th>Clase</th><td>Categoría de productos/servicios que protege la marca (de la 1 a la 45).</td></tr>
             <tr><th>Multiclase</th><td>Misma marca (mismo nombre) pedida en más de una clase, cada una con su propia acta. Se filtra con <em>Misma marca en varias clases</em> en los filtros avanzados.</td></tr>
