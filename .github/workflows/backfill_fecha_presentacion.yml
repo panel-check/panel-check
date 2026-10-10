@@ -7,6 +7,10 @@ on:
         description: "Solo mostrar los cambios en el log, sin guardar (true/false)"
         required: false
         default: "true"
+      max_minutes:
+        description: "Cortar solo a los N minutos (dejar vacío = sin tope, máx. 120). Lo ya corregido queda guardado"
+        required: false
+        default: ""
       limit:
         description: "Tope de marcas a revisar en esta corrida (dejar vacío = todas)"
         required: false
@@ -38,11 +42,12 @@ jobs:
       - name: Instalar dependencias
         run: pip install -r requirements.txt
 
-      - name: Poner la fecha de presentación real (Grilla Digital) en las marcas pre-boletín
+      - name: Poner la fecha de presentación real (ficha del acta) en las marcas pre-boletín
         run: |
           cd scripts
           args=""
           if [ -n "${{ inputs.limit }}" ]; then args="$args --limit ${{ inputs.limit }}"; fi
+          if [ -n "${{ inputs.max_minutes }}" ]; then args="$args --max-minutes ${{ inputs.max_minutes }}"; fi
           if [ "${{ inputs.dry_run }}" = "true" ]; then args="$args --dry-run"; fi
           python3 backfill_fecha_presentacion.py $args
         env:
