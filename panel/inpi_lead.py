@@ -494,9 +494,11 @@ def _datos_generales(pagina: str) -> dict:
     m = re.search(r"TIPO DE MARCA\s*:\s*(Denominativa|Mixta|Figurativa|Tridimensional)", bloque, re.I)
     if m:
         out["tipo"] = TIPOS_MARCA_INVERSO.get(m.group(1).upper())
-    m = re.search(r"PRESENTACI[ÓO]N\s*:\s*(\d{1,2}/\d{1,2}/\d{4})", bloque, re.I)
-    if m:
-        out["fecha_presentacion"] = _fecha_ddmmyyyy_a_iso(m.group(1))
+    for texto in (bloque, _texto_sin_tags(pagina)):
+        m = re.search(r"PRESENTACI[ÓO]N\s*:\s*(\d{1,2}/\d{1,2}/\d{4})", texto, re.I)
+        if m:
+            out["fecha_presentacion"] = _fecha_ddmmyyyy_a_iso(m.group(1))
+            break
     return out
 
 
