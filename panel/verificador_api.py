@@ -7,6 +7,7 @@ que está en otro dominio, por eso llevan CORS solo para ese sitio):
   GET  /api/publico/verificador/{codigo}             recupera un resultado guardado (vale 90 días)
   POST /api/publico/verificador/consulta-adicional   una pregunta extra sobre una marca ya verificada
   GET  /api/publico/verificador/oposicion/{codigo}   nombre de pila y marca para la página de oposición de la web (el código viene en el mail)
+  GET  /api/publico/verificador/oposicion/{codigo}/opositoras   marca(s) del oponente y sus clases (sin fundamentos) para esa página
   OPTIONS /api/publico/verificador/...               la verificación previa (preflight) del navegador
 
 Del panel (con login, sección «Consultas web» del menú Más):
@@ -345,20 +346,19 @@ def crear_router(verificar_login, conexion) -> APIRouter:
             "marca": v["marca"], "nombre": v["nombre"], "createdAt": v["creada_en"].isoformat(), "informeUrl": None,
         })
 
-    @router.get("/api/publico/verificador/oposicion/{codigo}")
-    def oposicion(codigo: str, request: Request):
-        """Para la página «Más información sobre la oposición» de la web (el link va en el mail de oposición a un lead).
-        El código es el del envío (largo, no adivinable). Devuelve SOLO el nombre de pila y la marca para saludar:
-        nunca el acta, el titular completo ni el mail."""
+    def _fila_oposicion(codigo: str, request: Request):
+        """(fila, respuesta_de_error): el envío de oposición de ese código, con la marca y su titular.
+        El código es el del envío (largo, no adivinable) y vale VALIDEZ_OPOSICION_DIAS."""
         ip = auth.ip_cliente(request) or "?"
         if not _permitido("oposicion", ip, OPOSICIONES_POR_HORA):
-            return _json(request, {"detail": "Demasiados pedidos. Probá de nuevo en un rato."}, 429)
+            return None, _json(request, {"detail": "Demasiados pedidos. Probá de nuevo en un rato."}, 429)
         if not vc.CODIGO_RE.match(codigo):
-            return _json(request, {"detail": "No encontrada"}, 404)
+            return None, _json(request, {"detail": "No encontrada"}, 404)
         with conexion() as conn:
             with rcur(conn) as cur:
                 cur.execute(
-                    "SELECT COALESCE(NULLIF(m.denominacion_inpi, ''), m.denominacion) AS marca, m.titular "
+                    "SELECT COALESCE(NULLIF(m.denominacion_inpi, ''), m.denominacion) AS marca, m.titular, "
+                    "m.actas_marca_oponente, m.marca_oponente_denominacion "
                     "FROM mails_envios e LEFT JOIN marcas m ON m.acta = e.acta "
                     "WHERE e.token = %s AND e.clave_mail = 'prospecto_oposicion' "
                     "AND e.enviado_en > now() - make_interval(days => %s)",
@@ -366,9 +366,29 @@ def crear_router(verificar_login, conexion) -> APIRouter:
                 )
                 f = cur.fetchone()
         if not f or not f["marca"]:
-            return _json(request, {"detail": "No encontrada"}, 404)
+            return None, _json(request, {"detail": "No encontrada"}, 404)
+        return f, None
+
+    @router.get("/api/publico/verificador/oposicion/{codigo}")
+    def oposicion(codigo: str, request: Request):
+        """Para la página «Más información sobre la oposición» de la web (el link va en el mail de oposición a un lead).
+        Devuelve SOLO el nombre de pila y la marca para saludar: nunca el acta, el titular completo ni el mail.
+        Es rápida a propósito: de «quién se opuso» se ocupa /opositoras."""
+        f, error = _fila_oposicion(codigo, request)
+        if error:
+            return error
         import nombres_ar
         return _json(request, {"marca": f["marca"], "nombre": nombres_ar.primer_nombre(f["titular"] or "")})
+
+    @router.get("/api/publico/verificador/oposicion/{codigo}/opositoras")
+    def oposicion_opositoras(codigo: str, request: Request):
+        """«¿Quién se opuso?» de la página de oposición: la marca del oponente y sus clases (oposicion_web), nunca los
+        fundamentos. Aparte del saludo porque, si las clases todavía no están guardadas, hay que pedirlas a INPI (puede demorar)."""
+        f, error = _fila_oposicion(codigo, request)
+        if error:
+            return error
+        import oposicion_web
+        return _json(request, {"opositoras": oposicion_web.marcas_opositoras(dict(f), conexion, rcur)})
 
     def _procesar_adicional(raw: dict, ip: str):
         if not _permitido("adicional", ip, ADICIONALES_POR_HORA):

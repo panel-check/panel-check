@@ -385,5 +385,89 @@ class MailOposicion(unittest.TestCase):
             self.assertTrue(vc.CODIGO_RE.match(secrets.token_urlsafe(9)))
 
 
+class QuienSeOpuso(unittest.TestCase):
+    """«¿Quién se opuso?» de la página de oposición: marca del oponente y clases (oposicion_web), sin red ni base."""
+
+    def setUp(self):
+        import oposicion_web as ow
+        self.ow = ow
+        ow._fallos.clear()
+        self.guardado = {}
+        self.pedidos = []
+
+    def correr(self, fila, cache=None, inpi=None, **kw):
+        cache = dict(cache or {})
+        inpi = inpi or {}
+
+        def leer(actas):
+            return {a: cache[a] for a in actas if a in cache}
+
+        def guardar(acta, estado, datos, logo):
+            self.guardado[acta] = estado
+            cache[acta] = {"estado": estado, **(datos or {})}
+
+        def consultar(acta):
+            self.pedidos.append(acta)
+            return inpi.get(acta, {"estado_consulta": "error", "error": "sin respuesta", "datos": None, "logo": None})
+
+        return self.ow.marcas_opositoras(fila, None, None, leer=leer, guardar=guardar, consultar=consultar, pausa=0, **kw)
+
+    def ok(self, den, clase):
+        return {"estado_consulta": "ok", "datos": {"denominacion": den, "clase": clase}, "logo": None}
+
+    def test_actas_de(self):
+        self.assertEqual(self.ow.actas_de("4094053, 4099176,4094053"), ["4094053", "4099176"])
+        self.assertEqual(self.ow.actas_de(None), [])
+        self.assertEqual(len(self.ow.actas_de("1111111,2222222,3333333,4444444")), self.ow.MAX_ACTAS)
+
+    def test_agrupa_las_clases_de_la_misma_marca_y_las_ordena(self):
+        r = self.ow.agrupar([{"denominacion": "Luna", "clase": "35"}, {"denominacion": "LUNA", "clase": "9"},
+                             {"denominacion": "LUNA", "clase": "35"}, {"denominacion": "SOL", "clase": None}])
+        self.assertEqual(r, [{"denominacion": "Luna", "clases": ["9", "35"]}, {"denominacion": "SOL", "clases": []}])
+
+    def test_usa_lo_guardado_sin_pedirle_nada_a_inpi(self):
+        r = self.correr({"actas_marca_oponente": "4094053"}, cache={"4094053": {"estado": "ok", "denominacion": "LUNA", "clase": "25"}})
+        self.assertEqual(r, [{"denominacion": "LUNA", "clases": ["25"]}])
+        self.assertEqual(self.pedidos, [])
+
+    def test_trae_de_inpi_lo_que_falta_y_lo_guarda(self):
+        r = self.correr({"actas_marca_oponente": "4094053,4099176"},
+                        inpi={"4094053": self.ok("LUNA", "25"), "4099176": self.ok("LUNA", "35")})
+        self.assertEqual(r, [{"denominacion": "LUNA", "clases": ["25", "35"]}])
+        self.assertEqual(self.guardado, {"4094053": "ok", "4099176": "ok"})
+
+    def test_si_inpi_falla_no_levanta_y_no_insiste_enseguida(self):
+        fila = {"actas_marca_oponente": "4094053"}
+        self.assertEqual(self.correr(fila), [])
+        self.assertEqual(self.correr(fila), [])
+        self.assertEqual(self.pedidos, ["4094053"])          # la segunda vez no volvió a pedir
+
+    def test_si_inpi_falla_y_hay_nombre_se_muestra_el_nombre(self):
+        r = self.correr({"actas_marca_oponente": None, "marca_oponente_denominacion": "BALISTONE"})
+        self.assertEqual(r, [{"denominacion": "BALISTONE", "clases": []}])
+
+    def test_marca_inexistente_se_guarda_y_no_se_muestra(self):
+        r = self.correr({"actas_marca_oponente": "4094053"},
+                        inpi={"4094053": {"estado_consulta": "no_existe", "datos": None, "logo": None}})
+        self.assertEqual(r, [])
+        self.assertEqual(self.guardado, {"4094053": "no_existe"})
+
+    def test_tope_de_tiempo(self):
+        t = iter([0, 0, 100, 100, 100, 100])
+        r = self.correr({"actas_marca_oponente": "4094053,4099176"},
+                        inpi={"4094053": self.ok("LUNA", "25"), "4099176": self.ok("LUNA", "35")}, reloj=lambda: next(t))
+        self.assertEqual(self.pedidos, ["4094053"])           # pasado el presupuesto no se piden más
+        self.assertEqual(r, [{"denominacion": "LUNA", "clases": ["25"]}])
+
+    def test_sin_datos_no_hay_nada_que_mostrar(self):
+        self.assertEqual(self.correr({}), [])
+        self.assertEqual(self.correr(None), [])
+
+    def test_nunca_se_expone_el_fundamento(self):
+        r = self.correr({"actas_marca_oponente": "4094053", "fundamento_oposicion": "texto largo"},
+                        inpi={"4094053": self.ok("LUNA", "25")})
+        self.assertEqual(set(r[0]), {"denominacion", "clases"})
+
+
 if __name__ == "__main__":
     unittest.main()

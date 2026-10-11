@@ -100,6 +100,11 @@
     .smo .smo-resp ul { margin: 0; padding-left: 22px; }
     .smo .smo-resp li { margin-bottom: 6px; }
     .smo .smo-resp b { color: var(--smo-azul); }
+    .smo .smo-q[hidden] { display: none; }
+    .smo .smo-marcas { list-style: none; padding: 0; display: grid; gap: 10px; }
+    .smo .smo-marcas li { margin: 0; padding: 14px 18px; background: #fff; border: 1px solid var(--smo-turq); border-radius: 14px; display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 14px; }
+    .smo .smo-marcas .smo-marca { font: 900 20px/1.2 var(--smo-titulo); color: var(--smo-azul); text-transform: uppercase; overflow-wrap: anywhere; }
+    .smo .smo-marcas .smo-clases { font-size: 15px; color: #4b4a6b; }
     .smo .smo-aclaracion { max-width: 820px; margin-top: 22px; font-size: 14px; line-height: 1.5; color: #7b7a99; }
 
     /* Cierre */
@@ -167,6 +172,16 @@
           <div class="smo-resp">
             <p>Cuando una solicitud de marca se publica en el Boletín del INPI, se abre un plazo para que terceros puedan oponerse. Una oposición es un escrito que presenta otra persona o empresa diciendo que el registro de tu marca podría afectar sus derechos, por lo general porque considera que se parece a una marca suya anterior.</p>
             <p>Es una situación bastante común y forma parte del procedimiento.</p>
+          </div>
+        </details>
+
+        <!-- Se muestra solo si el panel informa quién se opuso (marca y clases). Los fundamentos no se publican: son largos y los explicamos en la llamada. -->
+        <details class="smo-q" data-smo-quien hidden>
+          <summary>¿Quién se opuso?</summary>
+          <div class="smo-resp">
+            <p data-smo-quien-intro></p>
+            <ul class="smo-marcas" data-smo-quien-lista></ul>
+            <p>En la llamada revisamos juntos los fundamentos de la oposición y vemos qué se puede hacer.</p>
           </div>
         </details>
 
@@ -318,6 +333,26 @@
       $$("[data-smo-wa]").forEach(function (a) { a.href = whatsapp(nombre, marca); });
     }
 
+    /* ── ¿Quién se opuso? (marca del oponente y sus clases; sin fundamentos) ── */
+    function quienSeOpuso(marcas) {
+      var q = $("[data-smo-quien]"), lista = $("[data-smo-quien-lista]");
+      if (!q || !marcas || !marcas.length) return;
+      lista.textContent = "";
+      marcas.slice(0, 6).forEach(function (m) {
+        if (!m || !m.denominacion) return;
+        var li = el("li");
+        li.appendChild(el("span", "smo-marca", String(m.denominacion)));
+        var c = (m.clases || []).map(String);
+        if (c.length) li.appendChild(el("span", "smo-clases", (c.length > 1 ? "Clases " : "Clase ") + c.join(", ")));
+        lista.appendChild(li);
+      });
+      if (!lista.children.length) return;
+      $("[data-smo-quien-intro]").textContent = lista.children.length > 1
+        ? "La oposición se basa en estas marcas de quien se opuso:"
+        : "La oposición se basa en esta marca de quien se opuso:";
+      q.hidden = false;
+    }
+
     var codigo = (new URLSearchParams(window.location.search).get("e") || "").trim();
     if (!/^[A-Za-z0-9_-]{6,40}$/.test(codigo)) { mostrar("", ""); return; }
 
@@ -333,6 +368,11 @@
       .then(function (r) { return r.ok ? r.json() : null; })
       .then(function (d) { d && d.marca ? terminar(String(d.nombre || ""), String(d.marca)) : terminar("", ""); })
       .catch(function () { terminar("", ""); });
+    /* Aparte del saludo: si las clases no estaban guardadas el panel las pide a INPI y puede demorar. Si falla, la pregunta no aparece. */
+    fetch(API + encodeURIComponent(codigo) + "/opositoras", { headers: { "Accept": "application/json" } })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (d) { if (d) quienSeOpuso(d.opositoras); })
+      .catch(function () {});
   })();
   </script>
 </div>
