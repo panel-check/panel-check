@@ -289,7 +289,7 @@ def crear_router(verificar_login, verificar_admin, conexion, registrar_en_crm=No
             f"""SELECT e.resend_id, e.clave_mail, e.acta, e.enviado_por, m.titular,
                        COALESCE(NULLIF(m.denominacion_inpi, ''), m.denominacion) AS marca, {_SQL_CLAVE} AS clave_titular
                   FROM mails_envios e LEFT JOIN marcas m ON m.acta = e.acta
-                 WHERE e.resend_id = ANY(%s)""", (ids,))
+                 WHERE e.resend_id = ANY(%s) AND NOT e.es_prueba""", (ids,))
         del_panel = {f["resend_id"]: f for f in cur.fetchall()}
         por_mail = {}
         if cuenta == "prospectos":
@@ -366,6 +366,7 @@ def crear_router(verificar_login, verificar_admin, conexion, registrar_en_crm=No
             f"""SELECT e.resend_id AS id, e.para, e.asunto, e.enviado_en, e.clave_mail, e.acta, e.enviado_por,
                        m.titular, COALESCE(NULLIF(m.denominacion_inpi, ''), m.denominacion) AS marca, {_SQL_CLAVE} AS clave_titular
                   FROM mails_envios e LEFT JOIN marcas m ON m.acta = e.acta
+                 WHERE NOT e.es_prueba
                  ORDER BY e.enviado_en DESC LIMIT 200""")
         filas = cur.fetchall()
         eventos = mc.resumen_eventos(cur, [f["id"] for f in filas])
@@ -387,7 +388,7 @@ def crear_router(verificar_login, verificar_admin, conexion, registrar_en_crm=No
         with conexion() as conn, rcur(conn) as cur:
             cur.execute(
                 "SELECT id, clave_mail, acta, para, asunto, resend_id, enviado_por, enviado_en, detalle FROM mails_envios "
-                "WHERE acta = ANY(%s) ORDER BY enviado_en DESC LIMIT 200", (lista,))
+                "WHERE acta = ANY(%s) AND NOT es_prueba ORDER BY enviado_en DESC LIMIT 200", (lista,))
             filas = cur.fetchall()
             eventos = mc.resumen_eventos(cur, [f["resend_id"] for f in filas])
         for f in filas:
@@ -429,7 +430,7 @@ def crear_router(verificar_login, verificar_admin, conexion, registrar_en_crm=No
                 raise HTTPException(status_code=404, detail=f"No existe la marca con acta {body.acta}")
             if mc.esta_de_baja(cur, destino):
                 raise HTTPException(status_code=400, detail=f"{destino} está en la lista de bajas: no se le escribe más.")
-            cur.execute("SELECT enviado_en, enviado_por FROM mails_envios WHERE clave_mail = %s AND acta = %s "
+            cur.execute("SELECT enviado_en, enviado_por FROM mails_envios WHERE clave_mail = %s AND acta = %s AND NOT es_prueba "
                         "ORDER BY enviado_en DESC LIMIT 1", (clave, body.acta))
             previo = cur.fetchone()
             cfg = mc.combinar(clave, _guardadas(cur).get(clave))
@@ -537,7 +538,7 @@ def crear_router(verificar_login, verificar_admin, conexion, registrar_en_crm=No
         return mc.vista_previa(clave, cfg, _panel_url(), datos)
 
     @router.post("/api/mails/{clave}/test")
-    def enviar_test(clave: str, body: EnvioTest, _: str = Depends(verificar_admin)):
+    def enviar_test(clave: str, body: EnvioTest, admin: str = Depends(verificar_admin)):
         """Prueba de una plantilla de prospectos, tal como está en pantalla
         (sin guardar), con los datos reales de la marca elegida. Va SOLO a los
         mails escritos en "Enviar test a"; el de la marca no se usa nunca."""
@@ -566,15 +567,27 @@ def crear_router(verificar_login, verificar_admin, conexion, registrar_en_crm=No
             datos = {**datos, **pres.variables_mail(det)}
             adjuntos = [{"filename": pres.nombre_archivo(det), "content": pres.generar_pdf(det)}]
         simple = mc.es_simple(clave)
+        envio_token = mc.nuevo_token()
+        # Con una marca real elegida y la plantilla de oposición, el código del test es REAL: el botón «Más información» abre la
+        # página de la web con el nombre y la marca de esa persona (se anota como envío de prueba; no cuenta como envío al lead).
+        con_codigo_real = clave == "prospecto_oposicion" and bool((body.acta or "").strip())
+        if con_codigo_real:
+            datos = {**datos, "codigo": envio_token}
         asunto, cuerpo_html, texto = mc.render_prospecto(v["asunto"], v["cuerpo"], datos, v.get("encabezado"), simple=simple)
         if not simple:
             with conexion() as conn, rcur(conn) as cur:
-                cuerpo_html, texto = mc.rastrear_links(cur, cuerpo_html, texto, mc.nuevo_token(), _panel_url())
+                cuerpo_html, texto = mc.rastrear_links(cur, cuerpo_html, texto, envio_token, _panel_url())
                 conn.commit()
         try:
             id_resend = mc.enviar_test(v["cuenta"], v["remitente"], v["responder_a"], para, asunto, cuerpo_html, texto, adjuntos)
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
+        if con_codigo_real:
+            with conexion() as conn, conn.cursor() as cur:
+                cur.execute("INSERT INTO mails_envios (clave_mail, acta, para, asunto, resend_id, enviado_por, token, es_prueba) "
+                            "VALUES (%s, %s, %s, %s, %s, %s, %s, true)",
+                            (clave, body.acta.strip(), ", ".join(para), "[TEST] " + asunto, id_resend, admin, envio_token))
+                conn.commit()
         return {"ok": True, "id": id_resend, "para": para, "asunto": "[TEST] " + asunto}
 
     return router
