@@ -7,7 +7,7 @@ que está en otro dominio, por eso llevan CORS solo para ese sitio):
   GET  /api/publico/verificador/{codigo}             recupera un resultado guardado (vale 90 días)
   POST /api/publico/verificador/consulta-adicional   una pregunta extra sobre una marca ya verificada
   GET  /api/publico/verificador/oposicion/{codigo}   nombre de pila, marca y acta para la página de oposición de la web (el código viene en el mail)
-  GET  /api/publico/verificador/oposicion/{codigo}/opositoras   quién se opuso (nombre del oponente y su marca con clases; sin fundamentos) para esa página
+  GET  /api/publico/verificador/oposicion/{codigo}/opositoras   quién se opuso en cada oposición (nombre del oponente y su marca con clases; sin fundamentos) para esa página
   OPTIONS /api/publico/verificador/...               la verificación previa (preflight) del navegador
 
 Del panel (con login, sección «Consultas web» del menú Más):
@@ -382,18 +382,19 @@ def crear_router(verificar_login, conexion) -> APIRouter:
 
     @router.get("/api/publico/verificador/oposicion/{codigo}/opositoras")
     def oposicion_opositoras(codigo: str, request: Request):
-        """«¿Quién se opuso?» de la página de oposición: el nombre de quien se opuso y, si se conoce, su marca con las clases
+        """«¿Quién se opuso?» de la página de oposición: de cada oposición, el nombre de quien se opuso y, si se conoce, su marca con las clases
         (oposicion_web); nunca los fundamentos, el documento ni el CUIT. Aparte del saludo porque, si las clases todavía no están guardadas, hay que pedirlas a INPI (puede demorar)."""
         f, error = _fila_oposicion(codigo, request)
         if error:
             return error
         import oposicion_web
-        opositoras = oposicion_web.marcas_opositoras(dict(f), conexion, rcur)
-        oponente = oposicion_web.nombre_oponente(dict(f))
-        if not opositoras and not oponente:   # queda en el log de Railway para saber por qué la pregunta no aparece (sin datos personales)
+        ops = oposicion_web.oposiciones(dict(f), conexion, rcur)
+        primera = ops[0] if ops else {"oponente": "", "marcas": []}
+        if not ops:   # queda en el log de Railway para saber por qué la pregunta no aparece (sin datos personales)
             print(f"[oposicion] sin marca del oponente para mostrar: acta={f['acta']} actas_col={bool(f['actas_marca_oponente'])} "
                   f"nombre_col={bool(f['marca_oponente_denominacion'])} fundamento={bool(f['fundamento_oposicion'])} oponente={bool(f['oponente_nombre'])}")
-        return _json(request, {"oponente": oponente or None, "opositoras": opositoras})
+        # «oponente» y «opositoras» son los de la primera oposición (los usa la versión anterior de la página); «oposiciones» trae todas.
+        return _json(request, {"oposiciones": ops, "oponente": primera["oponente"] or None, "opositoras": primera["marcas"]})
 
     def _procesar_adicional(raw: dict, ip: str):
         if not _permitido("adicional", ip, ADICIONALES_POR_HORA):

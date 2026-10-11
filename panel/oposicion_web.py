@@ -1,8 +1,13 @@
 """
-«¿Quién se opuso?» de la página /oposicion/ de la web: la marca del oponente (denominación y
-clases), SIN los fundamentos (son largos y los explica una persona del estudio).
+«¿Quién se opuso?» de la página /oposicion/ de la web: de CADA oposición que tiene la marca, quién la
+presentó y su marca (denominación y clases), SIN los fundamentos (son largos y los explica una persona
+del estudio).
 
-De dónde sale:
+Las oposiciones salen de la consulta al expediente de INPI (trae todas); se guardan en `analisis_marca`
+(la misma que usa la pestaña Análisis) y se vuelven a pedir si tienen más de 12 horas. Si INPI no
+responde, se usa lo último guardado o, en su defecto, la única oposición que el panel ya tenía.
+
+La marca de cada oponente:
   * `marcas.actas_marca_oponente` (actas que cita el fundamento, separadas por coma) o, si el
     fundamento solo dio nombre y número de registro, `marcas.marca_oponente_denominacion`.
   * La clase solo figura en el expediente de INPI de esa marca. Se lee una vez y se guarda en
@@ -25,6 +30,8 @@ PRESUPUESTO_SEG = 12.0    # tiempo máximo (total) para consultar INPI mientras 
 REINTENTO_SEG = 600       # tras un fallo con INPI no se vuelve a probar esa acta por este tiempo
 PAUSA_SEG = 1.0           # entre un pedido a INPI y el siguiente
 MAX_DENOMINACION = 80
+MAX_OPOSICIONES = 5       # oposiciones que se muestran
+SNAPSHOT_VIGENTE_SEG = 12 * 3600   # una consulta a INPI guardada vale 12 horas
 
 _fallos = {}              # acta -> instante (monotonic) del último fallo
 _fallos_lock = threading.Lock()
@@ -101,7 +108,7 @@ def _consultar_inpi(acta, sesion=None):
 
 
 def marcas_opositoras(fila, conexion, rcur, *, leer=None, guardar=None, consultar=None,
-                      presupuesto=PRESUPUESTO_SEG, reloj=time.monotonic, pausa=PAUSA_SEG) -> list:
+                      presupuesto=PRESUPUESTO_SEG, reloj=time.monotonic, pausa=PAUSA_SEG, limite=None) -> list:
     """Marcas del oponente de la oposición `fila` (dict con actas_marca_oponente y
     marca_oponente_denominacion): [{denominacion, clases}]. Trae de INPI las que no estén
     guardadas (con tope de tiempo). Nunca levanta: ante cualquier problema devuelve lo que haya."""
@@ -133,14 +140,15 @@ def marcas_opositoras(fila, conexion, rcur, *, leer=None, guardar=None, consulta
     except Exception:  # noqa: BLE001 — la página no puede fallar por esto
         log.warning("No se pudo leer el caché de marcas del oponente", exc_info=True)
         guardadas = {}
-    inicio, pedidos = reloj(), 0
+    limite = limite if limite is not None else reloj() + presupuesto
+    pedidos = 0
     for a in actas:
         if a in guardadas:
             continue
         ahora = reloj()
         with _fallos_lock:
             ultimo = _fallos.get(a)
-        if (ultimo is not None and ahora - ultimo < REINTENTO_SEG) or ahora - inicio >= presupuesto:
+        if (ultimo is not None and ahora - ultimo < REINTENTO_SEG) or ahora >= limite:
             continue
         if pedidos:
             time.sleep(pausa)
@@ -164,15 +172,103 @@ def marcas_opositoras(fila, conexion, rcur, *, leer=None, guardar=None, consulta
     return agrupar(entradas, None if entradas else nombre)
 
 
+def _fecha_vigente(iso) -> bool:
+    import datetime as dt
+    try:
+        d = dt.datetime.fromisoformat(str(iso))
+    except ValueError:
+        return False
+    if d.tzinfo is None:
+        d = d.replace(tzinfo=dt.timezone.utc)
+    return (dt.datetime.now(dt.timezone.utc) - d).total_seconds() < SNAPSHOT_VIGENTE_SEG
+
+
+def _snapshot(conexion, rcur, acta):
+    """(items, vigente): las oposiciones de la última consulta a INPI guardada (puede ser None)."""
+    import analisis_marca as am
+    with conexion() as conn, rcur(conn) as cur:
+        g = am.leer_analisis(cur, acta)
+    snap = g.get("oposiciones")
+    if isinstance(snap, str):
+        try:
+            import json
+            snap = json.loads(snap)
+        except ValueError:
+            snap = None
+    if not isinstance(snap, dict) or not isinstance(snap.get("items"), list):
+        return None, False
+    return snap["items"], _fecha_vigente(snap.get("consultado_en"))
+
+
+def _guardar_snapshot(conexion, rcur, acta, items):
+    import analisis_marca as am
+    with conexion() as conn, rcur(conn) as cur:
+        am.guardar_oposiciones(cur, acta, items)
+        conn.commit()
+
+
+def _oposiciones_inpi(acta):
+    import inpi_lead
+    return inpi_lead.consultar_oposiciones(acta, None, timeout=8)
+
+
+def oposiciones(fila, conexion, rcur, *, snapshot=None, guardar_snapshot=None, consultar=None, consultar_marca=None,
+                presupuesto=PRESUPUESTO_SEG, reloj=time.monotonic, **kw) -> list:
+    """[{oponente, marcas: [{denominacion, clases}]}]: una entrada por cada oposición de la marca.
+    Nunca levanta; devuelve lo que haya (puede ser [])."""
+    fila = fila or {}
+    acta = str(fila.get("acta") or "").strip()
+    snapshot = snapshot or (lambda a: _snapshot(conexion, rcur, a))
+    guardar_snapshot = guardar_snapshot or (lambda a, it: _guardar_snapshot(conexion, rcur, a, it))
+    consultar = consultar or _oposiciones_inpi
+    items, vigente = None, False
+    if acta:
+        try:
+            items, vigente = snapshot(acta)
+        except Exception:  # noqa: BLE001
+            log.warning("No se pudo leer las oposiciones guardadas", exc_info=True)
+        if not vigente:
+            clave = "op:" + acta
+            with _fallos_lock:
+                ultimo = _fallos.get(clave)
+            if ultimo is None or reloj() - ultimo >= REINTENTO_SEG:
+                try:
+                    r = consultar(acta)
+                    if r["estado_consulta"] == "ok" and r.get("items"):
+                        items = [dict(i) for i in r["items"]]
+                        guardar_snapshot(acta, items)
+                    elif r["estado_consulta"] != "ok":
+                        raise RuntimeError(r.get("error") or r["estado_consulta"])
+                except Exception as e:  # noqa: BLE001
+                    log.warning("No se pudieron leer las oposiciones de INPI (acta %s): %s", acta, e)
+                    with _fallos_lock:
+                        _fallos[clave] = reloj()
+    items = [i for i in (items or []) if isinstance(i, dict)][:MAX_OPOSICIONES]
+    unica = len(items) <= 1
+    if not items:   # lo que el panel ya sabía de la (única) oposición
+        items = [{"oponente": nombre_oponente(fila), "fundamento": fila.get("fundamento_oposicion")}]
+    limite = reloj() + presupuesto
+    out = []
+    for it in items:
+        # Las columnas guardadas en la marca corresponden a una sola oposición: solo valen si hay una.
+        base = dict(fila) if unica else {"acta": acta}
+        base["fundamento_oposicion"] = it.get("fundamento") or (base.get("fundamento_oposicion") if unica else None)
+        marcas = marcas_opositoras(base, conexion, rcur, limite=limite, reloj=reloj, consultar=consultar_marca, **kw)
+        quien = _limpia(it.get("oponente")) or (nombre_oponente(fila) if unica else "")
+        if quien or marcas:
+            out.append({"oponente": quien, "marcas": marcas})
+    return out
+
+
 def precalentar(acta, conexion, rcur):
     """Para el mail: deja guardadas las marcas del oponente de esa marca para cuando abran la
     página. Se corre en segundo plano; no levanta."""
     try:
         with conexion() as conn, rcur(conn) as cur:
-            cur.execute("SELECT acta, actas_marca_oponente, marca_oponente_denominacion, fundamento_oposicion "
+            cur.execute("SELECT acta, actas_marca_oponente, marca_oponente_denominacion, fundamento_oposicion, oponente_nombre "
                         "FROM marcas WHERE acta = %s", (acta,))
             f = cur.fetchone()
         if f:
-            marcas_opositoras(dict(f), conexion, rcur)
+            oposiciones(dict(f), conexion, rcur)
     except Exception:  # noqa: BLE001
         log.warning("No se pudo precalentar la marca del oponente (acta %s)", acta, exc_info=True)
