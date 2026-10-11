@@ -3,8 +3,11 @@
 
   CÓMO PONERLA (WordPress + Elementor):
     1. Páginas → Añadir nueva → título «Resultado» (dirección /resultado/).
-    2. Plantilla: la de siempre del sitio (la landing NO trae header ni footer: usa los del sitio).
-    3. Editar con Elementor → un contenedor/sección a ANCHO COMPLETO, sin relleno → widget «HTML» → pegar TODO este archivo.
+    2. Plantilla: «Elementor ancho completo» (Ajustes de página → Diseño). Usa el header y el footer del sitio.
+    3. Editar con Elementor → un contenedor a ANCHO COMPLETO → widget «HTML» → pegar TODO este archivo.
+       IMPORTANTE: el contenedor y el widget HTML con margen 0 y relleno 0 (pestaña Avanzado). La landing ya deja
+       sola el espacio para el header del sitio (la parte azul arranca detrás del header, como en el home) y se
+       estira a todo el ancho de la pantalla.
     4. Publicar. Para probarla antes de conectarla al home, hacer una consulta en el home y copiar el código
        del resultado, o abrir /resultado/?c=<código de una consulta que figure en Más → Consultas web>.
     5. Recién entonces, en el bloque del home (verificador-home.html) poner  REDIRECT_URL = "/resultado/"
@@ -30,8 +33,12 @@
       --smr-titulo: "Outfit", "Roboto", "Segoe UI", sans-serif;
       --smr-texto: "Mulish", "Roboto", "Segoe UI", sans-serif;
       font-family: var(--smr-texto); color: var(--smr-gris); font-size: 17px; line-height: 1.6;
-      background: #fff; width: 100%; overflow: hidden; -webkit-font-smoothing: antialiased;
+      background: #fff; -webkit-font-smoothing: antialiased;
+      /* ocupa todo el ancho de la pantalla aunque el contenedor de Elementor tenga relleno */
+      width: 100vw; max-width: 100vw; margin-left: calc(50% - 50vw); margin-right: calc(50% - 50vw);
+      overflow: hidden; --smr-header: 90px; /* alto del header del sitio, que flota sobre el contenido */
     }
+    body:has(#smr) { overflow-x: clip; }
     .smr h1, .smr h2, .smr h3 { font-family: var(--smr-titulo); color: var(--smr-azul); margin: 0; letter-spacing: 0; }
     .smr p { margin: 0; }
     .smr a { color: inherit; }
@@ -55,7 +62,9 @@
     .smr .smr-btn svg { width: 20px; height: 20px; flex: none; fill: currentColor; }
 
     /* Hero */
-    .smr .smr-hero { position: relative; background: var(--smr-azul); color: #fff; padding: 64px 0 72px; }
+    .smr .smr-hero { position: relative; display: flex; align-items: center; background: var(--smr-azul); color: #fff;
+      min-height: min(100vh, 760px); padding: calc(var(--smr-header) + 40px) 0 72px; }
+    .smr .smr-hero > .smr-caja { width: 100%; }
     .smr .smr-trama { position: absolute; top: 0; right: 0; display: grid; grid-template-columns: repeat(8, var(--c)); grid-auto-rows: var(--c); --c: 46px; z-index: 0; pointer-events: none; }
     .smr .smr-trama i { display: block; }
     .smr .t-a { background: rgba(92,255,225,.5); } .smr .t-b { background: #0095ff; } .smr .t-c { background: rgba(0,149,255,.5); }
@@ -146,7 +155,7 @@
     @media (max-width: 640px) {
       .smr { font-size: 16px; }
       .smr .smr-caja { padding: 0 20px; }
-      .smr .smr-hero { padding: 48px 0 56px; }
+      .smr .smr-hero { padding: calc(var(--smr-header) + 28px) 0 56px; min-height: 0; }
       .smr .smr-trama { --c: 26px; }
       .smr .smr-hero-grid { grid-template-columns: 1fr; gap: 20px; }
       .smr .smr-sello { width: 104px; height: 104px; }
