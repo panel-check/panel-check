@@ -459,6 +459,17 @@ class QuienSeOpuso(unittest.TestCase):
         self.assertEqual(self.pedidos, ["4094053"])           # pasado el presupuesto no se piden más
         self.assertEqual(r, [{"denominacion": "LUNA", "clases": ["25"]}])
 
+    def test_si_las_columnas_estan_vacias_lee_la_marca_del_fundamento(self):
+        r = self.correr({"acta": "1", "actas_marca_oponente": None, "marca_oponente_denominacion": None,
+                         "fundamento_oposicion": "Somos titulares de las Actas N° 4094053 (clase 25) y 4099176 (clase 35)"},
+                        inpi={"4094053": self.ok("LUNA", "25"), "4099176": self.ok("LUNA", "35")})
+        self.assertEqual(r, [{"denominacion": "LUNA", "clases": ["25", "35"]}])
+
+    def test_fundamento_con_nombre_y_registro_pero_sin_acta(self):
+        r = self.correr({"acta": "1", "fundamento_oposicion": "similar a la marca ALIGN Reg. Nr. 2.345.678 de mi mandante"})
+        self.assertEqual(r, [{"denominacion": "ALIGN", "clases": []}])
+        self.assertEqual(self.pedidos, [])
+
     def test_sin_datos_no_hay_nada_que_mostrar(self):
         self.assertEqual(self.correr({}), [])
         self.assertEqual(self.correr(None), [])

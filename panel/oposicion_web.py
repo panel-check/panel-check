@@ -93,8 +93,19 @@ def marcas_opositoras(fila, conexion, rcur, *, leer=None, guardar=None, consulta
     leer = leer or (lambda actas: _leer(conexion, rcur, actas))
     guardar = guardar or (lambda a, e, d, lg: _guardar(conexion, rcur, a, e, d, lg))
     consultar = consultar or _consultar_inpi
-    nombre = (fila or {}).get("marca_oponente_denominacion")
-    actas = actas_de((fila or {}).get("actas_marca_oponente"))
+    fila = fila or {}
+    nombre = fila.get("marca_oponente_denominacion")
+    actas = actas_de(fila.get("actas_marca_oponente"))
+    if not actas and not nombre and fila.get("fundamento_oposicion"):
+        # La oposición no tiene guardada la marca del oponente (columnas vacías): se la busca en el texto del fundamento.
+        try:
+            import inpi_lead
+            c = inpi_lead.marcas_opuestas_citadas(fila["fundamento_oposicion"], fila.get("acta"))
+            actas = actas_de(",".join(c["actas"]))
+            if not actas and c["citada"]:
+                nombre = re.sub(r"\s*\(Registro.*$", "", c["citada"]).strip()
+        except Exception:  # noqa: BLE001
+            log.warning("No se pudo leer la marca del oponente en el fundamento", exc_info=True)
     if not actas:
         return agrupar([], nombre)
     try:
@@ -138,7 +149,8 @@ def precalentar(acta, conexion, rcur):
     página. Se corre en segundo plano; no levanta."""
     try:
         with conexion() as conn, rcur(conn) as cur:
-            cur.execute("SELECT actas_marca_oponente, marca_oponente_denominacion FROM marcas WHERE acta = %s", (acta,))
+            cur.execute("SELECT acta, actas_marca_oponente, marca_oponente_denominacion, fundamento_oposicion "
+                        "FROM marcas WHERE acta = %s", (acta,))
             f = cur.fetchone()
         if f:
             marcas_opositoras(dict(f), conexion, rcur)
