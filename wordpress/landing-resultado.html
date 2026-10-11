@@ -1,0 +1,467 @@
+<!--
+  Landing de resultado del verificador de marcas — smartiesconsultora.com.ar/resultado/
+
+  CÓMO PONERLA (WordPress + Elementor):
+    1. Páginas → Añadir nueva → título «Resultado» (dirección /resultado/).
+    2. Plantilla: «Elementor Canvas» (sin header ni footer del sitio; esta landing trae el suyo).
+       Si preferís dejar el header/footer del sitio, cambiá SHOW_HEADER a false (abajo).
+    3. Editar con Elementor → un contenedor/sección a ANCHO COMPLETO, sin relleno → widget «HTML» → pegar TODO este archivo.
+    4. Publicar. Para probarla antes de conectarla al home, hacer una consulta en el home y copiar el código
+       del resultado, o abrir /resultado/?c=<código de una consulta que figure en Más → Consultas web>.
+    5. Recién entonces, en el bloque del home (verificador-home.html) poner  REDIRECT_URL = "/resultado/"
+       para que, al enviar, la persona pase a esta página (llega como /resultado/?c=<código>).
+
+  QUÉ HACE: lee el código de la dirección (?c=...), pide el resultado a
+  https://panel.registrodemimarca.com.ar/api/publico/verificador/<código> (válido 90 días) y lo muestra con
+  una explicación, el paso a paso del trámite y formas de contacto (WhatsApp y consulta por mail, que llega al panel).
+  Estilo: manual de marca (azul #161250, celeste #0095FF, turquesa #5CFFE1, gris #606060, tramas de cuadrados)
+  y estructura del sitio (títulos en mayúsculas, tarjetas redondeadas con borde turquesa, botones píldora).
+
+  TIPOGRAFÍAS: el manual usa Azor Sans Black (títulos) y Avenir Next (textos), que son pagas. Acá se usan
+  Outfit y Mulish (Google Fonts, gratis) por ser lo más parecido. Si tienen las licencias, se cargan en
+  Elementor → Fuentes personalizadas y se cambian --smr-titulo / --smr-texto al principio del CSS.
+-->
+<div id="smr" class="smr">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Mulish:wght@400;600;700&family=Outfit:wght@600;800;900&display=swap">
+  <style>
+    .smr, .smr * { box-sizing: border-box; }
+    .smr {
+      --smr-azul: #161250; --smr-celeste: #0095ff; --smr-turq: #5cffe1; --smr-gris: #606060;
+      --smr-azul-claro: #2a2580; --smr-fondo: #f4f7ff;
+      --smr-titulo: "Outfit", "Roboto", "Segoe UI", sans-serif;
+      --smr-texto: "Mulish", "Roboto", "Segoe UI", sans-serif;
+      font-family: var(--smr-texto); color: var(--smr-gris); font-size: 17px; line-height: 1.6;
+      background: #fff; width: 100%; overflow: hidden; -webkit-font-smoothing: antialiased;
+    }
+    .smr h1, .smr h2, .smr h3 { font-family: var(--smr-titulo); color: var(--smr-azul); margin: 0; letter-spacing: 0; }
+    .smr p { margin: 0; }
+    .smr a { color: inherit; }
+    .smr [hidden] { display: none !important; }
+    .smr .smr-caja { width: 100%; max-width: 1080px; margin: 0 auto; padding: 0 24px; position: relative; z-index: 1; }
+
+    /* Barra superior */
+    .smr .smr-top { background: #fff; border-bottom: 1px solid #e7e9f3; }
+    .smr .smr-top .smr-caja { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 72px; }
+    .smr .smr-logo img { display: block; height: 42px; width: auto; }
+
+    /* Botones (píldora, como el sitio) */
+    .smr .smr-btn {
+      display: inline-flex; align-items: center; justify-content: center; gap: 8px; cursor: pointer; text-decoration: none;
+      min-height: 46px; padding: 0 24px; border-radius: 27px; border: 1px solid var(--smr-turq);
+      font: 700 16px/1 var(--smr-texto); transition: background .15s, color .15s, transform .15s;
+    }
+    .smr .smr-btn:hover { transform: translateY(-1px); }
+    .smr .smr-btn.pri { background: var(--smr-turq); color: var(--smr-azul); }
+    .smr .smr-btn.pri:hover { background: #8dffee; }
+    .smr .smr-btn.sec { background: transparent; color: var(--smr-turq); }
+    .smr .smr-btn.sec:hover { background: var(--smr-turq); color: var(--smr-azul); }
+    .smr .smr-btn.osc { background: var(--smr-azul); color: var(--smr-turq); }
+    .smr .smr-btn.osc:hover { background: var(--smr-turq); color: var(--smr-azul); }
+    .smr .smr-btn:disabled { opacity: .6; cursor: default; transform: none; }
+    .smr .smr-btn svg { width: 20px; height: 20px; flex: none; fill: currentColor; }
+
+    /* Hero */
+    .smr .smr-hero { position: relative; background: var(--smr-azul); color: #fff; padding: 64px 0 72px; }
+    .smr .smr-trama { position: absolute; top: 0; right: 0; display: grid; grid-template-columns: repeat(8, var(--c)); grid-auto-rows: var(--c); --c: 46px; z-index: 0; pointer-events: none; }
+    .smr .smr-trama i { display: block; }
+    .smr .t-a { background: rgba(92,255,225,.5); } .smr .t-b { background: #0095ff; } .smr .t-c { background: rgba(0,149,255,.5); }
+    .smr .t-d { background: var(--smr-azul-claro); } .smr .t-e { background: rgba(96,96,96,.85); } .smr .t-f { background: rgba(255,255,255,.18); }
+    .smr .t-g { background: rgba(138,138,168,.75); } .smr .t-h { background: #5cffe1; }
+    .smr .smr-hero-grid { display: grid; grid-template-columns: 150px 1fr; gap: 36px; align-items: center; }
+    .smr .smr-sello { width: 150px; height: 150px; }
+    .smr .smr-sello svg { width: 100%; height: 100%; overflow: visible; }
+    .smr .smr-eyebrow { font: 700 14px/1.3 var(--smr-texto); letter-spacing: .14em; text-transform: uppercase; color: var(--smr-turq); margin-bottom: 8px; }
+    .smr .smr-marca { font: 900 clamp(34px, 6vw, 60px)/1.05 var(--smr-titulo); color: #fff; text-transform: uppercase; word-break: break-word; margin-bottom: 14px; }
+    .smr .smr-estado { display: inline-block; padding: 6px 14px; border-radius: 20px; font: 800 13px/1.2 var(--smr-titulo); letter-spacing: .06em; text-transform: uppercase; margin-bottom: 14px; }
+    .smr .e-ok { background: var(--smr-turq); color: var(--smr-azul); }
+    .smr .e-aviso { background: #ffd166; color: #3b2a00; }
+    .smr .e-mal { background: #ff7a8a; color: #3d0010; }
+    .smr .e-info { background: #cfe9ff; color: var(--smr-azul); }
+    .smr .smr-titular { font: 800 clamp(22px, 3.4vw, 32px)/1.2 var(--smr-titulo); color: #fff; margin-bottom: 12px; }
+    .smr .smr-lead { font-size: 18px; line-height: 1.6; color: #e6e8ff; max-width: 680px; }
+    .smr .smr-lista { list-style: none; margin: 22px 0 0; padding: 0; display: grid; gap: 8px; max-width: 680px; }
+    .smr .smr-lista li { display: flex; justify-content: space-between; gap: 12px; padding: 11px 16px; background: rgba(255,255,255,.1); border: 1px solid rgba(92,255,225,.35); border-radius: 12px; color: #fff; font-weight: 700; line-height: 1.3; }
+    .smr .smr-lista span { white-space: nowrap; font-weight: 600; color: var(--smr-turq); }
+    .smr .smr-nota { margin-top: 14px; font-size: 14px; line-height: 1.5; color: #b9bdea; max-width: 680px; }
+    .smr .smr-acciones { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 28px; }
+    .smr .smr-cargando, .smr .smr-sin { text-align: center; padding: 20px 0; }
+    .smr .smr-cargando .smr-sello, .smr .smr-sin .smr-sello { margin: 0 auto 18px; }
+    .smr .smr-sin .smr-titular { margin-bottom: 10px; }
+    .smr .smr-sin .smr-lead { margin: 0 auto; }
+    .smr .smr-sin .smr-acciones { justify-content: center; }
+
+    /* Secciones claras */
+    .smr .smr-sec { padding: 72px 0; }
+    .smr .smr-sec.gris { background: var(--smr-fondo); }
+    .smr .smr-h2 { font: 900 clamp(26px, 4vw, 38px)/1.12 var(--smr-titulo); text-transform: uppercase; margin-bottom: 14px; }
+    .smr .smr-h2 em { font-style: normal; color: var(--smr-celeste); }
+    .smr .smr-sub { max-width: 720px; margin-bottom: 36px; font-size: 18px; }
+    .smr .smr-tarjetas { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
+    .smr .smr-tarjeta { background: #fff; border: 1px solid var(--smr-turq); border-radius: 20px; padding: 28px 24px; box-shadow: 0 6px 24px rgba(22,18,80,.06); }
+    .smr .smr-tarjeta .n { display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 40px; margin-bottom: 16px; background: var(--smr-azul); color: var(--smr-turq); border-radius: 10px; font: 900 18px/1 var(--smr-titulo); }
+    .smr .smr-tarjeta h3 { font-size: 20px; line-height: 1.25; margin-bottom: 8px; }
+    .smr .smr-tarjeta p { font-size: 16px; }
+
+    /* Pasos */
+    .smr .smr-pasos { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(5, 1fr); gap: 16px; counter-reset: p; }
+    .smr .smr-paso { position: relative; background: var(--smr-azul); color: #dfe2ff; border-radius: 20px; padding: 26px 20px 24px; counter-increment: p; }
+    .smr .smr-paso::before { content: counter(p); display: block; font: 900 40px/1 var(--smr-titulo); color: var(--smr-turq); margin-bottom: 14px; }
+    .smr .smr-paso h3 { color: #fff; font-size: 17px; line-height: 1.25; text-transform: uppercase; margin-bottom: 8px; }
+    .smr .smr-paso p { font-size: 15px; line-height: 1.5; }
+
+    /* Beneficios */
+    .smr .smr-bene { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px 28px; }
+    .smr .smr-bene li { display: flex; gap: 14px; align-items: flex-start; font-size: 18px; font-weight: 700; color: var(--smr-azul); line-height: 1.35; }
+    .smr .smr-bene li::before { content: ""; flex: none; width: 26px; height: 26px; margin-top: 1px; border-radius: 8px; background: var(--smr-turq) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23161250' stroke-width='3.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 12.5l4.5 4.5L19 7.5'/%3E%3C/svg%3E") center/16px no-repeat; }
+
+    /* Contacto */
+    .smr .smr-contacto { position: relative; background: var(--smr-azul); color: #fff; padding: 72px 0; }
+    .smr .smr-contacto .smr-h2 { color: #fff; }
+    .smr .smr-contacto .smr-h2 em { color: var(--smr-turq); }
+    .smr .smr-contacto .smr-sub { color: #dfe2ff; }
+    .smr .smr-cgrid { display: grid; grid-template-columns: 1fr 1.1fr; gap: 40px; align-items: start; }
+    .smr .smr-wa { background: rgba(255,255,255,.08); border: 1px solid rgba(92,255,225,.5); border-radius: 20px; padding: 28px 24px; }
+    .smr .smr-wa h3 { color: #fff; font-size: 20px; margin-bottom: 8px; }
+    .smr .smr-wa p { color: #dfe2ff; font-size: 16px; margin-bottom: 18px; }
+    .smr form { margin: 0; }
+    .smr .smr-campo { margin-bottom: 12px; }
+    .smr input[type=text], .smr input[type=email], .smr textarea {
+      display: block; width: 100%; height: 46px; margin: 0; padding: 0 14px; background: #fff; color: var(--smr-azul);
+      border: 1px solid var(--smr-celeste); border-radius: 11px; font: 400 16px/1.2 var(--smr-texto); box-shadow: none; outline: none;
+      -webkit-appearance: none; appearance: none;
+    }
+    .smr textarea { height: 120px; padding: 12px 14px; line-height: 1.5; resize: vertical; }
+    .smr input::placeholder, .smr textarea::placeholder { color: #7b7a99; opacity: 1; }
+    .smr input:focus, .smr textarea:focus { border-color: var(--smr-turq); box-shadow: 0 0 0 3px rgba(92,255,225,.3); }
+    .smr .smr-msg { margin-top: 12px; font-size: 15px; line-height: 1.5; }
+    .smr .smr-msg.err { color: #ffb3bf; } .smr .smr-msg.esp { color: #cfe9ff; font-style: italic; } .smr .smr-msg.ok { color: var(--smr-turq); font-weight: 700; }
+    .smr .smr-cform h3 { color: #fff; font-size: 20px; margin-bottom: 14px; }
+
+    /* Pie */
+    .smr .smr-pie { background: #0e0b3a; color: #b9bdea; padding: 28px 0; font-size: 14px; line-height: 1.6; }
+    .smr .smr-pie .smr-caja { display: flex; flex-wrap: wrap; gap: 10px 28px; align-items: center; justify-content: space-between; }
+    .smr .smr-pie a { text-decoration: none; margin-right: 16px; color: var(--smr-turq); font-weight: 700; }
+    .smr .smr-pie a:last-child { margin-right: 0; }
+
+    /* Animaciones del sello */
+    .smr .smr-anillo { transform-origin: 60px 60px; }
+    .smr .smr-cargando .smr-anillo { animation: smr-giro 1.6s linear infinite; }
+    @keyframes smr-giro { to { transform: rotate(360deg); } }
+    @media (prefers-reduced-motion: reduce) { .smr .smr-cargando .smr-anillo { animation: none; } .smr .smr-btn { transition: none; } }
+
+    @media (max-width: 900px) {
+      .smr .smr-tarjetas { grid-template-columns: 1fr; }
+      .smr .smr-pasos { grid-template-columns: 1fr 1fr; }
+      .smr .smr-cgrid { grid-template-columns: 1fr; gap: 28px; }
+      .smr .smr-bene { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 640px) {
+      .smr { font-size: 16px; }
+      .smr .smr-caja { padding: 0 20px; }
+      .smr .smr-hero { padding: 48px 0 56px; }
+      .smr .smr-trama { --c: 26px; }
+      .smr .smr-hero-grid { grid-template-columns: 1fr; gap: 20px; }
+      .smr .smr-sello { width: 104px; height: 104px; }
+      .smr .smr-sec, .smr .smr-contacto { padding: 52px 0; }
+      .smr .smr-pasos { grid-template-columns: 1fr; }
+      .smr .smr-acciones .smr-btn { width: 100%; }
+      .smr .smr-lista li { flex-direction: column; gap: 2px; }
+      .smr .smr-top .smr-btn { min-height: 40px; padding: 0 16px; font-size: 14px; }
+      .smr .smr-logo img { height: 34px; }
+    }
+  </style>
+
+  <!-- Barra superior (se oculta con SHOW_HEADER = false) -->
+  <header class="smr-top" data-smr-header>
+    <div class="smr-caja">
+      <a class="smr-logo" data-smr-home href="/" aria-label="Smarties Consultora"><img src="https://smartiesconsultora.com.ar/wp-content/uploads/2026/01/smarties-consultora-logo-1-1-768x181.png" alt="Smarties Consultora" width="178" height="42"></a>
+      <a class="smr-btn osc" data-smr-otra href="/#inicio">Verificar otra marca</a>
+    </div>
+  </header>
+
+  <!-- Resultado -->
+  <section class="smr-hero" aria-live="polite">
+    <div class="smr-trama" data-smr-trama aria-hidden="true"></div>
+    <div class="smr-caja">
+
+      <div class="smr-cargando" data-smr-cargando>
+        <div class="smr-sello" data-smr-sello-carga></div>
+        <p class="smr-eyebrow">Un momento</p>
+        <h1 class="smr-titular">Cargando tu resultado…</h1>
+      </div>
+
+      <div class="smr-sin" data-smr-sin hidden>
+        <div class="smr-sello" data-smr-sello-sin></div>
+        <h1 class="smr-titular" data-smr-sin-titulo>No encontramos esa consulta</h1>
+        <p class="smr-lead" data-smr-sin-texto>El link puede haber vencido (los resultados se guardan 90 días) o estar incompleto. Podés volver a verificar tu marca en un minuto.</p>
+        <div class="smr-acciones">
+          <a class="smr-btn pri" data-smr-otra href="/#inicio">Verificar mi marca</a>
+          <a class="smr-btn sec" data-smr-wa href="#" target="_blank" rel="noopener">Escribinos por WhatsApp</a>
+        </div>
+      </div>
+
+      <div class="smr-hero-grid" data-smr-res hidden>
+        <div class="smr-sello" data-smr-sello></div>
+        <div>
+          <p class="smr-eyebrow" data-smr-saludo>Resultado de tu consulta</p>
+          <h1 class="smr-marca" data-smr-marca></h1>
+          <span class="smr-estado" data-smr-estado></span>
+          <h2 class="smr-titular" data-smr-titular></h2>
+          <p class="smr-lead" data-smr-lead></p>
+          <ul class="smr-lista" data-smr-lista hidden></ul>
+          <p class="smr-nota" data-smr-nota></p>
+          <div class="smr-acciones">
+            <a class="smr-btn pri" data-smr-wa href="#" target="_blank" rel="noopener">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91c0 1.75.46 3.45 1.32 4.95L2.05 22l5.25-1.38a9.9 9.9 0 0 0 4.74 1.21c5.46 0 9.91-4.45 9.91-9.91S17.5 2 12.04 2Zm0 18.15c-1.48 0-2.93-.4-4.2-1.15l-.3-.18-3.12.82.83-3.04-.2-.31a8.2 8.2 0 0 1-1.26-4.38c0-4.54 3.7-8.23 8.25-8.23s8.23 3.69 8.23 8.23-3.7 8.24-8.23 8.24Zm4.52-6.16c-.25-.12-1.47-.72-1.69-.81-.23-.08-.39-.12-.56.12-.16.25-.64.81-.78.97-.14.17-.29.19-.54.06-.25-.12-1.05-.39-2-1.23-.74-.66-1.23-1.47-1.38-1.72-.14-.25-.02-.38.11-.5.11-.11.25-.29.37-.43.12-.14.16-.25.25-.41.08-.17.04-.31-.02-.43-.06-.12-.56-1.34-.76-1.84-.2-.48-.4-.42-.56-.42h-.48c-.17 0-.43.06-.66.31-.22.25-.86.85-.86 2.07s.89 2.4 1.01 2.56c.12.17 1.75 2.67 4.23 3.74.59.26 1.05.41 1.41.52.59.19 1.13.16 1.56.1.48-.07 1.47-.6 1.67-1.18.21-.58.21-1.07.14-1.18-.06-.1-.22-.16-.47-.28Z"/></svg>
+              Hablar por WhatsApp
+            </a>
+            <a class="smr-btn sec" data-smr-otra href="/#inicio">Verificar otra marca</a>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- Qué significa -->
+  <section class="smr-sec" data-smr-contenido hidden>
+    <div class="smr-caja">
+      <h2 class="smr-h2">¿Qué significa <em>este resultado</em>?</h2>
+      <p class="smr-sub">Es un primer filtro del nombre. Antes de invertir en logo, packaging o publicidad, conviene confirmarlo con un análisis completo.</p>
+      <div class="smr-tarjetas">
+        <article class="smr-tarjeta"><span class="n">1</span><h3>Comparamos el nombre</h3><p>Buscamos tu marca en la base de INPI y la comparamos con marcas registradas o solicitadas con un nombre igual o parecido.</p></article>
+        <article class="smr-tarjeta"><span class="n">2</span><h3>La clase importa</h3><p>Las marcas se registran por clases de productos y servicios. Un mismo nombre puede convivir en clases distintas, o chocar aunque no se escriba igual.</p></article>
+        <article class="smr-tarjeta"><span class="n">3</span><h3>Lo confirma un profesional</h3><p>Evaluamos parecidos de escritura, sonido y significado, la clase y tu actividad, y te decimos qué riesgo real hay antes de iniciar el trámite.</p></article>
+      </div>
+    </div>
+  </section>
+
+  <!-- Cómo trabajamos -->
+  <section class="smr-sec gris" data-smr-contenido hidden>
+    <div class="smr-caja">
+      <h2 class="smr-h2">Cómo <em>trabajamos</em></h2>
+      <p class="smr-sub">Te acompañamos en todo el proceso ante el INPI para que tu marca sea realmente tuya.</p>
+      <ol class="smr-pasos">
+        <li class="smr-paso"><h3>Análisis</h3><p>Estudiamos tu nombre, tu actividad y los antecedentes para definir en qué clases conviene registrar.</p></li>
+        <li class="smr-paso"><h3>Carga del formulario</h3><p>Nos pasás los datos del titular y completamos la solicitud por vos.</p></li>
+        <li class="smr-paso"><h3>Estrategia</h3><p>Definimos qué proteger: el nombre, el logo o ambos, y en qué clases.</p></li>
+        <li class="smr-paso"><h3>Presentación en INPI</h3><p>Presentamos la solicitud y seguimos el trámite: publicación en el Boletín y plazo de oposiciones.</p></li>
+        <li class="smr-paso"><h3>Título de marca registrada</h3><p>Cuando INPI concede la marca, recibís tu título: exclusividad por 10 años, renovable.</p></li>
+      </ol>
+    </div>
+  </section>
+
+  <!-- Por qué registrar -->
+  <section class="smr-sec" data-smr-contenido hidden>
+    <div class="smr-caja">
+      <h2 class="smr-h2">Por qué registrar <em>tu marca</em></h2>
+      <p class="smr-sub">Registrar tu marca te permite usar el nombre de forma exclusiva y evitar conflictos futuros.</p>
+      <ul class="smr-bene">
+        <li>Exclusividad legal por 10 años</li>
+        <li>Derecho a oponerte a terceros</li>
+        <li>Valor comercial y posibilidad de licenciar</li>
+        <li>Protección frente a conflictos y reclamos</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- Contacto -->
+  <section class="smr-contacto" data-smr-contenido hidden>
+    <div class="smr-trama" data-smr-trama2 aria-hidden="true" style="opacity:.55"></div>
+    <div class="smr-caja">
+      <h2 class="smr-h2">Avancemos con <em>tu marca</em></h2>
+      <p class="smr-sub">Te ofrecemos un estudio preliminar gratuito antes de iniciar el trámite. Escribinos por WhatsApp o dejanos tu consulta y te respondemos por mail.</p>
+      <div class="smr-cgrid">
+        <div class="smr-wa">
+          <h3>La forma más rápida</h3>
+          <p>Hablá directamente con nuestro equipo. Ya tenemos el resultado de tu consulta, así que no hace falta que lo repitas.</p>
+          <a class="smr-btn pri" data-smr-wa href="#" target="_blank" rel="noopener">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91c0 1.75.46 3.45 1.32 4.95L2.05 22l5.25-1.38a9.9 9.9 0 0 0 4.74 1.21c5.46 0 9.91-4.45 9.91-9.91S17.5 2 12.04 2Zm0 18.15c-1.48 0-2.93-.4-4.2-1.15l-.3-.18-3.12.82.83-3.04-.2-.31a8.2 8.2 0 0 1-1.26-4.38c0-4.54 3.7-8.23 8.25-8.23s8.23 3.69 8.23 8.23-3.7 8.24-8.23 8.24Zm4.52-6.16c-.25-.12-1.47-.72-1.69-.81-.23-.08-.39-.12-.56.12-.16.25-.64.81-.78.97-.14.17-.29.19-.54.06-.25-.12-1.05-.39-2-1.23-.74-.66-1.23-1.47-1.38-1.72-.14-.25-.02-.38.11-.5.11-.11.25-.29.37-.43.12-.14.16-.25.25-.41.08-.17.04-.31-.02-.43-.06-.12-.56-1.34-.76-1.84-.2-.48-.4-.42-.56-.42h-.48c-.17 0-.43.06-.66.31-.22.25-.86.85-.86 2.07s.89 2.4 1.01 2.56c.12.17 1.75 2.67 4.23 3.74.59.26 1.05.41 1.41.52.59.19 1.13.16 1.56.1.48-.07 1.47-.6 1.67-1.18.21-.58.21-1.07.14-1.18-.06-.1-.22-.16-.47-.28Z"/></svg>
+            Escribir por WhatsApp
+          </a>
+        </div>
+        <div class="smr-cform">
+          <h3>O dejanos tu consulta</h3>
+          <form data-smr-form novalidate>
+            <div class="smr-campo"><input type="text" name="nombre" placeholder="Tu nombre" aria-label="Tu nombre" maxlength="120" autocomplete="name"></div>
+            <div class="smr-campo"><input type="email" name="email" placeholder="Tu correo electrónico" aria-label="Tu correo electrónico" maxlength="200" autocomplete="email"></div>
+            <div class="smr-campo"><textarea name="pregunta" placeholder="Contanos qué querés saber o qué necesitás" aria-label="Tu consulta" maxlength="2000"></textarea></div>
+            <button type="submit" class="smr-btn pri" data-smr-enviar>Enviar consulta</button>
+            <div class="smr-msg" data-smr-msg role="status" aria-live="polite"></div>
+          </form>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <footer class="smr-pie">
+    <div class="smr-caja">
+      <span>Smarties Consultora · Agente de Propiedad Industrial</span>
+      <span>
+        <a href="https://www.instagram.com/smarties_consultora" target="_blank" rel="noopener">Instagram</a>
+        <a href="https://www.linkedin.com/in/smarties-consultora-3748b0212/" target="_blank" rel="noopener">LinkedIn</a>
+        <a href="https://www.facebook.com/EstudioSmarties" target="_blank" rel="noopener">Facebook</a>
+      </span>
+    </div>
+  </footer>
+
+  <script>
+  (function () {
+    /* ── Configuración ─────────────────────────────────────────────── */
+    var API = "https://panel.registrodemimarca.com.ar/api/publico/verificador";
+    var WHATSAPP = "5491155890784";
+    var HOME_URL = "/";            /* adónde lleva «Verificar otra marca» (+ #inicio) */
+    var SHOW_HEADER = true;        /* false = no mostrar la barra con el logo (si la página ya tiene el header del sitio) */
+
+    var raiz = document.getElementById("smr");
+    if (!raiz || raiz.getAttribute("data-smr-listo")) return;
+    raiz.setAttribute("data-smr-listo", "1");
+    var $ = function (s) { return raiz.querySelector(s); };
+    var $$ = function (s) { return Array.prototype.slice.call(raiz.querySelectorAll(s)); };
+    var el = function (tag, cls, txt) { var e = document.createElement(tag); if (cls) e.className = cls; if (txt != null) e.textContent = txt; return e; };
+
+    if (!SHOW_HEADER) $("[data-smr-header]").hidden = true;
+    var base = HOME_URL.replace(/\/+$/, "") + "/";
+    $("[data-smr-home]").href = base;
+    $$("[data-smr-otra]").forEach(function (a) { a.href = base + "#inicio"; });
+
+    /* ── Trama de cuadrados (manual de marca) ──────────────────────── */
+    function dibujarTrama(cont, filas) {
+      filas.forEach(function (f) {
+        for (var i = 0; i < 8; i++) {
+          var c = f.charAt(i), cuadro = document.createElement("i");
+          if (c !== ".") cuadro.className = "t-" + c;
+          cont.appendChild(cuadro);
+        }
+      });
+    }
+    dibujarTrama($("[data-smr-trama]"), ["ab.cegbh", ".cgdcfgb", "..b.c...", ".....a.."]);
+    dibujarTrama($("[data-smr-trama2]"), ["........", ".....ab.", "....cgdc", ".......b"]);
+
+    /* ── Sello: anillo de «carga» con ícono (símbolo de la marca) ───── */
+    var ICONOS = {
+      carga: '<path d="M44 52c0-6 5-10 11-10h9c9 0 11 8 4 12l-14 8c-7 4-5 12 4 12h9c6 0 11-4 11-10" fill="none" stroke="#fff" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" opacity=".9"/>',
+      ok: '<path d="M40 61l14 14 27-30" fill="none" stroke="#5cffe1" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>',
+      aviso: '<path d="M60 38v28" stroke="#ffd166" stroke-width="7" stroke-linecap="round"/><circle cx="60" cy="82" r="4.2" fill="#ffd166"/>',
+      mal: '<path d="M43 43l34 34M77 43L43 77" stroke="#ff7a8a" stroke-width="7" stroke-linecap="round"/>',
+      info: '<circle cx="60" cy="60" r="4.5" fill="#cfe9ff"/><circle cx="43" cy="60" r="4.5" fill="#cfe9ff" opacity=".7"/><circle cx="77" cy="60" r="4.5" fill="#cfe9ff" opacity=".7"/>'
+    };
+    function sello(cont, tipo, color) {
+      var c = color || "#5cffe1";
+      cont.innerHTML =
+        '<svg viewBox="0 0 120 120" role="img" aria-hidden="true"><g class="smr-anillo">' +
+        '<circle cx="60" cy="60" r="52" fill="none" stroke="' + c + '" stroke-width="5" stroke-linecap="round" stroke-dasharray="232 95" transform="rotate(-20 60 60)"/>' +
+        '<circle cx="60" cy="60" r="52" fill="none" stroke="' + c + '" stroke-width="5" stroke-linecap="round" stroke-dasharray="0.1 8.6" stroke-dashoffset="-2" transform="rotate(205 60 60)" opacity=".9"/>' +
+        '</g>' + ICONOS[tipo] + '</svg>';
+    }
+    sello($("[data-smr-sello-carga]"), "carga");
+
+    /* ── Estado de la pantalla ─────────────────────────────────────── */
+    function ver(cual) {
+      $("[data-smr-cargando]").hidden = cual !== "carga";
+      $("[data-smr-sin]").hidden = cual !== "sin";
+      $("[data-smr-res]").hidden = cual !== "res";
+      $$("[data-smr-contenido]").forEach(function (s) { s.hidden = cual === "carga"; });
+      if (cual === "sin") $$("[data-smr-contenido]").forEach(function (s) { s.hidden = true; });
+    }
+    function whatsapp(marca) {
+      var t = marca
+        ? "Hola! Hice la consulta de la marca «" + marca + "» en la web de Smarties y quisiera avanzar."
+        : "Hola! Quisiera saber más sobre los servicios de Smarties";
+      return "https://wa.me/" + WHATSAPP + "?text=" + encodeURIComponent(t);
+    }
+    function sinConsulta(titulo, texto) {
+      sello($("[data-smr-sello-sin]"), "info", "#cfe9ff");
+      if (titulo) $("[data-smr-sin-titulo]").textContent = titulo;
+      if (texto) $("[data-smr-sin-texto]").textContent = texto;
+      $$("[data-smr-wa]").forEach(function (a) { a.href = whatsapp(""); });
+      ver("sin");
+    }
+
+    /* ── Resultado ─────────────────────────────────────────────────── */
+    var VISTAS = {
+      disponible: { clase: "e-ok", sello: "ok", color: "#5cffe1", estado: "Sin coincidencias",
+        titular: function (m) { return "¡Buenas noticias! «" + m + "» parece estar libre"; },
+        lead: function () { return "No encontramos en INPI marcas con un nombre igual o parecido. Es el primer paso: ahora conviene confirmarlo por clase y actividad, y registrarla cuanto antes."; } },
+      con_similares: { clase: "e-aviso", sello: "aviso", color: "#ffd166", estado: "Hay marcas parecidas",
+        titular: function (m, r) { var n = (r.exactCount || 0) + (r.similarCount || 0); return "Encontramos " + n + (n === 1 ? " marca parecida" : " marcas parecidas") + " a «" + m + "»"; },
+        lead: function () { return "Eso no significa que no puedas registrarla: depende de la clase y de tu actividad. Revisamos tu caso, te decimos qué riesgo hay y cómo seguir."; } },
+      no_disponible: { clase: "e-mal", sello: "mal", color: "#ff7a8a", estado: "Ya existe",
+        titular: function (m) { return "«" + m + "» ya figura en INPI"; },
+        lead: function (m, r) { return "Hay " + (r.exactCount === 1 ? "una marca idéntica registrada o solicitada" : r.exactCount + " marcas idénticas registradas o solicitadas") + ". Según la clase y la actividad puede haber alternativas: te ayudamos a evaluarlas."; } },
+      error: { clase: "e-info", sello: "info", color: "#cfe9ff", estado: "Lo revisamos a mano",
+        titular: function () { return "Estamos revisando tu consulta"; },
+        lead: function (m) { return "No pudimos consultar INPI automáticamente. Ya tenemos tus datos y te escribimos con el resultado de «" + m + "»."; } }
+    };
+    var ctx = { id: "", marca: "", nombre: "" };
+
+    function mostrar(d) {
+      var r = d.public || {}, v = VISTAS[r.verdict] || VISTAS.error, marca = d.marca || "";
+      ctx.marca = marca; ctx.nombre = d.nombre || "";
+      sello($("[data-smr-sello]"), v.sello, v.color);
+      var primer = (d.nombre || "").trim().split(/\s+/)[0];
+      $("[data-smr-saludo]").textContent = primer ? "Hola " + primer + ", este es tu resultado" : "Resultado de tu consulta";
+      $("[data-smr-marca]").textContent = marca;
+      var est = $("[data-smr-estado]"); est.className = "smr-estado " + v.clase; est.textContent = v.estado;
+      $("[data-smr-titular]").textContent = v.titular(marca, r);
+      $("[data-smr-lead]").textContent = v.lead(marca, r);
+      var ul = $("[data-smr-lista]"); ul.textContent = "";
+      var muestras = (r.verdict === "con_similares" || r.verdict === "no_disponible") ? (r.samples || []) : [];
+      muestras.forEach(function (m) {
+        var li = el("li"); li.appendChild(el("b", null, m.denominacion)); li.appendChild(el("span", null, "Clase " + m.clase)); ul.appendChild(li);
+      });
+      ul.hidden = !muestras.length;
+      var nota = "";
+      if (d.createdAt) {
+        var f = new Date(d.createdAt);
+        if (!isNaN(f)) nota = "Consulta del " + f.toLocaleDateString("es-AR", { day: "numeric", month: "long", year: "numeric" }) + ". ";
+      }
+      $("[data-smr-nota]").textContent = r.verdict === "error" ? "" :
+        nota + "Es un primer análisis del nombre: la base de INPI cambia todos los días y la disponibilidad real depende de la clase.";
+      $$("[data-smr-wa]").forEach(function (a) { a.href = whatsapp(marca); });
+      if (ctx.nombre) $("[data-smr-form]").elements.nombre.value = ctx.nombre;
+      ver("res");
+    }
+
+    var codigo = (new URLSearchParams(window.location.search).get("c") || "").trim();
+    if (!/^[A-Za-z0-9_-]{6,40}$/.test(codigo)) {
+      sinConsulta("Todavía no hay una consulta para mostrar", "Para ver el resultado, verificá tu marca desde la página principal: lleva menos de un minuto.");
+    } else {
+      ctx.id = codigo;
+      var ctl = new AbortController(), t = setTimeout(function () { ctl.abort(); }, 20000);
+      fetch(API + "/" + encodeURIComponent(codigo), { signal: ctl.signal })
+        .then(function (r) { return r.json().catch(function () { return {}; }).then(function (j) { return { ok: r.ok, status: r.status, json: j }; }); })
+        .then(function (r) {
+          if (r.ok && r.json && r.json.public) mostrar(r.json);
+          else if (r.status === 404) sinConsulta();
+          else sinConsulta("No pudimos cargar tu resultado", "Probá de nuevo en un momento. Si sigue sin cargar, escribinos y te lo pasamos.");
+        })
+        .catch(function () { sinConsulta("No pudimos cargar tu resultado", "Revisá tu conexión y recargá la página. Si sigue sin cargar, escribinos y te lo pasamos."); })
+        .finally(function () { clearTimeout(t); });
+    }
+
+    /* ── Consulta por mail (llega al panel y por mail al equipo) ───── */
+    var form = $("[data-smr-form]"), msg = $("[data-smr-msg]"), btn = $("[data-smr-enviar]");
+    function aviso(txt, tipo) { msg.className = "smr-msg" + (tipo ? " " + tipo : ""); msg.textContent = txt || ""; }
+    form.addEventListener("submit", function (ev) {
+      ev.preventDefault();
+      var v = function (n) { return (form.elements[n].value || "").trim(); };
+      if (!v("nombre")) return aviso("¿Cómo te llamás?", "err");
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v("email"))) return aviso("Revisá el correo electrónico.", "err");
+      if (v("pregunta").length < 5) return aviso("Contanos qué querés saber.", "err");
+      btn.disabled = true; aviso("Enviando…", "esp");
+      var ctl = new AbortController(), t = setTimeout(function () { ctl.abort(); }, 30000);
+      fetch(API + "/consulta-adicional", {
+        method: "POST", headers: { "Content-Type": "application/json" }, signal: ctl.signal,
+        body: JSON.stringify({ consultaId: ctx.id, marca: ctx.marca, nombre: v("nombre"), email: v("email"), pregunta: v("pregunta") })
+      }).then(function (r) { return r.json().catch(function () { return {}; }).then(function (j) { return { ok: r.ok, json: j }; }); })
+        .then(function (r) {
+          if (r.ok && r.json && r.json.ok) { aviso("¡Listo! Recibimos tu consulta y te respondemos por mail.", "ok"); form.elements.pregunta.value = ""; }
+          else { btn.disabled = false; aviso((r.json && (r.json.error || r.json.detail)) || "No pudimos enviarla. Probá de nuevo.", "err"); }
+        })
+        .catch(function () { btn.disabled = false; aviso("No pudimos enviarla. Probá de nuevo o escribinos por WhatsApp.", "err"); })
+        .finally(function () { clearTimeout(t); });
+    });
+  })();
+  </script>
+</div>
