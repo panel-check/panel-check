@@ -444,8 +444,9 @@ def crear_router(verificar_login, verificar_admin, conexion, registrar_en_crm=No
             datos = {**datos, **pres.variables_mail(detalle)}
             adjuntos = [{"filename": pres.nombre_archivo(detalle), "content": pres.generar_pdf(detalle)}]
         simple = mc.es_simple(clave)
-        asunto, cuerpo_html, texto = mc.render_prospecto(cfg["asunto"], cfg["cuerpo"], datos, cfg.get("encabezado"), simple=simple)
         envio_token = mc.nuevo_token()
+        datos = {**datos, "codigo": envio_token}   # los links a la web que usan {{codigo}} muestran los datos de este envío
+        asunto, cuerpo_html, texto = mc.render_prospecto(cfg["asunto"], cfg["cuerpo"], datos, cfg.get("encabezado"), simple=simple)
         if not simple:   # el estilo simple no reescribe links: un mail con links «de rastreo» tiende a ir a Promociones
             with conexion() as conn, rcur(conn) as cur:
                 cuerpo_html, texto = mc.rastrear_links(cur, cuerpo_html, texto, envio_token, _panel_url())

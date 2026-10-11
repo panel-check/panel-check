@@ -293,7 +293,7 @@ function pintarDetalle() {
       <div class="variables">${Object.entries(datos.variables).map(([k, d]) =>
         `<code data-var="${esc(k)}" title="${esc(d)} — clic para insertar">{{${esc(k)}}}</code>`).join("")}</div>
       <div class="ayuda-campo" style="margin-top:6px">Formato: <code>## Texto</code> solo en su párrafo es un subtítulo; <code>**texto**</code> va en negrita; una línea que empieza con <code>* </code> es una viñeta;
-        <code>[texto](https://...)</code> es un link, y si va solo en su párrafo se ve como botón.
+        <code>[texto](https://...)</code> es un link, y si va solo en su párrafo se ve como botón (con <code>[~texto](https://...)</code> el botón sale con borde, en versión secundaria).
         <code>{{nombre}}</code> es el nombre de pila («Tomás»); si el titular es una empresa queda vacío y «Hola {{nombre}}:» sale «Hola:». <code>{{destinatario}}</code> es el nombre de pila o «equipo de Empresa SRL» si es una empresa.</div>
       <div class="pie-baja"><strong>Se agrega siempre al final (no se puede quitar):</strong> ${esc(datos.pie_baja)}</div>
     </div>` : "";

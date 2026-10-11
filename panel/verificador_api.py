@@ -6,6 +6,7 @@ que está en otro dominio, por eso llevan CORS solo para ese sitio):
   POST /api/publico/verificador/consulta             verifica una marca y guarda la consulta con los datos de contacto
   GET  /api/publico/verificador/{codigo}             recupera un resultado guardado (vale 90 días)
   POST /api/publico/verificador/consulta-adicional   una pregunta extra sobre una marca ya verificada
+  GET  /api/publico/verificador/oposicion/{codigo}   nombre de pila y marca para la página de oposición de la web (el código viene en el mail)
   OPTIONS /api/publico/verificador/...               la verificación previa (preflight) del navegador
 
 Del panel (con login, sección «Consultas web» del menú Más):
@@ -41,6 +42,7 @@ import verificador_core as vc
 MAX_CUERPO = 16 * 1024        # bytes: un pedido legítimo pesa unos cientos
 CONSULTAS_POR_HORA = 10       # por IP
 ADICIONALES_POR_HORA = 5      # por IP
+OPOSICIONES_POR_HORA = 60     # por IP (página de oposición)
 
 _usos = defaultdict(lambda: defaultdict(deque))
 _usos_lock = threading.Lock()
@@ -342,6 +344,31 @@ def crear_router(verificar_login, conexion) -> APIRouter:
                        "samples": _muestras_publicas(v["muestras"])},
             "marca": v["marca"], "nombre": v["nombre"], "createdAt": v["creada_en"].isoformat(), "informeUrl": None,
         })
+
+    @router.get("/api/publico/verificador/oposicion/{codigo}")
+    def oposicion(codigo: str, request: Request):
+        """Para la página «Más información sobre la oposición» de la web (el link va en el mail de oposición a un lead).
+        El código es el del envío (largo, no adivinable). Devuelve SOLO el nombre de pila y la marca para saludar:
+        nunca el acta, el titular completo ni el mail."""
+        ip = auth.ip_cliente(request) or "?"
+        if not _permitido("oposicion", ip, OPOSICIONES_POR_HORA):
+            return _json(request, {"detail": "Demasiados pedidos. Probá de nuevo en un rato."}, 429)
+        if not vc.CODIGO_RE.match(codigo):
+            return _json(request, {"detail": "No encontrada"}, 404)
+        with conexion() as conn:
+            with rcur(conn) as cur:
+                cur.execute(
+                    "SELECT COALESCE(NULLIF(m.denominacion_inpi, ''), m.denominacion) AS marca, m.titular "
+                    "FROM mails_envios e LEFT JOIN marcas m ON m.acta = e.acta "
+                    "WHERE e.token = %s AND e.clave_mail = 'prospecto_oposicion' "
+                    "AND e.enviado_en > now() - make_interval(days => %s)",
+                    (codigo, vc.VALIDEZ_OPOSICION_DIAS),
+                )
+                f = cur.fetchone()
+        if not f or not f["marca"]:
+            return _json(request, {"detail": "No encontrada"}, 404)
+        import nombres_ar
+        return _json(request, {"marca": f["marca"], "nombre": nombres_ar.primer_nombre(f["titular"] or "")})
 
     def _procesar_adicional(raw: dict, ip: str):
         if not _permitido("adicional", ip, ADICIONALES_POR_HORA):
