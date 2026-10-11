@@ -470,6 +470,27 @@ class QuienSeOpuso(unittest.TestCase):
         self.assertEqual(r, [{"denominacion": "ALIGN", "clases": []}])
         self.assertEqual(self.pedidos, [])
 
+    def test_fundamento_con_actas_escritas_con_puntos(self):
+        # Caso real: «SEPPIA (Acta N° 4.745.291 …)» y la propia marca «(Acta N° 4.788.267)»
+        fund = ("En mérito del poder especial conferido por los titulares del signo registrado y prioritario SEPPIA "
+                "(Acta N° 4.745.291, concedida en Clase 42), vengo a deducir oposición contra la solicitud de la marca "
+                "denominativa SEPIA (Acta N° 4.788.267) en la misma Clase 42")
+        r = self.correr({"acta": "4788267", "fundamento_oposicion": fund}, inpi={"4745291": self.ok("SEPPIA", "42")})
+        self.assertEqual(r, [{"denominacion": "SEPPIA", "clases": ["42"]}])
+        self.assertEqual(self.pedidos, ["4745291"])           # la propia marca no se consulta
+
+    def test_fundamento_con_marca_entre_comillas_y_registro(self):
+        # Caso real: «la marca “BRANDLIVE”, Reg. N° 3788090 y 3416267 previamente registrada en la misma Clase 42»
+        r = self.correr({"acta": "4769001", "fundamento_oposicion":
+                         "La marca publicada es similar y confundible con la marca “BRANDLIVE”, Reg. N° 3788090 y 3416267 previamente registrada en la misma Clase 42."})
+        self.assertEqual(r, [{"denominacion": "BRANDLIVE", "clases": []}])
+        self.assertEqual(self.pedidos, [])
+
+    def test_nombre_del_oponente_sin_documento(self):
+        self.assertEqual(self.ow.nombre_oponente({"oponente_nombre": " BRANDLIVE   S.A. ", "oponente_cuit": "30-1"}), "BRANDLIVE S.A.")
+        self.assertEqual(self.ow.nombre_oponente({}), "")
+        self.assertEqual(self.ow.nombre_oponente(None), "")
+
     def test_sin_datos_no_hay_nada_que_mostrar(self):
         self.assertEqual(self.correr({}), [])
         self.assertEqual(self.correr(None), [])

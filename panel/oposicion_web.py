@@ -39,6 +39,21 @@ def actas_de(texto) -> list:
     return out[:MAX_ACTAS]
 
 
+# «“BRANDLIVE”, Reg. N° 3788090» / «"LUNA" Registro 123456»: marca citada por nombre y registro (sin acta).
+_RE_MARCA_REGISTRO = re.compile(
+    r'["“]([^"”]{2,60})["”][^"“”0-9]{0,40}?\bReg(?:istros?)?\b\.?\s*(?:N[°ºo]|Nro?\.?)?\s*\.?\s*\d[\d.]{3,}', re.IGNORECASE)
+
+
+def _sin_puntos_de_miles(texto) -> str:
+    """«Acta N° 4.745.291» -> «Acta N° 4745291» (los fundamentos escriben los números con puntos)."""
+    return re.sub(r"(?<=\d)\.(?=\d{3}(?!\d))", "", str(texto or ""))
+
+
+def nombre_oponente(fila) -> str:
+    """Quién presentó la oposición (nombre tal cual figura; nunca documento ni CUIT)."""
+    return _limpia((fila or {}).get("oponente_nombre"))
+
+
 def _limpia(v) -> str:
     return re.sub(r"\s+", " ", str(v or "")).strip()[:MAX_DENOMINACION]
 
@@ -100,10 +115,15 @@ def marcas_opositoras(fila, conexion, rcur, *, leer=None, guardar=None, consulta
         # La oposición no tiene guardada la marca del oponente (columnas vacías): se la busca en el texto del fundamento.
         try:
             import inpi_lead
-            c = inpi_lead.marcas_opuestas_citadas(fila["fundamento_oposicion"], fila.get("acta"))
+            fundamento = _sin_puntos_de_miles(fila["fundamento_oposicion"])
+            c = inpi_lead.marcas_opuestas_citadas(fundamento, fila.get("acta"))
             actas = actas_de(",".join(c["actas"]))
             if not actas and c["citada"]:
                 nombre = re.sub(r"\s*\(Registro.*$", "", c["citada"]).strip()
+            if not actas and not nombre:
+                m = _RE_MARCA_REGISTRO.search(fundamento)
+                if m:
+                    nombre = m.group(1)
         except Exception:  # noqa: BLE001
             log.warning("No se pudo leer la marca del oponente en el fundamento", exc_info=True)
     if not actas:
