@@ -6,7 +6,7 @@ que está en otro dominio, por eso llevan CORS solo para ese sitio):
   POST /api/publico/verificador/consulta             verifica una marca y guarda la consulta con los datos de contacto
   GET  /api/publico/verificador/{codigo}             recupera un resultado guardado (vale 90 días)
   POST /api/publico/verificador/consulta-adicional   una pregunta extra sobre una marca ya verificada
-  GET  /api/publico/verificador/oposicion/{codigo}   nombre de pila y marca para la página de oposición de la web (el código viene en el mail)
+  GET  /api/publico/verificador/oposicion/{codigo}   nombre de pila, marca y acta para la página de oposición de la web (el código viene en el mail)
   GET  /api/publico/verificador/oposicion/{codigo}/opositoras   marca(s) del oponente y sus clases (sin fundamentos) para esa página
   OPTIONS /api/publico/verificador/...               la verificación previa (preflight) del navegador
 
@@ -357,7 +357,7 @@ def crear_router(verificar_login, conexion) -> APIRouter:
         with conexion() as conn:
             with rcur(conn) as cur:
                 cur.execute(
-                    "SELECT COALESCE(NULLIF(m.denominacion_inpi, ''), m.denominacion) AS marca, m.titular, "
+                    "SELECT COALESCE(NULLIF(m.denominacion_inpi, ''), m.denominacion) AS marca, m.titular, e.acta, "
                     "m.actas_marca_oponente, m.marca_oponente_denominacion "
                     "FROM mails_envios e LEFT JOIN marcas m ON m.acta = e.acta "
                     "WHERE e.token = %s AND e.clave_mail = 'prospecto_oposicion' "
@@ -372,13 +372,13 @@ def crear_router(verificar_login, conexion) -> APIRouter:
     @router.get("/api/publico/verificador/oposicion/{codigo}")
     def oposicion(codigo: str, request: Request):
         """Para la página «Más información sobre la oposición» de la web (el link va en el mail de oposición a un lead).
-        Devuelve SOLO el nombre de pila y la marca para saludar: nunca el acta, el titular completo ni el mail.
+        Devuelve SOLO el nombre de pila, la marca y su acta (para saludar y armar el mensaje de WhatsApp): nunca el titular completo ni el mail.
         Es rápida a propósito: de «quién se opuso» se ocupa /opositoras."""
         f, error = _fila_oposicion(codigo, request)
         if error:
             return error
         import nombres_ar
-        return _json(request, {"marca": f["marca"], "nombre": nombres_ar.primer_nombre(f["titular"] or "")})
+        return _json(request, {"marca": f["marca"], "acta": f["acta"], "nombre": nombres_ar.primer_nombre(f["titular"] or "")})
 
     @router.get("/api/publico/verificador/oposicion/{codigo}/opositoras")
     def oposicion_opositoras(codigo: str, request: Request):
