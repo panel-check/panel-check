@@ -314,13 +314,12 @@
     });
 
     /* ── Saludo con el nombre y la marca (si hay código válido) ─────── */
-    function whatsapp(nombre, marca) {
-      var t = "Hola!" + (nombre ? " Soy " + nombre + "." : "") +
-        (marca ? " Me llegó información sobre la oposición a mi marca «" + marca + "» y quisiera coordinar una llamada sin cargo."
-               : " Quisiera coordinar una llamada sin cargo por la oposición a mi marca.");
+    function whatsapp(marca, acta) {
+      var t = "Hola Pamela, recibí tu mail sobre la oposición a mi marca" + (marca ? " " + marca : "") +
+        (marca && acta ? ", acta " + acta + "," : "") + " y quiero asesorarme.";
       return "https://wa.me/" + WHATSAPP + "?text=" + encodeURIComponent(t);
     }
-    function mostrar(nombre, marca) {
+    function mostrar(nombre, marca, acta) {
       var h1 = $("[data-smo-h1]");
       if (marca) {
         h1.textContent = "";
@@ -330,7 +329,7 @@
         $("[data-smo-eyebrow]").textContent = nombre ? "Hola " + nombre : "Tu marca";
         document.title = "«" + marca + "» recibió una oposición";
       }
-      $$("[data-smo-wa]").forEach(function (a) { a.href = whatsapp(nombre, marca); });
+      $$("[data-smo-wa]").forEach(function (a) { a.href = whatsapp(marca, acta); });
     }
 
     /* ── ¿Quién se opuso? (marca del oponente y sus clases; sin fundamentos) ── */
@@ -354,20 +353,20 @@
     }
 
     var codigo = (new URLSearchParams(window.location.search).get("e") || "").trim();
-    if (!/^[A-Za-z0-9_-]{6,40}$/.test(codigo)) { mostrar("", ""); return; }
+    if (!/^[A-Za-z0-9_-]{6,40}$/.test(codigo)) { mostrar("", "", ""); return; }
 
     var h1 = $("[data-smo-h1]"), listo = false;
     h1.style.visibility = "hidden"; /* evita el parpadeo entre la versión general y la personalizada */
-    function terminar(nombre, marca) {
+    function terminar(nombre, marca, acta) {
       if (listo) return; listo = true;
-      mostrar(nombre, marca);
+      mostrar(nombre, marca, acta);
       h1.style.visibility = "";
     }
-    setTimeout(function () { terminar("", ""); }, ESPERA_MAX);
+    setTimeout(function () { terminar("", "", ""); }, ESPERA_MAX);
     fetch(API + encodeURIComponent(codigo), { headers: { "Accept": "application/json" } })
       .then(function (r) { return r.ok ? r.json() : null; })
-      .then(function (d) { d && d.marca ? terminar(String(d.nombre || ""), String(d.marca)) : terminar("", ""); })
-      .catch(function () { terminar("", ""); });
+      .then(function (d) { d && d.marca ? terminar(String(d.nombre || ""), String(d.marca), /^\d{5,8}$/.test(String(d.acta || "")) ? String(d.acta) : "") : terminar("", "", ""); })
+      .catch(function () { terminar("", "", ""); });
     /* Aparte del saludo: si las clases no estaban guardadas el panel las pide a INPI y puede demorar. Si falla, la pregunta no aparece. */
     fetch(API + encodeURIComponent(codigo) + "/opositoras", { headers: { "Accept": "application/json" } })
       .then(function (r) { return r.ok ? r.json() : null; })
