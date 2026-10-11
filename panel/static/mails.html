@@ -393,7 +393,7 @@ function pintarDetalle() {
           <button type="button" class="primario" id="b-test" ${dis}>Enviar test</button>
           <span class="msg" id="msg-test"></span>
         </div>
-        <div class="ayuda-campo">Sale tal como está en pantalla (aunque no esté guardado), con la cuenta y el remitente de arriba y «[TEST]» al principio del asunto.${m.adjunto ? " Lleva también el PDF del presupuesto." : ""}</div>
+        <div class="ayuda-campo">Sale tal como está en pantalla (aunque no esté guardado), con la cuenta y el remitente de arriba y «[TEST]» al principio del asunto.${m.clave === "prospecto_oposicion" ? " Con una marca elegida, el botón «Más información» abre la página de la web con el nombre y la marca de esa persona (sin marca elegida, abre la versión general)." : ""}${m.adjunto ? " Lleva también el PDF del presupuesto." : ""}</div>
       </div>` : ""}
       <div class="previa-asunto"><strong>Asunto:</strong> <span id="previa-asunto">…</span> <span class="msg err" id="msg-previa" style="margin-left:8px;"></span></div>
       <iframe class="previa" id="previa" sandbox title="Vista previa del mail"></iframe>

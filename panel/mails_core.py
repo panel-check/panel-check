@@ -447,6 +447,10 @@ def crear_tablas(cur):
     )
     cur.execute("CREATE INDEX IF NOT EXISTS idx_mails_links_envio ON mails_links(envio_token)")
     cur.execute("ALTER TABLE mails_envios ADD COLUMN IF NOT EXISTS token TEXT")
+    # Envíos de PRUEBA con una marca real (Más → Mails → «Enviar test»): existen solo para que el link del mail de prueba
+    # abra la página de la web con los datos de esa marca. No cuentan como envíos a un lead (ni en el historial ni para
+    # el aviso de «ya se le mandó esta plantilla»).
+    cur.execute("ALTER TABLE mails_envios ADD COLUMN IF NOT EXISTS es_prueba BOOLEAN NOT NULL DEFAULT false")
     # Datos con los que se armó el PDF adjunto (presupuestos): permite volver a bajarlo igual.
     cur.execute("ALTER TABLE mails_envios ADD COLUMN IF NOT EXISTS detalle JSONB")
     cur.execute(
