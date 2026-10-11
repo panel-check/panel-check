@@ -699,7 +699,7 @@ le asigna un puntaje de prioridad. Después sigue a cada marca a lo largo del ti
           <div class="num verde">10</div>
           <div class="cuerpo">
             <h3>Verificador de marcas del sitio web y Consultas web</h3>
-            <p>El formulario del home de smartiesconsultora.com.ar (un bloque HTML dentro de WordPress) le habla al panel por la dirección pública
+            <p>El formulario del home de smartiesconsultora.com.ar (un widget HTML de Elementor dentro de WordPress, cuyo código está en <code>wordpress/verificador-home.html</code> del repositorio: se pega entero en lugar del formulario de WPForms, y ahí mismo se cambia <code>REDIRECT_URL</code> cuando exista la landing de resultado) le habla al panel por la dirección pública
               <code>/api/publico/verificador/consulta</code>. Por cada consulta el panel: valida los datos, aplica el límite por IP (10 por hora), el campo trampa y el Turnstile;
               guarda la fila en <code>verificaciones_marca</code> como <em>pendiente</em>; busca la marca en la API de consultas de INPI (búsqueda «contiene», con variantes del nombre; primero mira el caché de 24 hs de
               <code>verificaciones_marca_cache</code>); compara cada marca encontrada con el nombre pedido usando el mismo puntaje de parecido que la vigilancia de clientes

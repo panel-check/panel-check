@@ -1,0 +1,249 @@
+<!--
+  Verificador de marcas — bloque para el home de smartiesconsultora.com.ar
+
+  CÓMO PONERLO (Elementor):
+    1. Editar el home con Elementor, sacar el widget del formulario de WPForms
+       («¿Querés saber si tu marca está disponible?»; el título y la bajada se quedan).
+    2. En ese mismo lugar arrastrar un widget «HTML» y pegar TODO este archivo.
+    3. Actualizar. No hace falta tocar WPForms ni el resto de la página.
+
+  CÓMO FUNCIONA: manda los datos a https://panel.registrodemimarca.com.ar/api/publico/verificador/consulta
+  (panel de Smarties), que consulta INPI y devuelve el resultado, que se muestra acá mismo.
+  Cada consulta queda en el panel: Más → Consultas web, y llega un mail de aviso al equipo.
+
+  CONFIGURACIÓN: las 3 constantes del principio del <script>.
+-->
+<div id="smv" class="smv" data-smv>
+  <style>
+    .smv, .smv * { box-sizing: border-box; }
+    .smv { width: 100%; font-family: Roboto, -apple-system, "system-ui", "Segoe UI", sans-serif; color: #fff; }
+    .smv form { margin: 0; }
+    .smv .smv-campo { padding: 15px 1px; }
+    .smv .smv-campo:first-child { padding-top: 0; }
+    .smv input[type=text], .smv input[type=email], .smv input[type=tel], .smv textarea {
+      display: block; width: 100%; height: 43px; padding: 0 14px; margin: 0;
+      background: #fff; color: #161250; border: 1px solid #0095ff; border-radius: 11px;
+      font: 400 16px/16px -apple-system, "system-ui", "Segoe UI", Roboto, sans-serif;
+      box-shadow: none; outline: none; -webkit-appearance: none; appearance: none;
+    }
+    .smv textarea { height: 110px; padding: 12px 14px; line-height: 22px; resize: vertical; }
+    .smv input::placeholder, .smv textarea::placeholder { color: #7b7a99; opacity: 1; }
+    .smv input:focus, .smv textarea:focus { border-color: #5cffe1; box-shadow: 0 0 0 3px rgba(92,255,225,.25); }
+    .smv .smv-hp { position: absolute !important; left: -9999px !important; width: 1px; height: 1px; overflow: hidden; }
+    .smv .smv-captcha { padding: 4px 1px 0; min-height: 0; }
+    .smv .smv-boton {
+      display: inline-flex; align-items: center; justify-content: center; gap: 8px; cursor: pointer;
+      height: 41px; padding: 0 15px; margin: 10px 0 0 1px;
+      background: #161250; color: #5cffe1; border: 1px solid #5cffe1; border-radius: 27px;
+      font: 500 17px/17px -apple-system, "system-ui", "Segoe UI", Roboto, sans-serif;
+      transition: background .15s, color .15s;
+    }
+    .smv .smv-boton:hover:not(:disabled) { background: #5cffe1; color: #161250; }
+    .smv .smv-boton:disabled { opacity: .65; cursor: default; }
+    .smv .smv-boton.smv-sec { background: transparent; }
+    .smv .smv-giro { width: 15px; height: 15px; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: smv-g .8s linear infinite; }
+    @keyframes smv-g { to { transform: rotate(360deg); } }
+    .smv .smv-msg { margin: 12px 1px 0; font-size: 15px; line-height: 21px; }
+    .smv .smv-msg.smv-error { color: #ffb3bf; }
+    .smv .smv-msg.smv-espera { color: #cfe9ff; font-style: italic; }
+    .smv .smv-opc { font-size: 13px; opacity: .8; margin: 6px 1px 0; line-height: 18px; }
+
+    .smv .smv-res { text-align: left; }
+    .smv .smv-sello { display: inline-block; padding: 5px 12px; border-radius: 20px; font: 700 13px/16px Roboto, sans-serif; letter-spacing: .04em; text-transform: uppercase; }
+    .smv .smv-ok .smv-sello { background: #5cffe1; color: #161250; }
+    .smv .smv-aviso .smv-sello { background: #ffd166; color: #3b2a00; }
+    .smv .smv-mal .smv-sello { background: #ff7a8a; color: #3d0010; }
+    .smv .smv-info .smv-sello { background: #cfe9ff; color: #161250; }
+    .smv .smv-res h3 { margin: 12px 0 8px; color: #fff; font: 800 20px/26px Roboto, sans-serif; }
+    .smv .smv-res p { margin: 0 0 10px; color: #fff; font: 400 16px/24px Roboto, sans-serif; }
+    .smv .smv-res .smv-chico { font-size: 14px; line-height: 20px; opacity: .85; }
+    .smv .smv-lista { list-style: none; margin: 4px 0 12px; padding: 0; }
+    .smv .smv-lista li { display: flex; justify-content: space-between; gap: 10px; padding: 8px 12px; margin: 0 0 6px; background: rgba(255,255,255,.1); border-radius: 9px; font-size: 15px; line-height: 20px; }
+    .smv .smv-lista b { font-weight: 700; word-break: break-word; }
+    .smv .smv-lista span { white-space: nowrap; opacity: .85; }
+    .smv .smv-adic { margin-top: 18px; padding-top: 16px; border-top: 1px solid rgba(92,255,225,.35); }
+    .smv .smv-adic label { display: block; margin: 0 0 8px; font: 500 15px/21px Roboto, sans-serif; color: #fff; }
+    .smv .smv-acciones { display: flex; flex-wrap: wrap; gap: 8px; }
+  </style>
+
+  <form data-smv-form novalidate>
+    <div class="smv-campo"><input type="text" name="marca" placeholder="Nombre de la Marca" aria-label="Nombre de la Marca" maxlength="80" required autocomplete="off"></div>
+    <div class="smv-campo"><input type="text" name="nombre" placeholder="Nombre de la Persona" aria-label="Nombre de la Persona" maxlength="120" required autocomplete="name"></div>
+    <div class="smv-campo"><input type="text" name="actividad" placeholder="Actividad" aria-label="Actividad" maxlength="300" required autocomplete="off"></div>
+    <div class="smv-campo"><input type="email" name="email" placeholder="Correo electrónico" aria-label="Correo electrónico" maxlength="200" required autocomplete="email"></div>
+    <div class="smv-campo"><input type="tel" name="telefono" placeholder="Teléfono / WhatsApp (opcional)" aria-label="Teléfono o WhatsApp (opcional)" maxlength="40" autocomplete="tel"></div>
+    <div class="smv-hp" aria-hidden="true"><label>No completar <input type="text" name="hp" tabindex="-1" autocomplete="off"></label></div>
+    <div class="smv-captcha" data-smv-captcha></div>
+    <button type="submit" class="smv-boton" data-smv-enviar>Enviar</button>
+    <div class="smv-msg" data-smv-msg role="status" aria-live="polite"></div>
+  </form>
+
+  <div class="smv-res" data-smv-res hidden></div>
+
+  <script>
+  (function () {
+    /* ── Configuración ─────────────────────────────────────────────── */
+    var API = "https://panel.registrodemimarca.com.ar/api/publico/verificador";
+    var TURNSTILE_SITE_KEY = "0x4AAAAAAFLfbijNn3z9s6Kp";
+    /* Cuando exista la landing de resultado, poner acá su dirección (ej. "/resultado/"):
+       la persona pasa a esa página con ?c=<código> en vez de ver el resultado en el home.
+       Vacío = el resultado se muestra acá mismo. */
+    var REDIRECT_URL = "";
+
+    var raiz = document.getElementById("smv");
+    if (!raiz || raiz.getAttribute("data-smv-listo")) return;
+    raiz.setAttribute("data-smv-listo", "1");
+    var q = function (s) { return raiz.querySelector(s); };
+    var form = q("[data-smv-form]"), msg = q("[data-smv-msg]"), btn = q("[data-smv-enviar]"),
+        res = q("[data-smv-res]"), caja = q("[data-smv-captcha]");
+    var widgetId = null, ultimo = null;
+
+    function el(tag, cls, txt) {
+      var e = document.createElement(tag);
+      if (cls) e.className = cls;
+      if (txt != null) e.textContent = txt;
+      return e;
+    }
+    function aviso(txt, tipo) { msg.className = "smv-msg" + (tipo ? " smv-" + tipo : ""); msg.textContent = txt || ""; }
+
+    /* ── Turnstile (se carga una sola vez aunque haya otro en la página) ── */
+    function renderCaptcha() {
+      if (!window.turnstile || widgetId !== null) return;
+      widgetId = window.turnstile.render(caja, { sitekey: TURNSTILE_SITE_KEY, language: "es", theme: "dark" });
+    }
+    function cargarTurnstile() {
+      if (window.turnstile) { renderCaptcha(); return; }
+      var previo = document.querySelector('script[src*="challenges.cloudflare.com/turnstile"]');
+      if (previo) { previo.addEventListener("load", renderCaptcha); return; }
+      var s = document.createElement("script");
+      s.src = "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit";
+      s.async = true; s.defer = true;
+      s.onload = renderCaptcha;
+      document.head.appendChild(s);
+    }
+    cargarTurnstile();
+
+    function token() { return widgetId !== null && window.turnstile ? (window.turnstile.getResponse(widgetId) || "") : ""; }
+    function reiniciarCaptcha() { if (widgetId !== null && window.turnstile) window.turnstile.reset(widgetId); }
+
+    /* ── Pedidos a la API ──────────────────────────────────────────── */
+    function pedir(ruta, cuerpo, ms) {
+      var ctl = new AbortController();
+      var t = setTimeout(function () { ctl.abort(); }, ms);
+      return fetch(API + ruta, {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(cuerpo), signal: ctl.signal
+      }).then(function (r) {
+        return r.json().catch(function () { return {}; }).then(function (j) { return { ok: r.ok, status: r.status, json: j }; });
+      }).finally(function () { clearTimeout(t); });
+    }
+
+    form.addEventListener("submit", function (ev) {
+      ev.preventDefault();
+      var v = function (n) { return (form.elements[n].value || "").trim(); };
+      if (v("marca").length < 2) return aviso("Escribí el nombre de tu marca.", "error");
+      if (!v("nombre")) return aviso("¿Cómo te llamás?", "error");
+      if (!v("actividad")) return aviso("Contanos a qué se dedica.", "error");
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v("email"))) return aviso("Revisá el correo electrónico.", "error");
+      var tk = token();
+      if (!tk) return aviso("Esperá un segundo a que se complete la verificación y volvé a tocar Enviar.", "error");
+
+      btn.disabled = true;
+      btn.textContent = "";
+      btn.appendChild(el("span", "smv-giro"));
+      btn.appendChild(document.createTextNode("Consultando INPI…"));
+      aviso("Estamos buscando tu marca en INPI. Puede tardar hasta un minuto, no cierres la página.", "espera");
+
+      var datos = { hp: form.elements.hp.value, token: tk,
+        lead: { marca: v("marca"), nombre: v("nombre"), actividad: v("actividad"), email: v("email"), telefono: v("telefono") } };
+      pedir("/consulta", datos, 110000).then(function (r) {
+        if (!r.ok) { aviso((r.json && r.json.detail) || "No pudimos enviar la consulta. Probá de nuevo en un momento.", "error"); reiniciarCaptcha(); return; }
+        ultimo = { marca: v("marca"), nombre: v("nombre"), email: v("email"), id: r.json.consultaId, resultado: r.json.public };
+        if (REDIRECT_URL && ultimo.id) { window.location.href = REDIRECT_URL + (REDIRECT_URL.indexOf("?") < 0 ? "?" : "&") + "c=" + encodeURIComponent(ultimo.id); return; }
+        mostrarResultado();
+      }).catch(function () {
+        aviso("La consulta tardó más de lo esperado. Si completaste todos los datos, ya la recibimos y te vamos a escribir con el resultado.", "error");
+        reiniciarCaptcha();
+      }).finally(function () {
+        btn.disabled = false; btn.textContent = "Enviar";
+      });
+    });
+
+    /* ── Resultado ─────────────────────────────────────────────────── */
+    function pie(hijo) {
+      var p = el("p", "smv-chico",
+        "Es un primer análisis del nombre en la base de INPI. La disponibilidad real también depende de la clase y de la actividad: " +
+        "nuestro equipo revisa tu caso y te escribe a " + ultimo.email + ".");
+      hijo.appendChild(p);
+    }
+    function lista(muestras) {
+      var ul = el("ul", "smv-lista");
+      muestras.forEach(function (m) {
+        var li = el("li");
+        li.appendChild(el("b", null, m.denominacion));
+        li.appendChild(el("span", null, "Clase " + m.clase));
+        ul.appendChild(li);
+      });
+      return ul;
+    }
+    function mostrarResultado() {
+      var r = ultimo.resultado || {}, v = r.verdict, marca = ultimo.marca;
+      var cont = el("div", v === "disponible" ? "smv-ok" : v === "con_similares" ? "smv-aviso" : v === "no_disponible" ? "smv-mal" : "smv-info");
+      var n = (r.exactCount || 0) + (r.similarCount || 0);
+      if (v === "disponible") {
+        cont.appendChild(el("span", "smv-sello", "Sin coincidencias"));
+        cont.appendChild(el("h3", null, "¡Buenas noticias! «" + marca + "» parece estar libre"));
+        cont.appendChild(el("p", null, "No encontramos en INPI marcas con un nombre igual o parecido."));
+      } else if (v === "con_similares") {
+        cont.appendChild(el("span", "smv-sello", "Hay marcas parecidas"));
+        cont.appendChild(el("h3", null, "Encontramos " + n + (n === 1 ? " marca parecida" : " marcas parecidas") + " a «" + marca + "»"));
+        cont.appendChild(el("p", null, "Puede que igual puedas registrarla, según la clase y la actividad. Estas son algunas:"));
+        if (r.samples && r.samples.length) cont.appendChild(lista(r.samples));
+      } else if (v === "no_disponible") {
+        cont.appendChild(el("span", "smv-sello", "Ya existe"));
+        cont.appendChild(el("h3", null, "«" + marca + "» ya figura en INPI"));
+        cont.appendChild(el("p", null, "Hay " + (r.exactCount === 1 ? "una marca idéntica" : r.exactCount + " marcas idénticas") + " registradas o solicitadas. Según la clase, todavía puede haber alternativas."));
+        if (r.samples && r.samples.length) cont.appendChild(lista(r.samples));
+      } else {
+        cont.appendChild(el("span", "smv-sello", "Lo revisamos a mano"));
+        cont.appendChild(el("h3", null, "No pudimos consultar INPI en este momento"));
+        cont.appendChild(el("p", null, "Tu consulta quedó registrada: la revisamos manualmente y te escribimos con el resultado de «" + marca + "»."));
+      }
+      if (v !== "error") pie(cont);
+
+      /* pregunta adicional */
+      var adic = el("div", "smv-adic");
+      var fadic = el("form"); fadic.noValidate = true;
+      var lab = el("label", null, "¿Querés dejarnos una consulta?"); lab.setAttribute("for", "smv-pregunta");
+      var ta = el("textarea"); ta.id = "smv-pregunta"; ta.maxLength = 2000; ta.placeholder = "Escribí tu pregunta y te respondemos por mail";
+      var enviar = el("button", "smv-boton", "Enviar consulta"); enviar.type = "submit";
+      var m2 = el("div", "smv-msg"); m2.setAttribute("role", "status");
+      fadic.appendChild(lab); fadic.appendChild(ta); fadic.appendChild(enviar); fadic.appendChild(m2);
+      fadic.addEventListener("submit", function (e) {
+        e.preventDefault();
+        var txt = ta.value.trim();
+        if (txt.length < 5) { m2.className = "smv-msg smv-error"; m2.textContent = "Escribí tu consulta."; return; }
+        enviar.disabled = true; m2.className = "smv-msg smv-espera"; m2.textContent = "Enviando…";
+        pedir("/consulta-adicional", { consultaId: ultimo.id, marca: ultimo.marca, nombre: ultimo.nombre, email: ultimo.email, pregunta: txt }, 30000)
+          .then(function (r) {
+            if (r.ok && r.json && r.json.ok) { m2.className = "smv-msg"; m2.textContent = "¡Listo! Recibimos tu consulta y te respondemos por mail."; ta.value = ""; ta.disabled = true; enviar.hidden = true; }
+            else { enviar.disabled = false; m2.className = "smv-msg smv-error"; m2.textContent = (r.json && (r.json.error || r.json.detail)) || "No pudimos enviarla. Probá de nuevo."; }
+          }).catch(function () { enviar.disabled = false; m2.className = "smv-msg smv-error"; m2.textContent = "No pudimos enviarla. Probá de nuevo."; });
+      });
+      adic.appendChild(fadic);
+      cont.appendChild(adic);
+
+      var acc = el("div", "smv-acciones"); acc.style.marginTop = "16px";
+      var otra = el("button", "smv-boton smv-sec", "Verificar otra marca"); otra.type = "button";
+      otra.addEventListener("click", function () {
+        res.hidden = true; res.textContent = "";
+        form.hidden = false; form.elements.marca.value = ""; form.elements.marca.focus();
+        aviso(""); reiniciarCaptcha();
+      });
+      acc.appendChild(otra); cont.appendChild(acc);
+
+      res.textContent = ""; res.appendChild(cont); res.hidden = false; form.hidden = true;
+      if (res.scrollIntoView) res.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }
+  })();
+  </script>
+</div>
