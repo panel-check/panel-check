@@ -85,10 +85,11 @@
     /* ── Configuración ─────────────────────────────────────────────── */
     var API = "https://panel.registrodemimarca.com.ar/api/publico/verificador";
     var TURNSTILE_SITE_KEY = "0x4AAAAAAFLfbijNn3z9s6Kp";
-    /* Cuando exista la landing de resultado, poner acá su dirección (ej. "/resultado/"):
-       la persona pasa a esa página con ?c=<código> en vez de ver el resultado en el home.
-       Vacío = el resultado se muestra acá mismo. */
-    var REDIRECT_URL = "";
+    /* Página de resultado (landing). Al enviar, el formulario deja los datos en el navegador (sessionStorage) y pasa
+       enseguida a esa página, que hace la consulta a INPI con una barra de progreso y muestra el resultado.
+       Vacío = no se redirige: la consulta se hace acá mismo y el resultado se muestra en el home. */
+    var REDIRECT_URL = "/busqueda-de-marca/";
+    var PENDIENTE = "smv_pendiente"; /* tiene que coincidir con la landing */
 
     var raiz = document.getElementById("smv");
     if (!raiz || raiz.getAttribute("data-smv-listo")) return;
@@ -147,14 +148,23 @@
       var tk = token();
       if (!tk) return aviso("Esperá un segundo a que se complete la verificación y volvé a tocar Enviar.", "error");
 
+      var datos = { hp: form.elements.hp.value, token: tk,
+        lead: { marca: v("marca"), nombre: v("nombre"), actividad: v("actividad"), email: v("email"), telefono: v("telefono") } };
+
+      if (REDIRECT_URL) {
+        try {
+          window.sessionStorage.setItem(PENDIENTE, JSON.stringify({ ts: Date.now(), datos: datos }));
+          btn.disabled = true; btn.textContent = "Enviando…"; aviso("");
+          window.location.href = REDIRECT_URL;
+          return;
+        } catch (e) { /* sin almacenamiento en el navegador: se sigue como siempre, con el resultado en este mismo lugar */ }
+      }
+
       btn.disabled = true;
       btn.textContent = "";
       btn.appendChild(el("span", "smv-giro"));
       btn.appendChild(document.createTextNode("Consultando INPI…"));
       aviso("Estamos buscando tu marca en INPI. Puede tardar hasta un minuto, no cierres la página.", "espera");
-
-      var datos = { hp: form.elements.hp.value, token: tk,
-        lead: { marca: v("marca"), nombre: v("nombre"), actividad: v("actividad"), email: v("email"), telefono: v("telefono") } };
       pedir("/consulta", datos, 110000).then(function (r) {
         if (!r.ok) { aviso((r.json && r.json.detail) || "No pudimos enviar la consulta. Probá de nuevo en un momento.", "error"); reiniciarCaptcha(); return; }
         ultimo = { marca: v("marca"), nombre: v("nombre"), email: v("email"), id: r.json.consultaId, resultado: r.json.public };
