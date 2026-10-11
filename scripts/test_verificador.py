@@ -501,5 +501,80 @@ class QuienSeOpuso(unittest.TestCase):
         self.assertEqual(set(r[0]), {"denominacion", "clases"})
 
 
+class VariasOposiciones(unittest.TestCase):
+    """La página muestra TODAS las oposiciones de la marca (oposicion_web.oposiciones), sin red ni base."""
+
+    def setUp(self):
+        import oposicion_web as ow
+        self.ow = ow
+        ow._fallos.clear()
+        self.snap_guardado = None
+        self.pedidos = []
+
+    def correr(self, fila, snap=(None, False), inpi=None, marcas=None):
+        marcas = marcas or {}
+
+        def consultar(acta):
+            self.pedidos.append(("op", acta))
+            return inpi if inpi is not None else {"estado_consulta": "error", "error": "caído", "items": []}
+
+        def guardar(acta, items):
+            self.snap_guardado = items
+
+        def leer(actas):
+            return {a: {"estado": "ok", **marcas[a]} for a in actas if a in marcas}
+
+        return self.ow.oposiciones(fila, None, None, snapshot=lambda a: snap, guardar_snapshot=guardar, consultar=consultar,
+                                   leer=leer, guardar=lambda *a: None, pausa=0,
+                                   consultar_marca=lambda a: {"estado_consulta": "error", "error": "sin red en los tests"})
+
+    ITEMS = [
+        {"oponente": "ANA PEREZ", "fundamento": "titular de la Acta N° 4.745.291 en clase 42"},
+        {"oponente": "LUNA SA", "fundamento": "con la marca “LUNA”, Reg. N° 3788090"},
+    ]
+
+    def test_muestra_cada_oposicion_con_su_oponente_y_su_marca(self):
+        r = self.correr({"acta": "4788267", "oponente_nombre": "ANA PEREZ"},
+                        inpi={"estado_consulta": "ok", "items": self.ITEMS},
+                        marcas={"4745291": {"denominacion": "SEPPIA", "clase": "42"}})
+        self.assertEqual(r, [{"oponente": "ANA PEREZ", "marcas": [{"denominacion": "SEPPIA", "clases": ["42"]}]},
+                             {"oponente": "LUNA SA", "marcas": [{"denominacion": "LUNA", "clases": []}]}])
+        self.assertEqual(self.snap_guardado, self.ITEMS)                       # queda guardado para no volver a pedirlo
+
+    def test_usa_lo_guardado_si_es_reciente(self):
+        r = self.correr({"acta": "1"}, snap=(self.ITEMS, True), marcas={"4745291": {"denominacion": "SEPPIA", "clase": "42"}})
+        self.assertEqual(len(r), 2)
+        self.assertEqual(self.pedidos, [])
+
+    def test_si_inpi_cae_usa_lo_guardado_aunque_sea_viejo(self):
+        r = self.correr({"acta": "1"}, snap=(self.ITEMS, False))
+        self.assertEqual([o["oponente"] for o in r], ["ANA PEREZ", "LUNA SA"])
+        self.assertEqual(self.pedidos, [("op", "1")])
+
+    def test_si_inpi_cae_y_no_hay_nada_guardado_usa_la_oposicion_del_panel(self):
+        r = self.correr({"acta": "1", "oponente_nombre": "BRANDLIVE S.A.", "marca_oponente_denominacion": "BRANDLIVE"})
+        self.assertEqual(r, [{"oponente": "BRANDLIVE S.A.", "marcas": [{"denominacion": "BRANDLIVE", "clases": []}]}])
+
+    def test_las_columnas_de_la_marca_no_se_mezclan_cuando_hay_varias(self):
+        # actas_marca_oponente es de UNA oposición: con dos, cada una se lee de su propio fundamento
+        r = self.correr({"acta": "1", "actas_marca_oponente": "9999999"}, snap=(self.ITEMS, True),
+                        marcas={"9999999": {"denominacion": "OTRA", "clase": "1"}})
+        self.assertNotIn("OTRA", str(r))
+
+    def test_una_sola_oposicion_sin_nombre_toma_el_del_panel(self):
+        r = self.correr({"acta": "1", "oponente_nombre": "ANA PEREZ"}, snap=([{"oponente": None, "fundamento": "x"}], True))
+        self.assertEqual(r, [{"oponente": "ANA PEREZ", "marcas": []}])
+
+    def test_sin_nada_devuelve_vacio_y_nunca_el_fundamento(self):
+        self.assertEqual(self.correr({"acta": "1"}), [])
+        r = self.correr({"acta": "1"}, snap=(self.ITEMS, True))
+        self.assertNotIn("fundamento", str(r))
+
+    def test_no_insiste_con_inpi_tras_un_fallo(self):
+        self.correr({"acta": "7"})
+        self.correr({"acta": "7"})
+        self.assertEqual(self.pedidos, [("op", "7")])
+
+
 if __name__ == "__main__":
     unittest.main()
