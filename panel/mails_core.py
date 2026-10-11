@@ -64,6 +64,8 @@ VARIABLES_PROSPECTO = {
     "tasas": "Solo en el mail del presupuesto: valor de las tasas oficiales",
     "total": "Solo en el mail del presupuesto: honorarios + tasas",
     "vigencia": "Solo en el mail del presupuesto: vigencia (p. ej. «10 días»)",
+    "resultado": "Solo en el mail de confirmación de la web: frase con el resultado de la consulta en INPI",
+    "codigo": "Solo en el mail de confirmación de la web: código del resultado (para armar el link a la página de resultado)",
 }
 
 EJEMPLO_PROSPECTO = {
@@ -78,6 +80,8 @@ EJEMPLO_PROSPECTO = {
     "tasas": "$40.569",
     "total": "$220.569",
     "vigencia": "10 días",
+    "resultado": "No encontramos en INPI marcas con un nombre igual o parecido. Es un primer paso: conviene confirmarlo por clase y actividad.",
+    "codigo": "V5enrbdPdLad",
 }
 
 # Línea de baja: va SIEMPRE al final de los mails a prospectos y no se edita.
@@ -199,6 +203,28 @@ Registro de Marcas Nacional e Internacional
 [www.smartiesconsultora.com.ar](https://www.smartiesconsultora.com.ar)
 WhatsApp: [+54 9 11 5589-0784](https://wa.me/""" + WHATSAPP_PAMELA + """)"""
 
+ASUNTO_CONFIRMACION_WEB = "Recibimos tu consulta de marca: {{marca}}"
+CUERPO_CONFIRMACION_WEB = """Hola {{nombre}}:
+
+Gracias por consultar la disponibilidad de tu marca {{marca}} en Smarties Consultora. Recibimos tus datos.
+
+{{resultado}}
+
+Podés volver a ver tu resultado cuando quieras (el link vale 90 días):
+
+[Ver mi resultado](https://smartiesconsultora.com.ar/resultado/?c={{codigo}})
+
+## Análisis preliminar sin cargo
+
+Vamos a preparar un **análisis preliminar de tu marca, sin cargo**, y te lo vamos a enviar por este mismo medio **en los próximos días**. Revisamos tu nombre con más detalle (clases que corresponden a tu actividad y posibles conflictos) y te contamos cómo seguir.
+
+Si tenés alguna duda mientras tanto, respondé este mail o escribinos por [WhatsApp](https://wa.me/""" + WHATSAPP_PAMELA + """?text=Hola, consulté mi marca {{marca}} en la web, mi nombre es ).
+
+Saludos,
+Equipo de Smarties Consultora
+Registro de Marcas Nacional e Internacional
+www.smartiesconsultora.com.ar"""
+
 CATALOGO = {
     "oposiciones": {
         "grupo": "interno",
@@ -248,6 +274,22 @@ CATALOGO = {
         "destinatarios": DEFAULT_TO_INTERNO,
         "env_remitente": "RESEND_FROM",
         "env_destinatarios": "NOTIFICAR_A",
+    },
+    "consulta_web_confirmacion": {
+        "grupo": "web",
+        "nombre": "Confirmación a quien consulta en la web",
+        "descripcion": "Mail que recibe la persona en el momento en que completa el formulario del verificador de marcas del home: confirma que "
+                       "recibimos su consulta, le da su resultado y el link para volver a verlo, y le avisa que le vamos a mandar un análisis "
+                       "preliminar sin cargo en los próximos días. Sale solo, con formato simple (sin encabezado ni botón), desde el dominio de Smarties.",
+        "cuenta": "prospectos",
+        "remitente": "Smarties Consultora <info@smartiesconsultora.com.ar>",
+        "responder_a": "info@smartiesconsultora.com.ar",
+        "destinatarios": "",
+        "encabezado": "TU CONSULTA DE MARCA",
+        "asunto": ASUNTO_CONFIRMACION_WEB,
+        "cuerpo": CUERPO_CONFIRMACION_WEB,
+        "editable": True,
+        "estilo": "simple",
     },
     "bloqueo": {
         "grupo": "interno",
@@ -768,6 +810,14 @@ def datos_de_marca(cur, acta: str):
     }
 
 
+def datos_de_ejemplo_web(clave: str, datos: dict | None) -> dict | None:
+    """En las plantillas del grupo «web» (confirmación de una consulta del verificador) las variables
+    {{resultado}} y {{codigo}} no salen de una marca de la base: se completan con las de ejemplo."""
+    if (CATALOGO.get(clave) or {}).get("grupo") != "web":
+        return datos
+    return {**EJEMPLO_PROSPECTO, **(datos or {})}
+
+
 def enviar_test(cuenta: str, remitente: str, responder_a: str, para: list, asunto: str, html_cuerpo: str, texto: str,
                 adjuntos: list = None) -> str:
     """Manda un mail de PRUEBA a las direcciones que se eligieron a mano en el
@@ -917,6 +967,7 @@ _ASUNTOS_INTERNOS = [
     ("cartera", re.compile(r"^Cartera y vigilancia", re.I)),
     ("formularios", re.compile(r"Formulario recibido", re.I)),
     ("consultas_web", re.compile(r"^Consulta web", re.I)),
+    ("consulta_web_confirmacion", re.compile(r"^Recibimos tu consulta de marca", re.I)),
     ("bloqueo", re.compile(r"INPI está bloqueando", re.I)),
     ("agenda", re.compile(r"^AGENDA\b")),
 ]
@@ -925,7 +976,7 @@ _ASUNTOS_INTERNOS = [
 def tipos_de_mail() -> list:
     """Opciones del filtro por tipo: sale del catálogo, así una plantilla
     nueva aparece sola. Más «Prueba (test)» y «Otro»."""
-    out = [{"clave": k, "nombre": c["nombre"], "interno": c["grupo"] != "prospectos"} for k, c in CATALOGO.items()]
+    out = [{"clave": k, "nombre": c["nombre"], "interno": c["grupo"] == "interno"} for k, c in CATALOGO.items()]
     out.append({"clave": "test", "nombre": "Prueba (test)", "interno": True})
     out.append({"clave": "otro", "nombre": "Otro", "interno": False})
     return out

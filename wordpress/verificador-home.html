@@ -56,6 +56,8 @@
     .smv .smv-info .smv-sello { background: #cfe9ff; color: #161250; }
     .smv .smv-res h3 { margin: 12px 0 8px; color: #fff; font: 800 20px/26px Roboto, sans-serif; }
     .smv .smv-res p { margin: 0 0 10px; color: #fff; font: 400 16px/24px Roboto, sans-serif; }
+    .smv .smv-res .smv-sc { margin: 14px 0 12px; padding: 12px 14px; border: 2px solid #5cffe1; border-radius: 14px; background: rgba(92,255,225,.12); }
+    .smv .smv-res .smv-sc b { color: #5cffe1; text-transform: uppercase; letter-spacing: .04em; }
     .smv .smv-res .smv-chico { font-size: 14px; line-height: 20px; opacity: .85; }
     .smv .smv-lista { list-style: none; margin: 4px 0 12px; padding: 0; }
     .smv .smv-lista li { display: flex; justify-content: space-between; gap: 10px; padding: 8px 12px; margin: 0 0 6px; background: rgba(255,255,255,.1); border-radius: 9px; font-size: 15px; line-height: 20px; }
@@ -218,6 +220,10 @@
         cont.appendChild(el("h3", null, "No pudimos consultar INPI en este momento"));
         cont.appendChild(el("p", null, "Tu consulta quedó registrada: la revisamos manualmente y te escribimos con el resultado de «" + marca + "»."));
       }
+      var sc = el("p", "smv-sc");
+      sc.appendChild(el("b", null, "Sin cargo: "));
+      sc.appendChild(document.createTextNode("te vamos a enviar por mail un análisis preliminar de tu marca en los próximos días."));
+      cont.appendChild(sc);
       if (v !== "error") pie(cont);
 
       /* pregunta adicional */

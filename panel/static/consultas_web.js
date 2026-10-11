@@ -68,7 +68,8 @@ async function cargar() {
         <td>${coincidencias(c)}</td>
         <td>${contacto(c)}</td>
         <td>${c.estado === "nueva" ? '<span class="cl-tag azul">Nueva</span>' : '<span class="cl-tag ok">Revisada</span>'}
-          ${c.aviso_error ? '<br><small class="crm-error" title="' + esc(c.aviso_error) + '">mail de aviso no enviado</small>' : ""}</td>
+          ${c.aviso_error ? '<br><small class="crm-error" title="' + esc(c.aviso_error) + '">mail de aviso no enviado</small>' : ""}
+          ${c.confirmacion_error ? '<br><small class="crm-error" title="' + esc(c.confirmacion_error) + '">confirmación a la persona no enviada</small>' : ""}</td>
         <td style="white-space:nowrap"><button type="button" class="cl-btn mini" data-ver="${c.id}">Ver</button>
           <button type="button" class="cl-btn sec mini" data-estado="${c.id}" data-a="${c.estado === "nueva" ? "revisada" : "nueva"}">${c.estado === "nueva" ? "Marcar revisada" : "Volver a nueva"}</button></td>
       </tr>`).join("")}
@@ -114,6 +115,8 @@ async function abrirConsulta(id) {
         <tr><th>Teléfono</th><td>${c.telefono ? (wa ? `<a href="${esc(wa)}" target="_blank" rel="noopener">${esc(c.telefono)}</a>` : esc(c.telefono)) : "—"}</td></tr>
         <tr><th>Web o redes</th><td>${web ? `<a href="${esc(web)}" target="_blank" rel="noopener noreferrer">${esc(c.web)}</a>` : esc(c.web || "—")}</td></tr>
         <tr><th>Viene de</th><td>${esc(c.origen || "—")}</td></tr>
+        <tr><th>Mail de confirmación</th><td>${c.confirmacion_enviada_en ? `enviado a la persona ${esc(fmtFechaHora(c.confirmacion_enviada_en))}`
+          : c.confirmacion_error ? `<span class="crm-error" style="padding:0">no salió: ${esc(c.confirmacion_error)}</span>` : "pendiente (sale en segundos)"}</td></tr>
       </table>
       ${c.veredicto === "error" ? `<p class="crm-alerta crm-alerta-info">INPI no respondió a tiempo${c.error ? ` (${esc(c.error)})` : ""}. A la persona se le avisó que la consulta se revisa a mano: conviene buscar la marca en INPI y escribirle.</p>` : ""}
       ${filas ? `<h4>Marcas de INPI que coinciden</h4>
