@@ -32,7 +32,7 @@ import psycopg2.extras
 import json
 from urllib.parse import quote
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse, RedirectResponse, Response
 from pydantic import BaseModel
 
@@ -411,8 +411,12 @@ def crear_router(verificar_login, verificar_admin, conexion, registrar_en_crm=No
             raise HTTPException(status_code=404, detail="Ese envío no tiene un presupuesto adjunto")
         return _respuesta_pdf(det)
 
+    def _precalentar_oponente(acta):
+        import oposicion_web
+        oposicion_web.precalentar(str(acta or "").strip(), conexion, rcur)
+
     @router.post("/api/mails/{clave}/enviar")
-    def enviar_a_lead(clave: str, body: EnvioLead, usuario: str = Depends(verificar_login)):
+    def enviar_a_lead(clave: str, body: EnvioLead, background: BackgroundTasks, usuario: str = Depends(verificar_login)):
         """Manda la plantilla de prospectos, tal como está GUARDADA, con los
         datos reales de la marca, al mail indicado. No manda nada si ese mail
         está en la lista de bajas; si ya se le mandó esa plantilla a esa acta,
@@ -475,6 +479,8 @@ def crear_router(verificar_login, verificar_admin, conexion, registrar_en_crm=No
                 except Exception as e:  # noqa: BLE001 — el mail ya salió; el CRM no debe hacerlo fallar
                     conn.rollback()
                     print(f"[mails] no se pudo registrar el envío en el CRM: {e}")
+        if clave == "prospecto_oposicion":   # deja lista la marca del oponente (y sus clases) para cuando abran la página de la web
+            background.add_task(_precalentar_oponente, body.acta)
         return {"ok": True, "id": id_resend, "para": destino, "asunto": asunto,
                 "adjunto": adjuntos[0]["filename"] if adjuntos else None}
 
@@ -538,7 +544,7 @@ def crear_router(verificar_login, verificar_admin, conexion, registrar_en_crm=No
         return mc.vista_previa(clave, cfg, _panel_url(), datos)
 
     @router.post("/api/mails/{clave}/test")
-    def enviar_test(clave: str, body: EnvioTest, admin: str = Depends(verificar_admin)):
+    def enviar_test(clave: str, body: EnvioTest, background: BackgroundTasks, admin: str = Depends(verificar_admin)):
         """Prueba de una plantilla de prospectos, tal como está en pantalla
         (sin guardar), con los datos reales de la marca elegida. Va SOLO a los
         mails escritos en "Enviar test a"; el de la marca no se usa nunca."""
@@ -588,6 +594,7 @@ def crear_router(verificar_login, verificar_admin, conexion, registrar_en_crm=No
                             "VALUES (%s, %s, %s, %s, %s, %s, %s, true)",
                             (clave, body.acta.strip(), ", ".join(para), "[TEST] " + asunto, id_resend, admin, envio_token))
                 conn.commit()
+            background.add_task(_precalentar_oponente, body.acta.strip())
         return {"ok": True, "id": id_resend, "para": para, "asunto": "[TEST] " + asunto}
 
     return router
