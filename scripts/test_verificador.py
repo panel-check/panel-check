@@ -340,5 +340,50 @@ class Confirmacion(unittest.TestCase):
         self.assertIsNone(mc.datos_de_ejemplo_web("prospecto_oposicion", None))
 
 
+class MailOposicion(unittest.TestCase):
+    """Mail de oposición a un lead: botón principal (WhatsApp) + botón secundario «Más información» a /oposicion/."""
+
+    def render(self, **extra):
+        import mails_core as mc
+        cat = mc.CATALOGO["prospecto_oposicion"]
+        datos = {"titular": "PEREZ JORGE", "marca": "CONTAFACIL PRO", "codigo": "AbC123xyz_-9", **extra}
+        return mc.render_prospecto(cat["asunto"], cat["cuerpo"], datos, cat["encabezado"])
+
+    def test_tiene_el_boton_de_mas_informacion_con_el_codigo_del_envio(self):
+        _, html_, texto = self.render()
+        self.assertIn("https://smartiesconsultora.com.ar/oposicion/?e=AbC123xyz_-9", html_)
+        self.assertIn("Más información sobre la oposición", html_)
+        self.assertIn("https://smartiesconsultora.com.ar/oposicion/?e=AbC123xyz_-9", texto)
+        self.assertNotIn("~", texto)
+        self.assertNotIn(">~", html_)
+
+    def test_el_secundario_tiene_borde_y_el_principal_relleno(self):
+        _, html_, _ = self.render()
+        self.assertEqual(html_.count("border:2px solid #133465"), 1)           # solo el secundario
+        self.assertIn("wa.me/5491155890784", html_)                            # el principal sigue estando
+        principal = html_.index("Quiero asesorarme sobre la oposición")
+        secundario = html_.index("Más información sobre la oposición")
+        self.assertLess(principal, secundario)                                  # WhatsApp primero
+
+    def test_los_otros_botones_no_cambian(self):
+        import mails_core as mc
+        _, html_, _ = mc.render_prospecto("x", "[Ir](https://a.com)", {}, "T")
+        self.assertIn("background:#133465", html_)
+        self.assertNotIn("border:2px solid", html_)
+
+    def test_la_vista_previa_completa_el_codigo_de_ejemplo(self):
+        import mails_core as mc
+        d = mc.datos_de_ejemplo_web("prospecto_oposicion", {"marca": "X"})
+        self.assertEqual(d["marca"], "X")
+        self.assertTrue(d["codigo"])
+        self.assertEqual(mc.datos_de_ejemplo_web("prospecto_oposicion", None), None)
+
+    def test_el_codigo_valido_para_el_endpoint(self):
+        self.assertTrue(vc.CODIGO_RE.match("AbC123xyz_-9"))
+        import secrets
+        for _ in range(50):
+            self.assertTrue(vc.CODIGO_RE.match(secrets.token_urlsafe(9)))
+
+
 if __name__ == "__main__":
     unittest.main()

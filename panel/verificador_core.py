@@ -32,6 +32,7 @@ import similitud
 
 # ── Parámetros ────────────────────────────────────────────────────────────
 VALIDEZ_DIAS = 90            # cuánto tiempo vale el link de un resultado
+VALIDEZ_OPOSICION_DIAS = 180  # cuánto tiempo vale el link «Más información» del mail de oposición
 CACHE_HORAS = 24             # una misma marca no se vuelve a pedir a INPI en este tiempo
 UMBRAL_SIMILAR = 80          # puntaje (similitud.puntaje_nombres) desde el cual una marca es «parecida»
 UMBRAL_IDENTICA = 98         # 100 = mismo nombre, 98 = igual sin espacios

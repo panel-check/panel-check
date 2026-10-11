@@ -65,7 +65,7 @@ VARIABLES_PROSPECTO = {
     "total": "Solo en el mail del presupuesto: honorarios + tasas",
     "vigencia": "Solo en el mail del presupuesto: vigencia (p. ej. «10 días»)",
     "resultado": "Solo en el mail de confirmación de la web: frase con el resultado de la consulta en INPI",
-    "codigo": "Solo en el mail de confirmación de la web: código del resultado (para armar el link a la página de resultado)",
+    "codigo": "Código de este envío, para armar links a páginas de la web que muestran datos de la persona: «Más información» de la oposición (/oposicion/?e={{codigo}}) y, en el mail de confirmación de la web, el resultado (/resultado/?c={{codigo}})",
 }
 
 EJEMPLO_PROSPECTO = {
@@ -171,6 +171,10 @@ Desde Smarties Consultora puedo ayudarte a:
 Si querés avanzar, podés escribirme directamente desde este botón:
 
 [Quiero asesorarme sobre la oposición a mi marca](https://wa.me/""" + WHATSAPP_PAMELA + """?text=Hola, me contacto desde la marca {{marca}}, mi nombre es )
+
+Y si primero querés entender mejor de qué se trata, armamos una guía con las preguntas más frecuentes:
+
+[~Más información sobre la oposición](https://smartiesconsultora.com.ar/oposicion/?e={{codigo}})
 
 Saludos cordiales,
 Pamela Guzzardi
@@ -655,6 +659,7 @@ def _sustituir(texto: str, datos: dict, escapar: bool, para_url: bool = False) -
 
 
 # [texto](https://...) en el cuerpo: link; solo en su párrafo: botón.
+# Si el texto empieza con «~» ([~Más información](...)), el botón sale en versión secundaria (con borde, sin relleno).
 _RE_LINK_MD = re.compile(r"\[([^\]\n]+)\]\(((?:https?://|mailto:|tel:)[^)\s]*(?:\s[^)\n]*)?)\)")
 
 
@@ -666,11 +671,17 @@ def _url_link(url_cruda: str, datos: dict) -> str:
     return quote(u, safe=":/?&=#%+@.,;~-_!*'()")
 
 
+def _etiqueta_y_estilo(etiqueta: str) -> tuple:
+    """(texto sin la marca, es_secundario)."""
+    e = etiqueta.strip()
+    return (e[1:].strip(), True) if e.startswith("~") else (etiqueta, False)
+
+
 def _inline_html(crudo: str, datos: dict) -> str:
     partes, pos = [], 0
     for m in _RE_LINK_MD.finditer(crudo):
         partes.append(_texto_html(crudo[pos:m.start()], datos))
-        etiqueta = _sustituir(html.escape(m.group(1), quote=False), datos, escapar=True)
+        etiqueta = _sustituir(html.escape(_etiqueta_y_estilo(m.group(1))[0], quote=False), datos, escapar=True)
         partes.append(f'<a href="{html.escape(_url_link(m.group(2), datos))}" style="color:#1d4ed8">{etiqueta}</a>')
         pos = m.end()
     partes.append(_texto_html(crudo[pos:], datos))
@@ -688,11 +699,18 @@ def _bloque_html(bloque: str, datos: dict, simple: bool = False) -> str:
     # Botón: el párrafo es un único link (en el estilo simple queda como un link común).
     m = _RE_LINK_MD.fullmatch(bloque.strip())
     if m and not simple:
-        etiqueta = _sustituir(html.escape(m.group(1), quote=False), datos, escapar=True)
+        texto_boton, secundario = _etiqueta_y_estilo(m.group(1))
+        etiqueta = _sustituir(html.escape(texto_boton, quote=False), datos, escapar=True)
         url = html.escape(_url_link(m.group(2), datos))
+        if secundario:   # botón con borde y sin relleno: no le quita protagonismo al principal
+            celda = f'background:#ffffff;border:2px solid {COLOR_AZUL};border-radius:6px'
+            enlace = f'padding:11px 20px;color:{COLOR_AZUL}'
+        else:
+            celda = f'background:{COLOR_AZUL};border-radius:6px'
+            enlace = 'padding:13px 22px;color:#ffffff'
         return ('<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:6px 0 20px">'
-                f'<tr><td style="background:{COLOR_AZUL};border-radius:6px">'
-                f'<a href="{url}" style="display:inline-block;padding:13px 22px;color:#ffffff;text-decoration:none;'
+                f'<tr><td style="{celda}">'
+                f'<a href="{url}" style="display:inline-block;{enlace};text-decoration:none;'
                 f'font-weight:700;font-size:15px;font-family:Arial,Helvetica,sans-serif">{etiqueta}</a>'
                 '</td></tr></table>')
     # Subtítulo: "## Texto" solo en su párrafo.
@@ -718,7 +736,7 @@ def es_simple(clave: str) -> bool:
 
 def _texto_plano(cuerpo: str, datos: dict, simple: bool = False) -> str:
     def link(m):
-        etiqueta = _sustituir(m.group(1), datos, escapar=False)
+        etiqueta = _sustituir(_etiqueta_y_estilo(m.group(1))[0], datos, escapar=False)
         url = _url_link(m.group(2), datos)
         if simple:
             # «www.sitio.com (https://www.sitio.com)» se reduce a la URL; el resto, «texto (url)».
@@ -811,11 +829,14 @@ def datos_de_marca(cur, acta: str):
 
 
 def datos_de_ejemplo_web(clave: str, datos: dict | None) -> dict | None:
-    """En las plantillas del grupo «web» (confirmación de una consulta del verificador) las variables
-    {{resultado}} y {{codigo}} no salen de una marca de la base: se completan con las de ejemplo."""
-    if (CATALOGO.get(clave) or {}).get("grupo") != "web":
-        return datos
-    return {**EJEMPLO_PROSPECTO, **(datos or {})}
+    """{{codigo}} (y, en las plantillas del grupo «web», {{resultado}}) no salen de una marca de la base: en la vista
+    previa y en los tests se completan con las de ejemplo. En un envío real el código es el del envío."""
+    cat = CATALOGO.get(clave) or {}
+    if cat.get("grupo") == "web":
+        return {**EJEMPLO_PROSPECTO, **(datos or {})}
+    if datos is not None and cat.get("editable"):
+        return {"codigo": EJEMPLO_PROSPECTO["codigo"], **datos}
+    return datos
 
 
 def enviar_test(cuenta: str, remitente: str, responder_a: str, para: list, asunto: str, html_cuerpo: str, texto: str,
