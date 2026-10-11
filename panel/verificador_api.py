@@ -7,7 +7,7 @@ que está en otro dominio, por eso llevan CORS solo para ese sitio):
   GET  /api/publico/verificador/{codigo}             recupera un resultado guardado (vale 90 días)
   POST /api/publico/verificador/consulta-adicional   una pregunta extra sobre una marca ya verificada
   GET  /api/publico/verificador/oposicion/{codigo}   nombre de pila, marca y acta para la página de oposición de la web (el código viene en el mail)
-  GET  /api/publico/verificador/oposicion/{codigo}/opositoras   marca(s) del oponente y sus clases (sin fundamentos) para esa página
+  GET  /api/publico/verificador/oposicion/{codigo}/opositoras   quién se opuso (nombre del oponente y su marca con clases; sin fundamentos) para esa página
   OPTIONS /api/publico/verificador/...               la verificación previa (preflight) del navegador
 
 Del panel (con login, sección «Consultas web» del menú Más):
@@ -358,7 +358,7 @@ def crear_router(verificar_login, conexion) -> APIRouter:
             with rcur(conn) as cur:
                 cur.execute(
                     "SELECT COALESCE(NULLIF(m.denominacion_inpi, ''), m.denominacion) AS marca, m.titular, e.acta, "
-                    "m.actas_marca_oponente, m.marca_oponente_denominacion, m.fundamento_oposicion "
+                    "m.actas_marca_oponente, m.marca_oponente_denominacion, m.fundamento_oposicion, m.oponente_nombre "
                     "FROM mails_envios e LEFT JOIN marcas m ON m.acta = e.acta "
                     "WHERE e.token = %s AND e.clave_mail = 'prospecto_oposicion' "
                     "AND e.enviado_en > now() - make_interval(days => %s)",
@@ -382,17 +382,18 @@ def crear_router(verificar_login, conexion) -> APIRouter:
 
     @router.get("/api/publico/verificador/oposicion/{codigo}/opositoras")
     def oposicion_opositoras(codigo: str, request: Request):
-        """«¿Quién se opuso?» de la página de oposición: la marca del oponente y sus clases (oposicion_web), nunca los
-        fundamentos. Aparte del saludo porque, si las clases todavía no están guardadas, hay que pedirlas a INPI (puede demorar)."""
+        """«¿Quién se opuso?» de la página de oposición: el nombre de quien se opuso y, si se conoce, su marca con las clases
+        (oposicion_web); nunca los fundamentos, el documento ni el CUIT. Aparte del saludo porque, si las clases todavía no están guardadas, hay que pedirlas a INPI (puede demorar)."""
         f, error = _fila_oposicion(codigo, request)
         if error:
             return error
         import oposicion_web
         opositoras = oposicion_web.marcas_opositoras(dict(f), conexion, rcur)
-        if not opositoras:   # queda en el log de Railway para saber por qué la pregunta no aparece (sin datos personales)
+        oponente = oposicion_web.nombre_oponente(dict(f))
+        if not opositoras and not oponente:   # queda en el log de Railway para saber por qué la pregunta no aparece (sin datos personales)
             print(f"[oposicion] sin marca del oponente para mostrar: acta={f['acta']} actas_col={bool(f['actas_marca_oponente'])} "
-                  f"nombre_col={bool(f['marca_oponente_denominacion'])} fundamento={bool(f['fundamento_oposicion'])}")
-        return _json(request, {"opositoras": opositoras})
+                  f"nombre_col={bool(f['marca_oponente_denominacion'])} fundamento={bool(f['fundamento_oposicion'])} oponente={bool(f['oponente_nombre'])}")
+        return _json(request, {"oponente": oponente or None, "opositoras": opositoras})
 
     def _procesar_adicional(raw: dict, ip: str):
         if not _permitido("adicional", ip, ADICIONALES_POR_HORA):

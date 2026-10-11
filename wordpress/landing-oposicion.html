@@ -101,6 +101,7 @@
     .smo .smo-resp li { margin-bottom: 6px; }
     .smo .smo-resp b { color: var(--smo-azul); }
     .smo .smo-q[hidden] { display: none; }
+    .smo .smo-marcas[hidden] { display: none; }
     .smo .smo-marcas { list-style: none; padding: 0; display: grid; gap: 10px; }
     .smo .smo-marcas li { margin: 0; padding: 14px 18px; background: #fff; border: 1px solid var(--smo-turq); border-radius: 14px; display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 14px; }
     .smo .smo-marcas .smo-marca { font: 900 20px/1.2 var(--smo-titulo); color: var(--smo-azul); text-transform: uppercase; overflow-wrap: anywhere; }
@@ -175,12 +176,12 @@
           </div>
         </details>
 
-        <!-- Se muestra solo si el panel informa quién se opuso (marca y clases). Los fundamentos no se publican: son largos y los explicamos en la llamada. -->
+        <!-- Se muestra solo si el panel informa quién se opuso (nombre de quien presentó la oposición y/o su marca con clases). Los fundamentos no se publican: son largos y los explicamos en la llamada. -->
         <details class="smo-q" data-smo-quien hidden>
           <summary>¿Quién se opuso?</summary>
           <div class="smo-resp">
             <p data-smo-quien-intro></p>
-            <ul class="smo-marcas" data-smo-quien-lista></ul>
+            <ul class="smo-marcas" data-smo-quien-lista hidden></ul>
             <p>En la llamada revisamos juntos los fundamentos de la oposición y vemos qué se puede hacer.</p>
           </div>
         </details>
@@ -333,22 +334,29 @@
     }
 
     /* ── ¿Quién se opuso? (marca del oponente y sus clases; sin fundamentos) ── */
-    function quienSeOpuso(marcas) {
-      var q = $("[data-smo-quien]"), lista = $("[data-smo-quien-lista]");
-      if (!q || !marcas || !marcas.length) return;
+    function quienSeOpuso(d) {
+      var q = $("[data-smo-quien]"), lista = $("[data-smo-quien-lista]"), intro = $("[data-smo-quien-intro]");
+      if (!q || !d) return;
+      var quien = String(d.oponente || "").trim();
+      var marcas = (d.opositoras || []).filter(function (m) { return m && m.denominacion; }).slice(0, 6);
+      if (!quien && !marcas.length) return;
+      intro.textContent = "";
+      intro.appendChild(document.createTextNode(quien ? "La oposición la presentó " : "La oposición se basa en "));
+      if (quien) intro.appendChild(el("b", null, quien));
+      if (marcas.length) {
+        intro.appendChild(document.createTextNode((quien ? " y se basa en " : "") + (marcas.length > 1 ? "estas marcas" : "esta marca") + (quien ? " suya:" : " de quien se opuso:")));
+      } else {
+        intro.appendChild(document.createTextNode(/[.]$/.test(quien) ? "" : "."));
+      }
       lista.textContent = "";
-      marcas.slice(0, 6).forEach(function (m) {
-        if (!m || !m.denominacion) return;
+      marcas.forEach(function (m) {
         var li = el("li");
         li.appendChild(el("span", "smo-marca", String(m.denominacion)));
         var c = (m.clases || []).map(String);
         if (c.length) li.appendChild(el("span", "smo-clases", (c.length > 1 ? "Clases " : "Clase ") + c.join(", ")));
         lista.appendChild(li);
       });
-      if (!lista.children.length) return;
-      $("[data-smo-quien-intro]").textContent = lista.children.length > 1
-        ? "La oposición se basa en estas marcas de quien se opuso:"
-        : "La oposición se basa en esta marca de quien se opuso:";
+      lista.hidden = !marcas.length;
       q.hidden = false;
     }
 
@@ -370,7 +378,7 @@
     /* Aparte del saludo: si las clases no estaban guardadas el panel las pide a INPI y puede demorar. Si falla, la pregunta no aparece. */
     fetch(API + encodeURIComponent(codigo) + "/opositoras", { headers: { "Accept": "application/json" } })
       .then(function (r) { return r.ok ? r.json() : null; })
-      .then(function (d) { if (d) quienSeOpuso(d.opositoras); })
+      .then(function (d) { quienSeOpuso(d); })
       .catch(function () {});
   })();
   </script>
