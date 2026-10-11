@@ -796,7 +796,7 @@ function anPintarLote() {
   lista.innerHTML = anFilas.map(r => {
     const e = anEstado[r.acta] || {};
     const marca = anUnico ? "" : (e.tiene_texto ? '<span class="nota">con análisis escrito</span>' : '<span class="nota">sin análisis escrito</span>');
-    return `<label class="an-lote-item"><input type="checkbox" value="${mlEsc(r.acta)}"${anSel.has(r.acta) ? " checked" : ""}> <span>${mlEsc(mlNombreMarca(r))} · acta ${mlEsc(r.acta)} · clase ${mlEsc(r.clase ?? "—")}</span> ${marca}</label>`;
+    return `<label class="an-lote-item"><input type="checkbox" value="${mlEsc(r.acta)}"${anSel.has(r.acta) ? " checked" : ""}> <span>${mlEsc(anEtiquetaMarca(r))}</span> ${marca}</label>`;
   }).join("");
   document.getElementById("an-lote-unico").checked = anUnico;
   const fa = anFilas.find(r => r.acta === anActa);
@@ -956,6 +956,13 @@ async function anAnularLink() {
   } catch (e) { anMsg("No se pudo anular: " + e.message, false); }
 }
 
+// «SEPIA · acta 4788267 · clase 42 (con oposición)»: así se distingue a simple vista cuál
+// de las marcas del titular es la que tiene la oposición (la que se analiza). Lo usan el
+// selector de arriba y la lista del PDF con varias marcas.
+function anEtiquetaMarca(r) {
+  return `${mlNombreMarca(r)} · acta ${r.acta} · clase ${r.clase ?? "—"}${mlEsOposicion(r) ? " (con oposición)" : ""}`;
+}
+
 function anIniciar(filas) {
   anFilas = filas;
   const box = document.getElementById("an-box");
@@ -964,10 +971,15 @@ function anIniciar(filas) {
   if (!filas.length) return;
   const sel = document.getElementById("an-marca");
   const actual = sel.value;
-  sel.innerHTML = filas.map(r => `<option value="${mlEsc(r.acta)}">${mlEsc(mlNombreMarca(r))} · acta ${mlEsc(r.acta)} · clase ${mlEsc(r.clase ?? "—")}</option>`).join("");
+  sel.innerHTML = filas.map(r => `<option value="${mlEsc(r.acta)}">${mlEsc(anEtiquetaMarca(r))}</option>`).join("");
   if (actual && filas.some(r => r.acta === actual)) sel.value = actual;
-  // Desde el botón «Generar análisis de marca» del Calendario: …/titular/<clave>?acta=N#analisis
-  if (!anIniciado && ACTA_PEDIDA && filas.some(r => r.acta === ACTA_PEDIDA)) sel.value = ACTA_PEDIDA;
+  if (!anIniciado) {
+    // Desde el botón «Generar análisis de marca» del Calendario: …/titular/<clave>?acta=N#analisis
+    // (esa marca manda). Si no, arranca elegida la marca con oposición (la primera, si hay varias).
+    const conOposicion = filas.find(mlEsOposicion);
+    if (ACTA_PEDIDA && filas.some(r => r.acta === ACTA_PEDIDA)) sel.value = ACTA_PEDIDA;
+    else if (conOposicion) sel.value = conOposicion.acta;
+  }
   if (!anIniciado) {
     anIniciado = true;
     sel.addEventListener("change", () => anCargar(sel.value));
