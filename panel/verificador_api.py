@@ -358,7 +358,7 @@ def crear_router(verificar_login, conexion) -> APIRouter:
             with rcur(conn) as cur:
                 cur.execute(
                     "SELECT COALESCE(NULLIF(m.denominacion_inpi, ''), m.denominacion) AS marca, m.titular, e.acta, "
-                    "m.actas_marca_oponente, m.marca_oponente_denominacion "
+                    "m.actas_marca_oponente, m.marca_oponente_denominacion, m.fundamento_oposicion "
                     "FROM mails_envios e LEFT JOIN marcas m ON m.acta = e.acta "
                     "WHERE e.token = %s AND e.clave_mail = 'prospecto_oposicion' "
                     "AND e.enviado_en > now() - make_interval(days => %s)",
@@ -388,7 +388,11 @@ def crear_router(verificar_login, conexion) -> APIRouter:
         if error:
             return error
         import oposicion_web
-        return _json(request, {"opositoras": oposicion_web.marcas_opositoras(dict(f), conexion, rcur)})
+        opositoras = oposicion_web.marcas_opositoras(dict(f), conexion, rcur)
+        if not opositoras:   # queda en el log de Railway para saber por qué la pregunta no aparece (sin datos personales)
+            print(f"[oposicion] sin marca del oponente para mostrar: acta={f['acta']} actas_col={bool(f['actas_marca_oponente'])} "
+                  f"nombre_col={bool(f['marca_oponente_denominacion'])} fundamento={bool(f['fundamento_oposicion'])}")
+        return _json(request, {"opositoras": opositoras})
 
     def _procesar_adicional(raw: dict, ip: str):
         if not _permitido("adicional", ip, ADICIONALES_POR_HORA):
