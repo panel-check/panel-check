@@ -88,6 +88,15 @@
     .smr .smr-lista { list-style: none; margin: 22px 0 0; padding: 0; display: grid; gap: 8px; max-width: 680px; }
     .smr .smr-lista li { display: flex; justify-content: space-between; gap: 12px; padding: 11px 16px; background: rgba(255,255,255,.1); border: 1px solid rgba(92,255,225,.35); border-radius: 12px; color: #fff; font-weight: 700; line-height: 1.3; }
     .smr .smr-lista span { white-space: nowrap; font-weight: 600; color: var(--smr-turq); }
+    .smr .smr-regalo { display: flex; gap: 16px; align-items: flex-start; max-width: 680px; margin-top: 24px; padding: 20px 22px;
+      background: rgba(92,255,225,.12); border: 2px solid var(--smr-turq); border-radius: 20px; box-shadow: 0 0 0 5px rgba(92,255,225,.08); }
+    .smr .smr-regalo .ico { flex: none; display: flex; align-items: center; justify-content: center; width: 48px; height: 48px; border-radius: 14px; background: var(--smr-turq); }
+    .smr .smr-regalo .ico svg { width: 26px; height: 26px; fill: none; stroke: var(--smr-azul); stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+    .smr .smr-regalo .tag { display: inline-block; margin-bottom: 8px; padding: 4px 12px; border-radius: 20px; background: var(--smr-turq); color: var(--smr-azul); font: 800 12px/1.3 var(--smr-titulo); letter-spacing: .1em; text-transform: uppercase; }
+    .smr .smr-regalo h3 { font: 800 clamp(19px, 2.8vw, 24px)/1.2 var(--smr-titulo); color: #fff; margin: 0 0 8px; }
+    .smr .smr-regalo p { margin: 0; font-size: 16px; line-height: 1.55; color: #e6e8ff; }
+    .smr .smr-regalo p b { color: var(--smr-turq); }
+    .smr .smr-regalo .peq { margin-top: 8px; font-size: 14px; color: #b9bdea; }
     .smr .smr-nota { margin-top: 14px; font-size: 14px; line-height: 1.5; color: #b9bdea; max-width: 680px; }
     .smr .smr-acciones { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 28px; }
     .smr .smr-cargando, .smr .smr-sin { text-align: center; padding: 20px 0; }
@@ -164,6 +173,7 @@
       .smr .smr-bene { grid-template-columns: 1fr; }
     }
     @media (max-width: 640px) {
+      .smr .smr-regalo { flex-direction: column; gap: 12px; padding: 18px 18px; }
       .smr { font-size: 16px; }
       .smr .smr-caja { padding: 0 20px; }
       .smr .smr-hero { padding: calc(var(--smr-header) + 28px) 0 56px; min-height: 0; }
@@ -212,6 +222,15 @@
           <h2 class="smr-titular" data-smr-titular></h2>
           <p class="smr-lead" data-smr-lead></p>
           <ul class="smr-lista" data-smr-lista hidden></ul>
+          <aside class="smr-regalo" data-smr-regalo>
+            <span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 5h16v14H4z"/><path d="M4 7l8 6 8-6"/></svg></span>
+            <div>
+              <span class="tag">Sin cargo</span>
+              <h3>Vamos a prepararte un análisis preliminar de tu marca, sin cargo</h3>
+              <p>Nuestro equipo revisa tu nombre con más detalle (clases que corresponden a tu actividad y posibles conflictos) y <b>te lo enviamos por mail en los próximos días</b>.</p>
+              <p class="peq">Te mandamos un mail de confirmación con este resultado. Si no lo ves, revisá la carpeta de spam.</p>
+            </div>
+          </aside>
           <p class="smr-nota" data-smr-nota></p>
           <div class="smr-acciones">
             <a class="smr-btn pri" data-smr-wa href="#" target="_blank" rel="noopener">

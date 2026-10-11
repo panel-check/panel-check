@@ -611,7 +611,10 @@ CREATE TABLE IF NOT EXISTS verificaciones_marca (
     revisado_por     TEXT,
     revisado_en      TIMESTAMPTZ,
     aviso_enviado_en TIMESTAMPTZ,
-    aviso_error      TEXT
+    aviso_error      TEXT,
+    -- Mail de confirmación a la persona (plantilla «consulta_web_confirmacion» de Más → Mails).
+    confirmacion_enviada_en TIMESTAMPTZ,
+    confirmacion_error      TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_verif_marca_creada ON verificaciones_marca(creada_en DESC);
 

@@ -362,6 +362,45 @@ def armar_mail_adicional(c: dict, marca: str, codigo: str, panel_url: str) -> tu
     return cuerpo, texto
 
 
+# ── Mail de confirmación a la persona ────────────────────────────────────
+CLAVE_MAIL_CONFIRMACION = "consulta_web_confirmacion"
+CONFIRMACIONES_MAX_24H = 5   # tope de confirmaciones a un mismo mail por día (evita que usen el form para mandarle mails a otro)
+
+FRASE_RESULTADO = {
+    "disponible": "Resultado: no encontramos en INPI marcas con un nombre igual o parecido. Es un primer paso: conviene confirmarlo por clase y actividad.",
+    "con_similares": "Resultado: encontramos en INPI marcas con nombres parecidos. Eso no significa que no puedas registrarla: depende de la clase y de la actividad.",
+    "no_disponible": "Resultado: encontramos en INPI una marca con el mismo nombre. Según la clase y la actividad puede haber alternativas.",
+    "error": "Hoy no pudimos consultar INPI desde la web, así que vamos a revisar tu marca a mano y te avisamos.",
+}
+
+
+def frase_resultado(veredicto: str) -> str:
+    return FRASE_RESULTADO.get(veredicto) or FRASE_RESULTADO["error"]
+
+
+def nombre_de_pila(nombre: str) -> str:
+    """Primera palabra de lo que escribió la persona («Tomás Pérez» → «Tomás»); «TOMAS» → «Tomas». Vacío si no hay un nombre usable."""
+    palabras = (nombre or "").split()
+    if not palabras:
+        return ""
+    p = palabras[0].strip(".,;:")
+    if not p or any(c.isdigit() for c in p):
+        return ""
+    return p.capitalize() if (p.isupper() or p.islower()) else p
+
+
+def datos_confirmacion(v: dict) -> dict:
+    """Variables de la plantilla de confirmación a partir de la fila de verificaciones_marca."""
+    return {
+        "nombre": nombre_de_pila(v.get("nombre") or ""),
+        "destinatario": nombre_de_pila(v.get("nombre") or ""),
+        "titular": v.get("nombre") or "",
+        "marca": v.get("marca") or "",
+        "resultado": frase_resultado(v.get("veredicto") or ""),
+        "codigo": v.get("codigo") or "",
+    }
+
+
 # ── Tablas ────────────────────────────────────────────────────────────────
 def crear_tablas(cur):
     """Idempotente."""
@@ -395,6 +434,8 @@ def crear_tablas(cur):
         )
         """
     )
+    cur.execute("ALTER TABLE verificaciones_marca ADD COLUMN IF NOT EXISTS confirmacion_enviada_en TIMESTAMPTZ")
+    cur.execute("ALTER TABLE verificaciones_marca ADD COLUMN IF NOT EXISTS confirmacion_error TEXT")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_verif_marca_creada ON verificaciones_marca(creada_en DESC)")
     cur.execute(
         """

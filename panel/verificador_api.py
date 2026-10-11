@@ -187,6 +187,44 @@ def crear_router(verificar_login, conexion) -> APIRouter:
         except Exception as e:  # noqa: BLE001
             print(f"[verificador] aviso de la consulta {vid} no enviado: {e}")
 
+    def _confirmacion_consulta(vid: int):
+        """Mail a la persona que completó el formulario (plantilla editable en Más → Mails). Nunca rompe la consulta:
+        si falla, el motivo queda en la ficha del panel."""
+        error = None
+        try:
+            with conexion() as conn:
+                with rcur(conn) as cur:
+                    cur.execute("SELECT * FROM verificaciones_marca WHERE id = %s", (vid,))
+                    v = cur.fetchone()
+                    if not v or not v.get("email"):
+                        return
+                    cur.execute(
+                        "SELECT COUNT(*) AS n FROM verificaciones_marca WHERE lower(email) = lower(%s) AND id <> %s "
+                        "AND confirmacion_enviada_en > now() - interval '24 hours'", (v["email"], vid))
+                    previas = cur.fetchone()["n"]
+                    cur.execute("SELECT * FROM mails_config WHERE clave = %s", (vc.CLAVE_MAIL_CONFIRMACION,))
+                    guardada = cur.fetchone() or {}
+            if previas >= vc.CONFIRMACIONES_MAX_24H:
+                error = f"No se mandó: ya se enviaron {previas} confirmaciones a este mail en las últimas 24 hs."
+            else:
+                cfg = mails_core.combinar(vc.CLAVE_MAIL_CONFIRMACION, guardada)
+                asunto, cuerpo_html, texto = mails_core.render_prospecto(
+                    cfg["asunto"], cfg["cuerpo"], vc.datos_confirmacion(v), cfg.get("encabezado"),
+                    simple=mails_core.es_simple(vc.CLAVE_MAIL_CONFIRMACION))
+                mails_core.enviar(cfg["cuenta"], cfg["remitente"], cfg["responder_a"], [v["email"]], asunto, cuerpo_html, texto)
+        except Exception as e:  # noqa: BLE001 — la consulta ya está guardada y respondida
+            error = str(e)[:500]
+            print(f"[verificador] confirmación de la consulta {vid} no enviada: {e}")
+        try:
+            with conexion() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "UPDATE verificaciones_marca SET confirmacion_enviada_en = CASE WHEN %s IS NULL THEN now() END, "
+                        "confirmacion_error = %s WHERE id = %s", (error, error, vid))
+                conn.commit()
+        except Exception as e:  # noqa: BLE001
+            print(f"[verificador] no se pudo anotar la confirmación de la consulta {vid}: {e}")
+
     def _aviso_adicional(cid: int):
         try:
             with conexion() as conn:
@@ -282,6 +320,7 @@ def crear_router(verificar_login, conexion) -> APIRouter:
         status, cuerpo, vid = await run_in_threadpool(_procesar_consulta, raw, ip, origen)
         if vid:
             background.add_task(_aviso_consulta, vid)
+            background.add_task(_confirmacion_consulta, vid)
         return _json(request, cuerpo, status)
 
     @router.get("/api/publico/verificador/{codigo}")
@@ -361,6 +400,7 @@ def crear_router(verificar_login, conexion) -> APIRouter:
                     f"""
                     SELECT v.id, v.codigo, v.creada_en, v.marca, v.actividad, v.nombre, v.email, v.telefono, v.web,
                            v.veredicto, v.exactos, v.similares, v.estado, v.desde_cache, v.error, v.aviso_enviado_en, v.aviso_error,
+                           v.confirmacion_enviada_en, v.confirmacion_error,
                            (SELECT COUNT(*) FROM verificaciones_marca_consultas c WHERE c.verificacion_id = v.id) AS adicionales
                     FROM verificaciones_marca v {donde}
                     ORDER BY v.creada_en DESC LIMIT 500

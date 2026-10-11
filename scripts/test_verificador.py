@@ -274,5 +274,71 @@ class Mails(unittest.TestCase):
         self.assertTrue(rx.search(vc.asunto_adicional("Mi Marca")))
 
 
+class Confirmacion(unittest.TestCase):
+    """Mail que recibe la persona al completar el formulario (plantilla «consulta_web_confirmacion»)."""
+
+    def fila(self, **kw):
+        base = {"marca": "Todo Tenis Inclusivo", "nombre": "TOMAS PEREZ", "veredicto": "disponible", "codigo": "V5enrbdPdLad",
+                "email": "tomas@x.com"}
+        base.update(kw)
+        return base
+
+    def render(self, v):
+        import mails_core as mc
+        cat = mc.CATALOGO[vc.CLAVE_MAIL_CONFIRMACION]
+        return mc.render_prospecto(cat["asunto"], cat["cuerpo"], vc.datos_confirmacion(v), cat["encabezado"], simple=mc.es_simple(vc.CLAVE_MAIL_CONFIRMACION))
+
+    def test_la_plantilla_es_valida_y_no_va_a_los_leads(self):
+        import mails_core as mc
+        cat = mc.CATALOGO[vc.CLAVE_MAIL_CONFIRMACION]
+        self.assertEqual(cat["grupo"], "web")           # no aparece entre las plantillas para mandar a leads
+        self.assertTrue(cat["editable"])
+        mc.validar_config(vc.CLAVE_MAIL_CONFIRMACION, {"cuenta": cat["cuenta"], "remitente": cat["remitente"], "responder_a": cat["responder_a"],
+                                                      "asunto": cat["asunto"], "cuerpo": cat["cuerpo"], "encabezado": cat["encabezado"]})
+
+    def test_mail_con_el_resultado_el_link_y_el_analisis_sin_cargo(self):
+        asunto, html_, texto = self.render(self.fila())
+        self.assertIn("Todo Tenis Inclusivo", asunto)
+        for esperado in ["Hola Tomas:", "sin cargo", "en los próximos días", "https://smartiesconsultora.com.ar/resultado/?c=V5enrbdPdLad",
+                         "no encontramos en INPI marcas con un nombre igual o parecido"]:
+            self.assertIn(esperado, html_.replace("<strong>", "").replace("</strong>", ""))
+        self.assertIn("sin cargo", texto)
+        self.assertNotIn("{{", html_ + texto + asunto)
+
+    def test_cada_resultado_tiene_su_frase(self):
+        for ver in ("disponible", "con_similares", "no_disponible", "error", "pendiente", None):
+            self.assertTrue(vc.frase_resultado(ver))
+        self.assertNotEqual(vc.frase_resultado("disponible"), vc.frase_resultado("no_disponible"))
+        self.assertIn("a mano", vc.frase_resultado("error"))
+
+    def test_nombre_de_pila(self):
+        self.assertEqual(vc.nombre_de_pila("Tomás Pérez"), "Tomás")
+        self.assertEqual(vc.nombre_de_pila("TOMAS"), "Tomas")
+        self.assertEqual(vc.nombre_de_pila("ana maría"), "Ana")
+        self.assertEqual(vc.nombre_de_pila(""), "")
+        self.assertEqual(vc.nombre_de_pila("1234 abc"), "")
+
+    def test_sin_nombre_el_saludo_sale_sin_coma(self):
+        _, html_, _ = self.render(self.fila(nombre=""))
+        self.assertIn("Hola:", html_)
+
+    def test_nada_de_lo_que_escribe_la_persona_se_ejecuta(self):
+        mal = "<script>alert(1)</script>"
+        asunto, html_, texto = self.render(self.fila(marca=mal, nombre=mal))
+        self.assertNotIn("<script>", html_)
+
+    def test_el_asunto_se_reconoce_en_enviados(self):
+        import mails_core as mc
+        asunto, _, _ = self.render(self.fila())
+        self.assertEqual(mc.tipo_por_asunto(asunto, "prospectos"), vc.CLAVE_MAIL_CONFIRMACION)
+
+    def test_datos_de_ejemplo_solo_para_el_grupo_web(self):
+        import mails_core as mc
+        d = mc.datos_de_ejemplo_web(vc.CLAVE_MAIL_CONFIRMACION, {"marca": "Real", "nombre": "Ana"})
+        self.assertEqual(d["marca"], "Real")
+        self.assertTrue(d["codigo"] and d["resultado"])
+        self.assertIsNone(mc.datos_de_ejemplo_web("prospecto_oposicion", None))
+
+
 if __name__ == "__main__":
     unittest.main()

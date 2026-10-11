@@ -527,6 +527,7 @@ def crear_router(verificar_login, verificar_admin, conexion, registrar_en_crm=No
             if body.encabezado is not None:
                 cfg["encabezado"] = " ".join(body.encabezado.split())[:60] or mc.CATALOGO[clave].get("encabezado")
         datos = _datos_marca(body.acta) if mc.CATALOGO[clave].get("editable") else None
+        datos = mc.datos_de_ejemplo_web(clave, datos)
         tipo_pres = mc.CATALOGO[clave].get("adjunto")
         if tipo_pres:
             # Montos y vigencia reales (los guardados + lo que haya escrito en pantalla) en vez de los de ejemplo.
@@ -556,7 +557,7 @@ def crear_router(verificar_login, verificar_admin, conexion, registrar_en_crm=No
             mc.validar_dominio(v["cuenta"], v["remitente"])
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
-        datos = _datos_marca(body.acta) or mc.EJEMPLO_PROSPECTO
+        datos = mc.datos_de_ejemplo_web(clave, _datos_marca(body.acta)) or mc.EJEMPLO_PROSPECTO
         adjuntos = None
         if mc.CATALOGO[clave].get("adjunto"):
             # La prueba lleva también el PDF, con lo que hay en pantalla (lo que falte de transferencia sale como «—»).

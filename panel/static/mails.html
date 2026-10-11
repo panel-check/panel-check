@@ -249,7 +249,7 @@ function nombreCuenta(id) {
 }
 
 function pintarLista() {
-  const grupos = [["prospectos", "Prospectos"], ["interno", "Avisos internos"]];
+  const grupos = [["prospectos", "Prospectos"], ["web", "Consultas de la web"], ["interno", "Avisos internos"]];
   document.getElementById("lista").innerHTML = grupos.map(([g, titulo]) => {
     const items = datos.mails.filter(m => m.grupo === g).map(m => `
       <button type="button" class="item-mail ${m.clave === actual ? "activo" : ""}" data-clave="${esc(m.clave)}">
