@@ -10,12 +10,15 @@
        estira a todo el ancho de la pantalla.
     4. Publicar. Para probarla antes de conectarla al home, hacer una consulta en el home y copiar el código
        del resultado, o abrir /resultado/?c=<código de una consulta que figure en Más → Consultas web>.
-    5. Recién entonces, en el bloque del home (verificador-home.html) poner  REDIRECT_URL = "/resultado/"
-       para que, al enviar, la persona pase a esta página (llega como /resultado/?c=<código>).
+    5. En el bloque del home (verificador-home.html), REDIRECT_URL tiene que ser la dirección de ESTA página
+       (hoy "/busqueda-de-marca/"). Al enviar el formulario, el home guarda los datos en el navegador y pasa enseguida
+       acá: esta página hace la consulta a INPI mostrando una barra de progreso y, cuando termina, muestra el resultado
+       y deja la dirección como ?c=<código> (se puede recargar o compartir).
 
-  QUÉ HACE: lee el código de la dirección (?c=...), pide el resultado a
-  https://panel.registrodemimarca.com.ar/api/publico/verificador/<código> (válido 90 días) y lo muestra con
-  una explicación, el paso a paso del trámite y formas de contacto (WhatsApp y consulta por mail, que llega al panel).
+  QUÉ HACE: de dos maneras. (1) Viene del formulario del home: toma los datos guardados en el navegador, los manda
+  a https://panel.registrodemimarca.com.ar/api/publico/verificador/consulta mientras muestra una barra de progreso,
+  y muestra el resultado. (2) Link con ?c=<código>: pide el resultado guardado (válido 90 días) y lo muestra.
+  En los dos casos agrega una explicación, el paso a paso del trámite y formas de contacto (WhatsApp y consulta por mail, que llega al panel).
   Estilo: manual de marca (azul #161250, celeste #0095FF, turquesa #5CFFE1, gris #606060, tramas de cuadrados)
   y estructura del sitio (títulos en mayúsculas, tarjetas redondeadas con borde turquesa, botones píldora).
 
@@ -88,6 +91,14 @@
     .smr .smr-nota { margin-top: 14px; font-size: 14px; line-height: 1.5; color: #b9bdea; max-width: 680px; }
     .smr .smr-acciones { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 28px; }
     .smr .smr-cargando, .smr .smr-sin { text-align: center; padding: 20px 0; }
+    .smr .smr-barra { position: relative; width: 100%; max-width: 520px; height: 16px; margin: 26px auto 0; border-radius: 27px; background: rgba(255,255,255,.12); border: 1px solid rgba(92,255,225,.5); overflow: hidden; }
+    .smr .smr-relleno { position: relative; height: 100%; width: 0; border-radius: 27px; overflow: hidden; background: linear-gradient(90deg, #0095ff, #5cffe1); transition: width .6s ease-out; }
+    .smr .smr-relleno::after { content: ""; position: absolute; inset: 0; background: linear-gradient(90deg, transparent, rgba(255,255,255,.6), transparent); transform: translateX(-100%); animation: smr-brillo 1.4s ease-in-out infinite; }
+    @keyframes smr-brillo { to { transform: translateX(100%); } }
+    .smr .smr-etapa { margin-top: 16px; min-height: 26px; font: 700 17px/1.5 var(--smr-texto); color: var(--smr-turq); }
+    .smr .smr-carga-nota { margin-top: 4px; font-size: 14px; line-height: 1.5; color: #b9bdea; }
+    .smr .smr-hero.is-carga .smr-trama i { animation: smr-pulso 1.8s ease-in-out infinite; animation-delay: calc(var(--i, 0) * 80ms); }
+    @keyframes smr-pulso { 0%, 100% { opacity: 1; } 50% { opacity: .3; } }
     .smr .smr-cargando .smr-sello, .smr .smr-sin .smr-sello { margin: 0 auto 18px; }
     .smr .smr-sin .smr-titular { margin-bottom: 10px; }
     .smr .smr-sin .smr-lead { margin: 0 auto; }
@@ -144,7 +155,7 @@
     .smr .smr-anillo { transform-origin: 60px 60px; }
     .smr .smr-cargando .smr-anillo { animation: smr-giro 1.6s linear infinite; }
     @keyframes smr-giro { to { transform: rotate(360deg); } }
-    @media (prefers-reduced-motion: reduce) { .smr .smr-cargando .smr-anillo { animation: none; } .smr .smr-btn { transition: none; } }
+    @media (prefers-reduced-motion: reduce) { .smr .smr-cargando .smr-anillo, .smr .smr-relleno::after, .smr .smr-hero.is-carga .smr-trama i { animation: none; } .smr .smr-btn, .smr .smr-relleno { transition: none; } }
 
     @media (max-width: 900px) {
       .smr .smr-tarjetas { grid-template-columns: 1fr; }
@@ -173,8 +184,13 @@
 
       <div class="smr-cargando" data-smr-cargando>
         <div class="smr-sello" data-smr-sello-carga></div>
-        <p class="smr-eyebrow">Un momento</p>
-        <h1 class="smr-titular">Cargando tu resultado…</h1>
+        <p class="smr-eyebrow" data-smr-carga-eyebrow>Un momento</p>
+        <h1 class="smr-titular" data-smr-carga-titulo>Cargando tu resultado…</h1>
+        <div class="smr-barra" data-smr-barra role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-label="Progreso de la consulta">
+          <div class="smr-relleno" data-smr-relleno></div>
+        </div>
+        <p class="smr-etapa" data-smr-etapa aria-live="polite"></p>
+        <p class="smr-carga-nota" data-smr-carga-nota></p>
       </div>
 
       <div class="smr-sin" data-smr-sin hidden>
@@ -285,7 +301,8 @@
     /* ── Configuración ─────────────────────────────────────────────── */
     var API = "https://panel.registrodemimarca.com.ar/api/publico/verificador";
     var WHATSAPP = "5491155890784";
-    var HOME_URL = "/";            /* adónde lleva «Verificar otra marca» (+ #inicio) */
+    var HOME_URL = "/";            /* adónde lleva «Verificar mi marca» (+ #inicio) */
+    var PENDIENTE = "smv_pendiente"; /* clave con la que el formulario del home deja los datos (sessionStorage) */
 
     var raiz = document.getElementById("smr");
     if (!raiz || raiz.getAttribute("data-smr-listo")) return;
@@ -302,6 +319,7 @@
       filas.forEach(function (f) {
         for (var i = 0; i < 8; i++) {
           var c = f.charAt(i), cuadro = document.createElement("i");
+          cuadro.style.setProperty("--i", i + filas.indexOf(f) * 2);
           if (c !== ".") cuadro.className = "t-" + c;
           cont.appendChild(cuadro);
         }
@@ -312,7 +330,7 @@
 
     /* ── Sello: anillo de «carga» con ícono (símbolo de la marca) ───── */
     var ICONOS = {
-      carga: '<path d="M44 52c0-6 5-10 11-10h9c9 0 11 8 4 12l-14 8c-7 4-5 12 4 12h9c6 0 11-4 11-10" fill="none" stroke="#fff" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" opacity=".9"/>',
+      carga: '<g transform="rotate(32 60 60)" fill="none" stroke="#fff" stroke-width="5.5" stroke-linejoin="round" opacity=".92"><rect x="34" y="47" width="36" height="17" rx="8.5"/><rect x="50" y="58" width="36" height="17" rx="8.5"/></g>',
       ok: '<path d="M40 61l14 14 27-30" fill="none" stroke="#5cffe1" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>',
       aviso: '<path d="M60 38v28" stroke="#ffd166" stroke-width="7" stroke-linecap="round"/><circle cx="60" cy="82" r="4.2" fill="#ffd166"/>',
       mal: '<path d="M43 43l34 34M77 43L43 77" stroke="#ff7a8a" stroke-width="7" stroke-linecap="round"/>',
@@ -329,7 +347,9 @@
     sello($("[data-smr-sello-carga]"), "carga");
 
     /* ── Estado de la pantalla ─────────────────────────────────────── */
+    var hero = $(".smr-hero");
     function ver(cual) {
+      hero.classList.toggle("is-carga", cual === "carga");
       $("[data-smr-cargando]").hidden = cual !== "carga";
       $("[data-smr-sin]").hidden = cual !== "sin";
       $("[data-smr-res]").hidden = cual !== "res";
@@ -395,21 +415,72 @@
       ver("res");
     }
 
+    /* ── Barra de progreso (la consulta a INPI puede tardar hasta un minuto) ── */
+    var barra = $("[data-smr-barra]"), relleno = $("[data-smr-relleno]"), etapa = $("[data-smr-etapa]"),
+        cargaTitulo = $("[data-smr-carga-titulo]"), cargaEyebrow = $("[data-smr-carga-eyebrow]"), cargaNota = $("[data-smr-carga-nota]");
+    var reloj = null;
+    function etapaDe(p) {
+      return p < 14 ? "Conectando con la base de INPI…" : p < 42 ? "Buscando marcas idénticas…" : p < 68 ? "Comparando nombres parecidos…" : "Preparando tu resultado…";
+    }
+    function progreso(p) {
+      relleno.style.width = p + "%";
+      barra.setAttribute("aria-valuenow", String(Math.round(p)));
+      etapa.textContent = p >= 100 ? "¡Listo!" : etapaDe(p);
+    }
+    function arrancarBarra(eyebrow, titulo, nota) {
+      cargaEyebrow.textContent = eyebrow; cargaTitulo.textContent = titulo; cargaNota.textContent = nota || "";
+      var t0 = Date.now(); progreso(3); clearInterval(reloj);
+      /* sube rápido al principio y se frena cerca del final: nunca llega a 100 hasta tener la respuesta */
+      reloj = setInterval(function () { progreso(Math.max(3, 94 * (1 - Math.exp(-(Date.now() - t0) / 20000)))); }, 250);
+    }
+    function terminarBarra(luego) { clearInterval(reloj); progreso(100); setTimeout(luego, 800); }
+    function cortarBarra() { clearInterval(reloj); }
+    function json(r) { return r.json().catch(function () { return {}; }).then(function (j) { return { ok: r.ok, status: r.status, json: j }; }); }
+
+    /* ── Qué mostrar: resultado guardado (?c=) o consulta recién enviada desde el home ── */
     var codigo = (new URLSearchParams(window.location.search).get("c") || "").trim();
-    if (!/^[A-Za-z0-9_-]{6,40}$/.test(codigo)) {
-      sinConsulta("Todavía no hay una consulta para mostrar", "Para ver el resultado, verificá tu marca desde la página principal: lleva menos de un minuto.");
-    } else {
+    var pend = null;
+    try {
+      var guardado = window.sessionStorage.getItem(PENDIENTE);
+      if (guardado) { window.sessionStorage.removeItem(PENDIENTE); pend = JSON.parse(guardado); }
+    } catch (e) { pend = null; }
+    if (pend && (!pend.datos || !pend.datos.lead || !pend.ts || Date.now() - pend.ts > 240000)) pend = null;
+
+    if (/^[A-Za-z0-9_-]{6,40}$/.test(codigo)) {
       ctx.id = codigo;
+      arrancarBarra("Un momento", "Cargando tu resultado…", "");
       var ctl = new AbortController(), t = setTimeout(function () { ctl.abort(); }, 20000);
       fetch(API + "/" + encodeURIComponent(codigo), { signal: ctl.signal })
-        .then(function (r) { return r.json().catch(function () { return {}; }).then(function (j) { return { ok: r.ok, status: r.status, json: j }; }); })
+        .then(json)
         .then(function (r) {
-          if (r.ok && r.json && r.json.public) mostrar(r.json);
-          else if (r.status === 404) sinConsulta();
-          else sinConsulta("No pudimos cargar tu resultado", "Probá de nuevo en un momento. Si sigue sin cargar, escribinos y te lo pasamos.");
+          if (r.ok && r.json && r.json.public) terminarBarra(function () { mostrar(r.json); });
+          else { cortarBarra(); if (r.status === 404) sinConsulta(); else sinConsulta("No pudimos cargar tu resultado", "Probá de nuevo en un momento. Si sigue sin cargar, escribinos y te lo pasamos."); }
         })
-        .catch(function () { sinConsulta("No pudimos cargar tu resultado", "Revisá tu conexión y recargá la página. Si sigue sin cargar, escribinos y te lo pasamos."); })
+        .catch(function () { cortarBarra(); sinConsulta("No pudimos cargar tu resultado", "Revisá tu conexión y recargá la página. Si sigue sin cargar, escribinos y te lo pasamos."); })
         .finally(function () { clearTimeout(t); });
+    } else if (pend) {
+      var d = pend.datos, marca = d.lead.marca || "";
+      arrancarBarra("Consultando INPI", "Estamos buscando «" + marca + "»", "Puede tardar hasta un minuto. No cierres esta página.");
+      var ctl2 = new AbortController(), t2 = setTimeout(function () { ctl2.abort(); }, 110000);
+      fetch(API + "/consulta", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(d), signal: ctl2.signal })
+        .then(json)
+        .then(function (r) {
+          if (r.ok && r.json && r.json.public) {
+            ctx.id = r.json.consultaId || "";
+            if (ctx.id) { try { window.history.replaceState(null, "", window.location.pathname + "?c=" + encodeURIComponent(ctx.id)); } catch (e) {} }
+            terminarBarra(function () { mostrar({ public: r.json.public, marca: marca, nombre: d.lead.nombre, createdAt: new Date().toISOString() }); });
+          } else {
+            cortarBarra();
+            sinConsulta("No pudimos enviar tu consulta", (r.json && r.json.detail) || "Probá de nuevo en un momento.");
+          }
+        })
+        .catch(function () {
+          cortarBarra();
+          sinConsulta("La consulta tardó más de lo esperado", "Si completaste todos los datos, ya la recibimos y te escribimos con el resultado. También podés escribirnos por WhatsApp.");
+        })
+        .finally(function () { clearTimeout(t2); });
+    } else {
+      sinConsulta("Todavía no hay una consulta para mostrar", "Para ver el resultado, verificá tu marca desde la página principal: lleva menos de un minuto.");
     }
 
     /* ── Consulta por mail (llega al panel y por mail al equipo) ───── */
