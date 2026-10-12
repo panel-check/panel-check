@@ -1,0 +1,55 @@
+name: Unir dos clientes duplicados
+
+on:
+  workflow_dispatch:
+    inputs:
+      origen:
+        description: "Id del cliente que se borra (sus marcas, novedades, alertas, formularios y poderes pasan al destino)"
+        required: true
+      destino:
+        description: "Id del cliente que se queda con todo"
+        required: true
+      acta_control:
+        description: "Un acta que el cliente de origen debe tener (control de seguridad; recomendado)"
+        required: false
+        default: ""
+      simular:
+        description: "Solo contar lo que se movería, sin escribir (true/false)"
+        required: false
+        default: "true"
+      forzar:
+        description: "Seguir aunque los dos clientes tengan CUIT distinto (true/false)"
+        required: false
+        default: "false"
+
+permissions:
+  contents: read
+
+jobs:
+  unir:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Instalar dependencias
+        run: pip install -r requirements.txt
+
+      - name: Unir los clientes
+        run: |
+          cd scripts
+          args=(--origen "$ORIGEN" --destino "$DESTINO" --acta-control "$ACTA_CONTROL")
+          if [ "$SIMULAR" = "true" ]; then args+=(--simular); fi
+          if [ "$FORZAR" = "true" ]; then args+=(--forzar); fi
+          python3 unir_clientes.py "${args[@]}"
+        env:
+          ORIGEN: ${{ inputs.origen }}
+          DESTINO: ${{ inputs.destino }}
+          ACTA_CONTROL: ${{ inputs.acta_control }}
+          SIMULAR: ${{ inputs.simular }}
+          FORZAR: ${{ inputs.forzar }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL || secrets.DATABASE_PUBLIC_URL }}
+          PYTHONUNBUFFERED: "1"
