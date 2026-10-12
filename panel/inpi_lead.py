@@ -423,7 +423,49 @@ def _parse_tabla_boletines(html: str) -> list[dict]:
 
 BOLETINES_DESDE = "2024-01-01"  # hasta dónde hacia atrás se listan los boletines en /boletines
 LISTADO_POST_URL = f"{BASE}/Boletines/Index"
+# Valor del combo "Tipo de boletín" de INPI: 7 = Boletines (8 = Anexos, 9 = Concedidas).
+# Filtrar por 7 deja afuera los Anexos, que ocupan casi la mitad de las filas.
+BOLETINES_TIPO = "7"
+# INPI corta cada consulta en 100 filas (las más nuevas del rango): por eso se pide por tramos
+# de un mes y, si un tramo llega al tope, se parte a la mitad hasta que entre completo.
+LIMITE_FILAS_INPI = 100
 _cache_listado = {"ts": 0.0, "desde": None, "datos": []}
+_cache_tramos_cerrados: dict = {}  # (start, finish) -> boletines; los meses ya cerrados no cambian
+
+
+def _contar_filas(html: str) -> int:
+    soup = BeautifulSoup(html, "html.parser")
+    return sum(1 for tr in soup.select("table tr") if tr.find("td"))
+
+
+def _tramos_mensuales(desde, hasta):
+    """[(inicio, fin)] mes por mes entre dos fechas, del más nuevo al más viejo."""
+    tramos = []
+    ini = desde.replace(day=1)
+    while ini <= hasta:
+        siguiente = (ini.replace(day=28) + timedelta(days=4)).replace(day=1)
+        fin = min(siguiente - timedelta(days=1), hasta)
+        tramos.append((max(ini, desde), fin))
+        ini = siguiente
+    return list(reversed(tramos))
+
+
+def _pedir_tramo(inicio, fin, timeout: int) -> list[dict]:
+    """Boletines de marcas nuevas entre dos fechas. Si INPI devuelve el tope de filas
+    el tramo está truncado: se parte a la mitad y se piden las dos partes."""
+    r = requests.post(
+        LISTADO_POST_URL,
+        data={"Tipo_Item": "3", "Tipo_Boletin": BOLETINES_TIPO, "start": inicio.isoformat(),
+              "finish": fin.isoformat(), "numero": ""},
+        timeout=timeout,
+    )
+    r.raise_for_status()
+    if _contar_filas(r.text) >= LIMITE_FILAS_INPI and inicio < fin:
+        mitad = inicio + (fin - inicio) / 2
+        time.sleep(0.3)
+        return (_pedir_tramo(inicio, mitad, timeout)
+                + _pedir_tramo(mitad + timedelta(days=1), fin, timeout))
+    return _parse_tabla_boletines(r.text)
 
 
 def listar_boletines_marcas_nuevas(timeout: int = 30, desde: str = BOLETINES_DESDE) -> list[dict]:
@@ -431,27 +473,32 @@ def listar_boletines_marcas_nuevas(timeout: int = 30, desde: str = BOLETINES_DES
     fecha `desde` (YYYY-MM-DD) hasta hoy. Devuelve [{"numero", "fecha"}], más
     nuevo primero.
 
-    El GET simple de INPI (Boletines?Tipo_Item=3) devuelve solo los últimos
-    boletines, así que el listado cortaba en unas pocas semanas. Con el rango
-    de fechas (POST, igual que scripts/listar_boletines.py --start/--finish)
-    aparece todo el historial. Si ese POST falla o viene vacío, se usa el GET
-    simple. Se cachea 30 minutos."""
+    El GET simple de INPI (Boletines?Tipo_Item=3) devuelve solo las últimas 100
+    filas (unos 46 boletines de marcas nuevas, ~10 semanas) y el POST con rango
+    de fechas tiene el mismo tope, así que se pide mes por mes (ver
+    LIMITE_FILAS_INPI). Los meses ya cerrados se guardan en memoria; el resultado
+    completo se cachea 30 minutos. Si no se logra traer nada por tramos, se usa
+    el GET simple."""
     if (time.time() - _cache_listado["ts"] < 1800 and _cache_listado["desde"] == desde
             and _cache_listado["datos"]):
         return _cache_listado["datos"]
 
-    hoy = datetime.now(timezone(timedelta(hours=-3))).date().isoformat()
+    from datetime import date
+    hoy = datetime.now(timezone(timedelta(hours=-3))).date()
     boletines: list[dict] = []
-    try:
-        r = requests.post(
-            LISTADO_POST_URL,
-            data={"Tipo_Item": "3", "Tipo_Boletin": "", "start": desde, "finish": hoy, "numero": ""},
-            timeout=timeout,
-        )
-        r.raise_for_status()
-        boletines = _parse_tabla_boletines(r.text)
-    except requests.RequestException:
-        boletines = []
+    for inicio, fin in _tramos_mensuales(date.fromisoformat(desde), hoy):
+        clave = (inicio, fin)
+        if clave in _cache_tramos_cerrados:
+            boletines += _cache_tramos_cerrados[clave]
+            continue
+        try:
+            tramo = _pedir_tramo(inicio, fin, timeout)
+        except requests.RequestException:
+            continue  # un mes que falla no tira abajo todo el listado
+        if (hoy - fin).days > 45:
+            _cache_tramos_cerrados[clave] = tramo
+        boletines += tramo
+        time.sleep(0.3)
     if not boletines:
         r = requests.get(LISTADO_URL, timeout=timeout)
         r.raise_for_status()
