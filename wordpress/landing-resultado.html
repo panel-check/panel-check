@@ -13,7 +13,7 @@
     4b. NO INDEXAR: en el plugin de SEO de la página (Yoast / Rank Math) poner «No permitir que los buscadores
        muestren esta página». Cada resultado es personal (lleva un código): no tiene que aparecer en Google.
        Esta página también agrega un «noindex» desde el navegador, pero lo que vale es el ajuste del plugin.
-    5. En el bloque del home (verificador-home.html), REDIRECT_URL tiene que ser la dirección de ESTA página
+    5. En el bloque del home (verificador-home.html) y en el del buscador (verificador-buscador.html), REDIRECT_URL tiene que ser la dirección de ESTA página
        (hoy "/resultado/"). Al enviar el formulario, el home guarda los datos en el navegador y pasa enseguida
        acá: esta página hace la consulta a INPI mostrando una barra de progreso y, cuando termina, muestra el resultado
        y deja la dirección como ?c=<código> (se puede recargar o compartir).

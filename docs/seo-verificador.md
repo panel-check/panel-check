@@ -10,12 +10,12 @@ Quien busca «consulta marca inpi» hoy encuentra primero las páginas del propi
 
 | Página | Dirección | Se indexa | Archivo |
 |---|---|---|---|
-| Verificador (herramienta + contenido) | `/consulta-marca-inpi/` | Sí | `verificador-home.html` (herramienta) + `verificador-pagina-contenido.html` |
+| Verificador (herramienta + contenido) | `/consulta-marca-inpi/` | Sí | `verificador-pagina-completa.html` (armado con `scripts/armar_pagina_verificador.py` a partir de `verificador-pagina-hero.html`, `verificador-buscador.html` y `verificador-pagina-contenido.html`) |
 | Guía de estados | `/estados-de-una-marca/` | Sí | `guia-estados-marca.html` |
 | Resultado | `/resultado/` | **No** (noindex en el plugin de SEO) | `landing-resultado.html` |
-| Home | `/` | Sí | herramienta `verificador-home.html` |
+| Home | `/` | Sí | formulario con todos los datos `verificador-home.html` (no es el buscador) |
 
-La herramienta es la misma en el home y en `/consulta-marca-inpi/`. Las dos mandan a `/resultado/`.
+El home y el buscador son formularios distintos a propósito: el home pide todos los datos antes del resultado (flujo anterior, que sigue funcionando); el buscador de `/consulta-marca-inpi/` no pide datos hasta mostrar el resultado. Los dos mandan a `/resultado/`.
 
 ## Mapa de palabras
 

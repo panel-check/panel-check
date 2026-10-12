@@ -4,7 +4,7 @@ WordPress (título + herramienta + textos con preguntas frecuentes).
 
 Une, en este orden:
   wordpress/verificador-pagina-hero.html       título y bajada (con el marcador <!--HERRAMIENTA-->)
-  wordpress/verificador-home.html              la herramienta (es la misma del home)
+  wordpress/verificador-buscador.html          el buscador (no es el formulario del home)
   wordpress/verificador-pagina-contenido.html  explicaciones, estados, preguntas frecuentes
 
 Hay que volver a correrlo cada vez que se cambie alguno de esos tres archivos:
@@ -39,7 +39,7 @@ def sin_comentario_inicial(texto: str) -> str:
 def armar() -> str:
     leer = lambda n: (WP / n).read_text(encoding="utf-8")
     hero = sin_comentario_inicial(leer("verificador-pagina-hero.html"))
-    herramienta = sin_comentario_inicial(leer("verificador-home.html"))
+    herramienta = sin_comentario_inicial(leer("verificador-buscador.html"))
     contenido = sin_comentario_inicial(leer("verificador-pagina-contenido.html"))
     if "<!--HERRAMIENTA-->" not in hero:
         raise SystemExit("Falta el marcador <!--HERRAMIENTA--> en verificador-pagina-hero.html")
