@@ -211,8 +211,14 @@ def crear_router(verificar_login, conexion, crm) -> APIRouter:
             cond.append("cm.estado_tramite = 'Concedida'")
         elif estado == "denegada":
             cond.append("cm.estado_tramite = 'Denegada'")
+        elif estado == "publicada":
+            # Publicada en el boletín y todavía sin resolución (misma regla que la etiqueta del panel).
+            cond.append("cm.consultado_en IS NOT NULL AND cm.fecha_publicacion IS NOT NULL "
+                        "AND COALESCE(cm.estado_tramite,'') NOT IN ('Concedida','Denegada')")
         elif estado == "en_tramite":
-            cond.append("cm.consultado_en IS NOT NULL AND COALESCE(cm.estado_tramite,'') NOT IN ('Concedida','Denegada')")
+            # En trámite = todavía no publicada ni resuelta.
+            cond.append("cm.consultado_en IS NOT NULL AND cm.fecha_publicacion IS NULL "
+                        "AND COALESCE(cm.estado_tramite,'') NOT IN ('Concedida','Denegada')")
         elif estado == "pendiente":
             cond.append("cm.consultado_en IS NULL")
         if con_oposicion:
@@ -228,7 +234,7 @@ def crear_router(verificar_login, conexion, crm) -> APIRouter:
             with rcur(conn) as cur:
                 cur.execute(
                     f"""
-                    SELECT cm.acta, cm.cliente_id, c.nombre AS cliente_nombre, c.referido AS cliente_referido, cm.denominacion, cm.tipo, cm.clase,
+                    SELECT cm.acta, cm.cliente_id, c.nombre AS cliente_nombre, c.referido AS cliente_referido, cm.denominacion, cm.tipo, cm.clase, cm.fecha_publicacion,
                            cm.titular, cm.estado_tramite, cm.fecha_presentacion, cm.fecha_concesion,
                            cm.fecha_vencimiento_marca, cm.tuvo_oposicion, cm.agente, cm.matricula_agente,
                            cm.vigilar, cm.vigilar_todas_clases, cm.terminos_vigilancia, cm.consultado_en,
