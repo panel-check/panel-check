@@ -45,7 +45,11 @@ RE_CARACTER_SPAN = re.compile(r"CARACTER\s*:?\s*<span[^>]*>(.*?)</span>", re.S)
 # como texto plano dentro del mismo <label> en otras (personas físicas) —
 # "CUIT: 20302361291" sin span. El <span> es opcional para cubrir ambos casos.
 RE_CUIT_SPAN = re.compile(r"CUIT\s*:?\s*(?:<span[^>]*>)?\s*([\d.\-]{6,})", re.S)
-RE_CLASE_SPAN = re.compile(r"CLASE\s*:?\s*(?:<span[^>]*>)?\s*(\d{1,2})", re.S)
+# Solo el label real <label ...>CLASE: <span ...>30</span>. Suelto en toda la
+# página se llevaba frases de las oposiciones ("...REGISTRADA EN LA CLASE 43")
+# que aparecen antes del campo (acta 4782038, 12/10/2026). Igual que en
+# scripts/validar_leads.py (no se importan entre sí).
+RE_CLASE_SPAN = re.compile(r"<label[^>]*>\s*CLASE\s*:\s*<span[^>]*>\s*(\d{1,2})\s*</span>", re.S)
 
 # Ver el mismo comentario en validar_leads.py: sección RESOLUCIÓN, en la
 # misma página. VENCE ya viene calculado por INPI (concesión + 10 años).

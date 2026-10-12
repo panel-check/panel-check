@@ -74,7 +74,22 @@ RE_CUIT_SPAN = re.compile(r"CUIT\s*:?\s*(?:<span[^>]*>)?\s*([\d.\-]{6,})", re.S)
 # mismo rojo/negrita que CARACTER y CUIT (o sea, mismo <span class="text-danger">).
 # Si la marca tiene más de una clase, esto se queda solo con la primera --
 # mismo límite que ya tenía la columna marcas.clase (es un solo INTEGER).
-RE_CLASE_SPAN = re.compile(r"CLASE\s*:?\s*(?:<span[^>]*>)?\s*(\d{1,2})", re.S)
+#
+# OJO (12/10/2026, acta 4782038): este regex NO se puede buscar suelto en toda
+# la página. Los textos de las oposiciones (JSON de `opos`) traen frases como
+# "ACTA N° 4250133 REGISTRADA EN LA CLASE 43", que aparecen ANTES del campo
+# real y se llevaban la clase (el panel mostraba 43 y el acta es clase 30).
+# Solo vale el label real: <label ...>CLASE: <span ...>30</span>. Se usa
+# clase_de_pagina(), que además exige los dos puntos y el <span>.
+RE_CLASE_SPAN = re.compile(r"<label[^>]*>\s*CLASE\s*:\s*<span[^>]*>\s*(\d{1,2})\s*</span>", re.S)
+
+
+def clase_de_pagina(pagina: str) -> int | None:
+    """Clase de la solicitud, del campo CLASE de TITULARIDAD (HTML de
+    /MarcasConsultas/Resultado). None si no está: nunca se adivina con texto
+    libre (p. ej. el de una oposición que cita otra marca en otra clase)."""
+    m = RE_CLASE_SPAN.search(pagina)
+    return int(m.group(1)) if m else None
 
 # Nombre del titular en la misma página de /MarcasConsultas/Resultado:
 # "NOMBRE: <span class="text-danger"> BOTTERO TOMAS 100.00%</span>" (el % es
@@ -918,9 +933,7 @@ def revisar_acta(s: requests.Session, acta: str, timeout: int = 30, html_previo:
         # si no matchea o no parece un CUIT válido, no seteamos la clave: así
         # row.update(info) no pisa un cuit que ya venía de completar_mixtas.py
 
-        m_clase = RE_CLASE_SPAN.search(texto_pagina)
-        if m_clase:
-            resultado["clase"] = int(m_clase.group(1))
+        resultado["clase"] = clase_de_pagina(texto_pagina)
 
         # Titular: primero de esta misma página (dato estructurado, más
         # confiable que el texto del PDF). El Formulario queda de respaldo.
