@@ -79,5 +79,22 @@ class HomeYLanding(unittest.TestCase):
             self.assertNotRegex(leer(nombre), r"\$\s?\d", nombre)
 
 
+class PaginaArmada(unittest.TestCase):
+    def test_la_pagina_completa_esta_al_dia(self):
+        import armar_pagina_verificador as armar
+
+        self.assertEqual(
+            leer("verificador-pagina-completa.html"),
+            armar.armar(),
+            "Falta correr: python3 scripts/armar_pagina_verificador.py",
+        )
+
+    def test_la_pagina_completa_trae_un_solo_h1_y_una_sola_herramienta(self):
+        src = leer("verificador-pagina-completa.html")
+        self.assertEqual(src.count("<h1"), 1)
+        self.assertEqual(src.count('id="smv"'), 1)
+        self.assertEqual(src.count("application/ld+json"), 1)
+
+
 if __name__ == "__main__":
     unittest.main()
