@@ -34,6 +34,16 @@ function tagReferido(r) {
   return r ? `<span class="cl-tag ref" title="Referido por ${esc(r)}">🤝 ${esc(r)}</span>` : "";
 }
 
+// Logo de la marca (el que figura en el expediente de INPI y se guarda al cargar la marca).
+// Se ve en miniatura; un click lo abre grande en una pestaña nueva. Las marcas sin logo
+// (denominativas) no muestran nada.
+function logoMarca(m) {
+  if (!m.tiene_logo) return "";
+  const url = `/api/analisis-marca/${encodeURIComponent(m.acta)}/logo`;
+  return `<a href="${url}" target="_blank" rel="noopener" class="cl-logo-link" title="Ver el logo de la marca" onclick="event.stopPropagation()">` +
+    `<img class="cl-logo" loading="lazy" alt="Logo de ${esc(m.denominacion || "la marca")}" src="${url}"></a>`;
+}
+
 function tagEstadoMarca(m) {
   if (m.estado_tramite === "Concedida") return '<span class="cl-tag ok">Concedida</span>';
   if (m.estado_tramite === "Denegada") return '<span class="cl-tag mal">Denegada</span>';
@@ -171,7 +181,7 @@ async function pintarMarcas() {
     tabla.innerHTML = `<div style="overflow-x:auto"><table class="cl-tabla"><thead><tr>
         <th>Marca</th><th>Clase</th><th>Acta</th><th>Cliente</th><th>Estado</th><th>Vence</th><th>Agente</th><th>Vigilancia</th></tr></thead><tbody>
       ${r.marcas.map(m => `<tr class="cl-click" data-cliente="${m.cliente_id}">
-        <td><strong>${esc(m.denominacion || (m.tipo === "F" ? "(figurativa, sin texto)" : "(pendiente)"))}</strong>
+        <td>${logoMarca(m)}<strong>${esc(m.denominacion || (m.tipo === "F" ? "(figurativa, sin texto)" : "(pendiente)"))}</strong>
           <br><small class="crm-gris">${esc(tipoLegible(m.tipo))}${m.fecha_presentacion ? " · presentada " + crmFecha(m.fecha_presentacion) : ""}</small>
           ${m.tuvo_oposicion && !["Concedida", "Denegada"].includes(m.estado_tramite) ? '<br><span class="cl-tag aviso">⚖ oposición / vista</span>' : ""}</td>
         <td>${esc(m.clase ?? "")}</td>
@@ -291,7 +301,7 @@ async function abrirCliente(id) {
     <div style="overflow-x:auto"><table class="cl-tabla cl-marcas"><thead><tr><th>Acta</th><th>Marca</th><th>Clase</th><th>Estado</th><th>Agente</th><th>Vigilancia</th><th></th></tr></thead><tbody>
     ${d.marcas.map(m => `<tr data-acta="${esc(m.acta)}">
       <td><a class="link-acta" href="javascript:void(0)" data-abrir="${esc(m.acta)}">${esc(m.acta)} ↗</a></td>
-      <td><strong>${esc(m.denominacion || (m.tipo === "F" ? "(figurativa, sin texto)" : "(pendiente)"))}</strong><br><small class="crm-gris">${esc(tipoLegible(m.tipo))}${m.fecha_presentacion ? " · presentada " + crmFecha(m.fecha_presentacion) : ""}${m.fecha_vencimiento_marca ? " · vence " + crmFecha(m.fecha_vencimiento_marca) : ""}</small>
+      <td>${logoMarca(m)}<strong>${esc(m.denominacion || (m.tipo === "F" ? "(figurativa, sin texto)" : "(pendiente)"))}</strong><br><small class="crm-gris">${esc(tipoLegible(m.tipo))}${m.fecha_presentacion ? " · presentada " + crmFecha(m.fecha_presentacion) : ""}${m.fecha_vencimiento_marca ? " · vence " + crmFecha(m.fecha_vencimiento_marca) : ""}</small>
         ${c.referido ? "<br>" + tagReferido(c.referido) : ""}${m.tuvo_oposicion ? '<br><span class="cl-tag aviso">⚖ oposición / vista</span>' : ""}${m.ultimo_movimiento ? `<br><small class="crm-gris">Últ. mov.: ${esc(m.ultimo_movimiento)}${m.ultimo_movimiento_fecha ? " (" + crmFecha(m.ultimo_movimiento_fecha) + ")" : ""}</small>` : ""}
         ${m.error_consulta ? `<br><small class="crm-error" style="padding:0">${esc(m.error_consulta)}</small>` : ""}</td>
       <td>${esc(m.clase ?? "")}</td>

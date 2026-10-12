@@ -233,6 +233,7 @@ def crear_router(verificar_login, conexion, crm) -> APIRouter:
                            cm.fecha_vencimiento_marca, cm.tuvo_oposicion, cm.agente, cm.matricula_agente,
                            cm.vigilar, cm.vigilar_todas_clases, cm.terminos_vigilancia, cm.consultado_en,
                            cm.ultimo_movimiento, cm.ultimo_movimiento_fecha,
+                           EXISTS (SELECT 1 FROM analisis_marca am WHERE am.acta = cm.acta AND am.logo IS NOT NULL) AS tiene_logo,
                            (SELECT COUNT(*) FROM vigilancia_alertas a WHERE a.acta_cliente = cm.acta
                               AND a.estado IN ('nueva','monitorear','oponer')) AS alertas_abiertas
                     FROM cartera_marcas cm JOIN clientes c ON c.id = cm.cliente_id
@@ -446,7 +447,8 @@ def crear_router(verificar_login, conexion, crm) -> APIRouter:
                     raise HTTPException(status_code=404, detail="No existe ese cliente")
                 cur.execute(
                     "SELECT cm.*, (SELECT COUNT(*) FROM vigilancia_alertas a WHERE a.acta_cliente = cm.acta "
-                    "AND a.estado IN ('nueva','monitorear','oponer')) AS alertas_abiertas "
+                    "AND a.estado IN ('nueva','monitorear','oponer')) AS alertas_abiertas, "
+                    "EXISTS (SELECT 1 FROM analisis_marca am WHERE am.acta = cm.acta AND am.logo IS NOT NULL) AS tiene_logo "
                     "FROM cartera_marcas cm WHERE cm.cliente_id = %s "
                     "ORDER BY cm.fecha_presentacion DESC NULLS LAST, cm.acta DESC",
                     (cliente_id,),

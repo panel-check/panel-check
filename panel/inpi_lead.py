@@ -623,7 +623,7 @@ def consultar_expediente(acta: str, s=None, timeout: int = 30, con_grilla: bool 
       estado_tramite, fecha_concesion, numero_disposicion,
       fecha_vencimiento_marca, tuvo_oposicion, detalle_oposicion,
       grilla_claves (lista de "fecha|indice|referencia"), movimientos,
-      ultimo_movimiento, ultimo_movimiento_fecha.
+      ultimo_movimiento, ultimo_movimiento_fecha, logo ((bytes, mime) o None).
     La grilla falla por separado (WAF): en ese caso grilla_claves queda None
     y el resto de los datos igual se devuelve."""
     s = s or _crear_sesion()
@@ -656,6 +656,9 @@ def consultar_expediente(acta: str, s=None, timeout: int = 30, con_grilla: bool 
     m_car = RE_CARACTER_SPAN.search(bloque_gestion or texto)
     out["caracter"] = re.sub(r"\s+", " ", m_car.group(1)).strip() if m_car else ""
     out.update(_agente_de_bloque(bloque_gestion))
+    # El logo viene en la misma página del expediente: no hace falta otro pedido a INPI.
+    # (bytes, mime) o None si la marca no tiene (las denominativas no tienen).
+    out["logo"] = extraer_logo(texto)
 
     m_cuit = RE_CUIT_SPAN.search(texto)
     cuit = re.sub(r"[^\d]", "", m_cuit.group(1)) if m_cuit else ""
