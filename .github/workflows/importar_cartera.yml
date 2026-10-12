@@ -1,0 +1,63 @@
+name: Importar marcas a la cartera de clientes
+
+on:
+  workflow_dispatch:
+    inputs:
+      actas:
+        description: "Números de acta a importar (separados por coma, espacio o salto de línea; se aceptan con puntos de miles)"
+        required: true
+      tag:
+        description: "Referido (tag) de los clientes NUEVOS; a los clientes que ya existían no se les cambia"
+        required: false
+        default: "Pame"
+      simular:
+        description: "Solo contar qué se omitiría por estar ya cargado, sin consultar INPI ni escribir (true/false)"
+        required: false
+        default: "false"
+      max_logos:
+        description: "Tope de marcas ya cargadas a las que se les completa el logo desde INPI (0 = ninguna)"
+        required: false
+        default: "150"
+
+permissions:
+  contents: read
+
+# Un solo carril contra INPI: si hay otro proceso de INPI corriendo, este espera su turno.
+concurrency:
+  group: inpi-lane
+  cancel-in-progress: false
+
+jobs:
+  importar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      # Alarma de bloqueo masivo de INPI (scripts/monitor_bloqueo.py)
+      RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+      RESEND_FROM: ${{ secrets.RESEND_FROM }}
+      NOTIFICAR_A: ${{ secrets.NOTIFICAR_A }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Instalar dependencias
+        run: pip install -r requirements.txt
+
+      - name: Importar las marcas a la cartera
+        run: |
+          cd scripts
+          args=(--actas "$ACTAS" --tag "$TAG" --max-logos "$MAX_LOGOS")
+          if [ "$SIMULAR" = "true" ]; then args+=(--simular); fi
+          python3 importar_cartera.py "${args[@]}"
+        env:
+          # Las entradas pasan por variables de entorno (no se pegan en el script) para que un
+          # texto raro no se ejecute como comando.
+          ACTAS: ${{ inputs.actas }}
+          TAG: ${{ inputs.tag }}
+          SIMULAR: ${{ inputs.simular }}
+          MAX_LOGOS: ${{ inputs.max_logos }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL || secrets.DATABASE_PUBLIC_URL }}
+          PYTHONUNBUFFERED: "1"

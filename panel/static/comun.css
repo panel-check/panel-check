@@ -1093,6 +1093,8 @@ tr.crm-fila:hover { background: var(--azul-claro); }
 .cl-tag.aviso { background: #fff3cd; color: #92720d; }
 .cl-tag.mal { background: #fdecea; color: var(--rojo); }
 .cl-tag.azul { background: var(--azul-claro); color: var(--azul); }
+.cl-logo { float: left; max-width: 52px; max-height: 52px; margin: 0 8px 2px 0; padding: 2px; background: #fff; border: 1px solid var(--borde); border-radius: 6px; object-fit: contain; }
+a.cl-logo-link { display: inline-block; line-height: 0; }
 .cl-tag.ref { background: #f1e8fb; color: #6b3fa0; }
 .cl-referido.destacado input { border-color: #6b3fa0; box-shadow: 0 0 0 2px #f1e8fb; }
 .modal-caja.modal-cliente { max-width: 980px; width: 100%; }

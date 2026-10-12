@@ -463,6 +463,35 @@ def _valores_expediente(info: dict) -> dict:
     return v
 
 
+def guardar_logo_expediente(cur, acta: str, info: dict) -> bool:
+    """Guarda el logo que trajo la consulta al expediente de INPI (`info["logo"]`) en la misma
+    tabla que usa el «Análisis de marca» (analisis_marca), así se ve en Clientes y en el análisis.
+    - Si la consulta no salió bien, no toca nada.
+    - Si trajo logo, lo guarda (reemplaza el anterior).
+    - Si no trajo y todavía no se había mirado el expediente, deja anotado que ya se miró
+      (una marca denominativa no tiene logo); si ya se había mirado, no pisa nada.
+    Nunca rompe la carga de la marca: un problema con el logo se ignora (savepoint)."""
+    if info.get("estado_consulta") != "ok":
+        return False
+    cur.execute("SAVEPOINT guardar_logo_sp")
+    try:
+        import analisis_marca
+        if info.get("logo"):
+            guardado = analisis_marca.guardar_logo(cur, acta, info["logo"])
+        else:
+            cur.execute("SELECT logo_consultado_en FROM analisis_marca WHERE acta = %s", (acta,))
+            f = cur.fetchone()
+            ya = (f[0] if not isinstance(f, dict) else f.get("logo_consultado_en")) if f else None
+            guardado = False
+            if not ya:
+                analisis_marca.guardar_logo(cur, acta, None)
+        cur.execute("RELEASE SAVEPOINT guardar_logo_sp")
+        return guardado
+    except Exception:  # noqa: BLE001 — el logo es accesorio, la marca se carga igual
+        cur.execute("ROLLBACK TO SAVEPOINT guardar_logo_sp")
+        return False
+
+
 def alta_marca_cartera(cur, cliente_id: int, acta: str, info: dict, usuario: str, origen_carga: str = "acta"):
     """Inserta una marca en la cartera de un cliente con lo que devolvió
     inpi_lead.consultar_expediente(). Si la consulta no terminó bien (bloqueo,
@@ -489,6 +518,8 @@ def alta_marca_cartera(cur, cliente_id: int, acta: str, info: dict, usuario: str
         """,
         [acta, cliente_id] + [v[c] for c in cols] + [origen_carga, ahora, error, usuario],
     )
+    if ok:
+        guardar_logo_expediente(cur, acta, info)
 
 
 def alta_marca_desde_fila(cur, cliente_id: int, fila: dict, usuario: str, origen_carga: str):
@@ -599,6 +630,7 @@ def aplicar_expediente(cur, acta: str, info: dict) -> list:
         f"UPDATE cartera_marcas SET {sets}, consultado_en = now(), error_consulta = NULL WHERE acta = %s",
         [v[c] for c in cols] + [acta],
     )
+    guardar_logo_expediente(cur, acta, info)
     for tipo, texto in novedades:
         cur.execute(
             "INSERT INTO cartera_novedades (acta, cliente_id, tipo, texto) VALUES (%s, %s, %s, %s)",
