@@ -1,0 +1,413 @@
+<!--
+  PÁGINA COMPLETA DEL VERIFICADOR — smartiesconsultora.com.ar/consulta-marca-inpi/
+  (archivo ARMADO: no se edita a mano; se cambian los archivos de origen y se corre scripts/armar_pagina_verificador.py)
+
+  CÓMO PONERLA (WordPress + Elementor), son 4 pasos:
+    1. Páginas → Añadir nueva → título «Consulta de marcas INPI» (dirección /consulta-marca-inpi/).
+    2. Ajustes de la página → Diseño → plantilla «Elementor ancho completo».
+    3. Editar con Elementor → un contenedor a ANCHO COMPLETO, con margen y relleno en 0 → un widget «HTML» → pegar TODO este archivo.
+       Ya trae el título (H1), la herramienta y los textos: no hay que agregar nada más.
+    4. Plugin de SEO (Yoast / Rank Math): título, descripción y frase clave de docs/seo-verificador.md. Esta página SÍ se indexa.
+  Después: Search Console → Inspección de URL → Solicitar indexación.
+-->
+<div id="smh" class="smh">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Mulish:wght@400;600;700&family=Outfit:wght@600;800;900&display=swap">
+  <style>
+    .smh, .smh * { box-sizing: border-box; }
+    .smh { width: 100vw; max-width: 100vw; margin-left: calc(50% - 50vw); margin-right: calc(50% - 50vw);
+      padding: 150px 24px 64px; /* arriba deja lugar al menú del sitio, que flota sobre la página */
+      background: linear-gradient(160deg, #161250 0%, #2a2580 100%); text-align: center; overflow: hidden; }
+    body:has(#smh) { overflow-x: clip; }
+    .smh .smh-caja { max-width: 820px; margin: 0 auto; }
+    .smh .smh-h1 { margin: 0 0 16px; font: 900 clamp(30px, 5.4vw, 52px)/1.08 "Outfit", "Roboto", "Segoe UI", sans-serif; text-transform: uppercase; color: #fff; letter-spacing: 0; }
+    .smh .smh-h1 em { font-style: normal; color: #5cffe1; }
+    .smh .smh-intro { margin: 0 auto 30px; max-width: 640px; font: 400 18px/1.55 "Mulish", "Roboto", "Segoe UI", sans-serif; color: #dfe3ff; }
+  </style>
+  <div class="smh-caja">
+    <h1 class="smh-h1">Consulta de marcas INPI: <em>verificá si tu nombre está disponible</em></h1>
+    <p class="smh-intro">Escribí el nombre de tu marca y mirá qué marcas iguales o parecidas hay en INPI, en qué estado está cada una y si coinciden con tus clases. Es gratis y no te pedimos tus datos.</p>
+    <div id="smv" class="smv" data-smv>
+  <style>
+    .smv, .smv * { box-sizing: border-box; }
+    /* Tarjeta azul propia: el texto es blanco, así que se lee igual sobre fondo blanco, celeste o azul */
+    .smv { width: 100%; max-width: 760px; margin: 0 auto; padding: 26px 24px 22px; border-radius: 22px; background: #1d1868;
+      border: 1px solid rgba(92,255,225,.4); box-shadow: 0 12px 34px rgba(22,18,80,.28);
+      font-family: Roboto, -apple-system, "system-ui", "Segoe UI", sans-serif; color: #fff; text-align: left; }
+    .smv form { margin: 0; }
+    .smv .smv-campo { padding: 0 1px 14px; }
+    .smv input[type=text] {
+      display: block; width: 100%; height: 43px; padding: 0 14px; margin: 0;
+      background: #fff; color: #161250; border: 1px solid #0095ff; border-radius: 11px;
+      font: 400 16px/16px -apple-system, "system-ui", "Segoe UI", Roboto, sans-serif;
+      box-shadow: none; outline: none; -webkit-appearance: none; appearance: none;
+    }
+    .smv input::placeholder { color: #7b7a99; opacity: 1; }
+    .smv input[type=text]:focus { border-color: #5cffe1; box-shadow: 0 0 0 3px rgba(92,255,225,.25); }
+    .smv .smv-hp { position: absolute !important; left: -9999px !important; width: 1px; height: 1px; overflow: hidden; }
+    .smv .smv-captcha { padding: 4px 1px 0; min-height: 0; }
+    .smv .smv-boton {
+      display: inline-flex; align-items: center; justify-content: center; gap: 8px; cursor: pointer;
+      height: 41px; padding: 0 18px; margin: 10px 0 0 1px;
+      background: #161250; color: #5cffe1; border: 1px solid #5cffe1; border-radius: 27px;
+      font: 500 17px/17px -apple-system, "system-ui", "Segoe UI", Roboto, sans-serif;
+      transition: background .15s, color .15s;
+    }
+    .smv .smv-boton:hover:not(:disabled) { background: #5cffe1; color: #161250; }
+    .smv .smv-boton:disabled { opacity: .65; cursor: default; }
+    .smv .smv-giro { width: 15px; height: 15px; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: smv-g .8s linear infinite; }
+    @keyframes smv-g { to { transform: rotate(360deg); } }
+    .smv .smv-msg { margin: 12px 1px 0; font-size: 15px; line-height: 21px; }
+    .smv .smv-msg.smv-error { color: #ffb3bf; }
+    .smv .smv-msg.smv-espera { color: #cfe9ff; font-style: italic; }
+    .smv .smv-nota { margin: 10px 1px 0; font-size: 13px; line-height: 18px; opacity: .8; }
+
+    /* selector de clases */
+    .smv .smv-cl { margin: 0 1px; border: 1px solid rgba(92,255,225,.45); border-radius: 11px; background: rgba(255,255,255,.06); }
+    .smv .smv-cl > summary {
+      list-style: none; cursor: pointer; padding: 11px 14px; font: 500 15px/21px Roboto, sans-serif; color: #fff;
+      display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    }
+    .smv .smv-cl > summary::-webkit-details-marker { display: none; }
+    .smv .smv-cl > summary::after { content: "▾"; color: #5cffe1; transition: transform .15s; }
+    .smv .smv-cl[open] > summary::after { transform: rotate(180deg); }
+    .smv .smv-cl-cuenta { font-size: 13px; color: #5cffe1; white-space: nowrap; }
+    .smv .smv-cl-ayuda { margin: 0; padding: 0 14px 8px; font-size: 13px; line-height: 18px; opacity: .85; }
+    .smv .smv-cl-lista {
+      display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px 12px;
+      max-height: 250px; overflow-y: auto; padding: 4px 14px 12px; -webkit-overflow-scrolling: touch;
+    }
+    @media (max-width: 520px) { .smv .smv-cl-lista { grid-template-columns: minmax(0, 1fr); } }
+    .smv .smv-cl-item { display: flex; align-items: flex-start; gap: 8px; padding: 5px 0; cursor: pointer; font-size: 14px; line-height: 19px; color: #fff; }
+    .smv .smv-cl-item input { margin: 2px 0 0; flex: 0 0 auto; width: 16px; height: 16px; accent-color: #5cffe1; }
+    .smv .smv-cl-item b { color: #5cffe1; font-weight: 700; }
+    .smv .smv-cl-item.smv-bloq { opacity: .4; cursor: default; }
+  </style>
+
+  <form data-smv-form novalidate>
+    <div class="smv-campo"><input type="text" name="marca" placeholder="Nombre de la marca" aria-label="Nombre de la marca" maxlength="80" required autocomplete="off"></div>
+
+    <details class="smv-cl" data-smv-clases>
+      <summary><span>Elegir clases de la marca <span style="opacity:.7">(opcional)</span></span><span class="smv-cl-cuenta" data-smv-cuenta></span></summary>
+      <p class="smv-cl-ayuda">Las marcas se registran por clase de producto o servicio. Si ya sabés en cuál, marcala y te mostramos si hay marcas parecidas en ella. Podés elegir hasta 6. Si no sabés, dejalo vacío.</p>
+      <div class="smv-cl-lista" data-smv-lista></div>
+    </details>
+
+    <div class="smv-hp" aria-hidden="true"><label>No completar <input type="text" name="hp" tabindex="-1" autocomplete="off"></label></div>
+    <div class="smv-captcha" data-smv-captcha></div>
+    <button type="submit" class="smv-boton" data-smv-enviar>Verificar mi marca</button>
+    <div class="smv-msg" data-smv-msg role="status" aria-live="polite"></div>
+    <p class="smv-nota">Gratis y sin dejar tus datos. Buscamos el nombre en la base de INPI y te mostramos en qué estado está cada marca parecida.</p>
+  </form>
+
+  <script>
+  (function () {
+    /* ── Configuración ─────────────────────────────────────────────── */
+    var API = "https://panel.registrodemimarca.com.ar/api/publico/verificador";
+    var TURNSTILE_SITE_KEY = "0x4AAAAAAFLfbijNn3z9s6Kp";
+    /* Página de resultado (landing). Tiene que existir: ahí se hace la búsqueda y se muestra todo. */
+    var REDIRECT_URL = "/resultado/";
+    var PENDIENTE = "smv_pendiente"; /* tiene que coincidir con la landing */
+    var CLASES_MAX = 6;               /* tiene que coincidir con CLASES_MAX del panel */
+
+    /* Clases de Niza, con una descripción corta para quien no las conoce */
+    var CLASES = [
+      "Productos químicos", "Pinturas, barnices y lacas", "Cosméticos y productos de limpieza", "Aceites, grasas y combustibles",
+      "Productos farmacéuticos y veterinarios", "Metales comunes y sus aleaciones", "Máquinas y máquinas herramienta", "Herramientas manuales",
+      "Aparatos científicos, software y electrónica", "Aparatos médicos", "Aparatos de iluminación, calefacción y refrigeración", "Vehículos y medios de transporte",
+      "Armas de fuego y pirotecnia", "Joyería, bijouterie y relojería", "Instrumentos musicales", "Papel, cartón e imprenta",
+      "Caucho, plásticos y aislantes", "Cuero e imitaciones, bolsos y valijas", "Materiales de construcción no metálicos", "Muebles, espejos y marcos",
+      "Utensilios de cocina y del hogar", "Cuerdas, redes, tiendas y toldos", "Hilos para uso textil", "Tejidos y ropa de cama o mesa",
+      "Prendas de vestir, calzado y sombrerería", "Encajes, bordados y mercería", "Alfombras, felpudos y revestimientos de suelos", "Juegos, juguetes y artículos deportivos",
+      "Carne, pescado, frutas y verduras en conserva", "Café, harinas, pan, pastelería y condimentos", "Productos agrícolas y animales vivos", "Cervezas y bebidas sin alcohol",
+      "Bebidas alcohólicas (excepto cervezas)", "Tabaco y artículos para fumadores", "Publicidad, gestión y comercio (tiendas)", "Seguros, finanzas e inmobiliarias",
+      "Construcción, reparación e instalación", "Telecomunicaciones", "Transporte y almacenamiento", "Tratamiento de materiales",
+      "Educación, entretenimiento y deportes", "Servicios científicos y tecnológicos, software", "Restaurantes y alojamiento temporal", "Servicios médicos, belleza y agricultura",
+      "Servicios jurídicos y de seguridad"
+    ];
+    /* El número de clase es la posición + 1 (son 45). Si alguien edita la lista y rompe el conteo, no se muestra el selector. */
+    if (CLASES.length !== 45) {
+      var det = document.querySelector("#smv [data-smv-clases]"); if (det) det.hidden = true;
+    }
+
+    var raiz = document.getElementById("smv");
+    if (!raiz || raiz.getAttribute("data-smv-listo")) return;
+    raiz.setAttribute("data-smv-listo", "1");
+    var q = function (s) { return raiz.querySelector(s); };
+    var form = q("[data-smv-form]"), msg = q("[data-smv-msg]"), btn = q("[data-smv-enviar]"),
+        caja = q("[data-smv-captcha]"), lista = q("[data-smv-lista]"), cuenta = q("[data-smv-cuenta]");
+    var widgetId = null;
+
+    function el(tag, cls, txt) {
+      var e = document.createElement(tag);
+      if (cls) e.className = cls;
+      if (txt != null) e.textContent = txt;
+      return e;
+    }
+    function aviso(txt, tipo) { msg.className = "smv-msg" + (tipo ? " smv-" + tipo : ""); msg.textContent = txt || ""; }
+
+    /* ── Clases ────────────────────────────────────────────────────── */
+    function elegidas() {
+      var out = [];
+      Array.prototype.forEach.call(lista.querySelectorAll("input:checked"), function (i) { out.push(parseInt(i.value, 10)); });
+      return out;
+    }
+    function actualizarClases() {
+      var n = elegidas().length;
+      cuenta.textContent = n ? n + (n === 1 ? " elegida" : " elegidas") : "";
+      Array.prototype.forEach.call(lista.querySelectorAll("label"), function (lab) {
+        var inp = lab.querySelector("input");
+        var bloq = n >= CLASES_MAX && !inp.checked;
+        inp.disabled = bloq;
+        lab.classList.toggle("smv-bloq", bloq);
+      });
+    }
+    CLASES.forEach(function (nombre, i) {
+      var lab = el("label", "smv-cl-item");
+      var inp = el("input"); inp.type = "checkbox"; inp.value = String(i + 1);
+      inp.addEventListener("change", actualizarClases);
+      var t = el("span"); t.appendChild(el("b", null, (i + 1) + " · ")); t.appendChild(document.createTextNode(nombre));
+      lab.appendChild(inp); lab.appendChild(t); lista.appendChild(lab);
+    });
+
+    /* ── Turnstile (se carga una sola vez aunque haya otro en la página) ── */
+    function renderCaptcha() {
+      if (!window.turnstile || widgetId !== null) return;
+      widgetId = window.turnstile.render(caja, { sitekey: TURNSTILE_SITE_KEY, language: "es", theme: "dark" });
+    }
+    function cargarTurnstile() {
+      if (window.turnstile) { renderCaptcha(); return; }
+      var previo = document.querySelector('script[src*="challenges.cloudflare.com/turnstile"]');
+      if (previo) { previo.addEventListener("load", renderCaptcha); return; }
+      var s = document.createElement("script");
+      s.src = "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit";
+      s.async = true; s.defer = true;
+      s.onload = renderCaptcha;
+      document.head.appendChild(s);
+    }
+    cargarTurnstile();
+
+    function token() { return widgetId !== null && window.turnstile ? (window.turnstile.getResponse(widgetId) || "") : ""; }
+    function reiniciarCaptcha() { if (widgetId !== null && window.turnstile) window.turnstile.reset(widgetId); }
+
+    function pedir(ruta, cuerpo, ms) {
+      var ctl = new AbortController();
+      var t = setTimeout(function () { ctl.abort(); }, ms);
+      return fetch(API + ruta, {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(cuerpo), signal: ctl.signal
+      }).then(function (r) {
+        return r.json().catch(function () { return {}; }).then(function (j) { return { ok: r.ok, status: r.status, json: j }; });
+      }).finally(function () { clearTimeout(t); });
+    }
+
+    form.addEventListener("submit", function (ev) {
+      ev.preventDefault();
+      var marca = (form.elements.marca.value || "").trim();
+      if (marca.length < 2) return aviso("Escribí el nombre de tu marca.", "error");
+      var tk = token();
+      if (!tk) return aviso("Esperá un segundo a que se complete la verificación y volvé a tocar el botón.", "error");
+
+      var datos = { hp: form.elements.hp.value, token: tk, marca: marca, clases: elegidas() };
+
+      /* Camino normal: dejar la búsqueda en el navegador y que /resultado/ la haga con su barra de progreso */
+      try {
+        window.sessionStorage.setItem(PENDIENTE, JSON.stringify({ ts: Date.now(), datos: datos }));
+        btn.disabled = true; btn.textContent = "Buscando…"; aviso("");
+        window.location.href = REDIRECT_URL;
+        return;
+      } catch (e) { /* el navegador no deja guardar: se hace el pedido acá y se pasa al resultado con el código */ }
+
+      btn.disabled = true;
+      btn.textContent = "";
+      btn.appendChild(el("span", "smv-giro"));
+      btn.appendChild(document.createTextNode("Consultando INPI…"));
+      aviso("Estamos buscando tu marca en INPI. Puede tardar hasta un minuto, no cierres la página.", "espera");
+      pedir("/buscar", datos, 110000).then(function (r) {
+        if (r.ok && r.json && r.json.consultaId) {
+          window.location.href = REDIRECT_URL + (REDIRECT_URL.indexOf("?") < 0 ? "?" : "&") + "c=" + encodeURIComponent(r.json.consultaId);
+          return;
+        }
+        aviso((r.json && r.json.detail) || "No pudimos hacer la búsqueda. Probá de nuevo en un momento.", "error");
+        reiniciarCaptcha(); btn.disabled = false; btn.textContent = "Verificar mi marca";
+      }).catch(function () {
+        aviso("INPI está tardando en responder. Probá de nuevo en un momento.", "error");
+        reiniciarCaptcha(); btn.disabled = false; btn.textContent = "Verificar mi marca";
+      });
+    });
+  })();
+  </script>
+</div>
+  </div>
+</div>
+
+<div id="smc" class="smc">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Mulish:wght@400;600;700&family=Outfit:wght@600;800;900&display=swap">
+  <style>
+    .smc, .smc * { box-sizing: border-box; }
+    .smc {
+      --smc-azul: #161250; --smc-celeste: #0095ff; --smc-turq: #5cffe1; --smc-gris: #606060; --smc-fondo: #f4f7ff;
+      --smc-titulo: "Outfit", "Roboto", "Segoe UI", sans-serif; --smc-texto: "Mulish", "Roboto", "Segoe UI", sans-serif;
+      font-family: var(--smc-texto); color: var(--smc-gris); font-size: 17px; line-height: 1.65; background: #fff;
+      -webkit-font-smoothing: antialiased; width: 100vw; max-width: 100vw; margin-left: calc(50% - 50vw); margin-right: calc(50% - 50vw); overflow: hidden;
+    }
+    body:has(#smc) { overflow-x: clip; }
+    .smc h2, .smc h3 { font-family: var(--smc-titulo); color: var(--smc-azul); margin: 0; letter-spacing: 0; }
+    .smc p { margin: 0 0 14px; }
+    .smc a { color: var(--smc-celeste); }
+    .smc .smc-caja { width: 100%; max-width: 980px; margin: 0 auto; padding: 0 24px; }
+    .smc .smc-sec { padding: 56px 0; }
+    .smc .smc-sec.gris { background: var(--smc-fondo); }
+    .smc .smc-h2 { font-weight: 800; font-size: clamp(26px, 4vw, 36px); line-height: 1.15; text-transform: uppercase; margin-bottom: 12px; }
+    .smc .smc-h2 em { font-style: normal; color: var(--smc-celeste); }
+    .smc .smc-sub { max-width: 720px; margin-bottom: 26px; }
+
+    .smc .smc-pasos { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; padding: 0; margin: 0; list-style: none; counter-reset: p; }
+    .smc .smc-paso { counter-increment: p; background: #fff; border: 2px solid var(--smc-turq); border-radius: 18px; padding: 20px; }
+    .smc .smc-paso::before { content: counter(p); display: inline-flex; width: 34px; height: 34px; align-items: center; justify-content: center; margin-bottom: 10px;
+      border-radius: 50%; background: var(--smc-azul); color: var(--smc-turq); font: 800 17px/1 var(--smc-titulo); }
+    .smc .smc-paso h3 { font-size: 19px; margin-bottom: 6px; }
+    .smc .smc-paso p { margin: 0; font-size: 16px; }
+
+    .smc .smc-estados { display: grid; gap: 12px; padding: 0; margin: 0 0 18px; list-style: none; }
+    .smc .smc-estado { display: grid; grid-template-columns: 190px minmax(0, 1fr); gap: 6px 18px; align-items: start; background: #fff; border: 1px solid #dfe5f5; border-radius: 14px; padding: 14px 18px; }
+    .smc .smc-chip { display: inline-block; justify-self: start; padding: 4px 12px; border-radius: 20px; font: 700 13px/18px var(--smc-texto); letter-spacing: .03em; text-transform: uppercase; }
+    .smc .smc-chip.c1 { background: #e3eaff; color: #1a3a8f; }
+    .smc .smc-chip.c2 { background: #d8f7ff; color: #05566e; }
+    .smc .smc-chip.c3 { background: #ffe6bd; color: #6b3d00; }
+    .smc .smc-chip.c4 { background: #cdf8e1; color: #0b5a34; }
+    .smc .smc-chip.c5 { background: #ffd3da; color: #7a0b22; }
+    .smc .smc-chip.c6 { background: #e8e8ee; color: #444; }
+    .smc .smc-estado p { margin: 0; font-size: 16px; }
+    @media (max-width: 640px) { .smc .smc-pasos { grid-template-columns: 1fr; } .smc .smc-estado { grid-template-columns: 1fr; } }
+
+    .smc .smc-lista { margin: 0 0 18px; padding-left: 22px; }
+    .smc .smc-lista li { margin-bottom: 8px; }
+
+    .smc .smc-cta { background: var(--smc-azul); color: #fff; border-radius: 22px; padding: 30px 28px; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 18px; }
+    .smc .smc-cta h2 { color: #fff; font-size: clamp(22px, 3.4vw, 30px); line-height: 1.2; margin-bottom: 6px; }
+    .smc .smc-cta p { margin: 0; color: #dfe3ff; max-width: 560px; }
+    .smc .smc-cta b { color: var(--smc-turq); }
+    .smc .smc-botones { display: flex; flex-wrap: wrap; gap: 10px; }
+    .smc .smc-btn { display: inline-flex; align-items: center; justify-content: center; height: 46px; padding: 0 22px; border-radius: 27px; text-decoration: none;
+      font: 700 16px/1 var(--smc-texto); border: 2px solid var(--smc-turq); transition: background .15s, color .15s; }
+    .smc .smc-btn.llena { background: var(--smc-turq); color: var(--smc-azul); }
+    .smc .smc-btn.llena:hover { background: #fff; border-color: #fff; }
+    .smc .smc-btn.vacia { background: transparent; color: var(--smc-turq); }
+    .smc .smc-btn.vacia:hover { background: var(--smc-turq); color: var(--smc-azul); }
+
+    .smc .smc-faq details { background: #fff; border: 1px solid #dfe5f5; border-radius: 14px; margin-bottom: 10px; }
+    .smc .smc-faq summary { cursor: pointer; list-style: none; padding: 16px 20px; font: 700 18px/1.35 var(--smc-titulo); color: var(--smc-azul); display: flex; justify-content: space-between; gap: 14px; }
+    .smc .smc-faq summary::-webkit-details-marker { display: none; }
+    .smc .smc-faq summary::after { content: "+"; color: var(--smc-celeste); font-size: 24px; line-height: 1; }
+    .smc .smc-faq details[open] summary::after { content: "–"; }
+    .smc .smc-faq .smc-resp { padding: 0 20px 6px; }
+    .smc .smc-aviso { font-size: 14px; line-height: 21px; color: #6d6d7a; margin-top: 18px; }
+  </style>
+
+  <!-- Cómo funciona -->
+  <section class="smc-sec">
+    <div class="smc-caja">
+      <h2 class="smc-h2">Cómo funciona la <em>consulta de marcas</em></h2>
+      <p class="smc-sub">Antes de invertir en un logo, un local o una campaña conviene saber si el nombre ya está tomado. Esta herramienta busca en la base de marcas del INPI (Instituto Nacional de la Propiedad Industrial) y ordena lo que encuentra para que sea fácil de leer.</p>
+      <ol class="smc-pasos">
+        <li class="smc-paso"><h3>Escribís el nombre</h3><p>Si ya sabés en qué rubro vas a registrarla, podés marcar las clases. Si no, la búsqueda funciona igual.</p></li>
+        <li class="smc-paso"><h3>Buscamos en INPI</h3><p>Traemos las marcas con un nombre igual o parecido y las marcamos si están en tus clases.</p></li>
+        <li class="smc-paso"><h3>Ves el estado de cada una</h3><p>En trámite, publicada, con oposición, concedida o denegada. Y no te pedimos tus datos para mostrártelo.</p></li>
+      </ol>
+    </div>
+  </section>
+
+  <!-- Estados -->
+  <section class="smc-sec gris" id="estados">
+    <div class="smc-caja">
+      <h2 class="smc-h2">Cómo leer el <em>estado</em> de cada marca</h2>
+      <p class="smc-sub">El INPI publica el estado de cada solicitud, pero no siempre se entiende. Esto es lo que significa cada uno en el resultado:</p>
+      <ul class="smc-estados">
+        <li class="smc-estado"><span class="smc-chip c1">En trámite</span><p>Alguien presentó la solicitud y todavía no salió publicada en el Boletín de Marcas. Es el llamado «preboletín»: el nombre ya tiene un interesado aunque no aparezca como registrado.</p></li>
+        <li class="smc-estado"><span class="smc-chip c2">Publicada</span><p>La solicitud salió en el Boletín de Marcas. Desde ese momento terceros pueden oponerse durante un plazo; si no hay oposición ni objeciones, el trámite sigue su curso.</p></li>
+        <li class="smc-estado"><span class="smc-chip c3">Con oposición</span><p>Otra persona o empresa se opuso a que se registre. El INPI resuelve después de escuchar a las partes, y el trámite puede demorarse o terminar en una denegatoria.</p></li>
+        <li class="smc-estado"><span class="smc-chip c4">Concedida</span><p>El INPI concedió la marca: está registrada y su titular tiene exclusividad en las clases concedidas. Es la que más hay que tener en cuenta al elegir un nombre.</p></li>
+        <li class="smc-estado"><span class="smc-chip c5">Denegada</span><p>El INPI rechazó la solicitud. Una marca denegada ya no bloquea el nombre por sí sola, aunque puede haber recursos pendientes o razones que se repitan en tu caso.</p></li>
+        <li class="smc-estado"><span class="smc-chip c6">Abandonada o caducada</span><p>La solicitud o el registro dejaron de estar vigentes. Cuando figura así, en general ya no es un obstáculo, pero conviene confirmarlo.</p></li>
+      </ul>
+      <p>Si el INPI usa para una marca un estado que no reconocemos, lo mostramos tal cual figura en su base, en lugar de adivinar. Más detalle en la <a href="/estados-de-una-marca/">guía de estados de una marca</a>.</p>
+    </div>
+  </section>
+
+  <!-- Qué hacer con marcas parecidas -->
+  <section class="smc-sec">
+    <div class="smc-caja">
+      <h2 class="smc-h2">Encontré marcas parecidas: <em>¿y ahora?</em></h2>
+      <p class="smc-sub">Que haya una marca parecida no significa que la tuya no se pueda registrar. Pesan varias cosas:</p>
+      <ul class="smc-lista">
+        <li><b>La clase.</b> Las marcas se registran por clase de productos o servicios (hay 45). El mismo nombre puede convivir en clases muy distintas. Por eso el resultado indica cuáles coinciden con las que elegiste.</li>
+        <li><b>El parecido.</b> El INPI compara cómo se escribe, cómo suena y qué significa. Dos nombres que se escriben distinto pero suenan igual pueden chocar.</li>
+        <li><b>El estado.</b> Una marca concedida pesa más que una abandonada o denegada.</li>
+        <li><b>Tu actividad real.</b> Dos clases distintas pueden estar relacionadas, y el INPI las compara igual.</li>
+      </ul>
+      <p>Esta consulta compara el <b>nombre</b>. No compara logos ni el uso que se le da a la marca en el mercado, y no reemplaza un análisis de antecedentes hecho por un profesional.</p>
+    </div>
+  </section>
+
+  <!-- CTA -->
+  <section class="smc-sec gris">
+    <div class="smc-caja">
+      <div class="smc-cta">
+        <div>
+          <h2>¿Querés saber si <em style="font-style:normal;color:#5cffe1">tu</em> marca se puede registrar?</h2>
+          <p>Después de la búsqueda te ofrecemos un <b>análisis preliminar sin cargo</b>: lo revisa nuestro equipo y te lo enviamos por mail.</p>
+        </div>
+        <div class="smc-botones">
+          <a class="smc-btn llena" href="#smv" onclick="var e=document.getElementById('smv');if(e){e.scrollIntoView({behavior:'smooth',block:'center'});return false;}">Verificar mi marca</a>
+          <a class="smc-btn vacia" href="https://wa.me/5491155890784?text=Hola%2C%20quiero%20consultar%20por%20el%20registro%20de%20mi%20marca" rel="noopener">Escribirnos por WhatsApp</a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Preguntas frecuentes -->
+  <section class="smc-sec">
+    <div class="smc-caja smc-faq">
+      <h2 class="smc-h2">Preguntas <em>frecuentes</em></h2>
+      <p class="smc-sub">Lo que más nos preguntan antes de registrar una marca en Argentina.</p>
+
+      <details><summary>¿Cómo consulto si una marca ya está registrada en Argentina?</summary>
+        <div class="smc-resp"><p>Se consulta en la base de datos de marcas del INPI. Con esta herramienta escribís el nombre y ves las marcas iguales o parecidas, la clase de cada una y su estado, sin dejar tus datos.</p></div></details>
+
+      <details><summary>¿Qué diferencia hay entre «en trámite», «publicada» y «concedida»?</summary>
+        <div class="smc-resp"><p>«En trámite» es una solicitud presentada que todavía no salió en el Boletín de Marcas. «Publicada» es la que ya salió y está abierta a oposiciones de terceros. «Concedida» es la que el INPI aceptó y quedó registrada.</p></div></details>
+
+      <details><summary>Si hay una marca parecida, ¿ya no puedo registrar la mía?</summary>
+        <div class="smc-resp"><p>No necesariamente. Depende de la clase, de qué tan parecidos son los nombres y de la actividad de cada uno. El INPI puede observar la solicitud y el titular de la otra marca puede oponerse, así que conviene analizarlo antes de presentar.</p></div></details>
+
+      <details><summary>¿Qué es una clase de marca?</summary>
+        <div class="smc-resp"><p>Es el rubro de productos o servicios en el que se registra la marca. Se usa la Clasificación de Niza, que tiene 45 clases: de la 1 a la 34 para productos y de la 35 a la 45 para servicios. Una marca solo está protegida en las clases en las que se registró.</p></div></details>
+
+      <details><summary>¿Cuánto dura una marca registrada?</summary>
+        <div class="smc-resp"><p>El registro dura 10 años desde su concesión y se puede renovar por períodos iguales mientras se siga usando.</p></div></details>
+
+      <details><summary>¿Esta consulta tiene costo?</summary>
+        <div class="smc-resp"><p>No. La búsqueda es gratuita y no te pedimos datos para mostrarte el resultado. Si después querés que nuestro equipo revise tu caso, te ofrecemos un análisis preliminar sin cargo.</p></div></details>
+
+      <details><summary>¿Esta consulta reemplaza una búsqueda de antecedentes profesional?</summary>
+        <div class="smc-resp"><p>No. Es un primer filtro del nombre. Una búsqueda profesional también tiene en cuenta cómo suena y qué significa el nombre, las clases relacionadas y tu actividad, y te dice qué riesgo real hay antes de iniciar el trámite.</p></div></details>
+
+      <p class="smc-aviso">La información de esta página es orientativa y no constituye asesoramiento legal. Los estados y datos provienen de la base pública del INPI y pueden cambiar.</p>
+    </div>
+  </section>
+
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "FAQPage",
+    "mainEntity": [
+      {"@type": "Question", "name": "¿Cómo consulto si una marca ya está registrada en Argentina?", "acceptedAnswer": {"@type": "Answer", "text": "Se consulta en la base de datos de marcas del INPI. Con esta herramienta escribís el nombre y ves las marcas iguales o parecidas, la clase de cada una y su estado, sin dejar tus datos."}},
+      {"@type": "Question", "name": "¿Qué diferencia hay entre «en trámite», «publicada» y «concedida»?", "acceptedAnswer": {"@type": "Answer", "text": "«En trámite» es una solicitud presentada que todavía no salió en el Boletín de Marcas. «Publicada» es la que ya salió y está abierta a oposiciones de terceros. «Concedida» es la que el INPI aceptó y quedó registrada."}},
+      {"@type": "Question", "name": "Si hay una marca parecida, ¿ya no puedo registrar la mía?", "acceptedAnswer": {"@type": "Answer", "text": "No necesariamente. Depende de la clase, de qué tan parecidos son los nombres y de la actividad de cada uno. El INPI puede observar la solicitud y el titular de la otra marca puede oponerse, así que conviene analizarlo antes de presentar."}},
+      {"@type": "Question", "name": "¿Qué es una clase de marca?", "acceptedAnswer": {"@type": "Answer", "text": "Es el rubro de productos o servicios en el que se registra la marca. Se usa la Clasificación de Niza, que tiene 45 clases: de la 1 a la 34 para productos y de la 35 a la 45 para servicios. Una marca solo está protegida en las clases en las que se registró."}},
+      {"@type": "Question", "name": "¿Cuánto dura una marca registrada?", "acceptedAnswer": {"@type": "Answer", "text": "El registro dura 10 años desde su concesión y se puede renovar por períodos iguales mientras se siga usando."}},
+      {"@type": "Question", "name": "¿Esta consulta tiene costo?", "acceptedAnswer": {"@type": "Answer", "text": "No. La búsqueda es gratuita y no te pedimos datos para mostrarte el resultado. Si después querés que nuestro equipo revise tu caso, te ofrecemos un análisis preliminar sin cargo."}},
+      {"@type": "Question", "name": "¿Esta consulta reemplaza una búsqueda de antecedentes profesional?", "acceptedAnswer": {"@type": "Answer", "text": "No. Es un primer filtro del nombre. Una búsqueda profesional también tiene en cuenta cómo suena y qué significa el nombre, las clases relacionadas y tu actividad, y te dice qué riesgo real hay antes de iniciar el trámite."}}
+    ]
+  }
+  </script>
+</div>
