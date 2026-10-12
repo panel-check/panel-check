@@ -79,6 +79,8 @@ if (!function_exists('smarties_preguntas_frecuentes')) {
     body:has(#smf) { overflow-x: clip; }
     .smf h1, .smf h2, .smf h3 { font-family: "Outfit","Roboto","Segoe UI",sans-serif; color: var(--az); letter-spacing: 0; margin: 0; }
     .smf a { color: inherit; }
+    /* el tema del sitio subraya todos los enlaces: se fuerza sin subrayado en tarjetas y botón (y en lo que llevan adentro) */
+    .smf a, .smf a:hover, .smf a:focus, .smf a:visited { text-decoration: none !important; }
     .smf .hero { padding: 150px 24px 70px; text-align: center; background: linear-gradient(160deg,#161250 0%,#2a2580 100%); }
     .smf .hero h1 { max-width: 820px; margin: 0 auto 14px; color: #fff; font-weight: 900; font-size: clamp(30px,5vw,48px); line-height: 1.1; text-transform: uppercase; }
     .smf .hero h1 em { font-style: normal; color: var(--tq); }
