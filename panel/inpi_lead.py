@@ -23,6 +23,7 @@ import re
 import sys
 import time
 import xml.etree.ElementTree as ET
+from datetime import datetime, timedelta, timezone
 from html import escape as _xml_escape
 
 import pdfplumber
@@ -420,15 +421,46 @@ def _parse_tabla_boletines(html: str) -> list[dict]:
     return boletines
 
 
-def listar_boletines_marcas_nuevas(timeout: int = 30) -> list[dict]:
-    """Lista los boletines "MARCAS NUEVAS" que INPI tiene publicados (la
-    misma página que usa scripts/listar_boletines.py en modo simple, sin
-    rango de fechas). Devuelve [{"numero", "fecha"}], más nuevo primero."""
-    r = requests.get(LISTADO_URL, timeout=timeout)
-    r.raise_for_status()
-    boletines = _parse_tabla_boletines(r.text)
-    boletines.sort(key=lambda b: int(b["numero"]), reverse=True)
-    return boletines
+BOLETINES_DESDE = "2024-01-01"  # hasta dónde hacia atrás se listan los boletines en /boletines
+LISTADO_POST_URL = f"{BASE}/Boletines/Index"
+_cache_listado = {"ts": 0.0, "desde": None, "datos": []}
+
+
+def listar_boletines_marcas_nuevas(timeout: int = 30, desde: str = BOLETINES_DESDE) -> list[dict]:
+    """Lista los boletines "MARCAS NUEVAS" que INPI tiene publicados desde la
+    fecha `desde` (YYYY-MM-DD) hasta hoy. Devuelve [{"numero", "fecha"}], más
+    nuevo primero.
+
+    El GET simple de INPI (Boletines?Tipo_Item=3) devuelve solo los últimos
+    boletines, así que el listado cortaba en unas pocas semanas. Con el rango
+    de fechas (POST, igual que scripts/listar_boletines.py --start/--finish)
+    aparece todo el historial. Si ese POST falla o viene vacío, se usa el GET
+    simple. Se cachea 30 minutos."""
+    if (time.time() - _cache_listado["ts"] < 1800 and _cache_listado["desde"] == desde
+            and _cache_listado["datos"]):
+        return _cache_listado["datos"]
+
+    hoy = datetime.now(timezone(timedelta(hours=-3))).date().isoformat()
+    boletines: list[dict] = []
+    try:
+        r = requests.post(
+            LISTADO_POST_URL,
+            data={"Tipo_Item": "3", "Tipo_Boletin": "", "start": desde, "finish": hoy, "numero": ""},
+            timeout=timeout,
+        )
+        r.raise_for_status()
+        boletines = _parse_tabla_boletines(r.text)
+    except requests.RequestException:
+        boletines = []
+    if not boletines:
+        r = requests.get(LISTADO_URL, timeout=timeout)
+        r.raise_for_status()
+        boletines = _parse_tabla_boletines(r.text)
+
+    unicos = {b["numero"]: b for b in boletines}
+    resultado = sorted(unicos.values(), key=lambda b: int(b["numero"]), reverse=True)
+    _cache_listado.update(ts=time.time(), desde=desde, datos=resultado)
+    return resultado
 
 
 # --- Ficha completa de un expediente (cartera de clientes) ------------------
