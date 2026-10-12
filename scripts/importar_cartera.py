@@ -163,13 +163,20 @@ def main():
                   + ", ".join(sueltas))
 
         if args.simular:
-            print("::notice::Simulación: no se consultó INPI ni se escribió nada.")
+            print(f"::notice::Simulación (no se consultó INPI ni se escribió nada): {len(actas)} actas recibidas, "
+                  f"{len(en_cartera)} ya en la cartera (se omitirían), {len(nuevas)} para importar.")
+            if en_cartera:
+                print("::notice::Ya en la cartera (se omiten): " + ", ".join(a for a in actas if a in en_cartera))
+            if sueltas:
+                print("::notice::Figuran también como lead en el panel de leads: " + ", ".join(sueltas))
             return
 
         s = crear_sesion()
         cache = {}
         importadas = clientes_nuevos = con_logo = bloqueadas = errores = inexistentes = sin_titular = 0
         bloqueo_seguido = 0
+        fallidas = {}   # acta -> motivo (para anotarlas al final)
+        hechas = []     # (acta, cliente_id, cliente_nuevo, tiene_logo)
         for i, acta in enumerate(nuevas, 1):
             if monitor_bloqueo.debe_cortar():
                 print("Se corta por bloqueos seguidos de INPI: las que faltan se pueden volver a importar (se omiten las ya cargadas).")
@@ -182,6 +189,7 @@ def main():
             if estado == "bloqueado":
                 bloqueadas += 1
                 bloqueo_seguido += 1
+                fallidas[acta] = "bloqueada por el WAF"
                 print(f"  [{i}/{len(nuevas)}] acta {acta}: bloqueada por el WAF, queda sin importar")
                 if bloqueo_seguido >= args.bloqueos_para_frenar:
                     print(f"{bloqueo_seguido} bloqueos seguidos: se corta la corrida.")
@@ -191,9 +199,11 @@ def main():
             bloqueo_seguido = 0
             if estado == "no_existe":
                 inexistentes += 1
+                fallidas[acta] = "INPI no la devuelve"
                 print(f"  [{i}/{len(nuevas)}] acta {acta}: INPI no la devuelve, queda sin importar")
             elif estado != "ok":
                 errores += 1
+                fallidas[acta] = "error de consulta"
                 print(f"  [{i}/{len(nuevas)}] acta {acta}: error de consulta, queda sin importar")
             else:
                 _completar_denominacion_ws(info, acta)
@@ -201,6 +211,7 @@ def main():
                 cuit = cuit_valido(info.get("cuit"))
                 if not titular:
                     sin_titular += 1
+                    fallidas[acta] = "el expediente no trae titular"
                     print(f"  [{i}/{len(nuevas)}] acta {acta}: el expediente no trae titular, queda sin importar")
                 else:
                     with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
@@ -216,6 +227,7 @@ def main():
                     conn.commit()
                     importadas += 1
                     tiene = bool(info.get("logo"))
+                    hechas.append((acta, cliente_id, es_nuevo, tiene))
                     con_logo += tiene
                     print(f"  [{i}/{len(nuevas)}] acta {acta}: ok → cliente #{cliente_id}"
                           f"{' (nuevo)' if es_nuevo else ' (ya existía)'}, logo: {'sí' if tiene else 'no'}")
@@ -265,7 +277,22 @@ def main():
                    f"Clientes nuevos: {clientes_nuevos}. Con logo: {con_logo}. Bloqueadas: {bloqueadas}. "
                    f"Sin resultado en INPI: {inexistentes}. Con error: {errores}. Sin titular: {sin_titular}. "
                    f"Logos completados en marcas viejas: {logos_ok} de {logos_revisadas} revisadas.")
+        # Anotaciones del run (se leen sin bajar el log): resumen, qué se omitió, qué falló, qué cliente quedó con qué marcas.
         print(f"::notice::{resumen}")
+        if en_cartera:
+            print("::notice::Omitidas por estar ya en la cartera: " + ", ".join(a for a in actas if a in en_cartera))
+        por_cliente = {}
+        for acta, cid, nuevo, tiene in hechas:
+            por_cliente.setdefault((cid, nuevo), []).append(f"{acta}{'*' if tiene else ''}")
+        if por_cliente:
+            lineas = [f"cliente #{cid}{' (nuevo)' if nuevo else ' (ya existía)'}: {', '.join(v)}"
+                      for (cid, nuevo), v in sorted(por_cliente.items())]
+            print("::notice::Cargadas (* = con logo): " + " | ".join(lineas))
+        if fallidas:
+            print("::warning::Sin importar: " + ", ".join(f"{a} ({m})" for a, m in fallidas.items()))
+        pendientes_corte = [a for a in nuevas if a not in fallidas and a not in {h[0] for h in hechas}]
+        if pendientes_corte:
+            print("::warning::Sin procesar por corte (bloqueos o tiempo): " + ", ".join(pendientes_corte))
         print(f"\n{resumen}")
     finally:
         conn.close()
