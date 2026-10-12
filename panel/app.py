@@ -69,6 +69,7 @@ import mails_api
 import mails_core
 import formularios_core
 import inpi_lead
+import listado_inpi
 
 DATABASE_URL = os.environ.get("DATABASE_URL")
 
@@ -212,12 +213,17 @@ def migrar_columnas_panel():
         calendario_core.iniciar_agenda_diaria(conexion)
     except Exception as e:
         print(f"[startup] la agenda diaria no arrancó (no bloqueante): {e}")
-    # Listado de boletines de INPI (/boletines): se arma en un hilo aparte para que, cuando
-    # alguien abra la pantalla, ya esté en caché (si no, la primera carga tarda ~20 s).
+    # Listado de boletines de INPI (/boletines): se guarda en la base. Si todavía no está el
+    # historial se arma acá mismo, en un hilo aparte (una sola vez).
     try:
-        inpi_lead.listado_boletines_en_cache()
+        with conexion() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SET lock_timeout = '3s'")
+                listado_inpi.crear_tablas(cur)
+            conn.commit()
+        listado_inpi.listado(conexion)
     except Exception as e:
-        print(f"[startup] precarga del listado de boletines salteada (no bloqueante): {e}")
+        print(f"[startup] listado de boletines de INPI salteado (no bloqueante): {e}")
 
 
 def _crear_tablas_crm(cur):
@@ -1323,27 +1329,10 @@ def _contar_consulta(consulta: str) -> int:
             return cur.fetchone()[0]
 
 
-_cache_fechas_inpi = {"ts": 0.0, "datos": {}}
-
-
 def _fechas_boletines_inpi() -> dict:
-    """{numero: date} según el listado de INPI (la fecha exacta de publicación).
-    Se cachea 6 horas; si INPI no responde devuelve lo último que se tenía."""
-    import time
-    from datetime import date
-    if time.time() - _cache_fechas_inpi["ts"] < 6 * 3600 and _cache_fechas_inpi["datos"]:
-        return _cache_fechas_inpi["datos"]
-    try:
-        datos = {}
-        for b in inpi_lead.listado_boletines_en_cache()[0]:
-            m = re.fullmatch(r"(\d{1,2})/(\d{1,2})/(\d{4})", b.get("fecha") or "")
-            if m:
-                datos[str(b["numero"])] = date(int(m.group(3)), int(m.group(2)), int(m.group(1)))
-        if datos:  # si el listado todavía se está cargando, no cachear el vacío 6 horas
-            _cache_fechas_inpi.update(ts=time.time(), datos=datos)
-    except Exception:
-        pass
-    return _cache_fechas_inpi["datos"]
+    """{numero: date} según el listado de INPI guardado en la base (ver listado_inpi.py)."""
+    filas, _, _, _ = listado_inpi.listado(conexion)
+    return {f["numero"]: f["fecha"] for f in filas if f["fecha"]}
 
 
 @app.get("/api/boletines")
@@ -1412,8 +1401,8 @@ def _dias_restantes_oposicion(fecha) -> int | None:
 @app.get("/api/boletines/completo")
 def listar_boletines_completo(_: str = Depends(verificar_login)):
     """Para la sección /boletines: cruza el listado completo de boletines
-    "MARCAS NUEVAS" que tiene INPI publicados (consultado en vivo, ver
-    inpi_lead.listar_boletines_marcas_nuevas) contra lo que ya tenemos
+    "MARCAS NUEVAS" que tiene INPI publicados (guardado en la base, ver
+    listado_inpi.py) contra lo que ya tenemos
     importado en nuestra tabla `boletines`, para poder mostrar cuáles
     faltan y ofrecer importarlos desde acá (útil para el backlog
     histórico) — antes solo se podía ver esto mirando GitHub Actions a
@@ -1423,9 +1412,10 @@ def listar_boletines_completo(_: str = Depends(verificar_login)):
     tenemos importado en nuestra base, con un aviso, en vez de romper la
     página entera."""
     aviso = None
-    # No espera a INPI: usa el listado en caché (se refresca en segundo plano) para que la
-    # pantalla abra al instante; la primera vez después de un deploy puede venir vacío.
-    de_inpi, cargando, error_inpi = inpi_lead.listado_boletines_en_cache()
+    # No espera a INPI: el listado está guardado en la base y solo se vuelve a consultar los
+    # miércoles de 7 a 11 hs (cuando salen los boletines nuevos) o con el botón Actualizar.
+    # Solo viene vacío la primera vez, mientras se arma el historial.
+    de_inpi, cargando, error_inpi, listado_actualizado = listado_inpi.listado(conexion)
     if cargando:
         aviso = "Cargando el listado de INPI (tarda unos segundos)… se muestra solo lo ya importado."
     elif error_inpi:
@@ -1464,7 +1454,15 @@ def listar_boletines_completo(_: str = Depends(verificar_login)):
             "oposiciones_buscadas_en": (importado_fila or {}).get("oposiciones_buscadas_en"),
         })
     filas.sort(key=lambda f: int(f["numero"]), reverse=True)
-    return {"boletines": filas, "aviso": aviso, "cargando": cargando}
+    return {"boletines": filas, "aviso": aviso, "cargando": cargando,
+            "listado_actualizado_en": listado_actualizado}
+
+
+@app.post("/api/boletines/actualizar-listado")
+def actualizar_listado_boletines(_: str = Depends(verificar_login)):
+    """Botón «Actualizar» de /boletines: consulta a INPI ahora (últimos 2 meses) en vez de
+    esperar al miércoles. Tarda unos segundos."""
+    return listado_inpi.actualizar_ahora(conexion)
 
 
 @app.post("/api/boletines/{numero}/importar")

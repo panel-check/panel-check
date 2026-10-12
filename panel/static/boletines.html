@@ -139,8 +139,15 @@ async function cargar() {
   try {
     const data = await api("/api/boletines/completo");
     const aviso = data.aviso ? `<div class="aviso-boletines">${_escapeHtml(data.aviso)}</div>` : "";
+    const chequeo = data.listado_actualizado_en
+      ? new Date(data.listado_actualizado_en).toLocaleString("es-AR", { dateStyle: "short", timeStyle: "short" })
+      : "todavía no";
     contenido.innerHTML = `
       ${aviso}
+      <div style="display:flex;gap:12px;align-items:center;margin:0 0 10px;font-size:13px;color:var(--gris);">
+        <span>Listado de INPI revisado: ${_escapeHtml(chequeo)}. Se actualiza solo los miércoles de 7 a 11 hs.</span>
+        <button type="button" id="actualizar-listado" class="importar-boletin">↻ Actualizar ahora</button>
+      </div>
       <table class="tabla-boletines">
         <thead>
           <tr><th>Número</th><th>Fecha</th><th>Estado</th><th class="num">Marcas</th><th class="num" title="Sin agente ni apoderado">Leads</th><th class="num">Con agente</th><th>Plazo de oposición</th><th></th></tr>
@@ -148,6 +155,7 @@ async function cargar() {
         <tbody>${data.boletines.map(filaBoletin).join("")}</tbody>
       </table>
     `;
+    document.getElementById("actualizar-listado").addEventListener("click", actualizarListado);
     if (data.cargando) setTimeout(cargar, 4000);  // el listado de INPI se está armando: reintenta solo
     contenido.querySelectorAll(".importar-boletin").forEach((b) => {
       b.addEventListener("click", () => importar(b));
@@ -158,6 +166,19 @@ async function cargar() {
   } catch (e) {
     contenido.innerHTML = `<p style="color:var(--rojo);">No se pudo cargar (${e.message}).</p>`;
   }
+}
+
+async function actualizarListado() {
+  const boton = document.getElementById("actualizar-listado");
+  boton.disabled = true;
+  boton.textContent = "Consultando INPI…";
+  try {
+    const r = await api("/api/boletines/actualizar-listado", { method: "POST" });
+    if (!r.ok) alert(r.error || "No se pudo actualizar el listado.");
+  } catch (e) {
+    alert(`No se pudo actualizar el listado (${e.message}).`);
+  }
+  cargar();
 }
 
 async function buscarOposiciones(boton) {
