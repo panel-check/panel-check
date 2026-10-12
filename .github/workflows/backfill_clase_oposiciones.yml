@@ -1,0 +1,55 @@
+name: Corregir clase de marcas con oposición (manual)
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "true = solo mostrar cuáles cambiarían, sin guardar (recomendado la primera vez). Para corregir de verdad, poner false"
+        required: false
+        default: "true"
+      max_minutes:
+        description: "Minutos máximos de la corrida"
+        required: false
+        default: "110"
+      limit:
+        description: "Tope de marcas a revisar (dejar vacío = todas las que tuvieron oposición)"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+# Un solo carril contra INPI: si hay otro proceso de INPI corriendo, este espera su turno.
+concurrency:
+  group: inpi-lane
+  cancel-in-progress: false
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+      RESEND_FROM: ${{ secrets.RESEND_FROM }}
+      NOTIFICAR_A: ${{ secrets.NOTIFICAR_A }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Instalar dependencias
+        run: pip install -r requirements.txt
+
+      - name: Releer la clase (campo CLASE de la ficha) de las marcas con oposición
+        run: |
+          cd scripts
+          args=""
+          if [ -n "${{ inputs.limit }}" ]; then args="$args --limit ${{ inputs.limit }}"; fi
+          if [ -n "${{ inputs.max_minutes }}" ]; then args="$args --max-minutes ${{ inputs.max_minutes }}"; fi
+          if [ "${{ inputs.dry_run }}" != "false" ]; then args="$args --dry-run"; fi
+          python3 backfill_clase_oposiciones.py $args
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL || secrets.DATABASE_PUBLIC_URL }}
+          PYTHONUNBUFFERED: "1"
