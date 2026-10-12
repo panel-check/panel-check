@@ -278,6 +278,8 @@ CREATE TABLE IF NOT EXISTS cartera_marcas (
 );
 
 CREATE INDEX IF NOT EXISTS idx_cartera_marcas_cliente ON cartera_marcas(cliente_id);
+-- Nombre de grupo puesto a mano para juntar marcas del mismo cliente en la lista (solo cambia cómo se muestran)
+ALTER TABLE cartera_marcas ADD COLUMN IF NOT EXISTS grupo_marca TEXT;
 
 CREATE TABLE IF NOT EXISTS cartera_novedades (
     id             BIGSERIAL PRIMARY KEY,

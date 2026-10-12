@@ -1113,6 +1113,8 @@ a.cl-logo-link { display: inline-block; line-height: 0; }
 .mk-sub th { text-align: left; font-size: 11px; font-weight: 600; color: var(--gris); padding: 8px 8px 6px; border-bottom: 1px solid var(--borde); white-space: nowrap; }
 .mk-sub td { padding: 8px; border-bottom: 1px solid #eef0f4; vertical-align: middle; }
 .mk-sub tr:last-child td { border-bottom: 0; }
+.mk-sub .cl-logo { max-width: 40px; max-height: 40px; }
+.mk-sub a.link-acta { font-size: 12px; white-space: nowrap; }
 a.mk-acta { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; white-space: nowrap; }
 .cl-tag.ref { background: #f1e8fb; color: #6b3fa0; }
 .cl-referido.destacado input { border-color: #6b3fa0; box-shadow: 0 0 0 2px #f1e8fb; }

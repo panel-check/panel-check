@@ -3,12 +3,18 @@ name: Unir dos clientes duplicados
 on:
   workflow_dispatch:
     inputs:
+      buscar:
+        description: "Para ver los ids: texto del nombre a buscar (no une nada; muestra id, tag, cantidad de marcas y actas, sin nombres)"
+        required: false
+        default: ""
       origen:
         description: "Id del cliente que se borra (sus marcas, novedades, alertas, formularios y poderes pasan al destino)"
-        required: true
+        required: false
+        default: ""
       destino:
         description: "Id del cliente que se queda con todo"
-        required: true
+        required: false
+        default: ""
       acta_control:
         description: "Un acta que el cliente de origen debe tener (control de seguridad; recomendado)"
         required: false
@@ -41,11 +47,16 @@ jobs:
       - name: Unir los clientes
         run: |
           cd scripts
+          if [ -n "$BUSCAR" ]; then
+            python3 unir_clientes.py --buscar "$BUSCAR"
+            exit 0
+          fi
           args=(--origen "$ORIGEN" --destino "$DESTINO" --acta-control "$ACTA_CONTROL")
           if [ "$SIMULAR" = "true" ]; then args+=(--simular); fi
           if [ "$FORZAR" = "true" ]; then args+=(--forzar); fi
           python3 unir_clientes.py "${args[@]}"
         env:
+          BUSCAR: ${{ inputs.buscar }}
           ORIGEN: ${{ inputs.origen }}
           DESTINO: ${{ inputs.destino }}
           ACTA_CONTROL: ${{ inputs.acta_control }}
