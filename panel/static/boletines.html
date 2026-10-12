@@ -148,6 +148,7 @@ async function cargar() {
         <tbody>${data.boletines.map(filaBoletin).join("")}</tbody>
       </table>
     `;
+    if (data.cargando) setTimeout(cargar, 4000);  // el listado de INPI se está armando: reintenta solo
     contenido.querySelectorAll(".importar-boletin").forEach((b) => {
       b.addEventListener("click", () => importar(b));
     });

@@ -21,6 +21,7 @@ import html as _html
 import io
 import re
 import sys
+import threading
 import time
 import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta, timezone
@@ -468,46 +469,94 @@ def _pedir_tramo(inicio, fin, timeout: int) -> list[dict]:
     return _parse_tabla_boletines(r.text)
 
 
+def _traer_listado(timeout: int, desde: str) -> list[dict]:
+    """Arma el listado completo pidiendo a INPI mes por mes, de a 3 consultas en
+    paralelo (serie tardaba ~60 s en frío). Los meses ya cerrados salen del caché."""
+    from concurrent.futures import ThreadPoolExecutor
+    from datetime import date
+    hoy = datetime.now(timezone(timedelta(hours=-3))).date()
+    tramos = _tramos_mensuales(date.fromisoformat(desde), hoy)
+    boletines: list[dict] = []
+    pendientes = []
+    for tramo in tramos:
+        if tramo in _cache_tramos_cerrados:
+            boletines += _cache_tramos_cerrados[tramo]
+        else:
+            pendientes.append(tramo)
+
+    def pedir(tramo):
+        try:
+            return tramo, _pedir_tramo(tramo[0], tramo[1], timeout), None
+        except requests.RequestException as e:  # un mes que falla no tira abajo todo el listado
+            return tramo, [], e
+
+    errores = []
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        for tramo, filas, error in pool.map(pedir, pendientes):
+            if error is not None:
+                errores.append(error)
+                continue
+            if (hoy - tramo[1]).days > 45:
+                _cache_tramos_cerrados[tramo] = filas
+            boletines += filas
+    if not boletines:
+        r = requests.get(LISTADO_URL, timeout=timeout)
+        r.raise_for_status()
+        boletines = _parse_tabla_boletines(r.text)
+    unicos = {b["numero"]: b for b in boletines}
+    return sorted(unicos.values(), key=lambda b: int(b["numero"]), reverse=True)
+
+
+_lock_listado = threading.Lock()
+
+
+def _refrescar_listado(timeout: int, desde: str):
+    """Rehace el listado y lo deja en el caché; solo uno a la vez."""
+    if not _lock_listado.acquire(blocking=False):
+        return
+    try:
+        try:
+            datos = _traer_listado(timeout, desde)
+            _cache_listado.update(ts=time.time(), desde=desde, datos=datos, error=None)
+        except requests.RequestException as e:
+            _cache_listado["error"] = str(e)
+            _cache_listado["ts_error"] = time.time()
+    finally:
+        _lock_listado.release()
+
+
+def listado_boletines_en_cache(timeout: int = 20, desde: str = BOLETINES_DESDE):
+    """(boletines, cargando, error). NUNCA espera a INPI: devuelve lo que haya en
+    el caché (aunque esté vencido) y, si hace falta, lo refresca en un hilo aparte.
+    `cargando` es True si todavía no hay ningún listado (primera carga tras un
+    deploy); `error` es el último error de INPI si no se pudo traer nada."""
+    vencido = time.time() - _cache_listado["ts"] >= 1800 or _cache_listado["desde"] != desde
+    reciente_error = time.time() - _cache_listado.get("ts_error", 0) < 60
+    if vencido and not reciente_error and not _lock_listado.locked():
+        threading.Thread(target=_refrescar_listado, args=(timeout, desde), daemon=True).start()
+    datos = _cache_listado["datos"] if _cache_listado["desde"] == desde else []
+    cargando = not datos and _lock_listado.locked()
+    return datos, cargando, (_cache_listado.get("error") if not datos else None)
+
+
 def listar_boletines_marcas_nuevas(timeout: int = 30, desde: str = BOLETINES_DESDE) -> list[dict]:
     """Lista los boletines "MARCAS NUEVAS" que INPI tiene publicados desde la
     fecha `desde` (YYYY-MM-DD) hasta hoy. Devuelve [{"numero", "fecha"}], más
-    nuevo primero.
+    nuevo primero. Versión que espera: para la pantalla usar
+    listado_boletines_en_cache, que no bloquea.
 
     El GET simple de INPI (Boletines?Tipo_Item=3) devuelve solo las últimas 100
     filas (unos 46 boletines de marcas nuevas, ~10 semanas) y el POST con rango
     de fechas tiene el mismo tope, así que se pide mes por mes (ver
     LIMITE_FILAS_INPI). Los meses ya cerrados se guardan en memoria; el resultado
-    completo se cachea 30 minutos. Si no se logra traer nada por tramos, se usa
-    el GET simple."""
+    completo se cachea 30 minutos."""
     if (time.time() - _cache_listado["ts"] < 1800 and _cache_listado["desde"] == desde
             and _cache_listado["datos"]):
         return _cache_listado["datos"]
-
-    from datetime import date
-    hoy = datetime.now(timezone(timedelta(hours=-3))).date()
-    boletines: list[dict] = []
-    for inicio, fin in _tramos_mensuales(date.fromisoformat(desde), hoy):
-        clave = (inicio, fin)
-        if clave in _cache_tramos_cerrados:
-            boletines += _cache_tramos_cerrados[clave]
-            continue
-        try:
-            tramo = _pedir_tramo(inicio, fin, timeout)
-        except requests.RequestException:
-            continue  # un mes que falla no tira abajo todo el listado
-        if (hoy - fin).days > 45:
-            _cache_tramos_cerrados[clave] = tramo
-        boletines += tramo
-        time.sleep(0.3)
-    if not boletines:
-        r = requests.get(LISTADO_URL, timeout=timeout)
-        r.raise_for_status()
-        boletines = _parse_tabla_boletines(r.text)
-
-    unicos = {b["numero"]: b for b in boletines}
-    resultado = sorted(unicos.values(), key=lambda b: int(b["numero"]), reverse=True)
-    _cache_listado.update(ts=time.time(), desde=desde, datos=resultado)
-    return resultado
+    with _lock_listado:
+        datos = _traer_listado(timeout, desde)
+        _cache_listado.update(ts=time.time(), desde=desde, datos=datos, error=None)
+        return datos
 
 
 # --- Ficha completa de un expediente (cartera de clientes) ------------------

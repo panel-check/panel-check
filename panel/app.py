@@ -212,6 +212,12 @@ def migrar_columnas_panel():
         calendario_core.iniciar_agenda_diaria(conexion)
     except Exception as e:
         print(f"[startup] la agenda diaria no arrancó (no bloqueante): {e}")
+    # Listado de boletines de INPI (/boletines): se arma en un hilo aparte para que, cuando
+    # alguien abra la pantalla, ya esté en caché (si no, la primera carga tarda ~20 s).
+    try:
+        inpi_lead.listado_boletines_en_cache()
+    except Exception as e:
+        print(f"[startup] precarga del listado de boletines salteada (no bloqueante): {e}")
 
 
 def _crear_tablas_crm(cur):
@@ -1329,11 +1335,12 @@ def _fechas_boletines_inpi() -> dict:
         return _cache_fechas_inpi["datos"]
     try:
         datos = {}
-        for b in inpi_lead.listar_boletines_marcas_nuevas():
+        for b in inpi_lead.listado_boletines_en_cache()[0]:
             m = re.fullmatch(r"(\d{1,2})/(\d{1,2})/(\d{4})", b.get("fecha") or "")
             if m:
                 datos[str(b["numero"])] = date(int(m.group(3)), int(m.group(2)), int(m.group(1)))
-        _cache_fechas_inpi.update(ts=time.time(), datos=datos)
+        if datos:  # si el listado todavía se está cargando, no cachear el vacío 6 horas
+            _cache_fechas_inpi.update(ts=time.time(), datos=datos)
     except Exception:
         pass
     return _cache_fechas_inpi["datos"]
@@ -1416,11 +1423,13 @@ def listar_boletines_completo(_: str = Depends(verificar_login)):
     tenemos importado en nuestra base, con un aviso, en vez de romper la
     página entera."""
     aviso = None
-    try:
-        de_inpi = inpi_lead.listar_boletines_marcas_nuevas()
-    except requests.RequestException as e:
-        de_inpi = []
-        aviso = f"No se pudo consultar el listado de INPI ({e}) — se muestra solo lo ya importado."
+    # No espera a INPI: usa el listado en caché (se refresca en segundo plano) para que la
+    # pantalla abra al instante; la primera vez después de un deploy puede venir vacío.
+    de_inpi, cargando, error_inpi = inpi_lead.listado_boletines_en_cache()
+    if cargando:
+        aviso = "Cargando el listado de INPI (tarda unos segundos)… se muestra solo lo ya importado."
+    elif error_inpi:
+        aviso = f"No se pudo consultar el listado de INPI ({error_inpi}) — se muestra solo lo ya importado."
 
     with conexion() as conn:
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
@@ -1455,7 +1464,7 @@ def listar_boletines_completo(_: str = Depends(verificar_login)):
             "oposiciones_buscadas_en": (importado_fila or {}).get("oposiciones_buscadas_en"),
         })
     filas.sort(key=lambda f: int(f["numero"]), reverse=True)
-    return {"boletines": filas, "aviso": aviso}
+    return {"boletines": filas, "aviso": aviso, "cargando": cargando}
 
 
 @app.post("/api/boletines/{numero}/importar")
