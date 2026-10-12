@@ -487,6 +487,22 @@ class QuienSeOpuso(unittest.TestCase):
         self.assertEqual(r, [{"denominacion": "BRANDLIVE", "clases": []}])
         self.assertEqual(self.pedidos, [])
 
+    def test_marcas_con_registro_y_clases_en_el_texto(self):
+        # Caso real (CANVA PTY LTD contra CANVA PADEL, acta 4775277): sin actas, pero con las clases escritas
+        fund = ("Por ser la marca solicitada muy confundible con las de nuestro mandante CANVA REG 3121936/935 CL. 40 Y 42; "
+                "CANVA (y diseño) REG 3422544/3496423/424/425 CL. 9, 40, 42, Y 45; CANVA (y diseño) REG 3485337/338/339/340 "
+                "CL 9, 40, 42 Y 45 y como designación comercial. Nos reservamos el derecho de ampliar los fundamentos.")
+        r = self.correr({"acta": "4775277", "fundamento_oposicion": fund})
+        self.assertEqual(r, [{"denominacion": "CANVA", "clases": ["9", "40", "42", "45"]}])
+        self.assertEqual(self.pedidos, [])
+
+    def test_marcas_del_texto_en_mayusculas_y_varias_marcas(self):
+        ow = self.ow
+        r = ow.marcas_del_texto("OPONGO LA MARCA DE NUESTRO MANDANTE LUNA SUR REG. N° 2.345.678 CLASE 25 Y SOL REG 123456 CL 9 E 35")
+        self.assertEqual(r, [{"denominacion": "LUNA SUR", "clase": "25"}, {"denominacion": "SOL", "clase": "9"}, {"denominacion": "SOL", "clase": "35"}])
+        self.assertEqual(ow.marcas_del_texto("la marca fue registrada en la misma clase 42"), [])   # «registrada» no es REG
+        self.assertEqual(ow.marcas_del_texto(None), [])
+
     def test_nombre_del_oponente_sin_documento(self):
         self.assertEqual(self.ow.nombre_oponente({"oponente_nombre": " BRANDLIVE   S.A. ", "oponente_cuit": "30-1"}), "BRANDLIVE S.A.")
         self.assertEqual(self.ow.nombre_oponente({}), "")
