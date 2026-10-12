@@ -17,7 +17,8 @@ Seguridad:
   * Todo en una sola transacción: si algo falla, no queda nada a medias.
 
 --buscar TEXTO: no une nada; lista los clientes cuyo nombre contiene el texto (sin tildes ni
-mayúsculas) como «#id: N marcas, tag, CUIT sí/no, actas…» para saber qué ids usar.
+mayúsculas) como «#id: N marcas, tag, CUIT sí/no, actas…» para saber qué ids usar, y también las
+marcas cuya denominación lo contiene como «acta (cliente #id)».
 
 El repo es público: el log solo muestra ids, tags, cantidades y actas, nunca nombres ni CUIT.
 
@@ -52,8 +53,12 @@ def buscar(cur, texto: str):
         """
     )
     coincidencias = [f for f in cur.fetchall() if objetivo in cartera.normalizar_nombre(f["nombre"])]
+    cur.execute("SELECT acta, cliente_id, denominacion FROM cartera_marcas ORDER BY cliente_id, acta")
+    marcas = [f for f in cur.fetchall() if objetivo in cartera.normalizar_nombre(f["denominacion"])]
+    if marcas:
+        print("::notice::Búsqueda en marcas: " + " | ".join(f"{m['acta']} (cliente #{m['cliente_id']})" for m in marcas))
     if not coincidencias:
-        print("::notice::Búsqueda: ningún cliente coincide.")
+        print("::notice::Búsqueda: ningún cliente coincide por nombre.")
         return
     lineas = [f"#{f['id']}: {f['marcas']} marca(s), tag {f['referido'] or '—'}, CUIT {'sí' if f['cuit'] else 'no'}"
               f"{'' if f['activo'] else ', inactivo'}, actas {', '.join(f['actas']) or '—'}" for f in coincidencias]
