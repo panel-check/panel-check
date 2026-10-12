@@ -12,12 +12,26 @@ Quien busca «consulta marca inpi» hoy encuentra primero las páginas del propi
 |---|---|---|---|
 | Verificador (herramienta + contenido) | `/consulta-marca-inpi/` | Sí | `verificador-pagina-completa.html` (armado con `scripts/armar_pagina_verificador.py` a partir de `verificador-pagina-hero.html`, `verificador-buscador.html` y `verificador-pagina-contenido.html`) |
 | Guía de estados | `/estados-de-una-marca/` | Sí | `guia-estados-marca.html` |
-| Índice de preguntas frecuentes | `/preguntas-frecuentes/` | Sí | shortcode `[preguntas_frecuentes]` de `preguntas-frecuentes-snippet.php`; se actualiza solo con cada entrada de la categoría «Preguntas frecuentes» |
+| Índice de preguntas frecuentes | `/preguntas-frecuentes/` | Sí | shortcode `[preguntas_frecuentes]` de `preguntas-frecuentes-snippet.php`; se actualiza solo con cada entrada de la categoría «Preguntas frecuentes»; permite filtrar por etapa (ver abajo) |
 | Entradas de preguntas | `/<pregunta>/` (una por tema) | Sí | entradas en la categoría «Preguntas frecuentes»; cada una enlaza al índice, al buscador y a la guía |
 | Resultado | `/resultado/` | **No** (noindex en el plugin de SEO) | `landing-resultado.html` |
 | Home | `/` | Sí | formulario con todos los datos `verificador-home.html` (no es el buscador) |
 
 El home y el buscador son formularios distintos a propósito: el home pide todos los datos antes del resultado (flujo anterior, que sigue funcionando); el buscador de `/consulta-marca-inpi/` no pide datos hasta mostrar el resultado. Los dos mandan a `/resultado/`.
+
+### Etapas del índice de preguntas
+
+El índice muestra, antes de la lista, «¿En qué etapa estás?» con tres opciones. Cada etapa es una **subcategoría** de «Preguntas frecuentes» y el shortcode la reconoce por la dirección (slug), que tiene que ser exacta:
+
+| Etapa | Subcategoría (slug) | Para quién |
+|---|---|---|
+| Antes de registrar | `antes-de-registrar` | piensa el nombre o está por presentar la solicitud |
+| En proceso | `en-proceso` | ya presentó la solicitud y está en trámite |
+| Ya concedida | `concedida` | la marca ya está registrada |
+
+Cada entrada se tilda en su etapa (puede estar en varias). Sin etapa, solo aparece en «Ver todas». `/preguntas-frecuentes/#en-proceso` abre el índice ya filtrado (sirve para enlazar desde mails o desde la guía de oposición). Una etapa sin entradas muestra «Todavía no hay preguntas para esta etapa».
+
+Asignación de las entradas de muestra: principio de especialidad, dominio web y marca, nombre descriptivo, informe de viabilidad y usar la marca sin registrar → Antes de registrar; oposición → En proceso; denominativa o mixta → Antes de registrar + En proceso. **«Ya concedida» no tiene entradas todavía** (temas posibles: renovación, qué hacer después de la concesión, vigilancia, uso y cesión).
 
 ## Mapa de palabras
 
