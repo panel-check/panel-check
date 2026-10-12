@@ -19,9 +19,10 @@ on:
 permissions:
   contents: read
 
-# Un solo carril contra INPI: si hay otro proceso de INPI corriendo, este espera su turno.
+# A propósito NO usa el carril compartido «inpi-lane»: arranca aunque haya otro proceso de INPI
+# corriendo (pedido del 12/10/2026). Solo evita que corran dos copias de esta misma herramienta.
 concurrency:
-  group: inpi-lane
+  group: backfill-clase-oposiciones
   cancel-in-progress: false
 
 jobs:
