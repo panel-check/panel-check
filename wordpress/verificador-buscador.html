@@ -1,0 +1,226 @@
+<!--
+  Buscador de marcas (sin datos de contacto) — es la herramienta de la página /consulta-marca-inpi/.
+  NO es el formulario del home: el home sigue con wordpress/verificador-home.html (pide todos los datos antes del resultado).
+  Normalmente no se pega suelto: scripts/armar_pagina_verificador.py lo une con el título y los textos en
+  wordpress/verificador-pagina-completa.html, que es lo que se pega en WordPress.
+
+  CÓMO FUNCIONA (flujo sin pedir datos de contacto):
+    - La persona escribe el nombre de su marca y, si quiere, elige las clases en las que piensa registrarla.
+    - Al enviar, el navegador guarda esa búsqueda (sessionStorage, clave «smv_pendiente») y pasa a /resultado/,
+      que consulta INPI con una barra de progreso, muestra el resultado y RECIÉN AHÍ pide los datos de contacto
+      para mandar el análisis preliminar sin cargo (ver wordpress/landing-resultado.html).
+    - Si el navegador no deja guardar la búsqueda, se hace el pedido a /buscar desde acá y se pasa a /resultado/?c=<código>.
+    - Cada búsqueda queda en el panel: Más → Consultas web (las que dejaron sus datos y las que solo buscaron).
+
+  CONFIGURACIÓN: las constantes del principio del <script>.
+-->
+<div id="smv" class="smv" data-smv>
+  <style>
+    .smv, .smv * { box-sizing: border-box; }
+    /* Tarjeta azul propia: el texto es blanco, así que se lee igual sobre fondo blanco, celeste o azul */
+    .smv { width: 100%; max-width: 760px; margin: 0 auto; padding: 26px 24px 22px; border-radius: 22px; background: #1d1868;
+      border: 1px solid rgba(92,255,225,.4); box-shadow: 0 12px 34px rgba(22,18,80,.28);
+      font-family: Roboto, -apple-system, "system-ui", "Segoe UI", sans-serif; color: #fff; text-align: left; }
+    .smv form { margin: 0; }
+    .smv .smv-campo { padding: 0 1px 14px; }
+    .smv input[type=text] {
+      display: block; width: 100%; height: 43px; padding: 0 14px; margin: 0;
+      background: #fff; color: #161250; border: 1px solid #0095ff; border-radius: 11px;
+      font: 400 16px/16px -apple-system, "system-ui", "Segoe UI", Roboto, sans-serif;
+      box-shadow: none; outline: none; -webkit-appearance: none; appearance: none;
+    }
+    .smv input::placeholder { color: #7b7a99; opacity: 1; }
+    .smv input[type=text]:focus { border-color: #5cffe1; box-shadow: 0 0 0 3px rgba(92,255,225,.25); }
+    .smv .smv-hp { position: absolute !important; left: -9999px !important; width: 1px; height: 1px; overflow: hidden; }
+    .smv .smv-captcha { padding: 4px 1px 0; min-height: 0; }
+    .smv .smv-boton {
+      display: inline-flex; align-items: center; justify-content: center; gap: 8px; cursor: pointer;
+      height: 41px; padding: 0 18px; margin: 10px 0 0 1px;
+      background: #161250; color: #5cffe1; border: 1px solid #5cffe1; border-radius: 27px;
+      font: 500 17px/17px -apple-system, "system-ui", "Segoe UI", Roboto, sans-serif;
+      transition: background .15s, color .15s;
+    }
+    .smv .smv-boton:hover:not(:disabled) { background: #5cffe1; color: #161250; }
+    .smv .smv-boton:disabled { opacity: .65; cursor: default; }
+    .smv .smv-giro { width: 15px; height: 15px; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: smv-g .8s linear infinite; }
+    @keyframes smv-g { to { transform: rotate(360deg); } }
+    .smv .smv-msg { margin: 12px 1px 0; font-size: 15px; line-height: 21px; }
+    .smv .smv-msg.smv-error { color: #ffb3bf; }
+    .smv .smv-msg.smv-espera { color: #cfe9ff; font-style: italic; }
+    .smv .smv-nota { margin: 10px 1px 0; font-size: 13px; line-height: 18px; opacity: .8; }
+
+    /* selector de clases */
+    .smv .smv-cl { margin: 0 1px; border: 1px solid rgba(92,255,225,.45); border-radius: 11px; background: rgba(255,255,255,.06); }
+    .smv .smv-cl > summary {
+      list-style: none; cursor: pointer; padding: 11px 14px; font: 500 15px/21px Roboto, sans-serif; color: #fff;
+      display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    }
+    .smv .smv-cl > summary::-webkit-details-marker { display: none; }
+    .smv .smv-cl > summary::after { content: "▾"; color: #5cffe1; transition: transform .15s; }
+    .smv .smv-cl[open] > summary::after { transform: rotate(180deg); }
+    .smv .smv-cl-cuenta { font-size: 13px; color: #5cffe1; white-space: nowrap; }
+    .smv .smv-cl-ayuda { margin: 0; padding: 0 14px 8px; font-size: 13px; line-height: 18px; opacity: .85; }
+    .smv .smv-cl-lista {
+      display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px 12px;
+      max-height: 250px; overflow-y: auto; padding: 4px 14px 12px; -webkit-overflow-scrolling: touch;
+    }
+    @media (max-width: 520px) { .smv .smv-cl-lista { grid-template-columns: minmax(0, 1fr); } }
+    .smv .smv-cl-item { display: flex; align-items: flex-start; gap: 8px; padding: 5px 0; cursor: pointer; font-size: 14px; line-height: 19px; color: #fff; }
+    .smv .smv-cl-item input { margin: 2px 0 0; flex: 0 0 auto; width: 16px; height: 16px; accent-color: #5cffe1; }
+    .smv .smv-cl-item b { color: #5cffe1; font-weight: 700; }
+    .smv .smv-cl-item.smv-bloq { opacity: .4; cursor: default; }
+  </style>
+
+  <form data-smv-form novalidate>
+    <div class="smv-campo"><input type="text" name="marca" placeholder="Nombre de la marca" aria-label="Nombre de la marca" maxlength="80" required autocomplete="off"></div>
+
+    <details class="smv-cl" data-smv-clases>
+      <summary><span>Elegir clases de la marca <span style="opacity:.7">(opcional)</span></span><span class="smv-cl-cuenta" data-smv-cuenta></span></summary>
+      <p class="smv-cl-ayuda">Las marcas se registran por clase de producto o servicio. Si ya sabés en cuál, marcala y te mostramos si hay marcas parecidas en ella. Podés elegir hasta 6. Si no sabés, dejalo vacío.</p>
+      <div class="smv-cl-lista" data-smv-lista></div>
+    </details>
+
+    <div class="smv-hp" aria-hidden="true"><label>No completar <input type="text" name="hp" tabindex="-1" autocomplete="off"></label></div>
+    <div class="smv-captcha" data-smv-captcha></div>
+    <button type="submit" class="smv-boton" data-smv-enviar>Verificar mi marca</button>
+    <div class="smv-msg" data-smv-msg role="status" aria-live="polite"></div>
+    <p class="smv-nota">Gratis y sin dejar tus datos. Buscamos el nombre en la base de INPI y te mostramos en qué estado está cada marca parecida.</p>
+  </form>
+
+  <script>
+  (function () {
+    /* ── Configuración ─────────────────────────────────────────────── */
+    var API = "https://panel.registrodemimarca.com.ar/api/publico/verificador";
+    var TURNSTILE_SITE_KEY = "0x4AAAAAAFLfbijNn3z9s6Kp";
+    /* Página de resultado (landing). Tiene que existir: ahí se hace la búsqueda y se muestra todo. */
+    var REDIRECT_URL = "/resultado/";
+    var PENDIENTE = "smv_pendiente"; /* tiene que coincidir con la landing */
+    var CLASES_MAX = 6;               /* tiene que coincidir con CLASES_MAX del panel */
+
+    /* Clases de Niza, con una descripción corta para quien no las conoce */
+    var CLASES = [
+      "Productos químicos", "Pinturas, barnices y lacas", "Cosméticos y productos de limpieza", "Aceites, grasas y combustibles",
+      "Productos farmacéuticos y veterinarios", "Metales comunes y sus aleaciones", "Máquinas y máquinas herramienta", "Herramientas manuales",
+      "Aparatos científicos, software y electrónica", "Aparatos médicos", "Aparatos de iluminación, calefacción y refrigeración", "Vehículos y medios de transporte",
+      "Armas de fuego y pirotecnia", "Joyería, bijouterie y relojería", "Instrumentos musicales", "Papel, cartón e imprenta",
+      "Caucho, plásticos y aislantes", "Cuero e imitaciones, bolsos y valijas", "Materiales de construcción no metálicos", "Muebles, espejos y marcos",
+      "Utensilios de cocina y del hogar", "Cuerdas, redes, tiendas y toldos", "Hilos para uso textil", "Tejidos y ropa de cama o mesa",
+      "Prendas de vestir, calzado y sombrerería", "Encajes, bordados y mercería", "Alfombras, felpudos y revestimientos de suelos", "Juegos, juguetes y artículos deportivos",
+      "Carne, pescado, frutas y verduras en conserva", "Café, harinas, pan, pastelería y condimentos", "Productos agrícolas y animales vivos", "Cervezas y bebidas sin alcohol",
+      "Bebidas alcohólicas (excepto cervezas)", "Tabaco y artículos para fumadores", "Publicidad, gestión y comercio (tiendas)", "Seguros, finanzas e inmobiliarias",
+      "Construcción, reparación e instalación", "Telecomunicaciones", "Transporte y almacenamiento", "Tratamiento de materiales",
+      "Educación, entretenimiento y deportes", "Servicios científicos y tecnológicos, software", "Restaurantes y alojamiento temporal", "Servicios médicos, belleza y agricultura",
+      "Servicios jurídicos y de seguridad"
+    ];
+    /* El número de clase es la posición + 1 (son 45). Si alguien edita la lista y rompe el conteo, no se muestra el selector. */
+    if (CLASES.length !== 45) {
+      var det = document.querySelector("#smv [data-smv-clases]"); if (det) det.hidden = true;
+    }
+
+    var raiz = document.getElementById("smv");
+    if (!raiz || raiz.getAttribute("data-smv-listo")) return;
+    raiz.setAttribute("data-smv-listo", "1");
+    var q = function (s) { return raiz.querySelector(s); };
+    var form = q("[data-smv-form]"), msg = q("[data-smv-msg]"), btn = q("[data-smv-enviar]"),
+        caja = q("[data-smv-captcha]"), lista = q("[data-smv-lista]"), cuenta = q("[data-smv-cuenta]");
+    var widgetId = null;
+
+    function el(tag, cls, txt) {
+      var e = document.createElement(tag);
+      if (cls) e.className = cls;
+      if (txt != null) e.textContent = txt;
+      return e;
+    }
+    function aviso(txt, tipo) { msg.className = "smv-msg" + (tipo ? " smv-" + tipo : ""); msg.textContent = txt || ""; }
+
+    /* ── Clases ────────────────────────────────────────────────────── */
+    function elegidas() {
+      var out = [];
+      Array.prototype.forEach.call(lista.querySelectorAll("input:checked"), function (i) { out.push(parseInt(i.value, 10)); });
+      return out;
+    }
+    function actualizarClases() {
+      var n = elegidas().length;
+      cuenta.textContent = n ? n + (n === 1 ? " elegida" : " elegidas") : "";
+      Array.prototype.forEach.call(lista.querySelectorAll("label"), function (lab) {
+        var inp = lab.querySelector("input");
+        var bloq = n >= CLASES_MAX && !inp.checked;
+        inp.disabled = bloq;
+        lab.classList.toggle("smv-bloq", bloq);
+      });
+    }
+    CLASES.forEach(function (nombre, i) {
+      var lab = el("label", "smv-cl-item");
+      var inp = el("input"); inp.type = "checkbox"; inp.value = String(i + 1);
+      inp.addEventListener("change", actualizarClases);
+      var t = el("span"); t.appendChild(el("b", null, (i + 1) + " · ")); t.appendChild(document.createTextNode(nombre));
+      lab.appendChild(inp); lab.appendChild(t); lista.appendChild(lab);
+    });
+
+    /* ── Turnstile (se carga una sola vez aunque haya otro en la página) ── */
+    function renderCaptcha() {
+      if (!window.turnstile || widgetId !== null) return;
+      widgetId = window.turnstile.render(caja, { sitekey: TURNSTILE_SITE_KEY, language: "es", theme: "dark" });
+    }
+    function cargarTurnstile() {
+      if (window.turnstile) { renderCaptcha(); return; }
+      var previo = document.querySelector('script[src*="challenges.cloudflare.com/turnstile"]');
+      if (previo) { previo.addEventListener("load", renderCaptcha); return; }
+      var s = document.createElement("script");
+      s.src = "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit";
+      s.async = true; s.defer = true;
+      s.onload = renderCaptcha;
+      document.head.appendChild(s);
+    }
+    cargarTurnstile();
+
+    function token() { return widgetId !== null && window.turnstile ? (window.turnstile.getResponse(widgetId) || "") : ""; }
+    function reiniciarCaptcha() { if (widgetId !== null && window.turnstile) window.turnstile.reset(widgetId); }
+
+    function pedir(ruta, cuerpo, ms) {
+      var ctl = new AbortController();
+      var t = setTimeout(function () { ctl.abort(); }, ms);
+      return fetch(API + ruta, {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(cuerpo), signal: ctl.signal
+      }).then(function (r) {
+        return r.json().catch(function () { return {}; }).then(function (j) { return { ok: r.ok, status: r.status, json: j }; });
+      }).finally(function () { clearTimeout(t); });
+    }
+
+    form.addEventListener("submit", function (ev) {
+      ev.preventDefault();
+      var marca = (form.elements.marca.value || "").trim();
+      if (marca.length < 2) return aviso("Escribí el nombre de tu marca.", "error");
+      var tk = token();
+      if (!tk) return aviso("Esperá un segundo a que se complete la verificación y volvé a tocar el botón.", "error");
+
+      var datos = { hp: form.elements.hp.value, token: tk, marca: marca, clases: elegidas() };
+
+      /* Camino normal: dejar la búsqueda en el navegador y que /resultado/ la haga con su barra de progreso */
+      try {
+        window.sessionStorage.setItem(PENDIENTE, JSON.stringify({ ts: Date.now(), datos: datos }));
+        btn.disabled = true; btn.textContent = "Buscando…"; aviso("");
+        window.location.href = REDIRECT_URL;
+        return;
+      } catch (e) { /* el navegador no deja guardar: se hace el pedido acá y se pasa al resultado con el código */ }
+
+      btn.disabled = true;
+      btn.textContent = "";
+      btn.appendChild(el("span", "smv-giro"));
+      btn.appendChild(document.createTextNode("Consultando INPI…"));
+      aviso("Estamos buscando tu marca en INPI. Puede tardar hasta un minuto, no cierres la página.", "espera");
+      pedir("/buscar", datos, 110000).then(function (r) {
+        if (r.ok && r.json && r.json.consultaId) {
+          window.location.href = REDIRECT_URL + (REDIRECT_URL.indexOf("?") < 0 ? "?" : "&") + "c=" + encodeURIComponent(r.json.consultaId);
+          return;
+        }
+        aviso((r.json && r.json.detail) || "No pudimos hacer la búsqueda. Probá de nuevo en un momento.", "error");
+        reiniciarCaptcha(); btn.disabled = false; btn.textContent = "Verificar mi marca";
+      }).catch(function () {
+        aviso("INPI está tardando en responder. Probá de nuevo en un momento.", "error");
+        reiniciarCaptcha(); btn.disabled = false; btn.textContent = "Verificar mi marca";
+      });
+    });
+  })();
+  </script>
+</div>

@@ -55,14 +55,14 @@ class PreguntasFrecuentes(unittest.TestCase):
 
 
 class HomeYLanding(unittest.TestCase):
-    def test_home_tiene_45_clases(self):
-        src = leer("verificador-home.html")
+    def test_buscador_tiene_45_clases(self):
+        src = leer("verificador-buscador.html")
         m = re.search(r"var CLASES = \[(.*?)\];", src, re.S)
         self.assertIsNotNone(m)
         self.assertEqual(len(re.findall(r'"[^"]+"', m.group(1))), 45)
 
     def test_misma_clave_de_sesion_y_tope_de_clases(self):
-        home, landing = leer("verificador-home.html"), leer("landing-resultado.html")
+        home, landing = leer("verificador-buscador.html"), leer("landing-resultado.html")
         clave = lambda s: re.search(r'var PENDIENTE = "([^"]+)"', s).group(1)
         self.assertEqual(clave(home), clave(landing))
         self.assertEqual(re.search(r"var CLASES_MAX = (\d+)", home).group(1), "6")
