@@ -5,7 +5,9 @@ contra INPI de verdad, sin guardar nada ni mandar mails, y muestra qué devuelve
 Sirve para chequear tres cosas antes de confiar en el resultado:
   1. que la búsqueda de INPI funciona desde el servidor (marca conocida → tiene que traer filas;
      si trae cero, el verificador podría decir «disponible» por error);
-  2. cómo cargó INPI los campos (estados, clases) de las marcas que aparecen;
+  2. cómo cargó INPI los campos (estados, clases) de las marcas que aparecen, y cómo los interpreta el
+     verificador (estado_marca.py: concedida, denegada, en trámite...). Cualquier estado que salga como
+     «otro» es una palabra de INPI que todavía no reconocemos: hay que sumarla a estado_marca.estado_de_inpi;
   3. qué veredicto sale para cada nombre.
 
 Solo se imprimen datos públicos de marcas (acta, denominación, clase, estado), nunca titulares:
@@ -22,6 +24,7 @@ from collections import Counter
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "panel"))
 
+import estado_marca  # noqa: E402
 import verificador_core as vc  # noqa: E402
 
 CONOCIDA = "NIKE"  # marca que seguro existe en INPI: si no aparece, algo anda mal con la búsqueda
@@ -46,12 +49,16 @@ def probar(marca: str) -> dict:
               f"filas de INPI {len(filas)}{' (página llena: puede haber más)' if r['posible_mas'] else ''} · {seg:.1f} s"]
     estados = Counter(f.get("estado") or "(vacío)" for f in filas)
     if estados:
-        lineas.append("Estados vistos: " + "; ".join(f"{k} ×{v}" for k, v in estados.most_common(8)))
+        def como(k):
+            e = estado_marca.estado_publico("" if k == "(vacío)" else k)  # solo lo que dice INPI: acá no hay base
+            return e["codigo"] if e else "sin estado"
+        lineas.append("Estados vistos (INPI → cómo se interpreta): " + "; ".join(f"{k} ×{v} → {como(k)}" for k, v in estados.most_common(8)))
     clases = Counter(str(f.get("clase")) for f in filas)
     if clases:
         lineas.append("Clases vistas: " + ", ".join(f"{k} ×{v}" for k, v in clases.most_common(8)))
     for m in r["muestras"][:8]:
-        lineas.append(f"  {m['tipo']:8} {m['puntaje']:3}  acta {m['acta']}  «{m['denominacion']}»  clase {m['clase']}  {m['estado'] or '—'}")
+        lineas.append(f"  {m['tipo']:8} {m['puntaje']:3}  acta {m['acta']}  «{m['denominacion']}»  clase {m['clase']}  "
+                      f"{m['estado'] or '—'} → {m['estado_codigo'] or 'sin estado'}")
     aviso(f"{marca}: {r['verdict']}", lineas)
     return {"marca": marca, "filas": len(filas), "veredicto": r["verdict"]}
 

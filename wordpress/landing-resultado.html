@@ -10,15 +10,25 @@
        estira a todo el ancho de la pantalla.
     4. Publicar. Para probarla antes de conectarla al home, hacer una consulta en el home y copiar el código
        del resultado, o abrir /resultado/?c=<código de una consulta que figure en Más → Consultas web>.
+    4b. NO INDEXAR: en el plugin de SEO de la página (Yoast / Rank Math) poner «No permitir que los buscadores
+       muestren esta página». Cada resultado es personal (lleva un código): no tiene que aparecer en Google.
+       Esta página también agrega un «noindex» desde el navegador, pero lo que vale es el ajuste del plugin.
     5. En el bloque del home (verificador-home.html), REDIRECT_URL tiene que ser la dirección de ESTA página
        (hoy "/resultado/"). Al enviar el formulario, el home guarda los datos en el navegador y pasa enseguida
        acá: esta página hace la consulta a INPI mostrando una barra de progreso y, cuando termina, muestra el resultado
        y deja la dirección como ?c=<código> (se puede recargar o compartir).
 
-  QUÉ HACE: de dos maneras. (1) Viene del formulario del home: toma los datos guardados en el navegador, los manda
-  a https://panel.registrodemimarca.com.ar/api/publico/verificador/consulta mientras muestra una barra de progreso,
-  y muestra el resultado. (2) Link con ?c=<código>: pide el resultado guardado (válido 90 días) y lo muestra.
-  En los dos casos agrega una explicación, el paso a paso del trámite y formas de contacto (WhatsApp y consulta por mail, que llega al panel).
+  QUÉ HACE: de dos maneras. (1) Viene del verificador del home o de la página del verificador: toma lo que quedó guardado en el
+  navegador (nombre de la marca y clases, SIN datos de contacto), lo manda a
+  https://panel.registrodemimarca.com.ar/api/publico/verificador/buscar mientras muestra una barra de progreso, y muestra el
+  resultado: el veredicto, cada marca encontrada con su ESTADO (en trámite, publicada, con oposición, concedida, denegada...)
+  y si está en las clases que eligió. (2) Link con ?c=<código>: pide el resultado guardado (válido 90 días) y lo muestra.
+  Con el resultado a la vista, pide los datos de contacto para mandar el análisis preliminar sin cargo
+  (POST …/verificador/<código>/contacto: se suma a la misma consulta, avisa al equipo y manda el mail de confirmación).
+  Sigue andando el formulario anterior del home (con datos antes del resultado): los datos que deja guardados llevan «lead»
+  y se mandan a …/verificador/consulta; en ese caso el contacto ya está y no se vuelve a pedir.
+  Además agrega una explicación, el paso a paso del trámite y formas de contacto (WhatsApp y consulta por mail, que llega al panel).
+  GUIA_URL (más abajo en el script) es la dirección de la guía «Estados de una marca» (wordpress/guia-estados-marca.html).
   Estilo: manual de marca (azul #161250, celeste #0095FF, turquesa #5CFFE1, gris #606060, tramas de cuadrados)
   y estructura del sitio (títulos en mayúsculas, tarjetas redondeadas con borde turquesa, botones píldora).
 
@@ -148,7 +158,7 @@
     .smr .smr-wa p { color: #dfe2ff; font-size: 16px; margin-bottom: 18px; }
     .smr form { margin: 0; }
     .smr .smr-campo { margin-bottom: 12px; }
-    .smr input[type=text], .smr input[type=email], .smr textarea {
+    .smr input[type=text], .smr input[type=email], .smr input[type=tel], .smr textarea {
       display: block; width: 100%; height: 46px; margin: 0; padding: 0 14px; background: #fff; color: var(--smr-azul);
       border: 1px solid var(--smr-celeste); border-radius: 11px; font: 400 16px/1.2 var(--smr-texto); box-shadow: none; outline: none;
       -webkit-appearance: none; appearance: none;
@@ -159,6 +169,30 @@
     .smr .smr-msg { margin-top: 12px; font-size: 15px; line-height: 1.5; }
     .smr .smr-msg.err { color: #ffb3bf; } .smr .smr-msg.esp { color: #cfe9ff; font-style: italic; } .smr .smr-msg.ok { color: var(--smr-turq); font-weight: 700; }
     .smr .smr-cform h3 { color: #fff; font-size: 20px; margin-bottom: 14px; }
+
+    /* Marcas encontradas: nombre, estado y clase */
+    .smr .smr-lnom { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; min-width: 0; }
+    .smr .smr-lnom b { word-break: break-word; }
+    .smr .smr-lista .smr-chip { display: inline-block; padding: 3px 10px; border-radius: 20px; font: 800 11px/1.3 var(--smr-titulo); letter-spacing: .06em; text-transform: uppercase; white-space: nowrap; }
+    .smr .smr-lista .c-en_tramite { background: #cfe9ff; color: var(--smr-azul); }
+    .smr .smr-lista .c-publicada { background: var(--smr-celeste); color: #fff; }
+    .smr .smr-lista .c-con_oposicion { background: #ffd166; color: #3b2a00; }
+    .smr .smr-lista .c-concedida { background: var(--smr-turq); color: var(--smr-azul); }
+    .smr .smr-lista .c-denegada { background: #ff7a8a; color: #3d0010; }
+    .smr .smr-lista .c-inactiva, .smr .smr-lista .c-otro { background: rgba(255,255,255,.22); color: #fff; }
+    .smr .smr-lcl { text-align: right; }
+    .smr .smr-lcl small { display: block; font-size: 12px; font-weight: 600; color: #b9bdea; }
+    .smr .smr-clases { margin-top: 16px; font-size: 15px; color: #e6e8ff; }
+    .smr .smr-leyenda { display: grid; gap: 8px; max-width: 680px; margin-top: 18px; font-size: 14px; line-height: 1.5; color: #d3d6f5; }
+    .smr .smr-leyenda b { color: #fff; }
+    .smr .smr-leyenda a { color: var(--smr-turq); }
+
+    /* Pedido de contacto dentro del resultado */
+    .smr .smr-regalo form { margin-top: 14px; }
+    .smr .smr-fila2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0 12px; }
+    .smr .smr-hp { position: absolute !important; left: -9999px !important; width: 1px; height: 1px; overflow: hidden; }
+    .smr .smr-captcha { min-height: 0; margin: 2px 0 12px; }
+    .smr .smr-regalo .smr-chico { margin-top: 10px; font-size: 13px; color: #b9bdea; }
 
     /* Animaciones del sello */
     .smr .smr-anillo { transform-origin: 60px 60px; }
@@ -173,6 +207,7 @@
       .smr .smr-bene { grid-template-columns: 1fr; }
     }
     @media (max-width: 640px) {
+      .smr .smr-fila2 { grid-template-columns: 1fr; }
       .smr .smr-regalo { flex-direction: column; gap: 12px; padding: 18px 18px; }
       .smr { font-size: 16px; }
       .smr .smr-caja { padding: 0 20px; }
@@ -221,14 +256,39 @@
           <span class="smr-estado" data-smr-estado></span>
           <h2 class="smr-titular" data-smr-titular></h2>
           <p class="smr-lead" data-smr-lead></p>
+          <p class="smr-clases" data-smr-clases hidden></p>
           <ul class="smr-lista" data-smr-lista hidden></ul>
+          <div class="smr-leyenda" data-smr-leyenda hidden></div>
           <aside class="smr-regalo" data-smr-regalo>
             <span class="ico" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 5h16v14H4z"/><path d="M4 7l8 6 8-6"/></svg></span>
             <div>
               <span class="tag">Sin cargo</span>
-              <h3>Vamos a prepararte un análisis preliminar de tu marca, sin cargo</h3>
-              <p>Nuestro equipo revisa tu nombre con más detalle (clases que corresponden a tu actividad y posibles conflictos) y <b>te lo enviamos por mail en los próximos días</b>.</p>
-              <p class="peq">Te mandamos un mail de confirmación con este resultado. Si no lo ves, revisá la carpeta de spam.</p>
+              <h3 data-smr-regalo-titulo>Recibí un análisis preliminar de tu marca, sin cargo</h3>
+
+              <div data-smr-pide>
+                <p data-smr-txt-normal>Nuestro equipo revisa tu nombre con más detalle (clases que corresponden a tu actividad y posibles conflictos) y <b>te lo enviamos por mail en los próximos días</b>. Dejanos tus datos:</p>
+                <p data-smr-txt-error hidden>No pudimos consultar INPI automáticamente. Dejanos tus datos y <b>revisamos tu marca a mano y te escribimos con el resultado</b>.</p>
+                <form data-smr-contacto novalidate>
+                  <div class="smr-fila2">
+                    <div class="smr-campo"><input type="text" name="nombre" placeholder="Tu nombre" aria-label="Tu nombre" maxlength="120" autocomplete="name"></div>
+                    <div class="smr-campo"><input type="email" name="email" placeholder="Tu correo electrónico" aria-label="Tu correo electrónico" maxlength="200" autocomplete="email"></div>
+                  </div>
+                  <div class="smr-fila2">
+                    <div class="smr-campo"><input type="text" name="actividad" placeholder="¿A qué se dedica tu marca?" aria-label="Actividad" maxlength="300" autocomplete="off"></div>
+                    <div class="smr-campo"><input type="tel" name="telefono" placeholder="WhatsApp (opcional)" aria-label="Teléfono o WhatsApp (opcional)" maxlength="40" autocomplete="tel"></div>
+                  </div>
+                  <div class="smr-hp" aria-hidden="true"><label>No completar <input type="text" name="hp" tabindex="-1" autocomplete="off"></label></div>
+                  <div class="smr-captcha" data-smr-captcha></div>
+                  <button type="submit" class="smr-btn pri" data-smr-contacto-enviar>Quiero el análisis sin cargo</button>
+                  <div class="smr-msg" data-smr-contacto-msg role="status" aria-live="polite"></div>
+                  <p class="smr-chico">Usamos tus datos solo para enviarte el análisis y contestarte. No es un compromiso de contratación.</p>
+                </form>
+              </div>
+
+              <div data-smr-listo hidden>
+                <p>Nuestro equipo revisa tu nombre con más detalle (clases que corresponden a tu actividad y posibles conflictos) y <b>te lo enviamos por mail en los próximos días</b>.</p>
+                <p class="peq">Te mandamos un mail de confirmación con este resultado. Si no lo ves, revisá la carpeta de spam.</p>
+              </div>
             </div>
           </aside>
           <p class="smr-nota" data-smr-nota></p>
@@ -321,7 +381,11 @@
     var API = "https://panel.registrodemimarca.com.ar/api/publico/verificador";
     var WHATSAPP = "5491155890784";
     var HOME_URL = "/";            /* adónde lleva «Verificar mi marca» (+ #inicio) */
-    var PENDIENTE = "smv_pendiente"; /* clave con la que el formulario del home deja los datos (sessionStorage) */
+    var PENDIENTE = "smv_pendiente"; /* clave con la que el verificador deja lo que se busca (sessionStorage) */
+    var GUIA_URL = "/estados-de-una-marca/"; /* guía «Estados de una marca» (vacío = no se muestra el link) */
+    var TURNSTILE_SITE_KEY = "0x4AAAAAAFLfbijNn3z9s6Kp"; /* el mismo del verificador */
+
+    try { var nx = document.createElement("meta"); nx.name = "robots"; nx.content = "noindex,nofollow"; document.head.appendChild(nx); } catch (e) {}
 
     var raiz = document.getElementById("smr");
     if (!raiz || raiz.getAttribute("data-smr-listo")) return;
@@ -402,9 +466,79 @@
         lead: function (m, r) { return "Hay " + (r.exactCount === 1 ? "una marca idéntica registrada o solicitada" : r.exactCount + " marcas idénticas registradas o solicitadas") + ". Según la clase y la actividad puede haber alternativas: te ayudamos a evaluarlas."; } },
       error: { clase: "e-info", sello: "info", color: "#cfe9ff", estado: "Lo revisamos a mano",
         titular: function () { return "Estamos revisando tu consulta"; },
-        lead: function (m) { return "No pudimos consultar INPI automáticamente. Ya tenemos tus datos y te escribimos con el resultado de «" + m + "»."; } }
+        lead: function (m, r, d) { return d && d.contacto
+          ? "No pudimos consultar INPI automáticamente. Ya tenemos tus datos y te escribimos con el resultado de «" + m + "»."
+          : "No pudimos consultar INPI automáticamente. Dejanos tus datos y revisamos «" + m + "» a mano: te escribimos con el resultado."; } }
     };
+    /* Qué significa cada estado (el mismo texto que la guía «Estados de una marca») */
+    var ESTADOS = [
+      ["en_tramite", "En trámite", "Ya se presentó en INPI pero todavía no salió en el Boletín de Marcas."],
+      ["publicada", "Publicada", "Salió en el Boletín de Marcas. Mientras corre el plazo de oposición, terceros pueden oponerse."],
+      ["con_oposicion", "Con oposición", "Alguien se opuso a esta solicitud. INPI tiene que resolver la oposición antes de decidir."],
+      ["concedida", "Concedida", "INPI la concedió: es una marca registrada (dura 10 años y se puede renovar)."],
+      ["denegada", "Denegada", "INPI no la registró. Conviene ver el motivo antes de asumir que el nombre quedó libre."],
+      ["inactiva", "Abandonada o caducada", "Dejó de estar activa. Conviene revisarla caso por caso antes de asumir que el nombre está libre."]
+    ];
     var ctx = { id: "", marca: "", nombre: "" };
+
+    function leadClases(r) {
+      if (!(r.classes && r.classes.length) || r.verdict === "disponible" || r.verdict === "error") return "";
+      if (r.inClassExact > 0) return "Hay " + (r.inClassExact === 1 ? "una marca idéntica" : r.inClassExact + " marcas idénticas") + " en las clases que elegiste. Vemos alternativas con vos: otra clase, otro nombre o una variante.";
+      if (r.inClassSimilar > 0) return "No encontramos marcas idénticas en tus clases, pero sí parecidas. Que sean parecidas no impide registrar: lo evaluamos según tu actividad.";
+      return "Hay marcas con ese nombre, pero ninguna en las clases que elegiste. Suele ser una buena señal, aunque no la garantiza: INPI también compara clases relacionadas.";
+    }
+    function filaMuestra(m) {
+      var li = el("li"), nom = el("div", "smr-lnom");
+      nom.appendChild(el("b", null, m.denominacion));
+      if (m.estado && m.estado.texto) nom.appendChild(el("span", "smr-chip c-" + String(m.estado.codigo || "otro").replace(/[^a-z_]/g, ""), m.estado.texto));
+      li.appendChild(nom);
+      var cl = el("span", "smr-lcl", "Clase " + m.clase);
+      if (typeof m.enTusClases === "boolean") cl.appendChild(el("small", null, m.enTusClases ? "En tu clase" : "Otra clase"));
+      li.appendChild(cl);
+      return li;
+    }
+    function leyenda(muestras) {
+      var cont = $("[data-smr-leyenda]"); cont.textContent = "";
+      var vistos = {};
+      muestras.forEach(function (m) { if (m.estado && m.estado.codigo) vistos[m.estado.codigo] = true; });
+      var hay = 0;
+      ESTADOS.forEach(function (e) {
+        if (!vistos[e[0]]) return;
+        hay++;
+        var p = el("p"); p.appendChild(el("b", null, e[1] + ": ")); p.appendChild(document.createTextNode(e[2])); cont.appendChild(p);
+      });
+      if (hay && GUIA_URL) { var p2 = el("p"), a = el("a", null, "Ver la guía de todos los estados"); a.href = GUIA_URL; p2.appendChild(a); cont.appendChild(p2); }
+      cont.hidden = !hay;
+    }
+
+    /* ── Captcha (Turnstile) del pedido de contacto ───────────────── */
+    var widgetId = null;
+    function renderCaptcha() {
+      var caja = $("[data-smr-captcha]");
+      if (!window.turnstile || widgetId !== null || !caja) return;
+      widgetId = window.turnstile.render(caja, { sitekey: TURNSTILE_SITE_KEY, language: "es", theme: "dark" });
+    }
+    function cargarTurnstile() {
+      if (window.turnstile) { renderCaptcha(); return; }
+      var previo = document.querySelector('script[src*="challenges.cloudflare.com/turnstile"]');
+      if (previo) { previo.addEventListener("load", renderCaptcha); return; }
+      var sc = document.createElement("script");
+      sc.src = "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit"; sc.async = true; sc.defer = true; sc.onload = renderCaptcha;
+      document.head.appendChild(sc);
+    }
+    function tokenCaptcha() { return widgetId !== null && window.turnstile ? (window.turnstile.getResponse(widgetId) || "") : ""; }
+    function reiniciarCaptcha() { if (widgetId !== null && window.turnstile) window.turnstile.reset(widgetId); }
+
+    function contactoUI(r, ya) {
+      var error = r.verdict === "error";
+      $("[data-smr-regalo-titulo]").textContent = ya ? "Vamos a prepararte un análisis preliminar de tu marca, sin cargo"
+        : error ? "Dejanos tus datos y revisamos tu marca a mano" : "Recibí un análisis preliminar de tu marca, sin cargo";
+      $("[data-smr-pide]").hidden = ya;
+      $("[data-smr-listo]").hidden = !ya;
+      $("[data-smr-txt-normal]").hidden = error;
+      $("[data-smr-txt-error]").hidden = !error;
+      if (!ya) cargarTurnstile();
+    }
 
     function mostrar(d) {
       var r = d.public || {}, v = VISTAS[r.verdict] || VISTAS.error, marca = d.marca || "";
@@ -415,22 +549,26 @@
       $("[data-smr-marca]").textContent = marca;
       var est = $("[data-smr-estado]"); est.className = "smr-estado " + v.clase; est.textContent = v.estado;
       $("[data-smr-titular]").textContent = v.titular(marca, r);
-      $("[data-smr-lead]").textContent = v.lead(marca, r);
+      $("[data-smr-lead]").textContent = leadClases(r) || v.lead(marca, r, d);
+      var cl = $("[data-smr-clases]");
+      cl.textContent = r.classes && r.classes.length ? "Clases que elegiste: " + r.classes.join(", ") + "." : "";
+      cl.hidden = !cl.textContent;
       var ul = $("[data-smr-lista]"); ul.textContent = "";
       var muestras = (r.verdict === "con_similares" || r.verdict === "no_disponible") ? (r.samples || []) : [];
-      muestras.forEach(function (m) {
-        var li = el("li"); li.appendChild(el("b", null, m.denominacion)); li.appendChild(el("span", null, "Clase " + m.clase)); ul.appendChild(li);
-      });
+      muestras.forEach(function (m) { ul.appendChild(filaMuestra(m)); });
       ul.hidden = !muestras.length;
+      leyenda(muestras);
       var nota = "";
       if (d.createdAt) {
         var f = new Date(d.createdAt);
         if (!isNaN(f)) nota = "Consulta del " + f.toLocaleDateString("es-AR", { day: "numeric", month: "long", year: "numeric" }) + ". ";
       }
       $("[data-smr-nota]").textContent = r.verdict === "error" ? "" :
-        nota + "Es un primer análisis del nombre: la base de INPI cambia todos los días y la disponibilidad real depende de la clase.";
+        nota + "Los estados corresponden al momento de la consulta. Es un primer análisis del nombre: la base de INPI cambia todos los días y la disponibilidad real depende de la clase." +
+        (r.moreResults ? " INPI devolvió el máximo de resultados por búsqueda: puede haber más marcas que no mostramos." : "");
       $$("[data-smr-wa]").forEach(function (a) { a.href = whatsapp(marca); });
       if (ctx.nombre) $("[data-smr-form]").elements.nombre.value = ctx.nombre;
+      contactoUI(r, !!d.contacto);
       ver("res");
     }
 
@@ -463,7 +601,7 @@
       var guardado = window.sessionStorage.getItem(PENDIENTE);
       if (guardado) { window.sessionStorage.removeItem(PENDIENTE); pend = JSON.parse(guardado); }
     } catch (e) { pend = null; }
-    if (pend && (!pend.datos || !pend.datos.lead || !pend.ts || Date.now() - pend.ts > 240000)) pend = null;
+    if (pend && (!pend.datos || !(pend.datos.lead || pend.datos.marca) || !pend.ts || Date.now() - pend.ts > 240000)) pend = null;
 
     if (/^[A-Za-z0-9_-]{6,40}$/.test(codigo)) {
       ctx.id = codigo;
@@ -478,29 +616,66 @@
         .catch(function () { cortarBarra(); sinConsulta("No pudimos cargar tu resultado", "Revisá tu conexión y recargá la página. Si sigue sin cargar, escribinos y te lo pasamos."); })
         .finally(function () { clearTimeout(t); });
     } else if (pend) {
-      var d = pend.datos, marca = d.lead.marca || "";
+      var d = pend.datos, anterior = !!d.lead, marca = (anterior ? d.lead.marca : d.marca) || "";
       arrancarBarra("Consultando INPI", "Estamos buscando «" + marca + "»", "Puede tardar hasta un minuto. No cierres esta página.");
       var ctl2 = new AbortController(), t2 = setTimeout(function () { ctl2.abort(); }, 110000);
-      fetch(API + "/consulta", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(d), signal: ctl2.signal })
+      fetch(API + (anterior ? "/consulta" : "/buscar"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(d), signal: ctl2.signal })
         .then(json)
         .then(function (r) {
           if (r.ok && r.json && r.json.public) {
             ctx.id = r.json.consultaId || "";
             if (ctx.id) { try { window.history.replaceState(null, "", window.location.pathname + "?c=" + encodeURIComponent(ctx.id)); } catch (e) {} }
-            terminarBarra(function () { mostrar({ public: r.json.public, marca: marca, nombre: d.lead.nombre, createdAt: new Date().toISOString() }); });
+            terminarBarra(function () { mostrar({ public: r.json.public, marca: marca, nombre: anterior ? d.lead.nombre : "", createdAt: new Date().toISOString(), contacto: anterior }); });
           } else {
             cortarBarra();
-            sinConsulta("No pudimos enviar tu consulta", (r.json && r.json.detail) || "Probá de nuevo en un momento.");
+            sinConsulta("No pudimos hacer la búsqueda", (r.json && r.json.detail) || "Probá de nuevo en un momento.");
           }
         })
         .catch(function () {
           cortarBarra();
-          sinConsulta("La consulta tardó más de lo esperado", "Si completaste todos los datos, ya la recibimos y te escribimos con el resultado. También podés escribirnos por WhatsApp.");
+          sinConsulta("La consulta tardó más de lo esperado", anterior
+            ? "Si completaste todos los datos, ya la recibimos y te escribimos con el resultado. También podés escribirnos por WhatsApp."
+            : "INPI está tardando en responder. Probá de nuevo en un momento o escribinos por WhatsApp y lo revisamos nosotros.");
         })
         .finally(function () { clearTimeout(t2); });
     } else {
       sinConsulta("Todavía no hay una consulta para mostrar", "Para ver el resultado, verificá tu marca desde la página principal: lleva menos de un minuto.");
     }
+
+    /* ── Contacto para el análisis preliminar (se suma a la misma consulta) ───── */
+    var fc = $("[data-smr-contacto]"), msgc = $("[data-smr-contacto-msg]"), btnc = $("[data-smr-contacto-enviar]");
+    function avisoC(txt, tipo) { msgc.className = "smr-msg" + (tipo ? " " + tipo : ""); msgc.textContent = txt || ""; }
+    fc.addEventListener("submit", function (ev) {
+      ev.preventDefault();
+      var v = function (n) { return (fc.elements[n].value || "").trim(); };
+      if (!ctx.id) return avisoC("No encontramos tu consulta. Volvé a buscar tu marca desde la página principal.", "err");
+      if (!v("nombre")) return avisoC("¿Cómo te llamás?", "err");
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v("email"))) return avisoC("Revisá el correo electrónico.", "err");
+      if (!v("actividad")) return avisoC("Contanos a qué se dedica.", "err");
+      var tk = tokenCaptcha();
+      if (!tk) return avisoC("Esperá un segundo a que se complete la verificación y volvé a tocar el botón.", "err");
+      btnc.disabled = true; avisoC("Enviando…", "esp");
+      var ctlc = new AbortController(), tc = setTimeout(function () { ctlc.abort(); }, 30000);
+      fetch(API + "/" + encodeURIComponent(ctx.id) + "/contacto", {
+        method: "POST", headers: { "Content-Type": "application/json" }, signal: ctlc.signal,
+        body: JSON.stringify({ nombre: v("nombre"), email: v("email"), actividad: v("actividad"), telefono: v("telefono"), hp: fc.elements.hp.value, token: tk })
+      }).then(json)
+        .then(function (r) {
+          if (r.ok && r.json && r.json.ok) {
+            ctx.nombre = v("nombre");
+            var primer = ctx.nombre.split(/\s+/)[0];
+            $("[data-smr-saludo]").textContent = "Hola " + primer + ", este es tu resultado";
+            $("[data-smr-regalo-titulo]").textContent = "¡Listo! Vamos a prepararte un análisis preliminar, sin cargo";
+            $("[data-smr-pide]").hidden = true; $("[data-smr-listo]").hidden = false;
+            var f2 = $("[data-smr-form]"); f2.elements.nombre.value = ctx.nombre; f2.elements.email.value = v("email");
+          } else {
+            btnc.disabled = false; reiniciarCaptcha();
+            avisoC((r.json && (r.json.error || r.json.detail)) || "No pudimos enviar tus datos. Probá de nuevo.", "err");
+          }
+        })
+        .catch(function () { btnc.disabled = false; reiniciarCaptcha(); avisoC("No pudimos enviar tus datos. Probá de nuevo o escribinos por WhatsApp.", "err"); })
+        .finally(function () { clearTimeout(tc); });
+    });
 
     /* ── Consulta por mail (llega al panel y por mail al equipo) ───── */
     var form = $("[data-smr-form]"), msg = $("[data-smr-msg]"), btn = $("[data-smr-enviar]");

@@ -1,0 +1,163 @@
+<!--
+  Guía «Estados de una marca en el INPI» — smartiesconsultora.com.ar/estados-de-una-marca/
+
+  Es la página a la que apunta el resultado del verificador (GUIA_URL en wordpress/landing-resultado.html) y la
+  que enlaza la página del verificador. Sirve para posicionar búsquedas tipo «marca en trámite», «marca publicada»,
+  «marca concedida / denegada» y «qué es el preboletín».
+
+  CÓMO PONERLA (WordPress + Elementor):
+    1. Páginas → Añadir nueva → «Estados de una marca en el INPI» (dirección /estados-de-una-marca/).
+       Plantilla «Elementor ancho completo».
+    2. Sección azul (#161250) con un widget «Encabezado» en H1:  Estados de una marca en el INPI: qué significa cada uno
+       y un «Editor de texto» corto: Del preboletín a la marca concedida: cómo avanza una solicitud y qué hacer en cada paso.
+    3. Debajo, un contenedor a ancho completo con un widget «HTML» y pegar TODO este archivo (margen y relleno 0).
+    4. SEO (Yoast / Rank Math): título, descripción y frase clave de docs/seo-verificador.md. Esta página SÍ se indexa.
+    5. Si cambia la dirección, actualizar GUIA_URL en landing-resultado.html y el enlace de verificador-pagina-contenido.html.
+
+  Todavía no explica el procedimiento de oposición paso a paso (plazos, cómo se contesta): eso queda para una guía aparte
+  cuando se confirme cómo funciona con la Res. INPI 297/2026 (ver docs/seo-verificador.md). Por eso acá se habla de oposición
+  solo en general.
+-->
+<div id="smg" class="smc">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Mulish:wght@400;600;700&family=Outfit:wght@600;800;900&display=swap">
+  <style>
+    .smc, .smc * { box-sizing: border-box; }
+    .smc {
+      --smc-azul: #161250; --smc-celeste: #0095ff; --smc-turq: #5cffe1; --smc-gris: #606060; --smc-fondo: #f4f7ff;
+      --smc-titulo: "Outfit", "Roboto", "Segoe UI", sans-serif; --smc-texto: "Mulish", "Roboto", "Segoe UI", sans-serif;
+      font-family: var(--smc-texto); color: var(--smc-gris); font-size: 17px; line-height: 1.65; background: #fff;
+      -webkit-font-smoothing: antialiased; width: 100vw; max-width: 100vw; margin-left: calc(50% - 50vw); margin-right: calc(50% - 50vw); overflow: hidden;
+    }
+    body:has(#smg) { overflow-x: clip; }
+    .smc h2, .smc h3 { font-family: var(--smc-titulo); color: var(--smc-azul); margin: 0; letter-spacing: 0; }
+    .smc p { margin: 0 0 14px; }
+    .smc a { color: var(--smc-celeste); }
+    .smc .smc-caja { width: 100%; max-width: 860px; margin: 0 auto; padding: 0 24px; }
+    .smc .smc-sec { padding: 50px 0; }
+    .smc .smc-sec.gris { background: var(--smc-fondo); }
+    .smc .smc-h2 { font-weight: 800; font-size: clamp(25px, 4vw, 34px); line-height: 1.15; text-transform: uppercase; margin-bottom: 12px; }
+    .smc .smc-h2 em { font-style: normal; color: var(--smc-celeste); }
+    .smc .smc-chip { display: inline-block; padding: 4px 12px; border-radius: 20px; font: 700 13px/18px var(--smc-texto); letter-spacing: .03em; text-transform: uppercase; margin-bottom: 8px; }
+    .smc .c1 { background: #e3eaff; color: #1a3a8f; }
+    .smc .c2 { background: #d8f7ff; color: #05566e; }
+    .smc .c3 { background: #ffe6bd; color: #6b3d00; }
+    .smc .c4 { background: #cdf8e1; color: #0b5a34; }
+    .smc .c5 { background: #ffd3da; color: #7a0b22; }
+    .smc .c6 { background: #e8e8ee; color: #444; }
+    .smc .smc-ficha { background: #fff; border: 1px solid #dfe5f5; border-radius: 16px; padding: 20px 22px; margin-bottom: 14px; }
+    .smc .smc-ficha h3 { font-size: 21px; margin-bottom: 8px; }
+    .smc .smc-ficha p:last-child { margin-bottom: 0; }
+    .smc .smc-ficha .smc-que { font-weight: 700; color: var(--smc-azul); }
+    .smc .smc-camino { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 6px 0 20px; }
+    .smc .smc-camino span.sep { color: var(--smc-celeste); font-weight: 800; }
+    .smc .smc-camino .smc-chip { margin: 0; }
+    .smc .smc-lista { margin: 0 0 18px; padding-left: 22px; }
+    .smc .smc-lista li { margin-bottom: 8px; }
+    .smc .smc-cta { background: var(--smc-azul); color: #fff; border-radius: 22px; padding: 30px 28px; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 18px; }
+    .smc .smc-cta h2 { color: #fff; font-size: clamp(22px, 3.4vw, 30px); line-height: 1.2; margin-bottom: 6px; }
+    .smc .smc-cta p { margin: 0; color: #dfe3ff; max-width: 520px; }
+    .smc .smc-cta b { color: var(--smc-turq); }
+    .smc .smc-botones { display: flex; flex-wrap: wrap; gap: 10px; }
+    .smc .smc-btn { display: inline-flex; align-items: center; justify-content: center; height: 46px; padding: 0 22px; border-radius: 27px; text-decoration: none;
+      font: 700 16px/1 var(--smc-texto); border: 2px solid var(--smc-turq); transition: background .15s, color .15s; }
+    .smc .smc-btn.llena { background: var(--smc-turq); color: var(--smc-azul); }
+    .smc .smc-btn.llena:hover { background: #fff; border-color: #fff; }
+    .smc .smc-btn.vacia { background: transparent; color: var(--smc-turq); }
+    .smc .smc-btn.vacia:hover { background: var(--smc-turq); color: var(--smc-azul); }
+    .smc .smc-aviso { font-size: 14px; line-height: 21px; color: #6d6d7a; margin-top: 18px; }
+  </style>
+
+  <section class="smc-sec">
+    <div class="smc-caja">
+      <h2 class="smc-h2">El camino de una <em>solicitud de marca</em></h2>
+      <p>Cuando alguien pide registrar una marca en Argentina, la solicitud pasa por varias etapas en el INPI antes de convertirse en un registro. El estado que ves en una búsqueda te dice en cuál está. Este es el recorrido más común:</p>
+      <div class="smc-camino" aria-label="Recorrido de una solicitud">
+        <span class="smc-chip c1">En trámite</span><span class="sep">→</span>
+        <span class="smc-chip c2">Publicada</span><span class="sep">→</span>
+        <span class="smc-chip c4">Concedida</span>
+      </div>
+      <p>No todas las solicitudes siguen el camino completo: en el medio puede haber una <b>oposición</b> de un tercero o una <b>denegatoria</b>, y en cualquier etapa la solicitud puede quedar <b>abandonada</b>.</p>
+      <p>Para saber si un nombre está disponible, la regla práctica es mirar <b>todas</b> las marcas parecidas, no solo las concedidas: una solicitud en trámite también puede terminar bloqueando tu nombre.</p>
+    </div>
+  </section>
+
+  <section class="smc-sec gris">
+    <div class="smc-caja">
+      <h2 class="smc-h2">Qué significa <em>cada estado</em></h2>
+
+      <div class="smc-ficha">
+        <span class="smc-chip c1">En trámite</span>
+        <h3>Marca en trámite o «preboletín»</h3>
+        <p>La solicitud ya fue presentada pero todavía no apareció en el Boletín de Marcas. En esta etapa el INPI revisa que la solicitud esté completa y en regla (examen de forma), y por eso se la conoce como «preboletín».</p>
+        <p><span class="smc-que">Qué implica para vos:</span> el nombre ya tiene un interesado. Si presentás la tuya después, en principio la otra solicitud tiene prioridad por fecha de presentación. Que no figure como registrada no significa que el nombre esté libre.</p>
+      </div>
+
+      <div class="smc-ficha">
+        <span class="smc-chip c2">Publicada</span>
+        <h3>Marca publicada en el Boletín</h3>
+        <p>El INPI publica en el Boletín de Marcas las solicitudes que pasaron el examen de forma. Desde la publicación, terceros que se consideren afectados pueden presentar una oposición durante un plazo.</p>
+        <p><span class="smc-que">Qué implica para vos:</span> es la etapa en la que podés actuar si la marca te afecta: si tenés una marca anterior parecida, la publicación es la oportunidad de oponerte. Si querés registrar un nombre igual, probablemente tu solicitud sea observada o rechazada.</p>
+      </div>
+
+      <div class="smc-ficha">
+        <span class="smc-chip c3">Con oposición</span>
+        <h3>Marca con oposición</h3>
+        <p>Alguien presentó una oposición contra la solicitud. Se da traslado al solicitante para que conteste y el INPI resuelve. El resultado puede ser que la solicitud siga adelante o que se deniegue.</p>
+        <p><span class="smc-que">Qué implica para vos:</span> el trámite está discutido y su resultado todavía no se sabe. Si la marca es parecida a la tuya, conviene esperar o analizar el caso antes de decidir.</p>
+      </div>
+
+      <div class="smc-ficha">
+        <span class="smc-chip c4">Concedida</span>
+        <h3>Marca concedida (registrada)</h3>
+        <p>El INPI aceptó la solicitud y emitió el título. La marca está registrada: su titular tiene derecho exclusivo sobre ella en las clases concedidas durante 10 años, renovable.</p>
+        <p><span class="smc-que">Qué implica para vos:</span> es el obstáculo más firme para un nombre parecido en la misma clase o en clases relacionadas. Fuera de esas clases, el nombre puede estar disponible, pero conviene confirmarlo.</p>
+      </div>
+
+      <div class="smc-ficha">
+        <span class="smc-chip c5">Denegada</span>
+        <h3>Marca denegada</h3>
+        <p>El INPI rechazó la solicitud, por ejemplo porque se parece a una marca anterior o por tratarse de un nombre que no se puede registrar (genérico o descriptivo). El solicitante a veces puede apelar.</p>
+        <p><span class="smc-que">Qué implica para vos:</span> por sí sola ya no bloquea tu nombre, pero el motivo de la denegatoria puede repetirse si presentás algo similar.</p>
+      </div>
+
+      <div class="smc-ficha">
+        <span class="smc-chip c6">Abandonada o caducada</span>
+        <h3>Marca abandonada, caducada o vencida</h3>
+        <p>La solicitud se abandonó (el solicitante no continuó el trámite) o el registro caducó (no se renovó o se declaró su caducidad). La marca deja de estar vigente.</p>
+        <p><span class="smc-que">Qué implica para vos:</span> en general deja de ser un obstáculo, aunque el nombre puede haber seguido usándose en el mercado. Conviene revisar cada caso.</p>
+      </div>
+
+      <p>Si el INPI usa otras palabras para un estado, el verificador lo muestra tal como figura en su base.</p>
+    </div>
+  </section>
+
+  <section class="smc-sec">
+    <div class="smc-caja">
+      <h2 class="smc-h2">Cómo usar esto <em>al elegir tu nombre</em></h2>
+      <ul class="smc-lista">
+        <li><b>Buscá primero.</b> Antes de diseñar el logo o imprimir nada, verificá el nombre: es gratis y no pedimos tus datos.</li>
+        <li><b>Mirá todas las marcas parecidas</b>, no solo las idénticas, y fijate la clase y el estado de cada una.</li>
+        <li><b>Distinguí por clase.</b> Un nombre repetido en otra clase puede no ser problema; en la misma clase o en una relacionada, sí.</li>
+        <li><b>No confundas «no figura registrada» con «libre».</b> Puede haber solicitudes en trámite que todavía no se publicaron.</li>
+        <li><b>Pedí un análisis antes de presentar.</b> Registrar tiene costo y plazos: conviene saber el riesgo antes.</li>
+      </ul>
+      <p><a href="/consulta-marca-inpi/">Verificar mi marca ahora →</a></p>
+    </div>
+  </section>
+
+  <section class="smc-sec gris">
+    <div class="smc-caja">
+      <div class="smc-cta">
+        <div>
+          <h2>¿Tu nombre tiene marcas parecidas?</h2>
+          <p>Nuestro equipo te manda un <b>análisis preliminar sin cargo</b> de tu marca: clases que te convienen y posibles conflictos.</p>
+        </div>
+        <div class="smc-botones">
+          <a class="smc-btn llena" href="/consulta-marca-inpi/">Verificar mi marca</a>
+          <a class="smc-btn vacia" href="https://wa.me/5491155890784?text=Hola%2C%20quiero%20consultar%20por%20el%20registro%20de%20mi%20marca" rel="noopener">Escribirnos por WhatsApp</a>
+        </div>
+      </div>
+      <p class="smc-aviso">La información de esta página es orientativa y no constituye asesoramiento legal. Los plazos y procedimientos del INPI pueden cambiar.</p>
+    </div>
+  </section>
+</div>

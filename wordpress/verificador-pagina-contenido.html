@@ -1,0 +1,193 @@
+<!--
+  Contenido SEO de la página del verificador — smartiesconsultora.com.ar/consulta-marca-inpi/
+  (la dirección y los textos de título/meta están en docs/seo-verificador.md)
+
+  CÓMO ARMAR LA PÁGINA (WordPress + Elementor), de arriba hacia abajo:
+    1. Páginas → Añadir nueva → «Consulta de marcas INPI» (dirección /consulta-marca-inpi/).
+       Plantilla «Elementor ancho completo».
+    2. Sección azul (#161250) con:
+         · widget «Encabezado» en H1:  Consulta de marcas INPI: verificá si tu nombre está disponible
+         · widget «Editor de texto»:   Escribí el nombre de tu marca y mirá qué marcas iguales o parecidas hay en INPI,
+                                       en qué estado está cada una y si coinciden con tus clases. Es gratis y no te pedimos tus datos.
+         · widget «HTML» con TODO wordpress/verificador-home.html (la misma herramienta del home).
+    3. Debajo, un contenedor a ancho completo con un widget «HTML» y pegar TODO este archivo (margen y relleno 0).
+    4. En el plugin de SEO (Yoast / Rank Math): título, descripción y «frase clave» de docs/seo-verificador.md.
+       Esta página SÍ se indexa (a diferencia de /resultado/).
+    5. Publicar y enviar la dirección a Search Console («Inspección de URL → Solicitar indexación»).
+
+  IMPORTANTE — preguntas frecuentes: el texto de cada pregunta está dos veces, en el HTML visible y en el JSON-LD del final
+  (datos estructurados para Google). Si se cambia uno, se cambia el otro. scripts/test_paginas_wordpress.py lo verifica.
+  Los textos NO llevan precios ni plazos fijos del trámite a propósito: cambian y quedarían desactualizados.
+-->
+<div id="smc" class="smc">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Mulish:wght@400;600;700&family=Outfit:wght@600;800;900&display=swap">
+  <style>
+    .smc, .smc * { box-sizing: border-box; }
+    .smc {
+      --smc-azul: #161250; --smc-celeste: #0095ff; --smc-turq: #5cffe1; --smc-gris: #606060; --smc-fondo: #f4f7ff;
+      --smc-titulo: "Outfit", "Roboto", "Segoe UI", sans-serif; --smc-texto: "Mulish", "Roboto", "Segoe UI", sans-serif;
+      font-family: var(--smc-texto); color: var(--smc-gris); font-size: 17px; line-height: 1.65; background: #fff;
+      -webkit-font-smoothing: antialiased; width: 100vw; max-width: 100vw; margin-left: calc(50% - 50vw); margin-right: calc(50% - 50vw); overflow: hidden;
+    }
+    body:has(#smc) { overflow-x: clip; }
+    .smc h2, .smc h3 { font-family: var(--smc-titulo); color: var(--smc-azul); margin: 0; letter-spacing: 0; }
+    .smc p { margin: 0 0 14px; }
+    .smc a { color: var(--smc-celeste); }
+    .smc .smc-caja { width: 100%; max-width: 980px; margin: 0 auto; padding: 0 24px; }
+    .smc .smc-sec { padding: 56px 0; }
+    .smc .smc-sec.gris { background: var(--smc-fondo); }
+    .smc .smc-h2 { font-weight: 800; font-size: clamp(26px, 4vw, 36px); line-height: 1.15; text-transform: uppercase; margin-bottom: 12px; }
+    .smc .smc-h2 em { font-style: normal; color: var(--smc-celeste); }
+    .smc .smc-sub { max-width: 720px; margin-bottom: 26px; }
+
+    .smc .smc-pasos { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; padding: 0; margin: 0; list-style: none; counter-reset: p; }
+    .smc .smc-paso { counter-increment: p; background: #fff; border: 2px solid var(--smc-turq); border-radius: 18px; padding: 20px; }
+    .smc .smc-paso::before { content: counter(p); display: inline-flex; width: 34px; height: 34px; align-items: center; justify-content: center; margin-bottom: 10px;
+      border-radius: 50%; background: var(--smc-azul); color: var(--smc-turq); font: 800 17px/1 var(--smc-titulo); }
+    .smc .smc-paso h3 { font-size: 19px; margin-bottom: 6px; }
+    .smc .smc-paso p { margin: 0; font-size: 16px; }
+
+    .smc .smc-estados { display: grid; gap: 12px; padding: 0; margin: 0 0 18px; list-style: none; }
+    .smc .smc-estado { display: grid; grid-template-columns: 190px minmax(0, 1fr); gap: 6px 18px; align-items: start; background: #fff; border: 1px solid #dfe5f5; border-radius: 14px; padding: 14px 18px; }
+    .smc .smc-chip { display: inline-block; justify-self: start; padding: 4px 12px; border-radius: 20px; font: 700 13px/18px var(--smc-texto); letter-spacing: .03em; text-transform: uppercase; }
+    .smc .smc-chip.c1 { background: #e3eaff; color: #1a3a8f; }
+    .smc .smc-chip.c2 { background: #d8f7ff; color: #05566e; }
+    .smc .smc-chip.c3 { background: #ffe6bd; color: #6b3d00; }
+    .smc .smc-chip.c4 { background: #cdf8e1; color: #0b5a34; }
+    .smc .smc-chip.c5 { background: #ffd3da; color: #7a0b22; }
+    .smc .smc-chip.c6 { background: #e8e8ee; color: #444; }
+    .smc .smc-estado p { margin: 0; font-size: 16px; }
+    @media (max-width: 640px) { .smc .smc-pasos { grid-template-columns: 1fr; } .smc .smc-estado { grid-template-columns: 1fr; } }
+
+    .smc .smc-lista { margin: 0 0 18px; padding-left: 22px; }
+    .smc .smc-lista li { margin-bottom: 8px; }
+
+    .smc .smc-cta { background: var(--smc-azul); color: #fff; border-radius: 22px; padding: 30px 28px; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 18px; }
+    .smc .smc-cta h2 { color: #fff; font-size: clamp(22px, 3.4vw, 30px); line-height: 1.2; margin-bottom: 6px; }
+    .smc .smc-cta p { margin: 0; color: #dfe3ff; max-width: 560px; }
+    .smc .smc-cta b { color: var(--smc-turq); }
+    .smc .smc-botones { display: flex; flex-wrap: wrap; gap: 10px; }
+    .smc .smc-btn { display: inline-flex; align-items: center; justify-content: center; height: 46px; padding: 0 22px; border-radius: 27px; text-decoration: none;
+      font: 700 16px/1 var(--smc-texto); border: 2px solid var(--smc-turq); transition: background .15s, color .15s; }
+    .smc .smc-btn.llena { background: var(--smc-turq); color: var(--smc-azul); }
+    .smc .smc-btn.llena:hover { background: #fff; border-color: #fff; }
+    .smc .smc-btn.vacia { background: transparent; color: var(--smc-turq); }
+    .smc .smc-btn.vacia:hover { background: var(--smc-turq); color: var(--smc-azul); }
+
+    .smc .smc-faq details { background: #fff; border: 1px solid #dfe5f5; border-radius: 14px; margin-bottom: 10px; }
+    .smc .smc-faq summary { cursor: pointer; list-style: none; padding: 16px 20px; font: 700 18px/1.35 var(--smc-titulo); color: var(--smc-azul); display: flex; justify-content: space-between; gap: 14px; }
+    .smc .smc-faq summary::-webkit-details-marker { display: none; }
+    .smc .smc-faq summary::after { content: "+"; color: var(--smc-celeste); font-size: 24px; line-height: 1; }
+    .smc .smc-faq details[open] summary::after { content: "–"; }
+    .smc .smc-faq .smc-resp { padding: 0 20px 6px; }
+    .smc .smc-aviso { font-size: 14px; line-height: 21px; color: #6d6d7a; margin-top: 18px; }
+  </style>
+
+  <!-- Cómo funciona -->
+  <section class="smc-sec">
+    <div class="smc-caja">
+      <h2 class="smc-h2">Cómo funciona la <em>consulta de marcas</em></h2>
+      <p class="smc-sub">Antes de invertir en un logo, un local o una campaña conviene saber si el nombre ya está tomado. Esta herramienta busca en la base de marcas del INPI (Instituto Nacional de la Propiedad Industrial) y ordena lo que encuentra para que sea fácil de leer.</p>
+      <ol class="smc-pasos">
+        <li class="smc-paso"><h3>Escribís el nombre</h3><p>Si ya sabés en qué rubro vas a registrarla, podés marcar las clases. Si no, la búsqueda funciona igual.</p></li>
+        <li class="smc-paso"><h3>Buscamos en INPI</h3><p>Traemos las marcas con un nombre igual o parecido y las marcamos si están en tus clases.</p></li>
+        <li class="smc-paso"><h3>Ves el estado de cada una</h3><p>En trámite, publicada, con oposición, concedida o denegada. Y no te pedimos tus datos para mostrártelo.</p></li>
+      </ol>
+    </div>
+  </section>
+
+  <!-- Estados -->
+  <section class="smc-sec gris" id="estados">
+    <div class="smc-caja">
+      <h2 class="smc-h2">Cómo leer el <em>estado</em> de cada marca</h2>
+      <p class="smc-sub">El INPI publica el estado de cada solicitud, pero no siempre se entiende. Esto es lo que significa cada uno en el resultado:</p>
+      <ul class="smc-estados">
+        <li class="smc-estado"><span class="smc-chip c1">En trámite</span><p>Alguien presentó la solicitud y todavía no salió publicada en el Boletín de Marcas. Es el llamado «preboletín»: el nombre ya tiene un interesado aunque no aparezca como registrado.</p></li>
+        <li class="smc-estado"><span class="smc-chip c2">Publicada</span><p>La solicitud salió en el Boletín de Marcas. Desde ese momento terceros pueden oponerse durante un plazo; si no hay oposición ni objeciones, el trámite sigue su curso.</p></li>
+        <li class="smc-estado"><span class="smc-chip c3">Con oposición</span><p>Otra persona o empresa se opuso a que se registre. El INPI resuelve después de escuchar a las partes, y el trámite puede demorarse o terminar en una denegatoria.</p></li>
+        <li class="smc-estado"><span class="smc-chip c4">Concedida</span><p>El INPI concedió la marca: está registrada y su titular tiene exclusividad en las clases concedidas. Es la que más hay que tener en cuenta al elegir un nombre.</p></li>
+        <li class="smc-estado"><span class="smc-chip c5">Denegada</span><p>El INPI rechazó la solicitud. Una marca denegada ya no bloquea el nombre por sí sola, aunque puede haber recursos pendientes o razones que se repitan en tu caso.</p></li>
+        <li class="smc-estado"><span class="smc-chip c6">Abandonada o caducada</span><p>La solicitud o el registro dejaron de estar vigentes. Cuando figura así, en general ya no es un obstáculo, pero conviene confirmarlo.</p></li>
+      </ul>
+      <p>Si el INPI usa para una marca un estado que no reconocemos, lo mostramos tal cual figura en su base, en lugar de adivinar. Más detalle en la <a href="/estados-de-una-marca/">guía de estados de una marca</a>.</p>
+    </div>
+  </section>
+
+  <!-- Qué hacer con marcas parecidas -->
+  <section class="smc-sec">
+    <div class="smc-caja">
+      <h2 class="smc-h2">Encontré marcas parecidas: <em>¿y ahora?</em></h2>
+      <p class="smc-sub">Que haya una marca parecida no significa que la tuya no se pueda registrar. Pesan varias cosas:</p>
+      <ul class="smc-lista">
+        <li><b>La clase.</b> Las marcas se registran por clase de productos o servicios (hay 45). El mismo nombre puede convivir en clases muy distintas. Por eso el resultado indica cuáles coinciden con las que elegiste.</li>
+        <li><b>El parecido.</b> El INPI compara cómo se escribe, cómo suena y qué significa. Dos nombres que se escriben distinto pero suenan igual pueden chocar.</li>
+        <li><b>El estado.</b> Una marca concedida pesa más que una abandonada o denegada.</li>
+        <li><b>Tu actividad real.</b> Dos clases distintas pueden estar relacionadas, y el INPI las compara igual.</li>
+      </ul>
+      <p>Esta consulta compara el <b>nombre</b>. No compara logos ni el uso que se le da a la marca en el mercado, y no reemplaza un análisis de antecedentes hecho por un profesional.</p>
+    </div>
+  </section>
+
+  <!-- CTA -->
+  <section class="smc-sec gris">
+    <div class="smc-caja">
+      <div class="smc-cta">
+        <div>
+          <h2>¿Querés saber si <em style="font-style:normal;color:#5cffe1">tu</em> marca se puede registrar?</h2>
+          <p>Después de la búsqueda te ofrecemos un <b>análisis preliminar sin cargo</b>: lo revisa nuestro equipo y te lo enviamos por mail.</p>
+        </div>
+        <div class="smc-botones">
+          <a class="smc-btn llena" href="#smv" onclick="var e=document.getElementById('smv');if(e){e.scrollIntoView({behavior:'smooth',block:'center'});return false;}">Verificar mi marca</a>
+          <a class="smc-btn vacia" href="https://wa.me/5491155890784?text=Hola%2C%20quiero%20consultar%20por%20el%20registro%20de%20mi%20marca" rel="noopener">Escribirnos por WhatsApp</a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Preguntas frecuentes -->
+  <section class="smc-sec">
+    <div class="smc-caja smc-faq">
+      <h2 class="smc-h2">Preguntas <em>frecuentes</em></h2>
+      <p class="smc-sub">Lo que más nos preguntan antes de registrar una marca en Argentina.</p>
+
+      <details><summary>¿Cómo consulto si una marca ya está registrada en Argentina?</summary>
+        <div class="smc-resp"><p>Se consulta en la base de datos de marcas del INPI. Con esta herramienta escribís el nombre y ves las marcas iguales o parecidas, la clase de cada una y su estado, sin dejar tus datos.</p></div></details>
+
+      <details><summary>¿Qué diferencia hay entre «en trámite», «publicada» y «concedida»?</summary>
+        <div class="smc-resp"><p>«En trámite» es una solicitud presentada que todavía no salió en el Boletín de Marcas. «Publicada» es la que ya salió y está abierta a oposiciones de terceros. «Concedida» es la que el INPI aceptó y quedó registrada.</p></div></details>
+
+      <details><summary>Si hay una marca parecida, ¿ya no puedo registrar la mía?</summary>
+        <div class="smc-resp"><p>No necesariamente. Depende de la clase, de qué tan parecidos son los nombres y de la actividad de cada uno. El INPI puede observar la solicitud y el titular de la otra marca puede oponerse, así que conviene analizarlo antes de presentar.</p></div></details>
+
+      <details><summary>¿Qué es una clase de marca?</summary>
+        <div class="smc-resp"><p>Es el rubro de productos o servicios en el que se registra la marca. Se usa la Clasificación de Niza, que tiene 45 clases: de la 1 a la 34 para productos y de la 35 a la 45 para servicios. Una marca solo está protegida en las clases en las que se registró.</p></div></details>
+
+      <details><summary>¿Cuánto dura una marca registrada?</summary>
+        <div class="smc-resp"><p>El registro dura 10 años desde su concesión y se puede renovar por períodos iguales mientras se siga usando.</p></div></details>
+
+      <details><summary>¿Esta consulta tiene costo?</summary>
+        <div class="smc-resp"><p>No. La búsqueda es gratuita y no te pedimos datos para mostrarte el resultado. Si después querés que nuestro equipo revise tu caso, te ofrecemos un análisis preliminar sin cargo.</p></div></details>
+
+      <details><summary>¿Esta consulta reemplaza una búsqueda de antecedentes profesional?</summary>
+        <div class="smc-resp"><p>No. Es un primer filtro del nombre. Una búsqueda profesional también tiene en cuenta cómo suena y qué significa el nombre, las clases relacionadas y tu actividad, y te dice qué riesgo real hay antes de iniciar el trámite.</p></div></details>
+
+      <p class="smc-aviso">La información de esta página es orientativa y no constituye asesoramiento legal. Los estados y datos provienen de la base pública del INPI y pueden cambiar.</p>
+    </div>
+  </section>
+
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "FAQPage",
+    "mainEntity": [
+      {"@type": "Question", "name": "¿Cómo consulto si una marca ya está registrada en Argentina?", "acceptedAnswer": {"@type": "Answer", "text": "Se consulta en la base de datos de marcas del INPI. Con esta herramienta escribís el nombre y ves las marcas iguales o parecidas, la clase de cada una y su estado, sin dejar tus datos."}},
+      {"@type": "Question", "name": "¿Qué diferencia hay entre «en trámite», «publicada» y «concedida»?", "acceptedAnswer": {"@type": "Answer", "text": "«En trámite» es una solicitud presentada que todavía no salió en el Boletín de Marcas. «Publicada» es la que ya salió y está abierta a oposiciones de terceros. «Concedida» es la que el INPI aceptó y quedó registrada."}},
+      {"@type": "Question", "name": "Si hay una marca parecida, ¿ya no puedo registrar la mía?", "acceptedAnswer": {"@type": "Answer", "text": "No necesariamente. Depende de la clase, de qué tan parecidos son los nombres y de la actividad de cada uno. El INPI puede observar la solicitud y el titular de la otra marca puede oponerse, así que conviene analizarlo antes de presentar."}},
+      {"@type": "Question", "name": "¿Qué es una clase de marca?", "acceptedAnswer": {"@type": "Answer", "text": "Es el rubro de productos o servicios en el que se registra la marca. Se usa la Clasificación de Niza, que tiene 45 clases: de la 1 a la 34 para productos y de la 35 a la 45 para servicios. Una marca solo está protegida en las clases en las que se registró."}},
+      {"@type": "Question", "name": "¿Cuánto dura una marca registrada?", "acceptedAnswer": {"@type": "Answer", "text": "El registro dura 10 años desde su concesión y se puede renovar por períodos iguales mientras se siga usando."}},
+      {"@type": "Question", "name": "¿Esta consulta tiene costo?", "acceptedAnswer": {"@type": "Answer", "text": "No. La búsqueda es gratuita y no te pedimos datos para mostrarte el resultado. Si después querés que nuestro equipo revise tu caso, te ofrecemos un análisis preliminar sin cargo."}},
+      {"@type": "Question", "name": "¿Esta consulta reemplaza una búsqueda de antecedentes profesional?", "acceptedAnswer": {"@type": "Answer", "text": "No. Es un primer filtro del nombre. Una búsqueda profesional también tiene en cuenta cómo suena y qué significa el nombre, las clases relacionadas y tu actividad, y te dice qué riesgo real hay antes de iniciar el trámite."}}
+    ]
+  }
+  </script>
+</div>

@@ -60,9 +60,10 @@ class Evaluar(unittest.TestCase):
         self.assertEqual(r["verdict"], "no_disponible")
         self.assertEqual(r["muestras"][0]["denominacion"], "LUNA")  # la más parecida primero
 
-    def test_muestras_publicas_solo_nombre_y_clase(self):
+    def test_muestras_publicas_solo_nombre_clase_y_estado(self):
         r = vc.evaluar("Nike", [fila(77, "NIKE", "25", estado="Vigente")])
-        self.assertEqual(r["samples"], [{"denominacion": "NIKE", "clase": 25}])
+        self.assertEqual(r["samples"], [{"denominacion": "NIKE", "clase": 25, "estado": {"codigo": "concedida", "texto": "Concedida"}}])
+        self.assertNotIn("acta", r["samples"][0])  # a la persona nunca se le muestra el acta
         self.assertEqual(r["muestras"][0]["acta"], "77")  # el equipo sí ve el acta y el estado
         self.assertEqual(r["muestras"][0]["estado"], "Vigente")
 
@@ -574,6 +575,182 @@ class VariasOposiciones(unittest.TestCase):
         self.correr({"acta": "7"})
         self.correr({"acta": "7"})
         self.assertEqual(self.pedidos, [("op", "7")])
+
+
+import estado_marca as em  # noqa: E402
+from datetime import date, datetime  # noqa: E402
+
+
+class EstadoDeLaMarca(unittest.TestCase):
+    HOY = date(2026, 10, 11)
+
+    def est(self, inpi="", db=None):
+        return em.estado_publico(inpi, db, self.HOY)
+
+    def codigo(self, inpi="", db=None):
+        e = self.est(inpi, db)
+        return e["codigo"] if e else None
+
+    def test_la_resolucion_del_panel_manda_sobre_todo(self):
+        self.assertEqual(self.codigo("En trámite", {"estado_tramite": "Concedida", "boletin": None}), "concedida")
+        self.assertEqual(self.codigo("", {"estado_tramite": "Denegada", "tuvo_oposicion": True}), "denegada")
+        self.assertEqual(self.codigo("", {"estado_tramite": "Concedida", "tuvo_oposicion": True}), "concedida")
+
+    def test_lo_que_dice_inpi_se_interpreta(self):
+        for texto, esperado in [("Vigente", "concedida"), ("CONCEDIDA", "concedida"), ("Registrada", "concedida"),
+                                ("Denegada", "denegada"), ("Abandonada", "inactiva"), ("Caducidad", "inactiva"),
+                                ("Vencida", "inactiva"), ("En trámite", "en_tramite"), ("Publicada", "publicada")]:
+            with self.subTest(texto=texto):
+                self.assertEqual(self.codigo(texto), esperado)
+
+    def test_no_vigente_no_es_concedida(self):
+        self.assertEqual(self.codigo("No vigente"), "inactiva")
+
+    def test_acentos_y_mayusculas_no_cuentan(self):
+        self.assertEqual(self.codigo("  concedída "), "concedida")
+
+    def test_con_oposicion_hasta_que_se_levanta(self):
+        base = {"boletin": "11116", "fecha_publicacion": date(2026, 8, 1), "tuvo_oposicion": True}
+        self.assertEqual(self.codigo("", dict(base, estado_oposicion="notificada_en_plazo")), "con_oposicion")
+        self.assertEqual(self.codigo("", dict(base, estado_oposicion="levantada")), "publicada")
+
+    def test_publicada_dice_si_todavia_corre_el_plazo_de_oposicion(self):
+        e = self.est("", {"boletin": "11116", "fecha_publicacion": date(2026, 10, 1)})
+        self.assertEqual((e["codigo"], e["texto"]), ("publicada", em.TEXTO_EN_PLAZO))
+        vieja = self.est("", {"boletin": "11116", "fecha_publicacion": date(2026, 8, 1)})
+        self.assertEqual(vieja, {"codigo": "publicada", "texto": "Publicada"})
+        sin_fecha = self.est("", {"boletin": "11116"})
+        self.assertEqual(sin_fecha, {"codigo": "publicada", "texto": "Publicada"})
+
+    def test_el_limite_del_plazo_es_el_dia_30(self):
+        dia30 = date.fromordinal(self.HOY.toordinal() - em.PLAZO_OPOSICION_DIAS)
+        dia31 = date.fromordinal(self.HOY.toordinal() - em.PLAZO_OPOSICION_DIAS - 1)
+        self.assertEqual(self.est("", {"boletin": "1", "fecha_publicacion": dia30})["texto"], em.TEXTO_EN_PLAZO)
+        self.assertEqual(self.est("", {"boletin": "1", "fecha_publicacion": dia31})["texto"], "Publicada")
+
+    def test_fecha_con_hora_tambien_sirve(self):
+        e = self.est("", {"boletin": "1", "fecha_publicacion": datetime(2026, 10, 5, 3, 0)})
+        self.assertEqual(e["texto"], em.TEXTO_EN_PLAZO)
+
+    def test_preboletin_es_una_marca_del_panel_sin_boletin(self):
+        e = self.est("En trámite", {"boletin": None, "fuente": "escaneo_directo", "fecha_publicacion": None})
+        self.assertEqual((e["codigo"], e["texto"]), ("en_tramite", em.TEXTO_SIN_PUBLICAR))
+
+    def test_marca_que_el_panel_no_tiene_usa_solo_inpi(self):
+        self.assertEqual(self.est("En trámite"), {"codigo": "en_tramite", "texto": "En trámite"})
+
+    def test_estado_desconocido_se_muestra_tal_cual_y_sin_adivinar(self):
+        e = self.est("  Algo\x00 RARO que escribió INPI y es muy muy muy muy largo  ")
+        self.assertEqual(e["codigo"], "otro")
+        self.assertLessEqual(len(e["texto"]), em.MAX_TEXTO_OTRO)
+        self.assertNotIn("\x00", e["texto"])
+        self.assertTrue(e["texto"].startswith("Algo"))
+
+    def test_sin_nada_no_hay_estado(self):
+        self.assertIsNone(self.est("", None))
+        self.assertIsNone(self.est(None, {}))
+
+
+class EvaluarConEstadosYClases(unittest.TestCase):
+    def test_cada_marca_encontrada_trae_su_estado_del_panel(self):
+        db = {"1": {"boletin": "11116", "fecha_publicacion": date(2026, 8, 1), "tuvo_oposicion": True, "estado_oposicion": "contestada"}}
+        r = vc.evaluar("Luna", [fila(1, "LUNA", 25, estado="En trámite")], estados_db=db, hoy=date(2026, 10, 11))
+        self.assertEqual(r["samples"][0]["estado"]["codigo"], "con_oposicion")
+        self.assertEqual(r["muestras"][0]["estado_codigo"], "con_oposicion")
+        self.assertEqual(r["muestras"][0]["estado"], "En trámite")  # lo que dijo INPI se sigue guardando para el equipo
+
+    def test_sin_clases_no_hay_marca_de_tus_clases(self):
+        r = vc.evaluar("Luna", [fila(1, "LUNA", 25)])
+        self.assertNotIn("enTusClases", r["samples"][0])
+        self.assertEqual((r["inClassExact"], r["inClassSimilar"]), (0, 0))
+
+    def test_las_clases_no_cambian_el_veredicto_pero_marcan_cada_marca(self):
+        filas = [fila(1, "LUNA", 9), fila(2, "LUNA", 25), fila(3, "LUNAS DEL SUR", 25)]
+        con = vc.evaluar("Luna", filas, clases=[25])
+        sin = vc.evaluar("Luna", filas)
+        self.assertEqual(con["verdict"], sin["verdict"])
+        self.assertEqual((con["exactCount"], con["similarCount"]), (sin["exactCount"], sin["similarCount"]))
+        marcas = {s["clase"]: s["enTusClases"] for s in con["samples"]}
+        self.assertEqual(marcas, {9: False, 25: True})
+        self.assertEqual((con["inClassExact"], con["inClassSimilar"]), (1, 1))
+
+    def test_las_de_tus_clases_van_primero(self):
+        filas = [fila(1, "LUNA", 9), fila(2, "LUNA", 25)]
+        r = vc.evaluar("Luna", filas, clases=[25])
+        self.assertEqual([s["clase"] for s in r["samples"]], [25, 9])
+        self.assertEqual([s["clase"] for s in vc.evaluar("Luna", filas)["samples"]], [9, 25])  # sin clases, el orden de siempre
+
+    def test_misma_marca_en_otra_clase_sigue_contando_como_identica(self):
+        r = vc.evaluar("Luna", [fila(1, "LUNA", 9)], clases=[25])
+        self.assertEqual(r["verdict"], "no_disponible")
+        self.assertEqual((r["inClassExact"], r["inClassSimilar"]), (0, 0))
+
+    def test_resultado_publico_sin_clases(self):
+        r = vc.evaluar("Luna", [fila(1, "LUNA", 25)])
+        pub = vc.resultado_publico(r["verdict"], r["exactCount"], r["similarCount"], r["muestras"], [], r["posible_mas"])
+        self.assertEqual(set(pub), {"verdict", "exactCount", "similarCount", "samples", "moreResults"})
+        self.assertFalse(pub["moreResults"])
+
+    def test_resultado_publico_con_clases_y_pagina_llena(self):
+        filas = [fila(i, f"LUNA {i}", 25) for i in range(vc.LIMITE_INPI)]
+        r = vc.evaluar("Luna", filas, clases=[25])
+        pub = vc.resultado_publico(r["verdict"], r["exactCount"], r["similarCount"], r["muestras"], [25], r["posible_mas"])
+        self.assertEqual(pub["classes"], [25])
+        self.assertTrue(pub["moreResults"])
+        self.assertGreater(pub["inClassSimilar"], 0)
+
+    def test_lo_guardado_alcanza_para_rearmar_el_resultado(self):
+        """El link del resultado (GET /{codigo}) se arma solo con lo que quedó en la base."""
+        r = vc.evaluar("Luna", [fila(1, "LUNA", 25), fila(2, "LUNA", 9)], clases=[25])
+        guardado = json_ida_y_vuelta(r["muestras"])
+        pub = vc.resultado_publico(r["verdict"], r["exactCount"], r["similarCount"], guardado, [25])
+        self.assertEqual(pub["samples"], r["samples"])
+        self.assertEqual(pub["inClassExact"], r["inClassExact"])
+
+    def test_nada_privado_llega_a_la_persona(self):
+        r = vc.evaluar("Luna", [fila(1, "LUNA", 25)], clases=[25])
+        for s in r["samples"]:
+            self.assertEqual(set(s), {"denominacion", "clase", "estado", "enTusClases"})
+
+
+def json_ida_y_vuelta(x):
+    import json
+    return json.loads(json.dumps(x))
+
+
+class ValidacionBusquedaSinDatos(unittest.TestCase):
+    def test_solo_el_nombre_alcanza(self):
+        self.assertEqual(vc.validar_busqueda("  Mi   Marca "), {"marca": "Mi Marca", "clases": []})
+
+    def test_nombre_invalido(self):
+        for malo, texto in [("a", "marca"), ("!!!", "letras"), ("", "marca")]:
+            with self.subTest(malo=malo):
+                with self.assertRaises(ValueError) as cm:
+                    vc.validar_busqueda(malo)
+                self.assertIn(texto, str(cm.exception))
+
+    def test_clases_se_limpian(self):
+        self.assertEqual(vc.validar_clases([25, "35", 25, "x", 0, 46, None, " 9 "]), [25, 35, 9])
+
+    def test_clases_que_no_son_una_lista_se_ignoran(self):
+        for v in (None, "25", 25, {"a": 1}):
+            self.assertEqual(vc.validar_clases(v), [])
+
+    def test_demasiadas_clases(self):
+        with self.assertRaises(ValueError):
+            vc.validar_clases(list(range(1, vc.CLASES_MAX + 2)))
+        self.assertEqual(len(vc.validar_clases(list(range(1, vc.CLASES_MAX + 1)))), vc.CLASES_MAX)
+
+    def test_contacto_valido_se_limpia(self):
+        d = vc.validar_contacto(" Ropa ", " Ana  Pérez ", "ANA@Correo.com ", "11 5555", "")
+        self.assertEqual((d["actividad"], d["nombre"], d["email"]), ("Ropa", "Ana Pérez", "ana@correo.com"))
+
+    def test_contacto_con_errores_en_castellano(self):
+        for campos, texto in [(("Ropa", "", "ana@x.com"), "llamás"), (("Ropa", "Ana", "ana@"), "e-mail"), (("", "Ana", "ana@x.com"), "dedica")]:
+            with self.subTest(campos=campos):
+                with self.assertRaises(ValueError) as cm:
+                    vc.validar_contacto(*campos)
+                self.assertIn(texto, str(cm.exception))
 
 
 if __name__ == "__main__":
