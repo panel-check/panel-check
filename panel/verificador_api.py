@@ -3,7 +3,9 @@ Rutas del verificador de marca de la web (ver verificador_core.py).
 
 Públicas (sin login — las llama el formulario del home de smartiesconsultora.com.ar,
 que está en otro dominio, por eso llevan CORS solo para ese sitio):
-  POST /api/publico/verificador/consulta             verifica una marca y guarda la consulta con los datos de contacto
+  POST /api/publico/verificador/buscar               busca una marca SIN pedir datos (nombre y, si quiere, clases): devuelve el resultado con el estado de cada marca
+  POST /api/publico/verificador/{codigo}/contacto    la persona deja su contacto DESPUÉS de ver el resultado: se suma a la misma consulta y avisa al equipo
+  POST /api/publico/verificador/consulta             (formulario anterior) verifica una marca y guarda la consulta con los datos de contacto
   GET  /api/publico/verificador/{codigo}             recupera un resultado guardado (vale 90 días)
   POST /api/publico/verificador/consulta-adicional   una pregunta extra sobre una marca ya verificada
   GET  /api/publico/verificador/oposicion/{codigo}   nombre de pila, marca y acta para la página de oposición de la web (el código viene en el mail)
@@ -11,14 +13,14 @@ que está en otro dominio, por eso llevan CORS solo para ese sitio):
   OPTIONS /api/publico/verificador/...               la verificación previa (preflight) del navegador
 
 Del panel (con login, sección «Consultas web» del menú Más):
-  GET    /api/consultas-web              lista (filtros: estado, resultado, texto)
+  GET    /api/consultas-web              lista (filtros: estado, resultado, contacto con/sin, texto)
   GET    /api/consultas-web/{id}         una consulta completa (marcas encontradas y preguntas adicionales)
   POST   /api/consultas-web/{id}/estado  marcar revisada / nueva
   DELETE /api/consultas-web/{id}         borrar la consulta
 
 Protecciones de la parte pública: límite de consultas por IP, campo trampa, captcha de
 Cloudflare Turnstile (si el panel lo tiene activado), caché de 24 hs por marca y un tope
-global de búsquedas a INPI por minuto. Los pedidos de otros dominios se rechazan salvo los
+global de búsquedas a INPI por minuto. Las búsquedas sin datos de contacto se borran a los 90 días. Los pedidos de otros dominios se rechazan salvo los
 de VERIFICADOR_ORIGENES (ver auth.origen_valido).
 """
 
@@ -41,7 +43,10 @@ import mails_core
 import verificador_core as vc
 
 MAX_CUERPO = 16 * 1024        # bytes: un pedido legítimo pesa unos cientos
-CONSULTAS_POR_HORA = 10       # por IP
+CONSULTAS_POR_HORA = 10       # por IP (formulario con datos)
+BUSQUEDAS_POR_HORA = 30       # por IP (búsqueda sin datos)
+CONTACTOS_POR_HORA = 5        # por IP (contacto posterior al resultado)
+LIMPIEZA_CADA_SEGUNDOS = 6 * 3600
 ADICIONALES_POR_HORA = 5      # por IP
 OPOSICIONES_POR_HORA = 60     # por IP (página de oposición)
 
@@ -101,19 +106,6 @@ def _panel_url() -> str:
     return (os.environ.get("PANEL_URL") or mails_core.DEFAULT_PANEL).rstrip("/")
 
 
-def _muestras_publicas(muestras) -> list:
-    """Lo que se le muestra a la persona: solo nombre y clase, sin actas ni estados."""
-    out = []
-    for m in muestras or []:
-        clase = vc._clase_entera(m.get("clase"))
-        if clase is None:
-            continue
-        out.append({"denominacion": m.get("denominacion") or "", "clase": clase})
-        if len(out) >= vc.MUESTRAS_PUBLICAS:
-            break
-    return out
-
-
 def crear_router(verificar_login, conexion) -> APIRouter:
     router = APIRouter()
 
@@ -156,6 +148,67 @@ def crear_router(verificar_login, conexion) -> APIRouter:
         except Exception as e:  # noqa: BLE001
             print(f"[verificador] no se pudieron leer las palabras genéricas: {e}")
             return frozenset()
+
+    def _estados_db(actas) -> dict:
+        """Lo que el panel sabe de las actas encontradas ({acta: fila de `marcas`}) para decir en qué estado está cada una
+        (estado_marca.py). Si no se puede leer, el resultado sale igual, solo con lo que dijo INPI."""
+        actas = sorted({str(a).strip() for a in actas if a})[:60]
+        if not actas:
+            return {}
+        try:
+            with conexion() as conn:
+                with rcur(conn) as cur:
+                    cur.execute(
+                        "SELECT acta, boletin, fuente, fecha_publicacion, tuvo_oposicion, estado_oposicion, estado_tramite "
+                        "FROM marcas WHERE acta = ANY(%s)", (actas,))
+                    return {f["acta"]: dict(f) for f in cur.fetchall()}
+        except Exception as e:  # noqa: BLE001
+            print(f"[verificador] no se pudieron leer los estados de las marcas: {e}")
+            return {}
+
+    def _resolver(vid: int, marca: str, clases: list) -> dict:
+        """Busca la marca (caché o INPI), calcula el veredicto con el estado de cada marca y las clases, lo guarda en la fila
+        y devuelve el cuerpo «public» para la web. Si INPI no responde el veredicto es «error»: nunca «disponible»."""
+        error, desde_cache, filas = None, False, []
+        try:
+            filas, desde_cache = _filas_para(marca)
+        except vc.ErrorInpi as e:
+            error = str(e)[:300]
+        except Exception as e:  # noqa: BLE001 — pase lo que pase, la persona recibe una respuesta
+            error = f"error inesperado ({type(e).__name__})"
+            print(f"[verificador] consulta {vid}: {e}")
+        if error:
+            res = {"verdict": "error", "exactCount": 0, "similarCount": 0, "muestras": [], "posible_mas": False}
+        else:
+            res = vc.evaluar(marca, filas, genericas=_genericas(), clases=clases,
+                             estados_db=_estados_db([f.get("acta") for f in filas]))
+        with conexion() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE verificaciones_marca SET veredicto = %s, exactos = %s, similares = %s, muestras = %s, "
+                    "posible_mas = %s, error = %s, desde_cache = %s, clases = %s, consultada_en = now() WHERE id = %s",
+                    (res["verdict"], res["exactCount"], res["similarCount"], psycopg2.extras.Json(res["muestras"]),
+                     res["posible_mas"], error, desde_cache, psycopg2.extras.Json(clases), vid),
+                )
+            conn.commit()
+        return vc.resultado_publico(res["verdict"], res["exactCount"], res["similarCount"], res["muestras"], clases, res["posible_mas"])
+
+    _limpieza = {"ultima": 0.0}
+
+    def _limpiar_busquedas_sin_datos():
+        """Las búsquedas de gente que no dejó contacto no sirven pasado el tiempo del link: se borran (como mucho, una vez cada 6 hs)."""
+        ahora = time.time()
+        if ahora - _limpieza["ultima"] < LIMPIEZA_CADA_SEGUNDOS:
+            return
+        _limpieza["ultima"] = ahora
+        try:
+            with conexion() as conn:
+                with conn.cursor() as cur:
+                    cur.execute("DELETE FROM verificaciones_marca WHERE email IS NULL AND creada_en < now() - make_interval(days => %s)",
+                                (vc.DIAS_BUSQUEDAS_SIN_DATOS,))
+                conn.commit()
+        except Exception as e:  # noqa: BLE001
+            print(f"[verificador] no se pudieron limpiar las búsquedas sin datos: {e}")
 
     # ── Avisos por mail al equipo ─────────────────────────────────────
     def _enviar_aviso(asunto: str, cuerpo_html: str, texto: str, responder_a: str) -> Optional[str]:
@@ -285,32 +338,8 @@ def crear_router(verificar_login, conexion) -> APIRouter:
                 vid = cur.fetchone()[0]
             conn.commit()
 
-        # 2) se busca en INPI (o en el caché) y se calcula el veredicto
-        error, desde_cache, filas = None, False, []
-        try:
-            filas, desde_cache = _filas_para(d["marca"])
-        except vc.ErrorInpi as e:
-            error = str(e)[:300]
-        except Exception as e:  # noqa: BLE001 — pase lo que pase, la persona recibe una respuesta
-            error = f"error inesperado ({type(e).__name__})"
-            print(f"[verificador] consulta {vid}: {e}")
-        if error:
-            res = {"verdict": "error", "exactCount": 0, "similarCount": 0, "samples": [], "muestras": [], "posible_mas": False}
-        else:
-            res = vc.evaluar(d["marca"], filas, genericas=_genericas())
-
-        # 3) se guarda el resultado
-        with conexion() as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    "UPDATE verificaciones_marca SET veredicto = %s, exactos = %s, similares = %s, muestras = %s, "
-                    "posible_mas = %s, error = %s, desde_cache = %s, consultada_en = now() WHERE id = %s",
-                    (res["verdict"], res["exactCount"], res["similarCount"], psycopg2.extras.Json(res["muestras"]),
-                     res["posible_mas"], error, desde_cache, vid),
-                )
-            conn.commit()
-        publico = {"verdict": res["verdict"], "exactCount": res["exactCount"], "similarCount": res["similarCount"],
-                   "samples": res["samples"]}
+        # 2) se busca en INPI (o en el caché), se calcula el veredicto y se guarda
+        publico = _resolver(vid, d["marca"], [])
         return 200, {"public": publico, "consultaId": codigo}, vid
 
     @router.post("/api/publico/verificador/consulta")
@@ -326,6 +355,90 @@ def crear_router(verificar_login, conexion) -> APIRouter:
             background.add_task(_confirmacion_consulta, vid)
         return _json(request, cuerpo, status)
 
+    def _procesar_busqueda(raw: dict, ip: str, origen: str):
+        """Búsqueda sin datos de contacto: (status, cuerpo). No avisa al equipo: todavía no hay a quién contactar."""
+        if not _permitido("busqueda", ip, BUSQUEDAS_POR_HORA):
+            return 429, {"detail": "Recibimos muchas consultas desde tu conexión. Probá de nuevo en un rato."}
+        if str(raw.get("hp") or "").strip():  # campo trampa invisible: solo lo llenan los robots
+            return 200, {"public": {"verdict": "error", "exactCount": 0, "similarCount": 0, "samples": [], "moreResults": False}, "consultaId": None}
+        try:
+            d = vc.validar_busqueda(raw.get("marca"), raw.get("clases"))
+        except ValueError as e:
+            return 400, {"detail": str(e)}
+        if not formularios_api._captcha_ok(str(raw.get("token") or ""), ip):
+            return 400, {"detail": "No pudimos verificar que no seas un robot. Esperá a que aparezca el tilde de "
+                                   "verificación y volvé a buscar."}
+        codigo = vc.nuevo_codigo()
+        with conexion() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "INSERT INTO verificaciones_marca (codigo, marca, clases, origen, ip) VALUES (%s, %s, %s, %s, %s) RETURNING id",
+                    (codigo, d["marca"], psycopg2.extras.Json(d["clases"]), origen[:200], ip),
+                )
+                vid = cur.fetchone()[0]
+            conn.commit()
+        publico = _resolver(vid, d["marca"], d["clases"])
+        _limpiar_busquedas_sin_datos()
+        return 200, {"public": publico, "consultaId": codigo, "marca": d["marca"]}
+
+    @router.post("/api/publico/verificador/buscar")
+    async def buscar(request: Request):
+        raw = await _leer_json(request)
+        if raw is None:
+            return _json(request, {"detail": "Pedido inválido."}, 400)
+        ip = auth.ip_cliente(request) or "?"
+        origen = request.headers.get("origin") or request.headers.get("referer") or ""
+        status, cuerpo = await run_in_threadpool(_procesar_busqueda, raw, ip, origen)
+        return _json(request, cuerpo, status)
+
+    def _procesar_contacto(codigo: str, raw: dict, ip: str):
+        """La persona deja su contacto después de ver el resultado: se suma a SU consulta. (status, cuerpo, id para los avisos o None).
+        Solo se acepta una vez por consulta: nadie puede pisar el contacto de otra con un código que no es suyo."""
+        if not _permitido("contacto", ip, CONTACTOS_POR_HORA):
+            return 429, {"ok": False, "error": "Recibimos muchos pedidos desde tu conexión. Probá de nuevo en un rato."}, None
+        if str(raw.get("hp") or "").strip():
+            return 200, {"ok": True}, None
+        if not vc.CODIGO_RE.match(codigo):
+            return 404, {"ok": False, "error": "No encontramos esa consulta."}, None
+        try:
+            d = vc.validar_contacto(raw.get("actividad"), raw.get("nombre"), raw.get("email"), raw.get("telefono"), raw.get("web"))
+        except ValueError as e:
+            return 400, {"ok": False, "error": str(e)}, None
+        if not formularios_api._captcha_ok(str(raw.get("token") or ""), ip):
+            return 400, {"ok": False, "error": "No pudimos verificar que no seas un robot. Esperá a que aparezca el tilde de "
+                                               "verificación y volvé a enviar."}, None
+        with conexion() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE verificaciones_marca SET nombre = %s, email = %s, actividad = %s, telefono = %s, web = %s, contacto_en = now() "
+                    "WHERE codigo = %s AND email IS NULL AND veredicto <> 'pendiente' AND creada_en > now() - make_interval(days => %s) "
+                    "RETURNING id",
+                    (d["nombre"], d["email"], d["actividad"], d["telefono"], d["web"], codigo, vc.VALIDEZ_DIAS),
+                )
+                f = cur.fetchone()
+                existe = None
+                if not f:
+                    cur.execute("SELECT id FROM verificaciones_marca WHERE codigo = %s", (codigo,))
+                    existe = cur.fetchone()
+            conn.commit()
+        if f:
+            return 200, {"ok": True}, f[0]
+        if existe:  # ya había dejado su contacto: no se toca nada
+            return 200, {"ok": True, "yaRegistrado": True}, None
+        return 404, {"ok": False, "error": "No encontramos esa consulta. Puede haber vencido: volvé a buscar tu marca."}, None
+
+    @router.post("/api/publico/verificador/{codigo}/contacto")
+    async def contacto(codigo: str, request: Request, background: BackgroundTasks):
+        raw = await _leer_json(request)
+        if raw is None:
+            return _json(request, {"ok": False, "error": "Pedido inválido."}, 400)
+        ip = auth.ip_cliente(request) or "?"
+        status, cuerpo, vid = await run_in_threadpool(_procesar_contacto, codigo, raw, ip)
+        if vid:
+            background.add_task(_aviso_consulta, vid)
+            background.add_task(_confirmacion_consulta, vid)
+        return _json(request, cuerpo, status)
+
     @router.get("/api/publico/verificador/{codigo}")
     def ver(codigo: str, request: Request):
         if not vc.CODIGO_RE.match(codigo):
@@ -333,7 +446,8 @@ def crear_router(verificar_login, conexion) -> APIRouter:
         with conexion() as conn:
             with rcur(conn) as cur:
                 cur.execute(
-                    "SELECT marca, nombre, veredicto, exactos, similares, muestras, creada_en FROM verificaciones_marca "
+                    "SELECT marca, nombre, veredicto, exactos, similares, muestras, creada_en, clases, posible_mas, "
+                    "(email IS NOT NULL) AS tiene_contacto FROM verificaciones_marca "
                     "WHERE codigo = %s AND veredicto <> 'pendiente' AND creada_en > now() - make_interval(days => %s)",
                     (codigo, vc.VALIDEZ_DIAS),
                 )
@@ -341,9 +455,9 @@ def crear_router(verificar_login, conexion) -> APIRouter:
         if not v:
             return _json(request, {"detail": "No encontrada"}, 404)
         return _json(request, {
-            "public": {"verdict": v["veredicto"], "exactCount": v["exactos"], "similarCount": v["similares"],
-                       "samples": _muestras_publicas(v["muestras"])},
+            "public": vc.resultado_publico(v["veredicto"], v["exactos"], v["similares"], v["muestras"], v["clases"], v["posible_mas"]),
             "marca": v["marca"], "nombre": v["nombre"], "createdAt": v["creada_en"].isoformat(), "informeUrl": None,
+            "contacto": bool(v["tiene_contacto"]),
         })
 
     def _fila_oposicion(codigo: str, request: Request):
@@ -434,11 +548,15 @@ def crear_router(verificar_login, conexion) -> APIRouter:
 
     # ── Del panel ─────────────────────────────────────────────────────
     @router.get("/api/consultas-web")
-    def listar(estado: str = "", veredicto: str = "", q: str = "", _: str = Depends(verificar_login)):
+    def listar(estado: str = "", veredicto: str = "", contacto: str = "", q: str = "", _: str = Depends(verificar_login)):
         cond, val = [], []
         if estado in ("nueva", "revisada"):
             cond.append("v.estado = %s")
             val.append(estado)
+        if contacto == "con":       # dejaron nombre y mail: son los leads
+            cond.append("v.email IS NOT NULL")
+        elif contacto == "sin":     # solo buscaron la marca
+            cond.append("v.email IS NULL")
         if veredicto in vc.VEREDICTOS or veredicto == "pendiente":
             cond.append("v.veredicto = %s")
             val.append(veredicto)
@@ -451,7 +569,7 @@ def crear_router(verificar_login, conexion) -> APIRouter:
             with rcur(conn) as cur:
                 cur.execute(
                     f"""
-                    SELECT v.id, v.codigo, v.creada_en, v.marca, v.actividad, v.nombre, v.email, v.telefono, v.web,
+                    SELECT v.id, v.codigo, v.creada_en, v.marca, v.clases, v.actividad, v.nombre, v.email, v.telefono, v.web,
                            v.veredicto, v.exactos, v.similares, v.estado, v.desde_cache, v.error, v.aviso_enviado_en, v.aviso_error,
                            v.confirmacion_enviada_en, v.confirmacion_error,
                            (SELECT COUNT(*) FROM verificaciones_marca_consultas c WHERE c.verificacion_id = v.id) AS adicionales
@@ -461,7 +579,7 @@ def crear_router(verificar_login, conexion) -> APIRouter:
                     val,
                 )
                 filas = cur.fetchall()
-                cur.execute("SELECT COUNT(*) AS n FROM verificaciones_marca WHERE estado = 'nueva'")
+                cur.execute("SELECT COUNT(*) AS n FROM verificaciones_marca WHERE estado = 'nueva' AND email IS NOT NULL")
                 nuevas = cur.fetchone()["n"]
         return {"consultas": filas, "nuevas": nuevas, "veredictos": vc.VEREDICTO_LEGIBLE}
 

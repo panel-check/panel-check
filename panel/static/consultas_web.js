@@ -1,5 +1,7 @@
-/* Consultas web (/consultas-web, menú Más): las marcas que la gente verifica en el formulario
- * del home de smartiesconsultora.com.ar, con el resultado de INPI y sus datos de contacto.
+/* Consultas web (/consultas-web, menú Más): las marcas que la gente verifica en el verificador
+ * de smartiesconsultora.com.ar, con el resultado de INPI y sus datos de contacto. Hay dos tipos:
+ * quienes dejaron sus datos (son los leads) y quienes solo buscaron la marca (sin contacto: sirven
+ * para ver qué se busca, y se borran a los 90 días).
  * Depende de comun.js (api, apiJson, fmtFechaHora, abrirActa). Todo texto que viene de la
  * base pasa por esc() antes de ir al HTML; los datos viajan en atributos data-*. */
 
@@ -13,6 +15,8 @@ let consultas = [];
 
 const tagVeredicto = (v) =>
   `<span class="cl-tag ${CLASE_VEREDICTO[v] ?? ""}">${esc(LEGIBLE[v] || v)}</span>`;
+
+const textoClases = (cl) => (Array.isArray(cl) && cl.length ? "Clase" + (cl.length > 1 ? "s" : "") + " " + cl.join(", ") : "");
 
 const urlWeb = (w) => {
   const t = (w || "").trim();
@@ -29,6 +33,7 @@ const linkWhatsapp = (tel, marca) => {
 };
 
 function contacto(c) {
+  if (!c.email) return '<small class="crm-gris">Solo buscó la marca<br>(no dejó sus datos)</small>';
   const partes = [`<strong>${esc(c.nombre || "—")}</strong>`];
   if (c.email) partes.push(`<a href="mailto:${esc(c.email)}">${esc(c.email)}</a>`);
   if (c.telefono) {
@@ -49,21 +54,21 @@ function coincidencias(c) {
 async function cargar() {
   const lista = $("cw-lista");
   const p = new URLSearchParams({
-    estado: $("cw-estado").value, veredicto: $("cw-veredicto").value, q: $("cw-q").value.trim(),
+    estado: $("cw-estado").value, veredicto: $("cw-veredicto").value, contacto: $("cw-contacto").value, q: $("cw-q").value.trim(),
   });
   try {
     const r = await api(`/api/consultas-web?${p}`);
     LEGIBLE = r.veredictos || {};
     consultas = r.consultas;
     if (!consultas.length) {
-      lista.innerHTML = `<p class="vacio">${$("cw-estado").value === "nueva" && !$("cw-q").value && !$("cw-veredicto").value
+      lista.innerHTML = `<p class="vacio">${$("cw-estado").value === "nueva" && $("cw-contacto").value === "con" && !$("cw-q").value && !$("cw-veredicto").value
         ? "No hay consultas nuevas sin revisar." : "No hay consultas con ese filtro."}</p>`;
       return;
     }
     lista.innerHTML = `<table class="cl-tabla"><thead><tr><th>Recibida</th><th>Marca</th><th>Resultado</th><th>Coincidencias</th><th>Contacto</th><th>Estado</th><th></th></tr></thead><tbody>
       ${consultas.map((c) => `<tr data-id="${c.id}">
         <td>${esc(fmtFechaHora(c.creada_en))}</td>
-        <td><strong>${esc(c.marca)}</strong><br><small class="crm-gris">${esc(c.actividad || "")}</small></td>
+        <td><strong>${esc(c.marca)}</strong><br><small class="crm-gris">${esc(c.actividad || "")}</small>${textoClases(c.clases) ? `<br><small class="crm-gris">${esc(textoClases(c.clases))}</small>` : ""}</td>
         <td>${tagVeredicto(c.veredicto)}${c.adicionales ? `<br><small class="crm-gris">+${c.adicionales} pregunta${c.adicionales !== 1 ? "s" : ""}</small>` : ""}</td>
         <td>${coincidencias(c)}</td>
         <td>${contacto(c)}</td>
@@ -100,7 +105,8 @@ async function abrirConsulta(id) {
     const web = urlWeb(c.web);
     const wa = linkWhatsapp(c.telefono, c.marca);
     const filas = (c.muestras || []).map((m) => `<tr>
-        <td>${esc(m.denominacion)}</td><td>${esc(m.clase ?? "?")}</td><td>${esc(m.estado || "—")}</td>
+        <td>${esc(m.denominacion)}</td><td>${esc(m.clase ?? "?")}${m.en_clases === true ? ' <span class="cl-tag ok" title="Está en una de las clases que eligió">su clase</span>' : ""}</td>
+        <td>${esc(m.estado_texto || m.estado || "—")}${m.estado_texto && m.estado && m.estado_texto !== m.estado ? `<br><small class="crm-gris">INPI: ${esc(m.estado)}</small>` : ""}</td>
         <td>${m.tipo === "identica" ? '<span class="cl-tag mal">idéntica</span>' : '<span class="cl-tag aviso">parecida</span>'}
           <small class="crm-gris">${esc(m.puntaje)}${m.motivos && m.motivos.length ? " · " + esc(m.motivos.join(", ")) : ""}</small></td>
         <td>${m.acta ? `<button type="button" class="cl-btn sec mini" data-acta="${esc(m.acta)}">Ver acta ${esc(m.acta)}</button>` : ""}</td></tr>`).join("");
@@ -109,13 +115,14 @@ async function abrirConsulta(id) {
       <p class="crm-gris" style="margin-top:0">Recibida ${esc(fmtFechaHora(c.creada_en))}${c.desde_cache ? " · resultado del caché (menos de 24 hs)" : ""}
         · N° ${esc(c.codigo)}</p>
       <table class="fm-tabla">
+        <tr><th>Clases que eligió</th><td>${esc(textoClases(c.clases) || "—")}</td></tr>
         <tr><th>Actividad</th><td>${esc(c.actividad || "—")}</td></tr>
         <tr><th>Nombre</th><td>${esc(c.nombre || "—")}</td></tr>
         <tr><th>E-mail</th><td>${c.email ? `<a href="mailto:${esc(c.email)}">${esc(c.email)}</a>` : "—"}</td></tr>
         <tr><th>Teléfono</th><td>${c.telefono ? (wa ? `<a href="${esc(wa)}" target="_blank" rel="noopener">${esc(c.telefono)}</a>` : esc(c.telefono)) : "—"}</td></tr>
         <tr><th>Web o redes</th><td>${web ? `<a href="${esc(web)}" target="_blank" rel="noopener noreferrer">${esc(c.web)}</a>` : esc(c.web || "—")}</td></tr>
         <tr><th>Viene de</th><td>${esc(c.origen || "—")}</td></tr>
-        <tr><th>Mail de confirmación</th><td>${c.confirmacion_enviada_en ? `enviado a la persona ${esc(fmtFechaHora(c.confirmacion_enviada_en))}`
+        <tr><th>Mail de confirmación</th><td>${!c.email ? "— (todavía no dejó sus datos)" : c.confirmacion_enviada_en ? `enviado a la persona ${esc(fmtFechaHora(c.confirmacion_enviada_en))}`
           : c.confirmacion_error ? `<span class="crm-error" style="padding:0">no salió: ${esc(c.confirmacion_error)}</span>` : "pendiente (sale en segundos)"}</td></tr>
       </table>
       ${c.veredicto === "error" ? `<p class="crm-alerta crm-alerta-info">INPI no respondió a tiempo${c.error ? ` (${esc(c.error)})` : ""}. A la persona se le avisó que la consulta se revisa a mano: conviene buscar la marca en INPI y escribirle.</p>` : ""}
@@ -150,6 +157,7 @@ document.querySelector("#modal-consulta .modal-cerrar").addEventListener("click"
 document.addEventListener("keydown", (e) => { if (e.key === "Escape") cerrarModal(); });
 $("cw-estado").addEventListener("change", cargar);
 $("cw-veredicto").addEventListener("change", cargar);
+$("cw-contacto").addEventListener("change", cargar);
 let _t = null;
 $("cw-q").addEventListener("input", () => { clearTimeout(_t); _t = setTimeout(cargar, 300); });
 window.alRecargar = cargar;

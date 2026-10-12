@@ -15,8 +15,15 @@ Qué significa cada veredicto (lo que ve la persona en la web):
   no_disponible   hay una marca idéntica (mismo nombre, o igual sin espacios)
   error           INPI no respondió a tiempo: la consulta queda guardada para revisarla a mano
 
-Es una búsqueda PRELIMINAR sobre la denominación: no mira la clase ni la actividad
-(la persona no la elige) y no reemplaza al estudio de disponibilidad del estudio.
+Es una búsqueda PRELIMINAR sobre la denominación y no reemplaza al estudio de disponibilidad
+del estudio. La persona puede elegir clases (opcional): el veredicto sigue siendo por nombre, pero
+cada marca encontrada se marca «en tus clases» o «en otra clase», porque el mismo nombre en otra
+clase suele convivir pero no siempre. Cada marca encontrada trae además su ESTADO (en trámite,
+publicada, con oposición, concedida, denegada...): ver estado_marca.py.
+
+Dos maneras de usarlo:
+  - sin datos: la persona busca y ve el resultado; el contacto se pide después (se agrega a la misma fila)
+  - con datos (formulario anterior): nombre, mail y actividad antes del resultado
 """
 
 import html
@@ -28,6 +35,7 @@ import time
 from collections import deque
 from urllib.parse import urlsplit
 
+import estado_marca
 import similitud
 
 # ── Parámetros ────────────────────────────────────────────────────────────
@@ -38,6 +46,9 @@ UMBRAL_SIMILAR = 80          # puntaje (similitud.puntaje_nombres) desde el cual
 UMBRAL_IDENTICA = 98         # 100 = mismo nombre, 98 = igual sin espacios
 MUESTRAS_PUBLICAS = 5        # marcas que se le muestran a la persona
 MUESTRAS_INTERNAS = 20       # marcas que se guardan para el equipo
+CLASES_MAX = 6               # clases que la persona puede elegir (hay 45 en total)
+CLASES_TOTAL = 45
+DIAS_BUSQUEDAS_SIN_DATOS = 90  # las búsquedas sin contacto se borran pasado este tiempo (lo mismo que dura el link)
 LIMITE_INPI = 20             # filas que devuelve INPI por búsqueda (tope de GrillaMarcasAvanzada)
 PEDIDOS_INPI_POR_MINUTO = 20  # tope global: protege la cuenta de INPI de un uso masivo
 TIMEOUT_INPI = 20            # segundos por pedido a INPI
@@ -109,6 +120,52 @@ def validar_lead(marca, actividad, nombre, email, telefono="", web="") -> dict:
         raise ValueError("¿Cómo te llamás?")
     if not EMAIL_RE.match(d["email"]):
         raise ValueError("Revisá el e-mail.")
+    return d
+
+
+def validar_clases(clases) -> list:
+    """Lista de clases (1 a 45) sin repetir y en el orden en que vinieron. Lo que no es una clase se ignora;
+    si son demasiadas levanta ValueError. Cualquier cosa que no sea una lista cuenta como «sin clases»."""
+    if not isinstance(clases, (list, tuple)):
+        return []
+    out = []
+    for c in clases:
+        try:
+            n = int(str(c).strip())
+        except (TypeError, ValueError):
+            continue
+        if 1 <= n <= CLASES_TOTAL and n not in out:
+            out.append(n)
+    if len(out) > CLASES_MAX:
+        raise ValueError(f"Elegí hasta {CLASES_MAX} clases.")
+    return out
+
+
+def validar_busqueda(marca, clases=None) -> dict:
+    """Búsqueda sin datos de contacto: solo el nombre y, si quiere, las clases."""
+    d = {"marca": _limpio(marca, 80), "clases": validar_clases(clases)}
+    if len(d["marca"]) < 2:
+        raise ValueError("Escribí el nombre de tu marca.")
+    if not similitud.normalizar(d["marca"]):
+        raise ValueError("Escribí el nombre de tu marca con letras o números.")
+    return d
+
+
+def validar_contacto(actividad, nombre, email, telefono="", web="") -> dict:
+    """Datos de contacto que la persona deja DESPUÉS de ver el resultado."""
+    d = {
+        "actividad": _limpio(actividad, 300),
+        "nombre": _limpio(nombre, 120),
+        "email": _limpio(email, 200).lower(),
+        "telefono": _limpio(telefono, 40),
+        "web": _limpio(web, 200),
+    }
+    if not d["nombre"]:
+        raise ValueError("¿Cómo te llamás?")
+    if not EMAIL_RE.match(d["email"]):
+        raise ValueError("Revisá el e-mail.")
+    if not d["actividad"]:
+        raise ValueError("Contanos a qué se dedica.")
     return d
 
 
@@ -244,23 +301,76 @@ def _clase_entera(valor):
         return None
 
 
-def evaluar(marca: str, filas: list, umbral: int = UMBRAL_SIMILAR, genericas=frozenset()) -> dict:
+def estado_de_muestra(m: dict):
+    """{codigo, texto} guardado en una marca encontrada, o None."""
+    codigo, texto = m.get("estado_codigo"), m.get("estado_texto")
+    return {"codigo": str(codigo), "texto": str(texto or "")} if codigo else None
+
+
+def muestras_publicas(muestras, tope: int = None) -> list:
+    """Lo que se le muestra a la persona de cada marca encontrada: nombre, clase, estado y si está en sus clases.
+    Nunca el acta, el titular ni nada de contacto. Las marcas sin clase conocida no se muestran."""
+    out = []
+    for m in muestras or []:
+        clase = _clase_entera(m.get("clase"))
+        if clase is None:
+            continue
+        item = {"denominacion": m.get("denominacion") or "", "clase": clase}
+        estado = estado_de_muestra(m)
+        if estado:
+            item["estado"] = estado
+        if m.get("en_clases") is not None:
+            item["enTusClases"] = bool(m["en_clases"])
+        out.append(item)
+        if len(out) >= (tope or MUESTRAS_PUBLICAS):
+            break
+    return out
+
+
+def contadores_en_clases(muestras) -> tuple:
+    """(idénticas, parecidas) que están en las clases que eligió la persona. (0, 0) si no eligió clases."""
+    ident = sum(1 for m in muestras or [] if m.get("en_clases") is True and m.get("tipo") == "identica")
+    pare = sum(1 for m in muestras or [] if m.get("en_clases") is True and m.get("tipo") == "similar")
+    return ident, pare
+
+
+def resultado_publico(veredicto, exactas, similares, muestras, clases=None, posible_mas=False) -> dict:
+    """El cuerpo «public» que devuelve la API a la web (y que usa la landing de resultado)."""
+    pub = {"verdict": veredicto, "exactCount": exactas, "similarCount": similares,
+           "samples": muestras_publicas(muestras), "moreResults": bool(posible_mas)}
+    if clases:
+        ident, pare = contadores_en_clases(muestras)
+        pub.update({"classes": list(clases), "inClassExact": ident, "inClassSimilar": pare})
+    return pub
+
+
+def evaluar(marca: str, filas: list, umbral: int = UMBRAL_SIMILAR, genericas=frozenset(),
+            clases=None, estados_db=None, hoy=None) -> dict:
     """Compara la marca contra lo que devolvió INPI. `genericas` son las palabras que no distinguen
     ("SA", "GROUP"...: las mismas que usa la vigilancia), así «Pan Casero SA» cuenta como «Pan Casero».
+    `clases` son las que eligió la persona (opcional): no cambian el veredicto, pero cada marca queda
+    marcada «en tus clases» o no, y las de sus clases van primero. `estados_db` es {acta: fila de `marcas`}
+    con lo que el panel sabe de cada acta, para decir en qué estado está (estado_marca.py).
     Devuelve {verdict, exactCount, similarCount, samples (para la web), muestras (para el equipo),
     posible_mas (INPI llenó la página: puede haber más marcas que no se vieron)}."""
+    clases_set = set(clases or [])
+    estados_db = estados_db or {}
     candidatas = []
     for f in filas or []:
         denom = f.get("denominacion") or ""
         puntaje, motivos = similitud.puntaje_nombres(marca, denom, genericas)
         if puntaje < umbral:
             continue
+        estado = estado_marca.estado_publico(f.get("estado"), estados_db.get(str(f.get("acta") or "")), hoy)
         candidatas.append({
             "acta": f.get("acta"), "denominacion": denom, "clase": f.get("clase"), "estado": f.get("estado") or "",
             "puntaje": puntaje, "motivos": motivos,
             "tipo": "identica" if puntaje >= UMBRAL_IDENTICA else "similar",
+            "estado_codigo": estado["codigo"] if estado else None,
+            "estado_texto": estado["texto"] if estado else None,
+            "en_clases": (_clase_entera(f.get("clase")) in clases_set) if clases_set else None,
         })
-    candidatas.sort(key=lambda c: (-c["puntaje"], c["denominacion"]))
+    candidatas.sort(key=lambda c: (c["en_clases"] is not True if clases_set else False, -c["puntaje"], c["denominacion"]))
     exactas = sum(1 for c in candidatas if c["tipo"] == "identica")
     similares = len(candidatas) - exactas
 
@@ -271,22 +381,16 @@ def evaluar(marca: str, filas: list, umbral: int = UMBRAL_SIMILAR, genericas=fro
     else:
         veredicto = "disponible"
 
-    publicas = []
-    for c in candidatas:
-        clase = _clase_entera(c["clase"])
-        if clase is None:
-            continue
-        publicas.append({"denominacion": c["denominacion"], "clase": clase})
-        if len(publicas) >= MUESTRAS_PUBLICAS:
-            break
-
+    ident_clases, pare_clases = contadores_en_clases(candidatas)
     return {
         "verdict": veredicto,
         "exactCount": exactas,
         "similarCount": similares,
-        "samples": publicas,
+        "samples": muestras_publicas(candidatas),
         "muestras": candidatas[:MUESTRAS_INTERNAS],
         "posible_mas": len(filas or []) >= LIMITE_INPI,
+        "inClassExact": ident_clases,
+        "inClassSimilar": pare_clases,
     }
 
 
@@ -437,6 +541,9 @@ def crear_tablas(cur):
     )
     cur.execute("ALTER TABLE verificaciones_marca ADD COLUMN IF NOT EXISTS confirmacion_enviada_en TIMESTAMPTZ")
     cur.execute("ALTER TABLE verificaciones_marca ADD COLUMN IF NOT EXISTS confirmacion_error TEXT")
+    # Búsqueda sin datos (11/10/2026): la persona ve el resultado y el contacto llega después, en la misma fila.
+    cur.execute("ALTER TABLE verificaciones_marca ADD COLUMN IF NOT EXISTS clases JSONB NOT NULL DEFAULT '[]'::jsonb")
+    cur.execute("ALTER TABLE verificaciones_marca ADD COLUMN IF NOT EXISTS contacto_en TIMESTAMPTZ")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_verif_marca_creada ON verificaciones_marca(creada_en DESC)")
     cur.execute(
         """
