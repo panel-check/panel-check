@@ -56,6 +56,37 @@ def _sin_puntos_de_miles(texto) -> str:
     return re.sub(r"(?<=\d)\.(?=\d{3}(?!\d))", "", str(texto or ""))
 
 
+# «CANVA REG 3121936/935 CL. 40 Y 42; CANVA (y diseño) REG 3422544/3496423/424/425 CL. 9, 40, 42, Y 45»:
+# a veces el fundamento lista las marcas del oponente con su registro y sus clases (sin acta que abrir en INPI).
+_RE_REG_CLASES = re.compile(
+    r"\bREG(?:ISTROS?)?\b\.?\s*(?:N[°ºo]\.?\s*)?\d[\d/.\s]*?\s*\bCL(?:ASES?)?\b\.?\s*"
+    r"(?P<cl>\d{1,2}(?:\s*(?:,\s*Y\s+|,|\s+Y\s+|\s+E\s+)\s*\d{1,2})*)", re.IGNORECASE)
+_NO_ES_NOMBRE = {"MANDANTE", "MANDANTES", "MARCA", "MARCAS", "TITULAR", "TITULARES", "DE", "LA", "EL", "LOS", "LAS", "DEL", "SU",
+                 "SUS", "POR", "CON", "Y", "E", "NUESTRA", "NUESTRO", "NUESTROS", "NUESTRAS", "SIGNO", "SIGNOS", "CLASE", "CL"}
+
+
+def marcas_del_texto(fundamento) -> list:
+    """[{denominacion, clase}] de las marcas que el fundamento lista con su registro y clases
+    («CANVA REG 3121936 CL. 40 Y 42»). Mejor esfuerzo: es lo que alega el oponente, no un dato de INPI."""
+    texto = _sin_puntos_de_miles(fundamento)
+    out = []
+    for m in _RE_REG_CLASES.finditer(texto):
+        previo = re.sub(r"\s*\([^)]*\)\s*$", "", texto[:m.start()]).rstrip()
+        palabras = []
+        for tok in reversed(previo.split()):
+            limpio = tok.strip(";:,.\"“”()")
+            if not limpio or limpio.isdigit() or not any(c.isalpha() for c in limpio) or limpio != limpio.upper() \
+                    or limpio in _NO_ES_NOMBRE or len(palabras) >= 3:
+                break
+            palabras.insert(0, limpio)
+        nombre = " ".join(palabras)
+        if not nombre:
+            continue
+        for c in re.findall(r"\d{1,2}", m.group("cl")):
+            out.append({"denominacion": nombre, "clase": str(int(c))})
+    return out
+
+
 def nombre_oponente(fila) -> str:
     """Quién presentó la oposición (nombre tal cual figura; nunca documento ni CUIT)."""
     return _limpia((fila or {}).get("oponente_nombre"))
@@ -118,7 +149,14 @@ def marcas_opositoras(fila, conexion, rcur, *, leer=None, guardar=None, consulta
     fila = fila or {}
     nombre = fila.get("marca_oponente_denominacion")
     actas = actas_de(fila.get("actas_marca_oponente"))
-    if not actas and not nombre and fila.get("fundamento_oposicion"):
+    del_texto = []
+    if not actas and fila.get("fundamento_oposicion"):
+        # Sin acta no hay expediente que abrir, pero a veces el fundamento lista las marcas con sus clases.
+        try:
+            del_texto = marcas_del_texto(fila["fundamento_oposicion"])
+        except Exception:  # noqa: BLE001
+            log.warning("No se pudo leer las marcas del fundamento", exc_info=True)
+    if not actas and not nombre and not del_texto and fila.get("fundamento_oposicion"):
         # La oposición no tiene guardada la marca del oponente (columnas vacías): se la busca en el texto del fundamento.
         try:
             import inpi_lead
@@ -134,7 +172,7 @@ def marcas_opositoras(fila, conexion, rcur, *, leer=None, guardar=None, consulta
         except Exception:  # noqa: BLE001
             log.warning("No se pudo leer la marca del oponente en el fundamento", exc_info=True)
     if not actas:
-        return agrupar([], nombre)
+        return agrupar(del_texto, nombre)
     try:
         guardadas = leer(actas)
     except Exception:  # noqa: BLE001 — la página no puede fallar por esto
