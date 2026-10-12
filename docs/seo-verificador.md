@@ -12,6 +12,8 @@ Quien busca «consulta marca inpi» hoy encuentra primero las páginas del propi
 |---|---|---|---|
 | Verificador (herramienta + contenido) | `/consulta-marca-inpi/` | Sí | `verificador-pagina-completa.html` (armado con `scripts/armar_pagina_verificador.py` a partir de `verificador-pagina-hero.html`, `verificador-buscador.html` y `verificador-pagina-contenido.html`) |
 | Guía de estados | `/estados-de-una-marca/` | Sí | `guia-estados-marca.html` |
+| Índice de preguntas frecuentes | `/preguntas-frecuentes/` | Sí | shortcode `[preguntas_frecuentes]` de `preguntas-frecuentes-snippet.php`; se actualiza solo con cada entrada de la categoría «Preguntas frecuentes» |
+| Entradas de preguntas | `/<pregunta>/` (una por tema) | Sí | entradas en la categoría «Preguntas frecuentes»; cada una enlaza al índice, al buscador y a la guía |
 | Resultado | `/resultado/` | **No** (noindex en el plugin de SEO) | `landing-resultado.html` |
 | Home | `/` | Sí | formulario con todos los datos `verificador-home.html` (no es el buscador) |
 
