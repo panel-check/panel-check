@@ -44,11 +44,20 @@ function logoMarca(m) {
     `<img class="cl-logo" loading="lazy" alt="Logo de ${esc(m.denominacion || "la marca")}" src="${url}"></a>`;
 }
 
+// Estado de una marca, con una sola regla para la etiqueta y para el filtro «Estado»:
+// concedida / denegada (resolución firme) → pendiente de consultar (todavía no se leyó en INPI)
+// → publicada (ya salió en el boletín, sin resolución) → en trámite.
+function estadoMarca(m) {
+  if (m.estado_tramite === "Concedida") return { clave: "concedida", texto: "Concedida", clase: "ok" };
+  if (m.estado_tramite === "Denegada") return { clave: "denegada", texto: "Denegada", clase: "mal" };
+  if (!m.consultado_en) return { clave: "pendiente", texto: "Pendiente de consultar", clase: "aviso", ayuda: "Todavía no se consultó en INPI: se completa sola en la próxima revisión" };
+  if (m.fecha_publicacion) return { clave: "publicada", texto: "Publicada", clase: "azul", ayuda: "Publicada en el boletín el " + crmFecha(m.fecha_publicacion) };
+  return { clave: "en_tramite", texto: "En trámite", clase: "" };
+}
+
 function tagEstadoMarca(m) {
-  if (m.estado_tramite === "Concedida") return '<span class="cl-tag ok">Concedida</span>';
-  if (m.estado_tramite === "Denegada") return '<span class="cl-tag mal">Denegada</span>';
-  if (!m.consultado_en) return '<span class="cl-tag aviso" title="Todavía no se consultó en INPI: se completa sola en la próxima revisión">Pendiente de consultar</span>';
-  return '<span class="cl-tag">En trámite</span>';
+  const e = estadoMarca(m);
+  return `<span class="cl-tag${e.clase ? " " + e.clase : ""}"${e.ayuda ? ` title="${esc(e.ayuda)}"` : ""}>${e.texto}</span>`;
 }
 
 function pedir(fn) {
@@ -150,18 +159,19 @@ async function pintarMarcas() {
           <label>Buscar<input type="search" id="mk-q" placeholder="marca, acta, titular o cliente…" style="min-width:240px"></label>
           <label>Cliente<select id="mk-cliente"><option value="">Todos</option>${est.clientes.map(c => `<option value="${c.id}">${esc(c.nombre)}</option>`).join("")}</select></label>
           <label>Referido<select id="mk-referido"><option value="">Todos</option></select></label>
-          <label>Estado<select id="mk-estado"><option value="">Todos</option><option value="en_tramite">En trámite</option><option value="concedida">Concedida</option><option value="denegada">Denegada</option><option value="pendiente">Pendiente de consultar</option></select></label>
+          <label>Estado<select id="mk-estado"><option value="">Todos</option><option value="en_tramite">En trámite</option><option value="publicada">Publicada</option><option value="concedida">Concedida</option><option value="denegada">Denegada</option><option value="pendiente">Pendiente de consultar</option></select></label>
           <label>Clase<input type="number" id="mk-clase" min="1" max="45" style="width:80px"></label>
           <label>Vence en<select id="mk-vence"><option value="">—</option><option value="90">90 días</option><option value="180">6 meses</option><option value="365">1 año</option></select></label>
           <label class="check" style="flex-direction:row;align-items:center;gap:6px"><input type="checkbox" id="mk-opo"> Con oposición</label>
           <label class="check" style="flex-direction:row;align-items:center;gap:6px"><input type="checkbox" id="mk-alertas"> Con alertas</label>
           <label class="check" style="flex-direction:row;align-items:center;gap:6px"><input type="checkbox" id="mk-sinvig"> Sin vigilar</label>
+          <label class="check" style="flex-direction:row;align-items:center;gap:6px"><input type="checkbox" id="mk-agrupar" checked> Agrupar por marca</label>
         </div>
         <div id="mk-tabla"></div>
       </div>`;
     let t;
     $("mk-q").addEventListener("input", () => { clearTimeout(t); t = setTimeout(pintarMarcas, 250); });
-    ["mk-cliente", "mk-referido", "mk-estado", "mk-clase", "mk-vence", "mk-opo", "mk-alertas", "mk-sinvig"].forEach(id => $(id).addEventListener("change", pintarMarcas));
+    ["mk-cliente", "mk-referido", "mk-estado", "mk-clase", "mk-vence", "mk-opo", "mk-alertas", "mk-sinvig", "mk-agrupar"].forEach(id => $(id).addEventListener("change", pintarMarcas));
   }
   const p = new URLSearchParams();
   if ($("mk-q").value.trim()) p.set("q", $("mk-q").value.trim());
@@ -178,7 +188,23 @@ async function pintarMarcas() {
     const r = await api(`/api/cartera/marcas?${p}`);
     llenarSelectReferidos($("mk-referido"), r.referidos || [], $("mk-referido").value);
     if (!r.marcas.length) { tabla.innerHTML = '<p class="vacio">No hay marcas con estos filtros.</p>'; return; }
-    tabla.innerHTML = `<div style="overflow-x:auto"><table class="cl-tabla"><thead><tr>
+    if ($("mk-agrupar").checked) {
+      tabla.innerHTML = marcasAgrupadasHtml(r.marcas);
+      enlazarMarcasAgrupadas(tabla);
+    } else {
+      tabla.innerHTML = marcasPlanasHtml(r.marcas);
+    }
+    tabla.querySelectorAll("[data-abrir]").forEach(a => a.addEventListener("click", ev => { ev.stopPropagation(); abrirActa(a.dataset.abrir); }));
+    tabla.querySelectorAll("tr[data-cliente], [data-ver-cliente]").forEach(el => el.addEventListener("click", ev => {
+      ev.stopPropagation(); abrirCliente(+(el.dataset.cliente || el.dataset.verCliente));
+    }));
+  } catch (e) { tabla.innerHTML = `<p class="crm-error">No se pudo cargar (${esc(e.message)}).</p>`; }
+}
+
+/* Marcas en lista plana (una fila por acta), para quien prefiera no agrupar. */
+function marcasPlanasHtml(marcas) {
+  const r = { marcas };
+  return `<div style="overflow-x:auto"><table class="cl-tabla"><thead><tr>
         <th>Marca</th><th>Clase</th><th>Acta</th><th>Cliente</th><th>Estado</th><th>Vence</th><th>Agente</th><th>Vigilancia</th></tr></thead><tbody>
       ${r.marcas.map(m => `<tr class="cl-click" data-cliente="${m.cliente_id}">
         <td>${logoMarca(m)}<strong>${esc(m.denominacion || (m.tipo === "F" ? "(figurativa, sin texto)" : "(pendiente)"))}</strong>
@@ -191,10 +217,71 @@ async function pintarMarcas() {
         <td>${m.fecha_vencimiento_marca ? crmFecha(m.fecha_vencimiento_marca) : "—"}</td>
         <td><small>${esc(m.agente || (m.matricula_agente ? "matrícula " + m.matricula_agente : "—"))}</small></td>
         <td>${m.vigilar ? '<span class="cl-tag ok">Vigilada</span>' : '<span class="cl-tag">No</span>'}${m.vigilar_todas_clases ? ' <span class="cl-tag azul">todas las clases</span>' : ""}${m.alertas_abiertas ? ` <span class="cl-tag mal">${m.alertas_abiertas} alerta(s)</span>` : ""}</td></tr>`).join("")}
-      </tbody></table></div><p class="cl-pie">${r.marcas.length} marca(s). Un click en la fila abre la ficha del cliente.</p>`;
-    tabla.querySelectorAll("[data-abrir]").forEach(a => a.addEventListener("click", ev => { ev.stopPropagation(); abrirActa(a.dataset.abrir); }));
-    tabla.querySelectorAll("tr[data-cliente]").forEach(tr => tr.addEventListener("click", () => abrirCliente(+tr.dataset.cliente)));
-  } catch (e) { tabla.innerHTML = `<p class="crm-error">No se pudo cargar (${esc(e.message)}).</p>`; }
+      </tbody></table></div><p class="cl-pie">${marcas.length} marca(s). Un click en la fila abre la ficha del cliente.</p>`;
+}
+
+/* Marcas agrupadas por nombre (una fila por marca y cliente, que se expande y muestra sus actas):
+   el mismo nombre en distintas clases o en denominativa + mixta queda junto. Las marcas sin texto
+   (figurativas) no se agrupan: cada acta es su propia fila. */
+function claveGrupoMarca(m) {
+  const n = (m.denominacion || "").trim().toUpperCase().replace(/\s+/g, " ");
+  return `${m.cliente_id}|${n || "acta:" + m.acta}`;
+}
+
+function marcasAgrupadasHtml(marcas) {
+  if (!est.gruposAbiertos) est.gruposAbiertos = new Set();
+  const grupos = new Map();
+  marcas.forEach(m => { const k = claveGrupoMarca(m); if (!grupos.has(k)) grupos.set(k, []); grupos.get(k).push(m); });
+  est.clavesGrupos = [...grupos.keys()];
+  const filas = [...grupos].map(([k, ms], i) => {
+    const abierto = est.gruposAbiertos.has(k);
+    const nombre = ms[0].denominacion || (ms[0].tipo === "F" ? "(figurativa, sin texto)" : "(pendiente)");
+    const clases = [...new Set(ms.map(m => m.clase).filter(c => c != null))].sort((a, b) => a - b).join(", ");
+    const ultimo = ms.filter(m => m.ultimo_movimiento_fecha).sort((a, b) => String(b.ultimo_movimiento_fecha).localeCompare(String(a.ultimo_movimiento_fecha)))[0];
+    const conLogo = ms.find(m => m.tiene_logo);
+    const conOpo = ms.filter(m => m.tuvo_oposicion && !["Concedida", "Denegada"].includes(m.estado_tramite)).length;
+    const alertas = ms.reduce((t, m) => t + (Number(m.alertas_abiertas) || 0), 0);
+    const cab = `<tr class="mk-grupo${abierto ? " abierto" : ""}" data-grupo="${i}">
+      <td class="mk-chev-td"><span class="mk-chev" aria-hidden="true">›</span></td>
+      <td>${conLogo ? logoMarca(conLogo) : ""}<span class="mk-nombre">${esc(nombre)}</span>
+        ${conOpo ? ` <span class="cl-tag aviso" title="Tiene oposición o vista sin resolver">⚖ ${conOpo}</span>` : ""}${alertas ? ` <span class="cl-tag mal" title="Alertas de vigilancia abiertas">${alertas} alerta(s)</span>` : ""}</td>
+      <td class="mk-exp">📄 <strong>${ms.length}</strong> expediente${ms.length === 1 ? "" : "s"}</td>
+      <td>${esc(clases || "—")}</td>
+      <td>${esc(ms[0].cliente_nombre)}${ms[0].cliente_referido ? "<br>" + tagReferido(ms[0].cliente_referido) : ""}</td>
+      <td>${ultimo ? `${crmFecha(ultimo.ultimo_movimiento_fecha)}<br><small class="crm-gris">${esc(ultimo.ultimo_movimiento || "")}</small>` : '<span class="crm-gris">—</span>'}</td></tr>`;
+    const filasActas = ms.map(m => `<tr>
+        <td><a class="link-acta mk-acta" href="javascript:void(0)" data-abrir="${esc(m.acta)}" title="Abrir el expediente completo en INPI">${esc(m.acta)} ↗</a></td>
+        <td>${logoMarca(m)}${esc(m.denominacion || (m.tipo === "F" ? "(figurativa, sin texto)" : "(pendiente)"))}</td>
+        <td><strong>${esc(m.clase ?? "")}</strong></td>
+        <td>${esc(tipoLegible(m.tipo))}</td>
+        <td>${tagEstadoMarca(m)}${m.tuvo_oposicion && !["Concedida", "Denegada"].includes(m.estado_tramite) ? ' <span class="cl-tag aviso">⚖ oposición / vista</span>' : ""}</td>
+        <td>${m.fecha_presentacion ? crmFecha(m.fecha_presentacion) : "—"}</td>
+        <td>${m.fecha_vencimiento_marca ? crmFecha(m.fecha_vencimiento_marca) : "—"}</td>
+        <td><small>${esc(m.agente || (m.matricula_agente ? "matrícula " + m.matricula_agente : "—"))}</small></td>
+        <td>${m.vigilar ? '<span class="cl-tag ok">Vigilada</span>' : '<span class="cl-tag">No</span>'}</td>
+        <td><a class="link-acta" href="javascript:void(0)" data-ver-cliente="${m.cliente_id}">Ver cliente →</a></td></tr>`).join("");
+    const det = `<tr class="mk-detalle" ${abierto ? "" : "hidden"}><td></td><td colspan="5">
+      <table class="mk-sub"><colgroup><col style="width:104px"><col><col style="width:50px"><col style="width:104px"><col style="width:150px"><col style="width:96px"><col style="width:96px"><col style="width:120px"><col style="width:84px"><col style="width:96px"></colgroup><thead><tr><th>Acta</th><th>Denominación</th><th>Clase</th><th>Tipo</th><th>Estado</th><th>Presentación</th><th>Vencimiento</th><th>Agente</th><th>Vigilancia</th><th></th></tr></thead>
+      <tbody>${filasActas}</tbody></table></td></tr>`;
+    return cab + det;
+  }).join("");
+  return `<div class="mk-barra"><span class="cl-pie" style="margin:0">${grupos.size} marca(s) · ${marcas.length} expediente(s)</span>
+      <span><button type="button" class="cl-btn sec mini" id="mk-expandir">Expandir todo</button> <button type="button" class="cl-btn sec mini" id="mk-contraer">Contraer todo</button></span></div>
+    <div style="overflow-x:auto"><table class="mk-tabla"><thead><tr><th style="width:28px"></th><th>Marca</th><th>Expedientes</th><th>Clases</th><th>Cliente</th><th>Último movimiento INPI</th></tr></thead>
+    <tbody>${filas}</tbody></table></div>
+    <p class="cl-pie">Un click en una marca muestra sus actas. El número de acta abre el expediente en INPI y «Ver cliente» abre la ficha del cliente.</p>`;
+}
+
+function enlazarMarcasAgrupadas(tabla) {
+  const fijar = (tr, abrir) => {
+    tr.classList.toggle("abierto", abrir);
+    tr.nextElementSibling.hidden = !abrir;
+    const k = est.clavesGrupos[+tr.dataset.grupo];
+    if (abrir) est.gruposAbiertos.add(k); else est.gruposAbiertos.delete(k);
+  };
+  tabla.querySelectorAll("tr.mk-grupo").forEach(tr => tr.addEventListener("click", () => fijar(tr, !tr.classList.contains("abierto"))));
+  $("mk-expandir").addEventListener("click", () => tabla.querySelectorAll("tr.mk-grupo").forEach(tr => fijar(tr, true)));
+  $("mk-contraer").addEventListener("click", () => tabla.querySelectorAll("tr.mk-grupo").forEach(tr => fijar(tr, false)));
 }
 
 /* ── Modal ──────────────────────────────────────────────────────── */
