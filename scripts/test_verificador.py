@@ -366,6 +366,15 @@ class MailOposicion(unittest.TestCase):
         secundario = html_.index("Más información sobre la oposición")
         self.assertLess(principal, secundario)                                  # WhatsApp primero
 
+    def test_el_whatsapp_sale_con_el_texto_de_la_oposicion(self):
+        from urllib.parse import urlparse, parse_qs, unquote
+        import re
+        _, html_, _ = self.render(acta="4769338")
+        href = next(h for h in re.findall(r'href="([^"]+)"', html_) if "wa.me/5491155890784?text=" in h)
+        texto = unquote(parse_qs(urlparse(href.replace("&amp;", "&")).query, keep_blank_values=True)["text"][0])
+        self.assertEqual(texto, "Hola Pamela, recibí tu mail sobre la oposición a mi marca CONTAFACIL PRO, "
+                                "acta 4769338, y quiero asesorarme. Mi nombre es ")
+
     def test_los_otros_botones_no_cambian(self):
         import mails_core as mc
         _, html_, _ = mc.render_prospecto("x", "[Ir](https://a.com)", {}, "T")
