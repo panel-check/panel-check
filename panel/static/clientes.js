@@ -195,6 +195,13 @@ async function pintarMarcas() {
       tabla.innerHTML = marcasPlanasHtml(r.marcas);
     }
     tabla.querySelectorAll("[data-abrir]").forEach(a => a.addEventListener("click", ev => { ev.stopPropagation(); abrirActa(a.dataset.abrir); }));
+    tabla.querySelectorAll("[data-agrupar]").forEach(a => a.addEventListener("click", async ev => {
+      ev.stopPropagation();
+      const n = prompt(`Nombre del grupo para el acta ${a.dataset.agrupar}.\nLas actas con el mismo nombre de grupo (del mismo cliente) se muestran juntas. Dejalo vacío para sacarla del grupo manual.`, a.dataset.nombre || "");
+      if (n === null) return;
+      try { await apiJson(`/api/cartera/marcas/${encodeURIComponent(a.dataset.agrupar)}`, "PUT", { grupo_marca: n.trim() }); pintarMarcas(); }
+      catch (e) { alert(e.message || e); }
+    }));
     tabla.querySelectorAll("tr[data-cliente], [data-ver-cliente]").forEach(el => el.addEventListener("click", ev => {
       ev.stopPropagation(); abrirCliente(+(el.dataset.cliente || el.dataset.verCliente));
     }));
@@ -207,7 +214,7 @@ function marcasPlanasHtml(marcas) {
   return `<div style="overflow-x:auto"><table class="cl-tabla"><thead><tr>
         <th>Marca</th><th>Clase</th><th>Acta</th><th>Cliente</th><th>Estado</th><th>Vence</th><th>Agente</th><th>Vigilancia</th></tr></thead><tbody>
       ${r.marcas.map(m => `<tr class="cl-click" data-cliente="${m.cliente_id}">
-        <td>${logoMarca(m)}<strong>${esc(m.denominacion || (m.tipo === "F" ? "(figurativa, sin texto)" : "(pendiente)"))}</strong>
+        <td><strong>${esc(m.denominacion || (m.tipo === "F" ? "(figurativa, sin texto)" : "(pendiente)"))}</strong>
           <br><small class="crm-gris">${esc(tipoLegible(m.tipo))}${m.fecha_presentacion ? " · presentada " + crmFecha(m.fecha_presentacion) : ""}</small>
           ${m.tuvo_oposicion && !["Concedida", "Denegada"].includes(m.estado_tramite) ? '<br><span class="cl-tag aviso">⚖ oposición / vista</span>' : ""}</td>
         <td>${esc(m.clase ?? "")}</td>
@@ -220,30 +227,72 @@ function marcasPlanasHtml(marcas) {
       </tbody></table></div><p class="cl-pie">${marcas.length} marca(s). Un click en la fila abre la ficha del cliente.</p>`;
 }
 
-/* Marcas agrupadas por nombre (una fila por marca y cliente, que se expande y muestra sus actas):
-   el mismo nombre en distintas clases o en denominativa + mixta queda junto. Las marcas sin texto
-   (figurativas) no se agrupan: cada acta es su propia fila. */
-function claveGrupoMarca(m) {
-  const n = (m.denominacion || "").trim().toUpperCase().replace(/\s+/g, " ");
-  return `${m.cliente_id}|${n || "acta:" + m.acta}`;
+/* Marcas agrupadas (una fila por marca y cliente, que se expande y muestra sus actas).
+   Se juntan solas las que tienen el mismo nombre (sin importar mayúsculas, acentos, comas o
+   espacios), las que repiten el nombre ("LBV BONVIELA LBV BONVIELA…") y las que contienen
+   entero el nombre de otra de dos o más palabras ("BS AS TECHNOLOGY" y "BA BS AS TECHNOLOGY").
+   Lo que no se junta solo se puede agrupar a mano con «Agrupar…» (queda en el campo grupo_marca).
+   Las marcas sin texto (figurativas) no se agrupan: cada acta es su propia fila. */
+function palabrasMarca(s) {
+  let t = String(s || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase().replace(/[^A-Z0-9]+/g, " ").trim();
+  t = t ? t.split(" ") : [];
+  for (let p = 1; p <= t.length / 2; p++) {           // "A B A B A B" → "A B"
+    if (t.length % p) continue;
+    if (t.every((w, i) => w === t[i % p])) return t.slice(0, p);
+  }
+  return t;
+}
+
+function contieneSecuencia(grande, chica) {
+  for (let i = 0; i + chica.length <= grande.length; i++) {
+    if (chica.every((w, j) => grande[i + j] === w)) return true;
+  }
+  return false;
+}
+
+function gruposDeMarcas(marcas) {
+  const porCliente = new Map();
+  marcas.forEach(m => { if (!porCliente.has(m.cliente_id)) porCliente.set(m.cliente_id, []); porCliente.get(m.cliente_id).push(m); });
+  const claveDe = new Map(), nombreDe = new Map();
+  porCliente.forEach((ms, cid) => {
+    const reps = [];
+    const buscar = pal => reps.find(r => r.pal.join(" ") === pal.join(" ") || (r.pal.length >= 2 && contieneSecuencia(pal, r.pal)));
+    // 1) los grupos puestos a mano
+    ms.filter(m => (m.grupo_marca || "").trim()).forEach(m => {
+      const pal = palabrasMarca(m.grupo_marca);
+      let r = reps.find(x => x.pal.join(" ") === pal.join(" "));
+      if (!r) { r = { pal, nombre: m.grupo_marca.trim(), clave: `${cid}|${pal.join(" ")}` }; reps.push(r); }
+      claveDe.set(m.acta, r.clave); nombreDe.set(r.clave, r.nombre);
+    });
+    // 2) el resto, de la denominación más corta a la más larga
+    ms.filter(m => !(m.grupo_marca || "").trim()).map(m => ({ m, pal: palabrasMarca(m.denominacion) }))
+      .sort((a, b) => a.pal.length - b.pal.length)
+      .forEach(({ m, pal }) => {
+        if (!pal.length) { const k = `${cid}|acta:${m.acta}`; claveDe.set(m.acta, k); nombreDe.set(k, m.denominacion || (m.tipo === "F" ? "(figurativa, sin texto)" : "(pendiente)")); return; }
+        let r = buscar(pal);
+        if (!r) { r = { pal, nombre: pal.length < palabrasMarca(m.denominacion).length ? pal.join(" ") : m.denominacion.trim(), clave: `${cid}|${pal.join(" ")}` }; reps.push(r); }
+        claveDe.set(m.acta, r.clave); if (!nombreDe.has(r.clave)) nombreDe.set(r.clave, r.nombre);
+      });
+  });
+  const grupos = new Map();
+  marcas.forEach(m => { const k = claveDe.get(m.acta); if (!grupos.has(k)) grupos.set(k, []); grupos.get(k).push(m); });
+  return { grupos, nombreDe };
 }
 
 function marcasAgrupadasHtml(marcas) {
   if (!est.gruposAbiertos) est.gruposAbiertos = new Set();
-  const grupos = new Map();
-  marcas.forEach(m => { const k = claveGrupoMarca(m); if (!grupos.has(k)) grupos.set(k, []); grupos.get(k).push(m); });
+  const { grupos, nombreDe } = gruposDeMarcas(marcas);
   est.clavesGrupos = [...grupos.keys()];
   const filas = [...grupos].map(([k, ms], i) => {
     const abierto = est.gruposAbiertos.has(k);
-    const nombre = ms[0].denominacion || (ms[0].tipo === "F" ? "(figurativa, sin texto)" : "(pendiente)");
+    const nombre = nombreDe.get(k);
     const clases = [...new Set(ms.map(m => m.clase).filter(c => c != null))].sort((a, b) => a - b).join(", ");
     const ultimo = ms.filter(m => m.ultimo_movimiento_fecha).sort((a, b) => String(b.ultimo_movimiento_fecha).localeCompare(String(a.ultimo_movimiento_fecha)))[0];
-    const conLogo = ms.find(m => m.tiene_logo);
     const conOpo = ms.filter(m => m.tuvo_oposicion && !["Concedida", "Denegada"].includes(m.estado_tramite)).length;
     const alertas = ms.reduce((t, m) => t + (Number(m.alertas_abiertas) || 0), 0);
     const cab = `<tr class="mk-grupo${abierto ? " abierto" : ""}" data-grupo="${i}">
       <td class="mk-chev-td"><span class="mk-chev" aria-hidden="true">›</span></td>
-      <td>${conLogo ? logoMarca(conLogo) : ""}<span class="mk-nombre">${esc(nombre)}</span>
+      <td><span class="mk-nombre">${esc(nombre)}</span>
         ${conOpo ? ` <span class="cl-tag aviso" title="Tiene oposición o vista sin resolver">⚖ ${conOpo}</span>` : ""}${alertas ? ` <span class="cl-tag mal" title="Alertas de vigilancia abiertas">${alertas} alerta(s)</span>` : ""}</td>
       <td class="mk-exp">📄 <strong>${ms.length}</strong> expediente${ms.length === 1 ? "" : "s"}</td>
       <td>${esc(clases || "—")}</td>
@@ -251,7 +300,7 @@ function marcasAgrupadasHtml(marcas) {
       <td>${ultimo ? `${crmFecha(ultimo.ultimo_movimiento_fecha)}<br><small class="crm-gris">${esc(ultimo.ultimo_movimiento || "")}</small>` : '<span class="crm-gris">—</span>'}</td></tr>`;
     const filasActas = ms.map(m => `<tr>
         <td><a class="link-acta mk-acta" href="javascript:void(0)" data-abrir="${esc(m.acta)}" title="Abrir el expediente completo en INPI">${esc(m.acta)} ↗</a></td>
-        <td>${logoMarca(m)}${esc(m.denominacion || (m.tipo === "F" ? "(figurativa, sin texto)" : "(pendiente)"))}</td>
+        <td class="mk-den">${logoMarca(m)}${esc(m.denominacion || (m.tipo === "F" ? "(figurativa, sin texto)" : "(pendiente)"))}</td>
         <td><strong>${esc(m.clase ?? "")}</strong></td>
         <td>${esc(tipoLegible(m.tipo))}</td>
         <td>${tagEstadoMarca(m)}${m.tuvo_oposicion && !["Concedida", "Denegada"].includes(m.estado_tramite) ? ' <span class="cl-tag aviso">⚖ oposición / vista</span>' : ""}</td>
@@ -259,7 +308,7 @@ function marcasAgrupadasHtml(marcas) {
         <td>${m.fecha_vencimiento_marca ? crmFecha(m.fecha_vencimiento_marca) : "—"}</td>
         <td><small>${esc(m.agente || (m.matricula_agente ? "matrícula " + m.matricula_agente : "—"))}</small></td>
         <td>${m.vigilar ? '<span class="cl-tag ok">Vigilada</span>' : '<span class="cl-tag">No</span>'}</td>
-        <td><a class="link-acta" href="javascript:void(0)" data-ver-cliente="${m.cliente_id}">Ver cliente →</a></td></tr>`).join("");
+        <td><a class="link-acta" href="javascript:void(0)" data-ver-cliente="${m.cliente_id}">Ver cliente →</a><br><a class="link-acta" href="javascript:void(0)" data-agrupar="${esc(m.acta)}" data-nombre="${esc(m.grupo_marca || nombre)}" title="Elegir a qué grupo de marcas pertenece esta acta">Agrupar…</a></td></tr>`).join("");
     const det = `<tr class="mk-detalle" ${abierto ? "" : "hidden"}><td></td><td colspan="5">
       <table class="mk-sub"><colgroup><col style="width:104px"><col><col style="width:50px"><col style="width:104px"><col style="width:150px"><col style="width:96px"><col style="width:96px"><col style="width:120px"><col style="width:84px"><col style="width:96px"></colgroup><thead><tr><th>Acta</th><th>Denominación</th><th>Clase</th><th>Tipo</th><th>Estado</th><th>Presentación</th><th>Vencimiento</th><th>Agente</th><th>Vigilancia</th><th></th></tr></thead>
       <tbody>${filasActas}</tbody></table></td></tr>`;
@@ -423,6 +472,7 @@ async function abrirCliente(id) {
       <div class="cl-acciones">
         <button type="button" class="cl-btn" id="cli-guardar">Guardar datos</button>
         <button type="button" class="cl-btn sec" id="cli-poder-btn">📄 Generar poder para firmar</button>
+        <button type="button" class="cl-btn sec" id="cli-unir" title="Pasa las marcas y todo lo demás de otro cliente duplicado a este, y borra el duplicado">🔗 Unir otro cliente a este</button>
         <button type="button" class="cl-btn peligro" id="cli-borrar">Borrar cliente</button>
         <span class="cl-estado" id="cli-estado"></span></div>
       <div class="cl-caja" id="cli-poder" hidden style="margin-top:10px"></div>
@@ -462,6 +512,39 @@ async function abrirCliente(id) {
   conectarFichaCliente(cont, d);
 }
 
+// Une un cliente duplicado a este: sus marcas, poderes, formularios y alertas pasan acá y el duplicado se borra.
+async function unirOtroCliente(c, d) {
+  const norm = t => String(t || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase().replace(/[^A-Z0-9]+/g, " ").trim();
+  const todos = (await api("/api/clientes?activos=false")).clientes;
+  const q = prompt(`¿Qué cliente querés unir a «${c.nombre}»? Escribí una parte de su nombre (ese cliente se borra y sus marcas pasan a este).`);
+  if (!q || !norm(q)) return;
+  const hallados = todos.filter(x => x.id !== c.id && norm(x.nombre).includes(norm(q)));
+  if (!hallados.length) { alert("No encontré ningún otro cliente con ese nombre."); return; }
+  let otro = hallados[0];
+  if (hallados.length > 1) {
+    const n = prompt("Hay varios, elegí el número:\n" + hallados.map((x, i) => `${i + 1}) ${x.nombre} — ${x.marcas} marca(s)`).join("\n"), "1");
+    otro = hallados[(parseInt(n, 10) || 0) - 1];
+    if (!otro) return;
+  }
+  if (!confirm(`Vas a pasar las ${otro.marcas} marca(s) y los demás datos de «${otro.nombre}» a «${c.nombre}», y «${otro.nombre}» se borra. No se puede deshacer. ¿Seguimos?`)) return;
+  const estado = $("cli-estado");
+  estado.textContent = "Uniendo…"; estado.className = "cl-estado";
+  try {
+    let r;
+    try { r = await apiJson(`/api/clientes/${c.id}/unir`, "POST", { origen_id: otro.id, forzar: false }); }
+    catch (e) {
+      if (!String(e.message).includes("CUIT distinto")) throw e;
+      if (!confirm(`Los dos clientes tienen CUIT distinto. ¿Seguro que son la misma persona o empresa? Si seguís, se unen igual.`)) { estado.textContent = ""; return; }
+      r = await apiJson(`/api/clientes/${c.id}/unir`, "POST", { origen_id: otro.id, forzar: true });
+    }
+    est.clientes = [];
+    const mk = vista("marcas"); if (mk) delete mk.dataset.armado;   // que la lista de marcas se arme de nuevo sin el cliente borrado
+    cargarResumen(); pintarClientes();
+    await abrirCliente(c.id);
+    $("cli-estado").textContent = `Listo: se unieron ${r.marcas} marca(s) ✓`;
+  } catch (e) { estado.textContent = e.message; estado.className = "cl-estado mal"; }
+}
+
 function conectarFichaCliente(cont, d) {
   const c = d.cliente;
   const estado = $("cli-estado");
@@ -473,6 +556,7 @@ function conectarFichaCliente(cont, d) {
       $("cli-estado").textContent = "Guardado ✓";
     } catch (e) { ev.currentTarget.disabled = false; estado.textContent = e.message; estado.className = "cl-estado mal"; }
   });
+  $("cli-unir").addEventListener("click", () => unirOtroCliente(c, d));
   $("cli-borrar").addEventListener("click", async () => {
     if (!confirm(`¿Borrar a ${c.nombre} y sus ${d.marcas.length} marca(s) de la cartera? No se puede deshacer (para dejar de vigilarlo sin borrar nada, desmarcá «Cliente activo»).`)) return;
     try { await apiJson(`/api/clientes/${c.id}`, "DELETE"); cerrarModal(); cargarResumen(); pintarClientes(); }

@@ -1,0 +1,45 @@
+name: Agrupar marcas bajo un mismo nombre
+
+on:
+  workflow_dispatch:
+    inputs:
+      grupo:
+        description: "Nombre del grupo con el que se muestran juntas en Clientes → Marcas (vacío = sacarlas del grupo)"
+        required: false
+        default: ""
+      actas:
+        description: "Actas que se juntan (separadas por coma, espacio o salto de línea)"
+        required: true
+      simular:
+        description: "Solo contar, sin escribir (true/false)"
+        required: false
+        default: "true"
+
+permissions:
+  contents: read
+
+jobs:
+  agrupar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Instalar dependencias
+        run: pip install -r requirements.txt
+
+      - name: Agrupar las marcas
+        run: |
+          cd scripts
+          args=(--grupo "$GRUPO" --actas "$ACTAS")
+          if [ "$SIMULAR" = "true" ]; then args+=(--simular); fi
+          python3 agrupar_marcas.py "${args[@]}"
+        env:
+          GRUPO: ${{ inputs.grupo }}
+          ACTAS: ${{ inputs.actas }}
+          SIMULAR: ${{ inputs.simular }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL || secrets.DATABASE_PUBLIC_URL }}
+          PYTHONUNBUFFERED: "1"

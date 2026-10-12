@@ -89,6 +89,7 @@ class BuscarTitular(BaseModel):
 
 
 class MarcaCambios(BaseModel):
+    grupo_marca: Optional[str] = None
     vigilar: Optional[bool] = None
     vigilar_todas_clases: Optional[bool] = None
     terminos_vigilancia: Optional[str] = None
@@ -97,6 +98,11 @@ class MarcaCambios(BaseModel):
 
 class Mover(BaseModel):
     cliente_id: int
+
+
+class UnirCliente(BaseModel):
+    origen_id: int          # el cliente que se borra: todo lo suyo pasa al cliente de la URL
+    forzar: bool = False    # seguir aunque los dos tengan CUIT distinto
 
 
 class AlertaCambios(BaseModel):
@@ -234,7 +240,7 @@ def crear_router(verificar_login, conexion, crm) -> APIRouter:
             with rcur(conn) as cur:
                 cur.execute(
                     f"""
-                    SELECT cm.acta, cm.cliente_id, c.nombre AS cliente_nombre, c.referido AS cliente_referido, cm.denominacion, cm.tipo, cm.clase, cm.fecha_publicacion,
+                    SELECT cm.acta, cm.cliente_id, c.nombre AS cliente_nombre, c.referido AS cliente_referido, cm.denominacion, cm.tipo, cm.clase, cm.fecha_publicacion, cm.grupo_marca,
                            cm.titular, cm.estado_tramite, cm.fecha_presentacion, cm.fecha_concesion,
                            cm.fecha_vencimiento_marca, cm.tuvo_oposicion, cm.agente, cm.matricula_agente,
                            cm.vigilar, cm.vigilar_todas_clases, cm.terminos_vigilancia, cm.consultado_en,
@@ -483,6 +489,19 @@ def crear_router(verificar_login, conexion, crm) -> APIRouter:
                 "plazos": plazos, "formularios": formularios, "poderes": poderes_cli, "tipos_persona": formularios_core.TIPO_LEGIBLE,
                 "origenes": cartera.ORIGENES_CLIENTE, "estados_alerta": cartera.ESTADOS_ALERTA, "referidos": referidos}
 
+    @router.post("/api/clientes/{cliente_id}/unir")
+    def unir_cliente(cliente_id: int, body: UnirCliente, usuario: str = Depends(verificar_login)):
+        """Trae a este cliente todo lo de otro cliente (que es la misma persona) y borra el otro."""
+        with nueva_conexion() as conn:
+            with rcur(conn) as cur:
+                try:
+                    res = cartera.unir_clientes(cur, body.origen_id, cliente_id, forzar=body.forzar,
+                                                usuario=usuario)
+                except cartera.UnionError as e:
+                    raise HTTPException(status_code=409, detail=str(e))
+            conn.commit()
+        return {"ok": True, "marcas": res["movidas"].get("cartera_marcas", 0)}
+
     @router.put("/api/clientes/{cliente_id}")
     def actualizar_cliente(cliente_id: int, body: ClienteCambios, usuario: str = Depends(verificar_login)):
         campos = _campos_cliente(body, parcial=True)
@@ -607,6 +626,8 @@ def crear_router(verificar_login, conexion, crm) -> APIRouter:
             sets.append("terminos_vigilancia = %s"); val.append(t)
         if "notas" in enviados:
             sets.append("notas = %s"); val.append(_limpio(body.notas, 2000))
+        if "grupo_marca" in enviados:
+            sets.append("grupo_marca = %s"); val.append(_limpio(body.grupo_marca, 120))
         if not sets:
             raise HTTPException(status_code=400, detail="No hay cambios para guardar")
         with nueva_conexion() as conn:

@@ -167,6 +167,9 @@ def crear_tablas(cur):
         """
     )
     cur.execute("CREATE INDEX IF NOT EXISTS idx_cartera_marcas_cliente ON cartera_marcas(cliente_id)")
+    # Grupo de marcas: nombre con el que se muestra esta marca en Clientes → Marcas cuando el equipo la
+    # junta a mano con otras (por ejemplo «LA BONNE VIE» + «LBV BONVIELA»). Vacío = se agrupa sola por nombre.
+    cur.execute("ALTER TABLE cartera_marcas ADD COLUMN IF NOT EXISTS grupo_marca TEXT")
     cur.execute(
         """
         CREATE TABLE IF NOT EXISTS cartera_novedades (
@@ -305,6 +308,87 @@ def crear_tablas(cur):
         for k, v in CONFIG_DEFAULT.items():
             cur.execute("INSERT INTO vigilancia_config (clave, valor) VALUES (%s, %s) ON CONFLICT DO NOTHING", (k, v))
         cur.execute("INSERT INTO vigilancia_config (clave, valor) VALUES ('semilla_aplicada', '1')")
+
+
+# ── Unir clientes duplicados ──────────────────────────────────────────────
+# (tabla, columna que apunta al cliente): todo lo que cuelga de un cliente y tiene que pasar al que queda.
+DEPENDIENTES_CLIENTE = (
+    ("cartera_marcas", "cliente_id"),
+    ("cartera_novedades", "cliente_id"),
+    ("vigilancia_alertas", "cliente_id"),
+    ("formularios_respuestas", "cliente_id"),
+    ("poderes_generados", "cliente_id"),
+)
+COMPLETAR_CLIENTE = ("cuit", "email", "telefono", "contacto")
+
+
+class UnionError(Exception):
+    """No se puede unir (cliente inexistente, mismo cliente, CUIT distinto sin forzar...)."""
+
+
+def normalizar_nombre(nombre) -> str:
+    """Nombre sin tildes ni puntuación, en mayúsculas y con espacios simples (para comparar o buscar)."""
+    import re
+    import unicodedata
+    n = unicodedata.normalize("NFKD", nombre or "")
+    n = "".join(c for c in n if not unicodedata.combining(c))
+    return re.sub(r"\s+", " ", re.sub(r"[^A-Za-z0-9 ]+", " ", n).upper()).strip()
+
+
+def _fila(cur):
+    f = cur.fetchone()
+    if f is None or isinstance(f, dict):
+        return f
+    return dict(zip([d[0] for d in cur.description], f))
+
+
+def contar_dependientes(cur, cliente_id: int) -> dict:
+    """Cuántas filas de cada tabla cuelgan de un cliente (solo las tablas que existen)."""
+    cuentas = {}
+    for tabla, col in DEPENDIENTES_CLIENTE:
+        cur.execute("SELECT to_regclass(%s) IS NOT NULL AS ok", (tabla,))
+        if _fila(cur)["ok"]:
+            cur.execute(f"SELECT COUNT(*) AS n FROM {tabla} WHERE {col} = %s", (cliente_id,))
+            cuentas[tabla] = _fila(cur)["n"]
+    return cuentas
+
+
+def unir_clientes(cur, origen_id: int, destino_id: int, forzar: bool = False, usuario: str = "unión de clientes",
+                  simular: bool = False) -> dict:
+    """Pasa todo lo del cliente ORIGEN al cliente DESTINO (marcas de la cartera, novedades, alertas,
+    formularios y poderes) y borra el origen. El destino conserva su tag y su vigilancia; si le falta CUIT,
+    email, teléfono o contacto y el origen los tiene, se completan; las notas se juntan. Si los dos tienen
+    CUIT y es distinto, no se une salvo `forzar`. Con `simular` solo cuenta, sin escribir.
+    El que llama hace el commit. Devuelve {"movidas": {tabla: n}, "completados": [...]}."""
+    if origen_id == destino_id:
+        raise UnionError("El origen y el destino son el mismo cliente")
+    cur.execute("SELECT * FROM clientes WHERE id = ANY(%s)", ([origen_id, destino_id],))
+    filas = {}
+    for f in cur.fetchall():
+        f = f if isinstance(f, dict) else dict(zip([d[0] for d in cur.description], f))
+        filas[f["id"]] = f
+    for cid in (origen_id, destino_id):
+        if cid not in filas:
+            raise UnionError(f"No existe el cliente #{cid}")
+    org, dst = filas[origen_id], filas[destino_id]
+    if org.get("cuit") and dst.get("cuit") and org["cuit"] != dst["cuit"] and not forzar:
+        raise UnionError("Los dos clientes tienen CUIT distinto: hay que confirmar que son la misma persona")
+    movidas = contar_dependientes(cur, origen_id)
+    completados = [c for c in COMPLETAR_CLIENTE if not dst.get(c) and org.get(c)]
+    if simular:
+        return {"movidas": movidas, "completados": completados}
+    for tabla in movidas:
+        col = dict(DEPENDIENTES_CLIENTE)[tabla]
+        cur.execute(f"UPDATE {tabla} SET {col} = %s WHERE {col} = %s", (destino_id, origen_id))
+    for c in completados:
+        cur.execute(f"UPDATE clientes SET {c} = %s WHERE id = %s", (org[c], destino_id))
+    if (org.get("notas") or "").strip():
+        previas = (dst.get("notas") or "").strip()
+        cur.execute("UPDATE clientes SET notas = %s WHERE id = %s",
+                    ((previas + "\n\n" if previas else "") + org["notas"].strip(), destino_id))
+    cur.execute("UPDATE clientes SET modificado_en = now(), modificado_por = %s WHERE id = %s", (usuario, destino_id))
+    cur.execute("DELETE FROM clientes WHERE id = %s", (origen_id,))
+    return {"movidas": movidas, "completados": completados}
 
 
 def leer_config(cur) -> dict:
