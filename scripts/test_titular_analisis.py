@@ -46,6 +46,7 @@ for (const c of casos) {
     "const sinNombre = () => '(sin nombre)';",
     "const anActualizarLote = () => {}, anCargar = () => {}, anExportarPdf = 0, anCopiarLink = 0, anAnularLink = 0,",
     "  anMejorar = 0, anExportarLote = 0, anUsarPropuesta = 0, anDescartarPropuesta = 0, anDeshacer = 0,",
+    "  anGuardarEnDrive = 0, anLoteADrive = 0,",
     "  anGuardarAhora = 0, anMsg = () => {}, anSel = new Set(), anTocadas = new Set(), anPintarLote = () => {}, apiJson = async () => ({});",
     "let anUnico = false, anUnicoLeido = false;",
     "let anTimer, anGuardado;",

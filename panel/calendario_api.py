@@ -44,6 +44,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import BaseModel
 
 import calendario_core as cal
+import drive_core as drive
 import ia_texto
 
 # Un mes con semanas completas a los costados cabe de sobra en 70 días; el tope evita
@@ -367,7 +368,7 @@ def crear_router(verificar_login, conexion, verificar_admin=None) -> APIRouter:
                            "en Railway (servicio del panel) y volvé a probar. La guía está en la pantalla Calendario.</p>", 409)
         estado_oauth = secrets.token_urlsafe(24)
         params = {"client_id": cid, "redirect_uri": _redirect_uri(request), "response_type": "code",
-                  "scope": cal.SCOPE, "access_type": "offline", "prompt": "consent", "state": estado_oauth}
+                  "scope": cal.SCOPE + " " + drive.SCOPE, "access_type": "offline", "prompt": "consent", "state": estado_oauth}
         if "@" in (cal.calendar_id() or ""):
             params["login_hint"] = cal.calendar_id()
         resp = RedirectResponse(cal.AUTH_URI + "?" + urlencode(params), status_code=302)
@@ -414,7 +415,7 @@ def crear_router(verificar_login, conexion, verificar_admin=None) -> APIRouter:
             (f"<p>Cuenta conectada: <strong>{_html.escape(cuenta)}</strong>.</p>" if cuenta else "")
             + aviso_cuenta
             + "<p>Último paso: copiá este valor completo y cargalo en Railway, en el servicio del panel, como variable "
-              "<code>GOOGLE_OAUTH_REFRESH_TOKEN</code>. Cuando Railway reinicie el panel, ya se pueden generar links de Meet.</p>"
+              "<code>GOOGLE_OAUTH_REFRESH_TOKEN</code>. Cuando Railway reinicie el panel, ya se pueden generar links de Meet y guardar los análisis de marca en Drive.</p>"
               f'<p><code style="word-break:break-all;user-select:all;display:block;padding:10px;background:#f4f6f9;border-radius:6px">{_html.escape(refresco)}</code></p>'
               "<p>Es una clave: no la compartas ni la pegues en un chat o mail. Esta página no se guarda en ningún lado; "
               "si la cerrás sin copiarla, se vuelve a generar con «Conectar con Google».</p>"
