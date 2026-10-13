@@ -235,10 +235,10 @@ class TextoWhatsApp(unittest.TestCase):
         hoy = dt.date(2026, 10, 13)
         t = cc.texto_whatsapp(self.ev(modalidad="meet", meet_url="https://meet.google.com/abc"), hoy=hoy)
         self.assertEqual(t.splitlines()[0],
-                         "Hola! Como está? Te paso los datos de nuestra reunión virtual por Google Meet de hoy:")
+                         "Hola! Cómo estás? Te paso los datos de nuestra reunión virtual por Google Meet de hoy:")
         t = cc.texto_whatsapp(self.ev(modalidad="llamada", lugar="11 5555-1234"), hoy=hoy)
         self.assertEqual(t.splitlines()[0],
-                         "Hola! Como está? Te paso los datos de nuestra llamada telefónica de hoy:")
+                         "Hola! Cómo estás? Te paso los datos de nuestra llamada telefónica de hoy:")
         # Los datos de abajo quedan iguales.
         self.assertIn("📞 Te llamamos por teléfono al 11 5555-1234", t)
         self.assertIn("Si necesitás cambiar el horario, avisame por acá. ¡Saludos!", t)

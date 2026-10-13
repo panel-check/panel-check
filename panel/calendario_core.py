@@ -945,7 +945,7 @@ def _intro_whatsapp(ev: dict, d0: _dt.date, hoy: _dt.date) -> str:
     else:
         que = "reunión"
     cuando = " de hoy" if d0 == hoy else " de mañana" if d0 == hoy + _dt.timedelta(days=1) else ""
-    return f"Hola! Como está? Te paso los datos de nuestra {que}{cuando}:"
+    return f"Hola! Cómo estás? Te paso los datos de nuestra {que}{cuando}:"
 
 
 def texto_whatsapp(ev: dict, hoy: _dt.date | None = None) -> str:
