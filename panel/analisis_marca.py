@@ -615,6 +615,12 @@ def _xml(t: str) -> str:
     return escape(t).replace("\n", "<br/>")
 
 
+def _xml_negrita(t: str) -> str:
+    """Como _xml, pero lo que va entre **dobles asteriscos** sale en negrita. Solo lo usa el texto del
+    presupuesto (el análisis que escribe el equipo se muestra tal cual: un ** ahí es un ** y nada más)."""
+    return "".join(f"<b>{_xml(p)}</b>" if i % 2 else _xml(p) for i, p in enumerate(t.split("**")))
+
+
 def generar_pdf(datos, texto_comun=None, texto_presupuesto=None) -> bytes:
     """El análisis en PDF (A4, con el membrete de Smarties). `datos` es una marca
     (ver datos_para_pdf) o una lista de marcas para un PDF con varias, una a continuación
@@ -623,7 +629,8 @@ def generar_pdf(datos, texto_comun=None, texto_presupuesto=None) -> bytes:
     UNA sola vez al final, en lugar del texto propio de cada marca.
     `texto_presupuesto`: cambia el formato a «Presupuesto» (botón «Presupuesto» de la pantalla):
     el título pasa a ser «Presupuesto» y, en lugar del análisis escrito, sale UNA sola vez al
-    final este texto (ver presupuesto_oposicion.texto), después de los datos de las marcas."""
+    final este texto (ver presupuesto_oposicion.texto), después de los datos de las marcas; en ese
+    texto lo que va entre **dobles asteriscos** sale en negrita."""
     from reportlab.lib.colors import HexColor
     from reportlab.lib.enums import TA_CENTER, TA_JUSTIFY, TA_LEFT
     from reportlab.lib.pagesizes import A4
@@ -704,8 +711,10 @@ def generar_pdf(datos, texto_comun=None, texto_presupuesto=None) -> bytes:
                                ("BOTTOMPADDING", (0, 0), (-1, -1), 0)]))
         return [t]
 
-    def flujo_analisis(texto, titulo_seccion):
-        """Título «Análisis» (si hay) y el texto escrito (párrafos y viñetas)."""
+    def flujo_analisis(texto, titulo_seccion, negritas=False):
+        """Título «Análisis» (si hay) y el texto escrito (párrafos y viñetas). Con negritas=True, lo que va
+        entre **dobles asteriscos** sale en negrita (el presupuesto)."""
+        xml = _xml_negrita if negritas else _xml
         out = [Paragraph(titulo_seccion, seccion), Spacer(1, 4)] if titulo_seccion else []
         bloques = _bloques_de_texto(texto)
         if not bloques:
@@ -713,12 +722,12 @@ def generar_pdf(datos, texto_comun=None, texto_presupuesto=None) -> bytes:
         previo = None
         for tipo, t in bloques:
             if tipo == "v":
-                out.append(Paragraph(_xml(t), vineta, bulletText="•"))
+                out.append(Paragraph(xml(t), vineta, bulletText="•"))
                 out.append(Spacer(1, 3))
             else:
                 if previo == "v":
                     out.append(Spacer(1, 5))  # un poco de aire al volver al texto después de una lista
-                out.append(Paragraph(_xml(t), cuerpo))
+                out.append(Paragraph(xml(t), cuerpo))
                 out.append(Spacer(1, 8))
             previo = tipo
         return out
@@ -802,7 +811,7 @@ def generar_pdf(datos, texto_comun=None, texto_presupuesto=None) -> bytes:
         if presu:
             h.append(Spacer(1, 16))
             h.append(CondPageBreak(150))
-            h.extend(flujo_analisis(texto_presupuesto, None))
+            h.extend(flujo_analisis(texto_presupuesto, None, negritas=True))
         else:
             h.append(Spacer(1, 14))
             h.append(HRFlowable(width="100%", thickness=0.6, color=HexColor(pres.COLOR_SUBTITULO)))

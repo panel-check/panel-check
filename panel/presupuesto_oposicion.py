@@ -118,30 +118,30 @@ def con_ajustes(cfg: dict, ajustes: dict) -> dict:
 
 
 def texto(cfg: dict) -> str:
-    """El texto del presupuesto, en el mismo formato que el análisis escrito (una línea en blanco
-    separa párrafos; las líneas que empiezan con «- » son viñetas), para armarlo con el mismo PDF."""
+    """El texto del presupuesto, en el mismo formato que el análisis escrito (una línea en blanco separa
+    párrafos; las líneas que empiezan con «- » son viñetas) para armarlo con el mismo PDF. Lo que va entre
+    **dobles asteriscos** sale en negrita en el PDF del presupuesto."""
     horas = int(cfg["horas_incluidas"])
     hasta = f"hasta {horas} hora" if horas == 1 else f"hasta {horas} horas"
     return (
-        "Las alternativas que podemos evaluar son:\n"
+        "La primera alternativa que podemos evaluar es:\n"
         "\n"
-        "- Negociación con el oponente, con el objetivo de procurar el retiro de la oposición mediante "
+        "**Negociación con el oponente**, con el objetivo de procurar el retiro de la oposición mediante "
         "un acuerdo entre las partes.\n"
-        "- En caso de no arribar a un acuerdo, evaluar la conveniencia de continuar con la defensa en el "
-        "procedimiento administrativo de oposición ante el INPI.\n"
-        "- Analizar la presentación de una nueva marca, con una denominación que presente un menor riesgo "
-        "de conflicto.\n"
         "\n"
-        f"Los honorarios correspondientes a la gestión de negociación de la oposición son de "
-        f"{pres.fmt_pesos(cfg['honorarios_negociacion'])}, e incluyen {hasta} de trabajo profesional. "
-        f"En caso de requerir tiempo adicional, la hora profesional tiene un valor de "
-        f"{pres.fmt_pesos(cfg['hora_adicional'])}.\n"
+        "Los honorarios correspondientes a la gestión de negociación de la oposición son de "
+        f"**{pres.fmt_pesos(cfg['honorarios_negociacion'])}**, e incluyen **{hasta} de trabajo profesional**. "
+        "En caso de requerir tiempo adicional, la hora profesional tiene un valor de "
+        f"**{pres.fmt_pesos(cfg['hora_adicional'])}**. Este presupuesto corresponde "
+        "**exclusivamente a la etapa de negociación** y se aplica por cada oposición recibida y por cada clase.\n"
         "\n"
-        f"Para el registro de una nueva marca, el presupuesto para el estudio de viabilidad y la "
-        f"presentación de la solicitud es de {pres.fmt_pesos(cfg['honorarios_registro'])}, más la tasa "
-        f"oficial del INPI de {pres.fmt_pesos(cfg['tasa_inpi'])}.\n"
+        "En caso de no arribar a un acuerdo, evaluaremos la conveniencia de continuar con la defensa en el "
+        "procedimiento administrativo de oposición ante el INPI. **Esta etapa se cotiza por separado.**\n"
         "\n"
-        "En caso de avanzar con una nueva denominación, antes de presentar la solicitud realizaremos una "
-        "búsqueda integral de viabilidad marcaria, a fin de analizar antecedentes fonéticos, gráficos y "
-        "conceptuales y reducir el riesgo de nuevas oposiciones."
+        "En caso de que resulte conveniente registrar una nueva marca, con una denominación que presente un "
+        "menor riesgo de conflicto, el presupuesto para el estudio de viabilidad y la presentación de la "
+        f"solicitud es de **{pres.fmt_pesos(cfg['honorarios_registro'])}**, más la tasa oficial del INPI de "
+        f"**{pres.fmt_pesos(cfg['tasa_inpi'])}** (valores por una marca en una clase). Antes de presentar la "
+        "solicitud realizaremos una **búsqueda integral de viabilidad marcaria**, a fin de analizar "
+        "antecedentes fonéticos, gráficos y conceptuales y reducir el riesgo de nuevas oposiciones."
     )
