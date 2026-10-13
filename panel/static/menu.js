@@ -547,12 +547,16 @@
 
   // Pestañas del panel: «Agendar» (el formulario) y «Disponibilidad» (los turnos libres de cada día). Cada una es
   // su propio iframe, así lo que se escribió en el formulario no se pierde al mirar la disponibilidad.
-  let pestanaActual = "agendar";
+  // Cada pantalla del panel es una página nueva: para que el panel lateral no se cierre al cambiar de pantalla,
+  // se recuerda (en esta pestaña del navegador) si estaba abierto y en qué pestaña, y se vuelve a abrir solo.
+  // Lo que se había escrito en el formulario se recupera aparte, con el borrador de calendario_comun.js.
   const URL_PESTANA = { agendar: "/agendar-llamada?embebido=1", disponibilidad: "/disponibilidad?embebido=1" };
+  let pestanaActual = URL_PESTANA[guardado("kom-agenda-pestana")] ? guardado("kom-agenda-pestana") : "agendar";
   function pestanaAgenda(nombre, alAbrir) {
     if (!panelAgenda || !URL_PESTANA[nombre]) return;
     const cambia = nombre !== pestanaActual;
     pestanaActual = nombre;
+    guardado("kom-agenda-pestana", nombre);
     panelAgenda.querySelectorAll("button[data-pestana]").forEach((b) => b.setAttribute("aria-selected", b.dataset.pestana === nombre ? "true" : "false"));
     panelAgenda.querySelectorAll("iframe[data-pestana]").forEach((f) => {
       const es = f.dataset.pestana === nombre;
@@ -602,6 +606,7 @@
     }
     void panelAgenda.offsetWidth;   // reflow para que la animación arranque aunque se haya recién creado
     panelAgenda.classList.toggle("abierto", !!abrir);
+    guardado("kom-agenda-panel", abrir ? "1" : "0");
     if (boton) {
       boton.classList.toggle("activa", !!abrir);
       boton.setAttribute("aria-expanded", abrir ? "true" : "false");
@@ -641,6 +646,8 @@
       const meet = enlaceNav("nav-meet", URL_MEET, "Reunión interna (Google Meet)", MEET_SVG);
       nav.insertBefore(meet, document.getElementById("link-comentarios"));   // si no hay chat, queda al final
     }
+    // Si el panel de «Agendar llamada» estaba abierto en la pantalla anterior, sigue abierto en esta.
+    if (window.top === window && guardado("kom-agenda-panel") === "1") abrirAgenda(true);
   }
 
   function iniciar() { iniciarAccesos(); iniciarBusqueda(); iniciarAtajos(); iniciarGrupos(); iniciarChat(); }
