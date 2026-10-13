@@ -80,6 +80,15 @@
   .an-lead label.an-lote-item { display: flex; align-items: baseline; gap: 8px; font-size: 14px; font-weight: 400; color: inherit; margin: 3px 0; cursor: pointer; }
   .an-lead label.an-lote-item .nota { margin: 0; }
   .an-lead .an-lote-unico { margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--borde); }
+  /* Botón «Presupuesto»: con el modo activo se esconde lo propio del análisis y se muestran los montos. */
+  .an-lead.modo-presu .solo-analisis { display: none !important; }
+  .an-lead:not(.modo-presu) .solo-presu { display: none !important; }
+  .an-lead button.secundario.activo { background: var(--azul); color: #fff; }
+  .an-lead .an-presu { border: 1px solid var(--azul); border-radius: 10px; background: #f5f8ff; padding: 12px 14px; margin-top: 4px; }
+  .an-lead .an-presu-titulo { font-size: 13px; font-weight: 700; margin-bottom: 8px; }
+  .an-lead .an-presu-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+  @media (max-width: 760px) { .an-lead .an-presu-grid { grid-template-columns: 1fr 1fr; } }
+  .an-lead .an-presu-grid input[type=text] { width: 100%; padding: 7px 9px; border: 1px solid var(--borde-control); border-radius: 8px; font: inherit; font-size: 14px; background: #fff; box-sizing: border-box; }
   .an-lead ul.an-avisos { margin: 0 0 8px; padding: 8px 10px 8px 26px; font-size: 13px; color: #92400e; background: #fffbeb; border: 1px solid #fcd34d; border-radius: 8px; }
 </style>
 </head>
@@ -160,33 +169,44 @@
       <label for="an-marca">Marca</label>
       <select id="an-marca"></select>
       <div class="an-datos" id="an-datos"><span class="nota">Cargando…</span></div>
-      <label for="an-texto">Análisis</label>
-      <textarea id="an-texto" maxlength="20000" placeholder="Escribí acá el análisis de la marca…" disabled></textarea>
-      <div class="nota">Se guarda solo mientras escribís. En el PDF, una línea en blanco separa párrafos y las líneas que empiezan con «- » salen como viñetas.</div>
+      <label for="an-texto" class="solo-analisis">Análisis</label>
+      <textarea id="an-texto" class="solo-analisis" maxlength="20000" placeholder="Escribí acá el análisis de la marca…" disabled></textarea>
+      <div class="nota solo-analisis">Se guarda solo mientras escribís. En el PDF, una línea en blanco separa párrafos y las líneas que empiezan con «- » salen como viñetas.</div>
+      <div class="an-presu solo-presu" id="an-presu">
+        <div class="an-presu-titulo">💼 Presupuesto por el trabajo <span class="nota">· el PDF sale con el presupuesto en lugar del análisis; lo que cambies acá vale para ese PDF</span></div>
+        <div class="an-presu-grid" id="an-presu-campos"><span class="nota">Cargando…</span></div>
+        <div class="acciones">
+          <button type="button" class="secundario" id="an-presu-guardar" disabled title="Guarda estos montos para todo el equipo: son los que aparecen cada vez que se aprieta «Presupuesto».">Guardar como valores habituales</button>
+          <span class="msg" id="an-presu-msg"></span>
+        </div>
+        <div class="nota">Incluye las alternativas a evaluar (negociación con el oponente, continuar la defensa ante el INPI o una nueva marca), los honorarios de la negociación de la oposición y el presupuesto para registrar una nueva marca. Los datos de la marca y sus oposiciones salen igual que en el análisis.</div>
+      </div>
       <div class="acciones">
         <button type="button" class="enviar" id="an-pdf" disabled>Exportar PDF</button>
+        <button type="button" class="secundario" id="an-presu-btn" title="Cambia el formato del PDF: en lugar del análisis escrito sale el presupuesto por el trabajo. Volvé a apretarlo para volver al análisis.">💼 Presupuesto</button>
         <button type="button" class="secundario" id="an-drive" disabled title="Sube este mismo PDF a la carpeta «Análisis de marca» del Drive del estudio. Si esta marca ya estaba subida, reemplaza ese archivo (Drive suele conservar un tiempo las versiones anteriores).">📁 Guardar en Drive</button>
-        <button type="button" class="secundario" id="an-link" disabled title="Copia un link público al PDF: lo abre cualquiera que lo tenga, sin iniciar sesión, y siempre muestra el análisis guardado">🔗 Copiar link del PDF</button>
-        <button type="button" class="secundario" id="an-link-anular" disabled title="Apaga el link público: el que ya se mandó deja de abrir el PDF">🚫 Anular link</button>
-        <button type="button" class="secundario" id="an-mejorar" disabled>✨ Mejorar texto</button>
-        <button type="button" class="plegar" id="an-deshacer" hidden>↶ Volver al texto anterior</button>
+        <button type="button" class="secundario solo-analisis" id="an-link" disabled title="Copia un link público al PDF: lo abre cualquiera que lo tenga, sin iniciar sesión, y siempre muestra el análisis guardado">🔗 Copiar link del PDF</button>
+        <button type="button" class="secundario solo-analisis" id="an-link-anular" disabled title="Apaga el link público: el que ya se mandó deja de abrir el PDF">🚫 Anular link</button>
+        <button type="button" class="secundario solo-analisis" id="an-mejorar" disabled>✨ Mejorar texto</button>
+        <button type="button" class="plegar solo-analisis" id="an-deshacer" hidden>↶ Volver al texto anterior</button>
         <span class="msg" id="an-estado"></span>
       </div>
       <div class="nota" id="an-drive-nota" hidden>«Guardar en Drive» todavía no está activado: falta conectar la cuenta de Google del estudio (Calendario → «Conectar con Google»). Ver el Manual del sistema.</div>
-      <div class="nota" id="an-ia-nota">«Mejorar texto» manda solo este texto a un servicio de IA y te muestra una propuesta para que la revises: no cambia nada hasta que la aceptes.</div>
+      <div class="nota solo-analisis" id="an-ia-nota">«Mejorar texto» manda solo este texto a un servicio de IA y te muestra una propuesta para que la revises: no cambia nada hasta que la aceptes.</div>
       <div class="an-lote" id="an-lote" hidden>
         <div class="an-lote-titulo">📄 PDF con varias marcas <span class="nota">(las de este titular)</span></div>
         <div id="an-lote-lista"></div>
-        <label class="an-lote-item an-lote-unico"><input type="checkbox" id="an-lote-unico"> <span><strong>Es el mismo análisis para todas las marcas</strong></span></label>
-        <div class="nota" id="an-lote-unico-nota"></div>
+        <label class="an-lote-item an-lote-unico solo-analisis"><input type="checkbox" id="an-lote-unico"> <span><strong>Es el mismo análisis para todas las marcas</strong></span></label>
+        <div class="nota solo-analisis" id="an-lote-unico-nota"></div>
         <div class="acciones">
           <button type="button" class="enviar" id="an-lote-pdf" disabled>Exportar PDF con las marcas tildadas</button>
           <button type="button" class="secundario" id="an-lote-drive" disabled title="Sube el PDF con las marcas tildadas a la carpeta «Análisis de marca» del Drive del estudio. Si ya subiste esas mismas marcas, reemplaza el archivo anterior.">📁 Guardar en Drive las marcas tildadas</button>
           <span class="msg" id="an-lote-estado"></span>
         </div>
-        <div class="nota">Cada marca sale con su logo, su clase y sus oposiciones, una a continuación de la otra; el análisis es el propio de cada marca o, si tildás «el mismo análisis», uno solo para todas. Las que todavía no se consultaron en INPI se consultan solas antes de armar el PDF. «Guardar en Drive» sube ese mismo PDF a la carpeta «Análisis de marca» del Drive del estudio.</div>
+        <div class="nota solo-presu">Con «Presupuesto» activo, cada marca tildada sale con su logo, su clase y sus oposiciones, una a continuación de la otra, y el presupuesto de arriba sale una sola vez, al final.</div>
+        <div class="nota solo-analisis">Cada marca sale con su logo, su clase y sus oposiciones, una a continuación de la otra; el análisis es el propio de cada marca o, si tildás «el mismo análisis», uno solo para todas. Las que todavía no se consultaron en INPI se consultan solas antes de armar el PDF. «Guardar en Drive» sube ese mismo PDF a la carpeta «Análisis de marca» del Drive del estudio.</div>
       </div>
-      <div class="an-propuesta" id="an-propuesta" hidden>
+      <div class="an-propuesta solo-analisis" id="an-propuesta" hidden>
         <div class="an-propuesta-titulo">✨ Versión mejorada <span class="nota">(podés editarla antes de usarla)</span></div>
         <ul class="an-avisos" id="an-avisos" hidden></ul>
         <textarea id="an-propuesta-texto" maxlength="20000"></textarea>
@@ -636,6 +656,9 @@ let anUnico = false;         // PDF con varias marcas: un solo análisis (el de 
 let anSel = new Set();      // actas tildadas para el PDF con varias marcas
 let anTocadas = new Set();  // actas que la persona tildó o destildó a mano (ya no se tildan solas)
 let anEstado = {};          // por acta: {tiene_texto, consultada}
+let anPresu = false;        // botón «Presupuesto» activo: el PDF sale como presupuesto, sin el análisis escrito
+let anPresuCfg = null;      // montos guardados del presupuesto (null = todavía no se cargaron)
+const AN_PRESU_CAMPOS = ["honorarios_negociacion", "horas_incluidas", "hora_adicional", "honorarios_registro", "tasa_inpi"];
 
 function anMsg(t, ok = true) { const el = document.getElementById("an-estado"); el.textContent = t || ""; el.className = "msg " + (ok ? "ok" : "err"); }
 
@@ -799,7 +822,7 @@ function anPintarLote() {
   const lista = document.getElementById("an-lote-lista");
   lista.innerHTML = anFilas.map(r => {
     const e = anEstado[r.acta] || {};
-    const marca = anUnico ? "" : (e.tiene_texto ? '<span class="nota">con análisis escrito</span>' : '<span class="nota">sin análisis escrito</span>');
+    const marca = (anUnico || anPresu) ? "" : (e.tiene_texto ? '<span class="nota">con análisis escrito</span>' : '<span class="nota">sin análisis escrito</span>');
     return `<label class="an-lote-item"><input type="checkbox" value="${mlEsc(r.acta)}"${anSel.has(r.acta) ? " checked" : ""}> <span>${mlEsc(anEtiquetaMarca(r))}</span> ${marca}</label>`;
   }).join("");
   document.getElementById("an-lote-unico").checked = anUnico;
@@ -836,8 +859,8 @@ function anLoteMsg(t, ok = true) { const el = document.getElementById("an-lote-e
 // para todas y en cuántas marcas INPI no respondió del todo.
 async function anPrepararLote(actas) {
   anLoteMsg("Guardando…");
-  if (!(await anGuardarAhora())) throw new Error("no se pudo guardar el texto");
-  const unico = anUnico && actas.length > 1;
+  if (!anPresu && !(await anGuardarAhora())) throw new Error("no se pudo guardar el texto");
+  const unico = !anPresu && anUnico && actas.length > 1;   // con «Presupuesto» no hay análisis: el presupuesto sale una vez
   if (unico && !document.getElementById("an-texto").value.trim()) throw new Error("escribí el análisis en la marca abierta: es el que se usa para todas");
   // Las marcas que nunca se miraron en INPI se consultan antes (una por vez, con pausa).
   await anActualizarLoteEstado();
@@ -855,6 +878,12 @@ async function anPrepararLote(actas) {
   return { unico, sinVerificar };
 }
 
+// El pedido del PDF con varias marcas: con «Presupuesto», los montos; si no, el análisis (propio de cada marca o el común).
+function anCuerpoLote(actas, unico) {
+  if (anPresu) return { actas, presupuesto: anPresuValores() };
+  return unico ? { actas, analisis_comun_de: anActa } : { actas };
+}
+
 function anActasTildadas() { return anFilas.map(f => f.acta).filter(a => anSel.has(a)); }
 
 function anAvisoSinVerificar(n) {
@@ -870,7 +899,7 @@ async function anExportarLote() {
     anLoteMsg("Armando el PDF…");
     const r = await fetch("/api/analisis-marca-lote/pdf", {
       method: "POST", credentials: "include", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(unico ? { actas, analisis_comun_de: anActa } : { actas }),
+      body: JSON.stringify(anCuerpoLote(actas, unico)),
     });
     if (r.status === 401 && typeof irAlLogin === "function") irAlLogin();
     if (!r.ok) {
@@ -899,7 +928,7 @@ async function anLoteADrive() {
   try {
     const { unico, sinVerificar } = await anPrepararLote(actas);
     anLoteMsg("Subiendo a Drive…");
-    const r = await apiJson("/api/analisis-marca-lote/drive", "POST", unico ? { actas, analisis_comun_de: anActa } : { actas });
+    const r = await apiJson("/api/analisis-marca-lote/drive", "POST", anCuerpoLote(actas, unico));
     anMostrarDrive(document.getElementById("an-lote-estado"), r, anAvisoSinVerificar(sinVerificar));
   } catch (e) { anLoteMsg("No se pudo guardar en Drive: " + e.message, false); }
   anBotonesLote();
@@ -961,15 +990,83 @@ async function anCargar(acta) {
   anVerificar();                                       // primera vez: se consulta INPI y queda guardado
 }
 
+// ── Botón «Presupuesto» ──
+// Cambia el formato del PDF: en lugar del análisis escrito sale el presupuesto por el trabajo (alternativas,
+// honorarios de la negociación y presupuesto de una nueva marca). Los montos vienen de lo guardado para todo
+// el equipo y se pueden ajustar acá para ese PDF.
+function anPresuMsg(t, ok = true) { const el = document.getElementById("an-presu-msg"); el.textContent = t || ""; el.className = "msg " + (ok ? "ok" : "err"); }
+
+// Los montos tal como están en los campos (texto: el servidor acepta «790.000», «$790000» o 790000).
+function anPresuValores() {
+  const v = {};
+  for (const c of AN_PRESU_CAMPOS) {
+    const el = document.getElementById("an-p-" + c);
+    if (el && el.value.trim()) v[c] = el.value.trim();
+  }
+  return v;
+}
+
+function anPresuPintar(cfg, etiquetas) {
+  const suf = { honorarios_negociacion: "$", hora_adicional: "$", honorarios_registro: "$", tasa_inpi: "$" };
+  document.getElementById("an-presu-campos").innerHTML = AN_PRESU_CAMPOS.map(c => {
+    const val = Number(cfg[c]).toLocaleString("es-AR");
+    return `<div><label for="an-p-${c}">${mlEsc(etiquetas[c] || c)}${suf[c] ? " ($)" : ""}</label><input type="text" id="an-p-${c}" inputmode="numeric" value="${mlEsc(val)}" /></div>`;
+  }).join("");
+  document.getElementById("an-presu-guardar").disabled = false;
+}
+
+async function anPresuCargar() {
+  try {
+    const r = await apiJson("/api/analisis-presupuesto", "GET");
+    anPresuCfg = r.config;
+    anPresuPintar(r.config, r.etiquetas);
+  } catch (e) {
+    document.getElementById("an-presu-campos").innerHTML = `<span class="msg err">No se pudieron cargar los montos (${mlEsc(e.message)}). El PDF sale con los montos guardados.</span>`;
+  }
+}
+
+function anPresuAlternar() {
+  anPresu = !anPresu;
+  document.getElementById("an-box").classList.toggle("modo-presu", anPresu);
+  const b = document.getElementById("an-presu-btn");
+  b.classList.toggle("activo", anPresu);
+  b.textContent = anPresu ? "↩ Volver al análisis" : "💼 Presupuesto";
+  anMsg(""); anLoteMsg("");
+  if (anPresu) {
+    anCerrarPropuesta();
+    if (!anPresuCfg) anPresuCargar();
+    // Si no hay ninguna marca tildada para el PDF con varias marcas, queda tildada la que está abierta.
+    if (anFilas.length > 1 && anSel.size === 0 && anActa) anSel.add(anActa);
+  }
+  anPintarLote();
+}
+
+async function anPresuGuardar() {
+  const btn = document.getElementById("an-presu-guardar");
+  btn.disabled = true; anPresuMsg("Guardando…");
+  try {
+    const r = await apiJson("/api/analisis-presupuesto", "PUT", { valores: anPresuValores() });
+    anPresuCfg = r.config;
+    for (const c of AN_PRESU_CAMPOS) { const el = document.getElementById("an-p-" + c); if (el) el.value = Number(r.config[c]).toLocaleString("es-AR"); }
+    anPresuMsg("Guardado ✓ (son los montos habituales de todo el equipo)");
+  } catch (e) { anPresuMsg("No se pudo guardar: " + e.message, false); }
+  btn.disabled = false;
+}
+
+// Lo que se manda al servidor para pedir el PDF de ESTA marca: el texto del análisis o los montos del presupuesto.
+function anCuerpoPdf() {
+  return anPresu ? { presupuesto: anPresuValores() } : { texto: document.getElementById("an-texto").value };
+}
+
 async function anExportarPdf() {
   if (!anActa) return;
   const btn = document.getElementById("an-pdf");
   btn.disabled = true; anMsg("Armando el PDF…");
   try {
-    if (!(await anGuardarAhora())) throw new Error("no se pudo guardar el texto");
+    if (!anPresu && !(await anGuardarAhora())) throw new Error("no se pudo guardar el texto");
     const r = await fetch(`/api/analisis-marca/${encodeURIComponent(anActa)}/pdf`, {
       method: "POST", credentials: "include", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ texto: document.getElementById("an-texto").value }),
+      body: JSON.stringify(anCuerpoPdf()),
     });
     if (r.status === 401 && typeof irAlLogin === "function") irAlLogin();
     if (!r.ok) {
@@ -977,7 +1074,7 @@ async function anExportarPdf() {
       try { detalle = (await r.json()).detail || detalle; } catch (_) {}
       throw new Error(detalle);
     }
-    let nombre = `Analisis de marca - acta ${anActa}.pdf`;
+    let nombre = `${anPresu ? "Presupuesto" : "Analisis de marca"} - acta ${anActa}.pdf`;
     const m = /filename\*=UTF-8''([^;]+)/i.exec(r.headers.get("Content-Disposition") || "");
     if (m) { try { nombre = decodeURIComponent(m[1]); } catch (_) { /* queda el nombre genérico */ } }
     const url = URL.createObjectURL(await r.blob());
@@ -996,8 +1093,8 @@ async function anGuardarEnDrive() {
   const btn = document.getElementById("an-drive");
   btn.disabled = true; anMsg("Subiendo a Drive…");
   try {
-    if (!(await anGuardarAhora())) throw new Error("no se pudo guardar el texto");
-    const r = await apiJson(`/api/analisis-marca/${encodeURIComponent(anActa)}/drive`, "POST", { texto: document.getElementById("an-texto").value });
+    if (!anPresu && !(await anGuardarAhora())) throw new Error("no se pudo guardar el texto");
+    const r = await apiJson(`/api/analisis-marca/${encodeURIComponent(anActa)}/drive`, "POST", anCuerpoPdf());
     anMostrarDrive(document.getElementById("an-estado"), r);
   } catch (e) { anMsg("No se pudo guardar en Drive: " + e.message, false); }
   btn.disabled = !anDriveDisponible;
@@ -1058,6 +1155,8 @@ function anIniciar(filas) {
       anTimer = setTimeout(anGuardarAhora, 1200);
     });
     document.getElementById("an-pdf").addEventListener("click", anExportarPdf);
+    document.getElementById("an-presu-btn").addEventListener("click", anPresuAlternar);
+    document.getElementById("an-presu-guardar").addEventListener("click", anPresuGuardar);
     document.getElementById("an-drive").addEventListener("click", anGuardarEnDrive);
     document.getElementById("an-link").addEventListener("click", anCopiarLink);
     document.getElementById("an-link-anular").addEventListener("click", anAnularLink);

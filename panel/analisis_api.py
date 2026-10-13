@@ -30,6 +30,13 @@ Rutas (todas con sesión, salvo la del link público del PDF):
   POST  /api/analisis-marca/{acta}/drive        sube ese mismo PDF a la carpeta «Análisis de marca» del Drive del
                                                 estudio (si la marca ya estaba subida, reemplaza el archivo)
   POST  /api/analisis-marca-lote/drive          lo mismo con el PDF de varias marcas
+  GET   /api/analisis-presupuesto               los montos guardados del presupuesto por una oposición (botón
+                                                «Presupuesto») y el texto con que sale
+  PUT   /api/analisis-presupuesto               guardar esos montos para todo el equipo
+
+Los POST de PDF y de Drive (de una marca o de varias) aceptan además `presupuesto` (los montos, que pueden
+venir ajustados para ese PDF): con eso el PDF cambia de formato a «Presupuesto» y, en lugar del análisis
+escrito, sale el texto del presupuesto (ver presupuesto_oposicion.py).
 """
 
 import hashlib
@@ -47,6 +54,7 @@ import analisis_marca as am
 import drive_core as drive
 import ia_texto
 import inpi_lead
+import presupuesto_oposicion as po
 
 log = logging.getLogger(__name__)
 PAUSA_ENTRE_PEDIDOS = 1.0   # segundos entre un pedido a INPI y el siguiente
@@ -58,6 +66,9 @@ class TextoAnalisis(BaseModel):
 
 class PedidoPdf(BaseModel):
     texto: Optional[str] = None
+    # Si viene (aunque sea vacío), el PDF sale en formato «Presupuesto» con estos montos
+    # (los que falten salen de lo guardado).
+    presupuesto: Optional[dict] = None
 
 
 class PedidoMismoAnalisis(BaseModel):
@@ -70,6 +81,12 @@ class PedidoLote(BaseModel):
     # Si viene, el análisis es el mismo para todas las marcas: se usa el texto guardado de
     # esta acta y sale una sola vez en el PDF (en vez del texto propio de cada marca).
     analisis_comun_de: Optional[str] = None
+    # Igual que en PedidoPdf: el PDF sale en formato «Presupuesto» (una sola vez, al final).
+    presupuesto: Optional[dict] = None
+
+
+class PedidoMontos(BaseModel):
+    valores: dict = {}
 
 
 class PedidoLink(BaseModel):
@@ -204,8 +221,17 @@ def crear_router(verificar_login, conexion) -> APIRouter:
         out["aviso"] = aviso
         return out
 
-    def _pdf_de(acta: str, texto_pedido: Optional[str]):
-        """(bytes del PDF, nombre del archivo) del análisis de una marca."""
+    def _texto_presupuesto(montos: dict) -> str:
+        """El texto del presupuesto con los montos guardados y, encima, los que vengan para este PDF."""
+        with conexion() as conn, rcur(conn) as cur:
+            cfg = po.leer_config(cur)
+        try:
+            return po.texto(po.con_ajustes(cfg, montos))
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+
+    def _pdf_de(acta: str, texto_pedido: Optional[str], presupuesto: Optional[dict] = None):
+        """(bytes del PDF, nombre del archivo) del análisis de una marca (o de su presupuesto)."""
         with conexion() as conn, rcur(conn) as cur:
             m = _marca(cur, acta)
             guardado = am.leer_analisis(cur, acta)
@@ -216,10 +242,12 @@ def crear_router(verificar_login, conexion) -> APIRouter:
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
         d = am.datos_para_pdf(m, texto, op, logo, guardado["expediente"])
+        if presupuesto is not None:
+            return am.generar_pdf(d, texto_presupuesto=_texto_presupuesto(presupuesto)), am.nombre_archivo(d, True)
         return am.generar_pdf(d), am.nombre_archivo(d)
 
-    def _respuesta_pdf(acta: str, texto_pedido: Optional[str]) -> Response:
-        contenido, nombre = _pdf_de(acta, texto_pedido)
+    def _respuesta_pdf(acta: str, texto_pedido: Optional[str], presupuesto: Optional[dict] = None) -> Response:
+        contenido, nombre = _pdf_de(acta, texto_pedido, presupuesto)
         return Response(
             content=contenido, media_type="application/pdf",
             headers={"Content-Disposition": f"inline; filename*=UTF-8''{quote(nombre)}",
@@ -241,7 +269,7 @@ def crear_router(verificar_login, conexion) -> APIRouter:
 
     @router.post("/api/analisis-marca/{acta}/pdf")
     def pdf_analisis(acta: str, body: PedidoPdf, _: str = Depends(verificar_login)):
-        return _respuesta_pdf(_acta(acta), body.texto)
+        return _respuesta_pdf(_acta(acta), body.texto, body.presupuesto)
 
     @router.get("/api/analisis-marca/{acta}/pdf")
     def ver_pdf_analisis(acta: str, _: str = Depends(verificar_login)):
@@ -255,8 +283,10 @@ def crear_router(verificar_login, conexion) -> APIRouter:
         """Arma el mismo PDF de «Exportar PDF» y lo sube a la carpeta «Análisis de marca» del Drive
         del estudio. Si esa marca ya estaba subida, reemplaza el archivo (no se acumulan copias)."""
         acta = _acta(acta)
-        contenido, nombre = _pdf_de(acta, body.texto)
-        return _a_drive(contenido, nombre, ("acta", acta), usuario)
+        contenido, nombre = _pdf_de(acta, body.texto, body.presupuesto)
+        # El presupuesto de una marca va aparte de su análisis: no se pisan en Drive.
+        clave = ("presupuesto", acta) if body.presupuesto is not None else ("acta", acta)
+        return _a_drive(contenido, nombre, clave, usuario)
 
     @router.post("/api/analisis-marca/{acta}/link")
     def link_publico(acta: str, body: PedidoLink = PedidoLink(), _: str = Depends(verificar_login)):
@@ -365,6 +395,9 @@ def crear_router(verificar_login, conexion) -> APIRouter:
                 guardado = am.leer_analisis(cur, acta)
                 op, _pend = am.adjuntar_opuestas(cur, acta, am.armar_oposiciones(m, guardado["oposiciones"]), con_logo=True)
                 marcas.append(am.datos_para_pdf(m, guardado["texto"], op, am.leer_logo(cur, acta), guardado["expediente"]))
+        if body.presupuesto is not None:
+            return (am.generar_pdf(marcas, texto_presupuesto=_texto_presupuesto(body.presupuesto)),
+                    am.nombre_archivo(marcas, True), actas)
         if texto_comun is not None and len(marcas) == 1:
             marcas[0]["texto"] = texto_comun   # con una sola marca no hay nada que compartir
             texto_comun = None
@@ -384,8 +417,28 @@ def crear_router(verificar_login, conexion) -> APIRouter:
         """El PDF con varias marcas, subido a la carpeta «Análisis de marca» del Drive del estudio. Volver a
         subir las mismas marcas, con la misma opción de «el mismo análisis», reemplaza el archivo anterior."""
         contenido, nombre, actas = _pdf_lote_de(body)
-        huella = hashlib.sha1((",".join(sorted(actas)) + "|" + (body.analisis_comun_de or "")).encode()).hexdigest()[:32]
-        return _a_drive(contenido, nombre, ("lote", huella), usuario)
+        presu = body.presupuesto is not None
+        huella = hashlib.sha1((",".join(sorted(actas)) + "|" + ("presupuesto" if presu
+                                                                else (body.analisis_comun_de or ""))).encode()).hexdigest()[:32]
+        return _a_drive(contenido, nombre, ("lote_presupuesto" if presu else "lote", huella), usuario)
+
+    @router.get("/api/analisis-presupuesto")
+    def ver_montos_presupuesto(_: str = Depends(verificar_login)):
+        """Los montos guardados del presupuesto por una oposición y el texto con que sale."""
+        with conexion() as conn, rcur(conn) as cur:
+            cfg = po.leer_config(cur)
+        return {"config": cfg, "etiquetas": po.ETIQUETAS, "texto": po.texto(cfg)}
+
+    @router.put("/api/analisis-presupuesto")
+    def guardar_montos_presupuesto(body: PedidoMontos, _: str = Depends(verificar_login)):
+        """Guarda los montos (para todo el equipo): son los que se cargan al apretar «Presupuesto»."""
+        try:
+            with conexion() as conn, rcur(conn) as cur:
+                cfg = po.guardar_config(cur, body.valores)
+                conn.commit()
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        return {"ok": True, "config": cfg}
 
     @router.post("/api/analisis-marca/{acta}/mejorar-texto")
     def mejorar_texto(acta: str, body: TextoAnalisis, _: str = Depends(verificar_login)):
