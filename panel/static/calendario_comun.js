@@ -320,6 +320,85 @@ async function calBorrar(e, alBorrar) {
 // ── Modal para crear / editar ────────────────────────────────────────
 let _calModalCtx = null;
 
+// ── Borrador del formulario «Agendar llamada o reunión» ──
+// Cada cambio de pantalla del panel recarga la página y el panel lateral arranca de cero. Para no perder
+// lo que se había empezado a escribir, el formulario embebido (y solo ese: ni editar un evento, ni un
+// recordatorio) se guarda solo en este navegador (localStorage) y se recupera al volver a abrirlo.
+// Se borra al agendar, o con «Cancelar»; si pasan 7 días sin tocarlo, se descarta.
+const _CAL_BORRADOR_CLAVE = "kom-agenda-borrador";
+const _CAL_BORRADOR_VIDA_MS = 7 * 24 * 3600 * 1000;
+let _calBorradorListo = false;   // hasta no haber restaurado, no se guarda (si no, se pisaría el borrador con el formulario vacío)
+
+function _calBorradorLeer() {
+  try {
+    const b = JSON.parse(localStorage.getItem(_CAL_BORRADOR_CLAVE));
+    if (!b || typeof b !== "object") return null;
+    if (!b.ts || Date.now() - b.ts > _CAL_BORRADOR_VIDA_MS) { localStorage.removeItem(_CAL_BORRADOR_CLAVE); return null; }
+    return b;
+  } catch (_) { return null; }
+}
+
+function _calBorradorBorrar() {
+  try { localStorage.removeItem(_CAL_BORRADOR_CLAVE); } catch (_) { /* sin storage: no pasa nada */ }
+}
+
+function _calBorradorActivo() {
+  const c = _calModalCtx;
+  return !!(c && c.embebido && !c.evento && !c.recordatorio && _calBorradorListo);
+}
+
+function _calBorradorGuardar() {
+  if (!_calBorradorActivo()) return;
+  const $ = (id) => document.getElementById(id);
+  const mod = document.querySelector('input[name="mc-mod"]:checked');
+  const b = {
+    ts: Date.now(),
+    ia: $("mc-ia-texto").value,
+    titulo: $("mc-titulo").value, tituloAuto: !!$("mc-titulo").dataset.auto,
+    fecha: $("mc-fecha").value, hasta: $("mc-hasta").value,
+    todo: $("mc-todo").checked, hora: $("mc-hora").value, dur: $("mc-dur").value,
+    mod: mod ? mod.value : "",
+    lugar: $("mc-lugar").value, actas: $("mc-actas").value, notas: $("mc-notas").value,
+    avisar: $("mc-avisar").checked, avisarManual: !!$("mc-avisar").dataset.manual,
+    email: $("mc-email").value, emailManual: !!$("mc-email").dataset.manual,
+    marca: _calMarcaTitulo, nombreTexto: _calNombreTexto,
+  };
+  // Si no hay nada escrito por la persona (solo lo que trae el formulario de fábrica), no hay borrador que guardar.
+  const algo = [b.ia, b.titulo, b.hora, b.lugar, b.actas, b.notas, b.email].some((v) => String(v || "").trim());
+  try {
+    if (algo) localStorage.setItem(_CAL_BORRADOR_CLAVE, JSON.stringify(b));
+    else localStorage.removeItem(_CAL_BORRADOR_CLAVE);
+  } catch (_) { /* sin storage: no pasa nada */ }
+}
+
+// Vuelca el borrador en el formulario recién armado. Devuelve true si había uno.
+function _calBorradorRestaurar() {
+  const b = _calBorradorLeer();
+  if (!b) return false;
+  const $ = (id) => document.getElementById(id);
+  $("mc-ia-texto").value = b.ia || "";
+  $("mc-titulo").value = b.titulo || "";
+  if (b.tituloAuto) $("mc-titulo").dataset.auto = "1"; else delete $("mc-titulo").dataset.auto;
+  _calMarcaTitulo = b.marca || null;
+  _calNombreTexto = b.nombreTexto || null;
+  // Un día que ya pasó no se recupera: queda hoy.
+  if (b.fecha && b.fecha >= calHoy()) $("mc-fecha").value = b.fecha;
+  $("mc-hasta").value = b.hasta && b.hasta >= $("mc-fecha").value ? b.hasta : $("mc-fecha").value;
+  $("mc-todo").checked = !!b.todo;
+  $("mc-hora").value = b.hora || "";
+  if (+b.dur) _calDuracion(+b.dur);
+  const radio = b.mod ? document.querySelector(`input[name="mc-mod"][value="${b.mod}"]`) : null;
+  if (radio && !radio.disabled) radio.checked = true;
+  $("mc-lugar").value = b.lugar || "";
+  $("mc-actas").value = b.actas || "";
+  $("mc-notas").value = b.notas || "";
+  $("mc-avisar").checked = !!b.avisar;
+  if (b.avisarManual) $("mc-avisar").dataset.manual = "1"; else delete $("mc-avisar").dataset.manual;
+  $("mc-email").value = b.email || "";
+  if (b.emailManual) $("mc-email").dataset.manual = "1"; else delete $("mc-email").dataset.manual;
+  return true;
+}
+
 function _calAsegurarModal() {
   if (document.getElementById("modal-cal")) return;
   const div = document.createElement("div");
@@ -329,6 +408,7 @@ function _calAsegurarModal() {
     <div class="modal-caja modal-cal" onclick="event.stopPropagation()">
       <button type="button" class="modal-cerrar" id="mc-x" aria-label="Cerrar">&times;</button>
       <h3 id="mc-titulo-modal">Nuevo evento</h3>
+      <p class="mc-ayuda" id="mc-borrador-nota" hidden>↩ Recuperé lo que habías empezado a escribir. «Cancelar» lo descarta.</p>
       <div class="mc-ia" id="mc-ia" hidden>
         <button type="button" class="cal-btn chico" id="mc-ia-abrir">✨ Completar con IA</button>
         <div id="mc-ia-caja" hidden>
@@ -407,7 +487,17 @@ function _calAsegurarModal() {
   document.body.appendChild(div);
   document.addEventListener("keydown", (ev) => { if (ev.key === "Escape") calCerrarModal(); });
   document.getElementById("mc-x").addEventListener("click", calCerrarModal);
-  document.getElementById("mc-cancelar").addEventListener("click", calCerrarModal);
+  document.getElementById("mc-cancelar").addEventListener("click", () => {
+    const ctx = _calModalCtx;
+    // En el formulario embebido no hay nada que cerrar: «Cancelar» descarta lo escrito y lo deja en blanco.
+    if (ctx && ctx.embebido && !ctx.evento && !ctx.recordatorio) {
+      _calBorradorListo = false;
+      _calBorradorBorrar();
+      calAbrirModal({ embebido: true, alGuardar: ctx.alGuardar });
+      return;
+    }
+    calCerrarModal();
+  });
   document.getElementById("mc-todo").addEventListener("change", _calPintarTodoElDia);
   document.querySelectorAll('input[name="mc-mod"]').forEach(r => r.addEventListener("change", _calPintarModalidad));
   document.getElementById("mc-avisar").addEventListener("change", (ev) => { ev.target.dataset.manual = "1"; _calPintarAviso(); });
@@ -448,6 +538,15 @@ function _calAsegurarModal() {
     clearTimeout(temporizador);
     temporizador = setTimeout(_calVistaPreviaActas, 350);
   });
+  // Borrador: se guarda después de cada cambio (en la fase de captura, así también se enteran los cambios que
+  // el código dispara a mano, como los turnos de «Disponibilidad»), cada pocos segundos (para lo que se completa
+  // sin eventos, como «Completar con IA») y al salir de la página.
+  for (const tipo of ["input", "change", "click"]) {
+    div.addEventListener(tipo, () => setTimeout(_calBorradorGuardar, 0), true);
+  }
+  setInterval(_calBorradorGuardar, 2500);
+  window.addEventListener("pagehide", _calBorradorGuardar);
+  document.addEventListener("visibilitychange", () => { if (document.hidden) _calBorradorGuardar(); });
 }
 
 // ── Título automático: «Reunión virtual (MARCA)» / «Llamada (MARCA)» ──
@@ -816,6 +915,7 @@ async function calAbrirModal({ evento = null, fecha = null, hora = null, duracio
   _calAsegurarModal();
   // recordatorio: el mismo formulario, sin hora, modalidad ni aviso por mail (un evento de todo el día con otro color).
   const seg = !!recordatorio || !!(evento && evento.tipo === "seguimiento");
+  _calBorradorListo = false;   // hasta restaurar (o saber que no hay borrador) no se guarda nada
   _calModalCtx = { evento, marcas, alGuardar, embebido, recordatorio: seg };
   document.getElementById("modal-cal").classList.toggle("embebido", !!embebido);
   document.getElementById("modal-cal").classList.toggle("modo-seg", seg);
@@ -830,6 +930,7 @@ async function calAbrirModal({ evento = null, fecha = null, hora = null, duracio
   $("mc-error").hidden = true;
   $("mc-vista-actas").hidden = true;
   $("mc-borrar").hidden = !evento;
+  $("mc-borrador-nota").hidden = true;
   $("mc-guardar").disabled = false;
   $("mc-guardar").textContent = "Guardar";
   delete $("mc-titulo").dataset.auto;
@@ -886,6 +987,10 @@ async function calAbrirModal({ evento = null, fecha = null, hora = null, duracio
   delete $("mc-avisar").dataset.manual;
   $("mc-avisar").checked = !evento && !seg;
   $("mc-avisar-txt").textContent = evento ? "Avisar del cambio por mail" : "Avisar por mail (a la persona y al equipo)";
+  // Formulario embebido de uno nuevo, sin datos de arranque: se recupera lo que había quedado escrito.
+  const arrancaVacio = !titulo && !fecha && !hora && !(actas || []).length;
+  const hayBorrador = !!(embebido && !evento && !seg && arrancaVacio && _calBorradorRestaurar());
+  $("mc-borrador-nota").hidden = !hayBorrador;
   _calPintarModalidad();
   _calPintarTodoElDia();
   _calModalCtx.original = evento ? _calFirma() : null;
@@ -894,6 +999,7 @@ async function calAbrirModal({ evento = null, fecha = null, hora = null, duracio
   if ($("mc-actas").value) _calVistaPreviaActas();
   document.getElementById("modal-cal").classList.add("abierto");
   $("mc-borrar").hidden = !evento;
+  _calBorradorListo = true;   // desde acá lo que se escriba se va guardando como borrador (solo en el formulario embebido)
   setTimeout(() => { if (_calModalCtx) $(embebido ? "mc-buscar" : "mc-titulo").focus(); }, 50);
 }
 
@@ -956,6 +1062,8 @@ async function _calGuardar(ev) {
       }
     }
     mostrarAviso(partes.join(" · "), hayError ? "aviso" : undefined);
+    _calBorradorListo = false;   // ya se agendó: el borrador no tiene que volver a aparecer
+    _calBorradorBorrar();
     calCerrarModal();
     if (ctx.alGuardar) ctx.alGuardar(r);
     if (ofrecerWsp && r && r.evento) calMostrarWhatsApp(r.evento, { recienAgendado: !ctx.evento });
