@@ -629,7 +629,7 @@ def generar_pdf(datos, texto_comun=None, texto_presupuesto=None) -> bytes:
     UNA sola vez al final, en lugar del texto propio de cada marca.
     `texto_presupuesto`: cambia el formato a «Presupuesto» (botón «Presupuesto» de la pantalla):
     el título pasa a ser «Presupuesto» y, en lugar del análisis escrito, sale UNA sola vez al
-    final este texto (ver presupuesto_oposicion.texto), después de los datos de las marcas; en ese
+    final, bajo el título «Presupuesto», este texto (ver presupuesto_oposicion.texto), después de los datos de las marcas; en ese
     texto lo que va entre **dobles asteriscos** sale en negrita."""
     from reportlab.lib.colors import HexColor
     from reportlab.lib.enums import TA_CENTER, TA_JUSTIFY, TA_LEFT
@@ -811,7 +811,7 @@ def generar_pdf(datos, texto_comun=None, texto_presupuesto=None) -> bytes:
         if presu:
             h.append(Spacer(1, 16))
             h.append(CondPageBreak(150))
-            h.extend(flujo_analisis(texto_presupuesto, None, negritas=True))
+            h.extend(flujo_analisis(texto_presupuesto, "Presupuesto", negritas=True))
         else:
             h.append(Spacer(1, 14))
             h.append(HRFlowable(width="100%", thickness=0.6, color=HexColor(pres.COLOR_SUBTITULO)))
