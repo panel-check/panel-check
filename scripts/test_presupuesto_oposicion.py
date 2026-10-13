@@ -43,27 +43,43 @@ class CursorConfig:
         return self._res[0] if self._res else None
 
 
+def sin_negritas(t: str) -> str:
+    return t.replace("**", "")
+
+
 class Texto(unittest.TestCase):
     def test_con_los_valores_por_defecto_sale_el_texto_acordado(self):
-        t = po.texto(po.config_efectiva())
-        self.assertIn("Las alternativas que podemos evaluar son:", t)
-        self.assertIn("- Negociación con el oponente, con el objetivo de procurar el retiro de la oposición "
-                      "mediante un acuerdo entre las partes.", t)
+        t = sin_negritas(po.texto(po.config_efectiva()))
+        self.assertTrue(t.startswith("La primera alternativa que podemos evaluar es:\n\nNegociación con el oponente, con el "
+                                     "objetivo de procurar el retiro de la oposición mediante un acuerdo entre las partes."))
         self.assertIn("son de $790.000, e incluyen hasta 3 horas de trabajo profesional.", t)
-        self.assertIn("la hora profesional tiene un valor de $190.000.", t)
-        self.assertIn("es de $180.000, más la tasa oficial del INPI de $41.259.", t)
-        self.assertIn("realizaremos una búsqueda integral de viabilidad marcaria", t)
+        self.assertIn("la hora profesional tiene un valor de $190.000. Este presupuesto corresponde exclusivamente a la "
+                      "etapa de negociación y se aplica por cada oposición recibida y por cada clase.", t)
+        self.assertIn("evaluaremos la conveniencia de continuar con la defensa en el procedimiento administrativo de "
+                      "oposición ante el INPI. Esta etapa se cotiza por separado.", t)
+        self.assertIn("con una denominación que presente un menor riesgo de conflicto", t)
+        self.assertIn("es de $180.000, más la tasa oficial del INPI de $41.259 (valores por una marca en una clase).", t)
+        self.assertTrue(t.endswith("reducir el riesgo de nuevas oposiciones."))
 
-    def test_las_tres_alternativas_son_viñetas_y_el_resto_parrafos(self):
+    def test_son_cinco_parrafos_sin_viñetas(self):
         bloques = am._bloques_de_texto(po.texto(po.config_efectiva()))
-        self.assertEqual([b[0] for b in bloques], ["p", "v", "v", "v", "p", "p", "p"])
+        self.assertEqual([b[0] for b in bloques], ["p"] * 5)
+
+    def test_las_negritas_estan_balanceadas_y_marcan_lo_importante(self):
+        t = po.texto(po.config_efectiva())
+        self.assertEqual(t.count("**") % 2, 0)
+        for resaltado in ("Negociación con el oponente", "$790.000", "hasta 3 horas de trabajo profesional", "$190.000",
+                          "exclusivamente a la etapa de negociación", "Esta etapa se cotiza por separado.", "$180.000",
+                          "$41.259", "búsqueda integral de viabilidad marcaria"):
+            self.assertIn(f"**{resaltado}**", t)
 
     def test_los_montos_cambian_con_la_config(self):
-        t = po.texto(po.config_efectiva({"honorarios_negociacion": 850000, "horas_incluidas": 1,
-                                         "hora_adicional": 200000, "honorarios_registro": 1234567, "tasa_inpi": 50000}))
+        t = sin_negritas(po.texto(po.config_efectiva({
+            "honorarios_negociacion": 850000, "horas_incluidas": 1, "hora_adicional": 200000,
+            "honorarios_registro": 1234567, "tasa_inpi": 50000})))
         self.assertIn("son de $850.000, e incluyen hasta 1 hora de trabajo profesional.", t)
         self.assertIn("valor de $200.000.", t)
-        self.assertIn("es de $1.234.567, más la tasa oficial del INPI de $50.000.", t)
+        self.assertIn("es de $1.234.567, más la tasa oficial del INPI de $50.000", t)
 
 
 class Validar(unittest.TestCase):
@@ -166,6 +182,16 @@ class PdfPresupuesto(unittest.TestCase):
         self.assertNotIn("ANALISIS PROPIO DE LA MARCA", t)
         self.assertNotIn("Análisis de marca", t)
 
+    def test_las_negritas_salen_como_negritas_y_no_como_asteriscos(self):
+        pdf = am.generar_pdf(marca(), texto_presupuesto=po.texto(po.config_efectiva()))
+        self.assertNotIn("**", self._texto_pdf(pdf))
+
+    def test_en_el_analisis_escrito_los_asteriscos_no_hacen_negrita(self):
+        d = marca()
+        d["texto"] = "Riesgo **alto** de confusión"
+        t = self._texto_pdf(am.generar_pdf(d))
+        self.assertIn("Riesgo **alto** de confusión", t)
+
     def test_el_pdf_de_siempre_no_cambia(self):
         t = self._texto_pdf(am.generar_pdf(marca()))
         self.assertIn("Análisis de marca", t)
@@ -177,14 +203,14 @@ class PdfPresupuesto(unittest.TestCase):
                                            texto_presupuesto=po.texto(po.config_efectiva())))
         self.assertIn("PUENTES", t)
         self.assertIn("OTRA", t)
-        self.assertEqual(t.count("Las alternativas que podemos evaluar son:"), 1)
+        self.assertEqual(t.count("La primera alternativa que podemos evaluar es:"), 1)
         self.assertNotIn("ANALISIS PROPIO DE LA MARCA", t)
 
     def test_el_presupuesto_gana_sobre_el_mismo_analisis_para_todas(self):
         t = self._texto_pdf(am.generar_pdf([marca(), marca("4770309", "OTRA")], "TEXTO COMUN",
                                            texto_presupuesto=po.texto(po.config_efectiva())))
         self.assertNotIn("TEXTO COMUN", t)
-        self.assertEqual(t.count("Las alternativas que podemos evaluar son:"), 1)
+        self.assertEqual(t.count("La primera alternativa que podemos evaluar es:"), 1)
 
 
 if __name__ == "__main__":
