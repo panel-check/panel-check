@@ -182,6 +182,12 @@ class PdfPresupuesto(unittest.TestCase):
         self.assertNotIn("ANALISIS PROPIO DE LA MARCA", t)
         self.assertNotIn("Análisis de marca", t)
 
+    def test_el_texto_del_presupuesto_arranca_bajo_un_titulo_presupuesto(self):
+        t = self._texto_pdf(am.generar_pdf(marca(), texto_presupuesto=po.texto(po.config_efectiva())))
+        self.assertEqual(t.count("Presupuesto"), 2)   # el título de arriba y el de la sección
+        self.assertLess(t.index("Oposiciones:"), t.rindex("Presupuesto"))
+        self.assertLess(t.rindex("Presupuesto"), t.index("La primera alternativa que podemos evaluar es:"))
+
     def test_las_negritas_salen_como_negritas_y_no_como_asteriscos(self):
         pdf = am.generar_pdf(marca(), texto_presupuesto=po.texto(po.config_efectiva()))
         self.assertNotIn("**", self._texto_pdf(pdf))
