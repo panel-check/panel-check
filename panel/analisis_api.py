@@ -27,8 +27,12 @@ Rutas (todas con sesión, salvo la del link público del PDF):
                                                 con un mismo análisis para todas si se manda analisis_comun_de)
   POST  /api/analisis-marca/{acta}/mejorar-texto  propuesta de redacción mejorada con IA (no guarda
                                                 nada: la persona la acepta o la descarta)
+  POST  /api/analisis-marca/{acta}/drive        sube ese mismo PDF a la carpeta «Análisis de marca» del Drive del
+                                                estudio (si la marca ya estaba subida, reemplaza el archivo)
+  POST  /api/analisis-marca-lote/drive          lo mismo con el PDF de varias marcas
 """
 
+import hashlib
 import logging
 import time
 from typing import List, Optional
@@ -40,6 +44,7 @@ from fastapi.responses import Response
 from pydantic import BaseModel
 
 import analisis_marca as am
+import drive_core as drive
 import ia_texto
 import inpi_lead
 
@@ -118,6 +123,8 @@ def crear_router(verificar_login, conexion) -> APIRouter:
             "opuestas_pendientes": len(pendientes),
             # El botón «Mejorar texto» solo funciona si el servidor tiene la clave de la IA.
             "ia_disponible": ia_texto.configurada(),
+            # «Guardar en Drive» solo funciona con la cuenta de Google del estudio conectada.
+            "drive_disponible": drive.configurado(),
         }
 
     @router.get("/api/analisis-marca/{acta}")
@@ -197,7 +204,8 @@ def crear_router(verificar_login, conexion) -> APIRouter:
         out["aviso"] = aviso
         return out
 
-    def _respuesta_pdf(acta: str, texto_pedido: Optional[str]) -> Response:
+    def _pdf_de(acta: str, texto_pedido: Optional[str]):
+        """(bytes del PDF, nombre del archivo) del análisis de una marca."""
         with conexion() as conn, rcur(conn) as cur:
             m = _marca(cur, acta)
             guardado = am.leer_analisis(cur, acta)
@@ -208,10 +216,28 @@ def crear_router(verificar_login, conexion) -> APIRouter:
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
         d = am.datos_para_pdf(m, texto, op, logo, guardado["expediente"])
+        return am.generar_pdf(d), am.nombre_archivo(d)
+
+    def _respuesta_pdf(acta: str, texto_pedido: Optional[str]) -> Response:
+        contenido, nombre = _pdf_de(acta, texto_pedido)
         return Response(
-            content=am.generar_pdf(d), media_type="application/pdf",
-            headers={"Content-Disposition": f"inline; filename*=UTF-8''{quote(am.nombre_archivo(d))}",
+            content=contenido, media_type="application/pdf",
+            headers={"Content-Disposition": f"inline; filename*=UTF-8''{quote(nombre)}",
                      "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"})
+
+    def _a_drive(contenido: bytes, nombre: str, clave: Optional[tuple], usuario: str) -> dict:
+        """Sube el PDF a Drive. Un error de Google (conexión vencida, API apagada…) va con 424 y
+        su motivo, para que la pantalla lo muestre (un 502 lo reemplazaría el proxy de Railway)."""
+        if not drive.configurado():
+            raise HTTPException(status_code=409, detail="«Guardar en Drive» todavía no está activado: falta conectar la cuenta "
+                                "de Google del estudio (Calendario → «Conectar con Google»). Ver el Manual del sistema.")
+        try:
+            r = drive.subir_pdf(contenido, nombre, clave)
+        except drive.DriveError as e:
+            log.warning("No se pudo guardar en Drive (%s): %s", usuario, e)
+            raise HTTPException(status_code=424, detail=str(e))
+        log.info("%s guardó un análisis en Drive (%s)", usuario, "reemplazo" if r["reemplazo"] else "nuevo")
+        return {"ok": True, **r}
 
     @router.post("/api/analisis-marca/{acta}/pdf")
     def pdf_analisis(acta: str, body: PedidoPdf, _: str = Depends(verificar_login)):
@@ -223,6 +249,14 @@ def crear_router(verificar_login, conexion) -> APIRouter:
         está al día. Sirve para abrirlo desde otra pantalla (la tarjeta del evento del Calendario) o pasarlo
         al equipo (requiere sesión del panel)."""
         return _respuesta_pdf(_acta(acta), None)
+
+    @router.post("/api/analisis-marca/{acta}/drive")
+    def pdf_a_drive(acta: str, body: PedidoPdf, usuario: str = Depends(verificar_login)):
+        """Arma el mismo PDF de «Exportar PDF» y lo sube a la carpeta «Análisis de marca» del Drive
+        del estudio. Si esa marca ya estaba subida, reemplaza el archivo (no se acumulan copias)."""
+        acta = _acta(acta)
+        contenido, nombre = _pdf_de(acta, body.texto)
+        return _a_drive(contenido, nombre, ("acta", acta), usuario)
 
     @router.post("/api/analisis-marca/{acta}/link")
     def link_publico(acta: str, body: PedidoLink = PedidoLink(), _: str = Depends(verificar_login)):
@@ -314,10 +348,10 @@ def crear_router(verificar_login, conexion) -> APIRouter:
             am.guardar_mismo_analisis(cur, cuit, body.valor, usuario)
             conn.commit()
         return {"ok": True, "guardado": True}
-    @router.post("/api/analisis-marca-lote/pdf")
-    def pdf_lote(body: PedidoLote, _: str = Depends(verificar_login)):
-        """Un solo PDF con varias marcas: cada una con sus datos, su logo y su análisis
-        guardado (la pantalla guarda el texto en curso antes de pedirlo)."""
+
+    def _pdf_lote_de(body: PedidoLote):
+        """(bytes del PDF, nombre del archivo, actas) con varias marcas: cada una con sus datos, su logo y
+        su análisis guardado (la pantalla guarda el texto en curso antes de pedirlo)."""
         actas = _actas_lote(body.actas)
         marcas = []
         with conexion() as conn, rcur(conn) as cur:
@@ -334,10 +368,24 @@ def crear_router(verificar_login, conexion) -> APIRouter:
         if texto_comun is not None and len(marcas) == 1:
             marcas[0]["texto"] = texto_comun   # con una sola marca no hay nada que compartir
             texto_comun = None
+        return am.generar_pdf(marcas, texto_comun), am.nombre_archivo(marcas), actas
+
+    @router.post("/api/analisis-marca-lote/pdf")
+    def pdf_lote(body: PedidoLote, _: str = Depends(verificar_login)):
+        """Un solo PDF con varias marcas."""
+        contenido, nombre, _actas = _pdf_lote_de(body)
         return Response(
-            content=am.generar_pdf(marcas, texto_comun), media_type="application/pdf",
-            headers={"Content-Disposition": f"inline; filename*=UTF-8''{quote(am.nombre_archivo(marcas))}",
+            content=contenido, media_type="application/pdf",
+            headers={"Content-Disposition": f"inline; filename*=UTF-8''{quote(nombre)}",
                      "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"})
+
+    @router.post("/api/analisis-marca-lote/drive")
+    def pdf_lote_a_drive(body: PedidoLote, usuario: str = Depends(verificar_login)):
+        """El PDF con varias marcas, subido a la carpeta «Análisis de marca» del Drive del estudio. Volver a
+        subir las mismas marcas, con la misma opción de «el mismo análisis», reemplaza el archivo anterior."""
+        contenido, nombre, actas = _pdf_lote_de(body)
+        huella = hashlib.sha1((",".join(sorted(actas)) + "|" + (body.analisis_comun_de or "")).encode()).hexdigest()[:32]
+        return _a_drive(contenido, nombre, ("lote", huella), usuario)
 
     @router.post("/api/analisis-marca/{acta}/mejorar-texto")
     def mejorar_texto(acta: str, body: TextoAnalisis, _: str = Depends(verificar_login)):

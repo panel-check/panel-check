@@ -68,7 +68,11 @@ El workflow `.github/workflows/pipeline.yml` corre estos 6 pasos automáticament
   usar la propia cuenta de Google del estudio (la cuenta de servicio no puede): cliente
   OAuth de Google Cloud (app «En producción»), `GOOGLE_OAUTH_CLIENT_ID` y
   `GOOGLE_OAUTH_CLIENT_SECRET` en Railway, y el botón **Conectar con Google** de la pantalla
-  Calendario, que entrega el `GOOGLE_OAUTH_REFRESH_TOKEN`. Los avisos salen por Resend
+  Calendario, que entrega el `GOOGLE_OAUTH_REFRESH_TOKEN`. Esa misma conexión sirve para
+  **Guardar en Drive** (pestaña *Análisis de marca*, `panel/drive_core.py`): sube el PDF del
+  análisis a la carpeta «Análisis de marca» del Drive del estudio con el permiso `drive.file`
+  (solo ve lo que crea el panel); hay que habilitar también la *Google Drive API* y, si la
+  conexión es anterior, repetir **Conectar con Google** una vez. Los avisos salen por Resend
   (cuenta de prospectos); la copia al equipo va a `CALENDARIO_AVISO_EQUIPO` (opcional).
   El evento «MEET PAME / TOMI» no se muestra en el panel; `CALENDARIO_OCULTAR` (títulos
   separados por `;`) cambia qué eventos se ocultan. `/agendar-llamada` abre solo el formulario de agendar.
