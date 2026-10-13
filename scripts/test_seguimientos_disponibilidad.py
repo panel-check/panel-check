@@ -231,6 +231,25 @@ class TextoWhatsApp(unittest.TestCase):
         t = cc.texto_whatsapp(self.ev(modalidad="presencial", lugar="Av. Corrientes 1234"))
         self.assertIn("En persona: Av. Corrientes 1234", t)
 
+    def test_saludo_segun_el_tipo_de_evento(self):
+        hoy = dt.date(2026, 10, 13)
+        t = cc.texto_whatsapp(self.ev(modalidad="meet", meet_url="https://meet.google.com/abc"), hoy=hoy)
+        self.assertEqual(t.splitlines()[0],
+                         "Hola! Como está? Te paso los datos de nuestra reunión virtual por Google Meet de hoy:")
+        t = cc.texto_whatsapp(self.ev(modalidad="llamada", lugar="11 5555-1234"), hoy=hoy)
+        self.assertEqual(t.splitlines()[0],
+                         "Hola! Como está? Te paso los datos de nuestra llamada telefónica de hoy:")
+        # Los datos de abajo quedan iguales.
+        self.assertIn("📞 Te llamamos por teléfono al 11 5555-1234", t)
+        self.assertIn("Si necesitás cambiar el horario, avisame por acá. ¡Saludos!", t)
+
+    def test_saludo_si_no_es_hoy(self):
+        ev = self.ev(modalidad="meet", meet_url="https://meet.google.com/abc")
+        manana = cc.texto_whatsapp(ev, hoy=dt.date(2026, 10, 12)).splitlines()[0]
+        self.assertTrue(manana.endswith("Google Meet de mañana:"))
+        otro = cc.texto_whatsapp(ev, hoy=dt.date(2026, 10, 1)).splitlines()[0]
+        self.assertTrue(otro.endswith("Google Meet:"))
+
     def test_json_trae_el_texto_solo_en_reuniones(self):
         f = base.fila_evento()
         self.assertIn("texto_whatsapp", cc.evento_a_json(f))

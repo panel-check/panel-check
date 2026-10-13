@@ -932,12 +932,29 @@ def marcar_hecho(conexion, evento_id: int, hecho: bool = True) -> int:
 
 # ── Texto para pasar por WhatsApp ──────────────────────────────────────
 
-def texto_whatsapp(ev: dict) -> str:
+def _intro_whatsapp(ev: dict, d0: _dt.date, hoy: _dt.date) -> str:
+    """La primera línea del texto: saluda y dice de qué se trata según cómo es el evento
+    (reunión virtual por Google Meet, llamada telefónica o en persona) y, si es hoy o mañana, lo aclara."""
+    modalidad = ev.get("modalidad")
+    if modalidad == "meet" or ev.get("meet_url"):
+        que = "reunión virtual por Google Meet"
+    elif modalidad == "llamada":
+        que = "llamada telefónica"
+    elif modalidad == "presencial":
+        que = "reunión en persona"
+    else:
+        que = "reunión"
+    cuando = " de hoy" if d0 == hoy else " de mañana" if d0 == hoy + _dt.timedelta(days=1) else ""
+    return f"Hola! Como está? Te paso los datos de nuestra {que}{cuando}:"
+
+
+def texto_whatsapp(ev: dict, hoy: _dt.date | None = None) -> str:
     """El texto con los datos de una reunión, listo para pegar en WhatsApp (o abrir el chat con él).
     `ev` es un evento ya convertido con evento_a_json. Dice qué, cuándo y cómo; con la videollamada
-    incluye el link de Meet."""
+    incluye el link de Meet. `hoy` solo se pasa en las pruebas (por defecto, hoy en Argentina)."""
     d0 = _dt.date.fromisoformat(ev["fecha"])
-    lineas = ["Hola! Te paso los datos de nuestra reunión con Smarties Consultora:", ""]
+    hoy = hoy or _dt.datetime.now(TZ).date()
+    lineas = [_intro_whatsapp(ev, d0, hoy), ""]
     lineas.append(f"📅 {_fecha_larga(d0)}")
     if not ev.get("todo_el_dia") and ev.get("hora"):
         lineas.append(f"🕘 De {ev['hora']} a {ev['hora_fin']} hs (hora de Argentina)")
