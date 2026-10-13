@@ -570,17 +570,19 @@ def datos_para_pdf(m: dict, texto: str, op: dict, logo=None, expediente=None) ->
     }
 
 
-def nombre_archivo(d) -> str:
-    """Nombre del PDF. `d` es una marca (dict) o una lista de marcas."""
+def nombre_archivo(d, presupuesto: bool = False) -> str:
+    """Nombre del PDF. `d` es una marca (dict) o una lista de marcas. Con presupuesto=True el
+    archivo se llama «Presupuesto - …» en lugar de «Analisis de marca - …»."""
+    uno, varios = ("Presupuesto", "Presupuesto") if presupuesto else ("Analisis de marca", "Analisis de marcas")
     if isinstance(d, list):
         if len(d) == 1:
-            return nombre_archivo(d[0])
+            return nombre_archivo(d[0], presupuesto)
         quien = re.sub(r"[^A-Za-z0-9ÁÉÍÓÚÑáéíóúñ ]+", " ", d[0].get("titular", "").split(" (CUIT")[0])
         quien = " ".join(quien.split())[:40]
-        return f"Analisis de marcas - {quien} - {len(d)} marcas.pdf" if quien else f"Analisis de marcas - {len(d)} marcas.pdf"
+        return f"{varios} - {quien} - {len(d)} marcas.pdf" if quien else f"{varios} - {len(d)} marcas.pdf"
     m = re.sub(r"[^A-Za-z0-9ÁÉÍÓÚÑáéíóúñ ]+", " ", d.get("marca") or "")
     m = " ".join(m.split())[:40]
-    return f"Analisis de marca - {m} - acta {d['acta']}.pdf" if m else f"Analisis de marca - acta {d['acta']}.pdf"
+    return f"{uno} - {m} - acta {d['acta']}.pdf" if m else f"{uno} - acta {d['acta']}.pdf"
 
 
 # ── PDF ───────────────────────────────────────────────────────────────────
@@ -613,12 +615,15 @@ def _xml(t: str) -> str:
     return escape(t).replace("\n", "<br/>")
 
 
-def generar_pdf(datos, texto_comun=None) -> bytes:
+def generar_pdf(datos, texto_comun=None, texto_presupuesto=None) -> bytes:
     """El análisis en PDF (A4, con el membrete de Smarties). `datos` es una marca
     (ver datos_para_pdf) o una lista de marcas para un PDF con varias, una a continuación
     de la otra. Si el texto es largo sigue en más hojas, todas con membrete.
     `texto_comun` (solo con varias marcas): el análisis es el mismo para todas, así que sale
-    UNA sola vez al final, en lugar del texto propio de cada marca."""
+    UNA sola vez al final, en lugar del texto propio de cada marca.
+    `texto_presupuesto`: cambia el formato a «Presupuesto» (botón «Presupuesto» de la pantalla):
+    el título pasa a ser «Presupuesto» y, en lugar del análisis escrito, sale UNA sola vez al
+    final este texto (ver presupuesto_oposicion.texto), después de los datos de las marcas."""
     from reportlab.lib.colors import HexColor
     from reportlab.lib.enums import TA_CENTER, TA_JUSTIFY, TA_LEFT
     from reportlab.lib.pagesizes import A4
@@ -632,7 +637,9 @@ def generar_pdf(datos, texto_comun=None) -> bytes:
     if not marcas:
         raise ValueError("No hay marcas para el PDF")
     varias = len(marcas) > 1
-    comun = texto_comun is not None and varias
+    presu = texto_presupuesto is not None
+    comun = texto_comun is not None and varias and not presu
+    una_vez = comun or presu   # el texto no es el propio de cada marca: sale una sola vez, al final
 
     F = pres._fuentes()
     esc = F["escala"]
@@ -698,8 +705,8 @@ def generar_pdf(datos, texto_comun=None) -> bytes:
         return [t]
 
     def flujo_analisis(texto, titulo_seccion):
-        """Título «Análisis» y el texto escrito (párrafos y viñetas)."""
-        out = [Paragraph(titulo_seccion, seccion), Spacer(1, 4)]
+        """Título «Análisis» (si hay) y el texto escrito (párrafos y viñetas)."""
+        out = [Paragraph(titulo_seccion, seccion), Spacer(1, 4)] if titulo_seccion else []
         bloques = _bloques_de_texto(texto)
         if not bloques:
             out.append(Paragraph("(Sin análisis escrito.)", chico))
@@ -716,7 +723,8 @@ def generar_pdf(datos, texto_comun=None) -> bytes:
             previo = tipo
         return out
 
-    h = [Paragraph("Análisis de marcas" if varias else "Análisis de marca", titulo), Spacer(1, 22)]
+    titulo_pdf = "Presupuesto" if presu else ("Análisis de marcas" if varias else "Análisis de marca")
+    h = [Paragraph(titulo_pdf, titulo), Spacer(1, 22)]
 
     for n, d in enumerate(marcas, 1):
         op = d["oposiciones"]
@@ -786,16 +794,21 @@ def generar_pdf(datos, texto_comun=None) -> bytes:
             h.append(Spacer(1, 3))
             h.append(Paragraph("Dato del sistema: no se verificó contra el expediente de INPI.", chico))
 
-        if not comun:
+        if not una_vez:
             h.append(Spacer(1, 16))
             h.extend(flujo_analisis(d.get("texto") or "", "Análisis"))
 
-    if comun:
-        h.append(Spacer(1, 14))
-        h.append(HRFlowable(width="100%", thickness=0.6, color=HexColor(pres.COLOR_SUBTITULO)))
-        h.append(Spacer(1, 12))
-        h.append(CondPageBreak(150))
-        h.extend(flujo_analisis(texto_comun or "", f"Análisis (el mismo para las {len(marcas)} marcas)"))
+    if una_vez:
+        if presu:
+            h.append(Spacer(1, 16))
+            h.append(CondPageBreak(150))
+            h.extend(flujo_analisis(texto_presupuesto, None))
+        else:
+            h.append(Spacer(1, 14))
+            h.append(HRFlowable(width="100%", thickness=0.6, color=HexColor(pres.COLOR_SUBTITULO)))
+            h.append(Spacer(1, 12))
+            h.append(CondPageBreak(150))
+            h.extend(flujo_analisis(texto_comun or "", f"Análisis (el mismo para las {len(marcas)} marcas)"))
 
     cuando = pres.mes_anio(_dt.date.fromisoformat(marcas[0]["fecha"]))
 
@@ -803,8 +816,7 @@ def generar_pdf(datos, texto_comun=None) -> bytes:
         pres.dibujar_membrete_y_pie(c, cuando)
 
     buf = io.BytesIO()
-    doc = BaseDocTemplate(buf, pagesize=A4, title="Análisis de marcas" if varias else "Análisis de marca",
-                          author=pres.MARCA_NOMBRE)
+    doc = BaseDocTemplate(buf, pagesize=A4, title=titulo_pdf, author=pres.MARCA_NOMBRE)
     # Mismo arranque que el presupuesto: el título apoya su base 167.7 pt bajo el borde de arriba;
     # el marco termina antes del pie.
     arriba = 167.7 - pres.AJUSTE - titulo.fontSize
