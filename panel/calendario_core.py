@@ -930,6 +930,145 @@ def marcar_hecho(conexion, evento_id: int, hecho: bool = True) -> int:
     return _guardar_resultado(conexion, recurso)
 
 
+# ── Postergar recordatorios (a mano y automático) ──────────────────────
+# Un recordatorio pendiente se puede pasar al día siguiente con el botón «Postergar» y, si nadie lo marca
+# como hecho, el panel lo pasa solo apenas empieza el día siguiente. «Día siguiente» = el próximo día
+# hábil: de viernes (o de fin de semana) se salta al lunes. Los feriados no se tienen en cuenta.
+
+PASE_RECORDATORIOS_CADA = 300   # segundos entre controles del pase automático
+
+
+def primer_dia_habil(d: _dt.date) -> _dt.date:
+    """`d` si es de lunes a viernes; si es sábado o domingo, el lunes que sigue."""
+    while d.weekday() >= 5:
+        d += _dt.timedelta(days=1)
+    return d
+
+
+def proximo_dia_habil(d: _dt.date) -> _dt.date:
+    """El día hábil siguiente a `d`: mañana, o el lunes si mañana cae sábado o domingo (viernes → lunes)."""
+    return primer_dia_habil(d + _dt.timedelta(days=1))
+
+
+def fecha_postergada(fecha: _dt.date, hoy: _dt.date) -> _dt.date:
+    """A qué día pasa un recordatorio pendiente de `fecha` cuando se aprieta «Postergar»: el día hábil
+    siguiente a su fecha o, si ya está atrasado, el siguiente a hoy (nunca queda en el pasado)."""
+    return proximo_dia_habil(max(fecha, hoy))
+
+
+def fecha_pase_automatico(fecha: _dt.date, hoy: _dt.date) -> _dt.date:
+    """A qué día pasa solo un recordatorio pendiente si `fecha` ya quedó atrás: el día hábil siguiente a su
+    fecha, y si el panel estuvo apagado varios días, el primer día hábil desde hoy. Si todavía no
+    venció (hoy o más adelante) no se mueve."""
+    if fecha >= hoy:
+        return fecha
+    return max(proximo_dia_habil(fecha), primer_dia_habil(hoy))
+
+
+def _mover_recordatorio(conexion, google_id: str, nueva: _dt.date, dias: int) -> int:
+    """Cambia la fecha de un recordatorio en Google (mismo largo en días) y copia el resultado al panel.
+    No toca el color ni si está hecho."""
+    fin = nueva + _dt.timedelta(days=max(1, dias))
+    cuerpo = {"start": {"date": nueva.isoformat(), "dateTime": None, "timeZone": None},
+              "end": {"date": fin.isoformat(), "dateTime": None, "timeZone": None}}
+    recurso = _pedir("PATCH", _ruta_eventos("/" + google_id), json=cuerpo, params={"sendUpdates": "none"})
+    return _guardar_resultado(conexion, recurso)
+
+
+def _fecha_y_dias(inicio: _dt.datetime, fin: _dt.datetime) -> tuple:
+    d0 = inicio.astimezone(TZ).date()
+    return d0, max(1, (fin.astimezone(TZ).date() - d0).days)
+
+
+def postergar_recordatorio(conexion, evento_id: int, hoy: _dt.date = None) -> _dt.date:
+    """Pasa un recordatorio pendiente al día hábil siguiente (viernes → lunes). Devuelve la fecha nueva.
+    `hoy` solo se pasa en las pruebas (por defecto, hoy en Argentina)."""
+    hoy = hoy or _dt.datetime.now(TZ).date()
+    with conexion() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT google_id, tipo, hecho, inicio, fin FROM calendario_eventos WHERE id = %s AND calendar_id = %s",
+                        (evento_id, calendar_id()))
+            fila = cur.fetchone()
+    if not fila:
+        raise CalendarioError("Ese recordatorio ya no existe (puede que lo hayan borrado desde Google Calendar).")
+    google_id, tipo, hecho, inicio, fin = fila
+    if (tipo or TIPO_EVENTO) != TIPO_SEGUIMIENTO:
+        raise CalendarioError("Solo los recordatorios se pueden postergar.")
+    if hecho:
+        raise CalendarioError("Ese recordatorio ya está hecho: reabrilo si querés volver a postergarlo.")
+    fecha, dias = _fecha_y_dias(inicio, fin)
+    nueva = fecha_postergada(fecha, hoy)
+    _mover_recordatorio(conexion, google_id, nueva, dias)
+    return nueva
+
+
+def pasar_recordatorios_atrasados(conexion, hoy: _dt.date = None) -> int:
+    """Pasa al día hábil siguiente todos los recordatorios pendientes cuya fecha ya quedó atrás.
+    Devuelve cuántos movió. La fecha nueva sale solo de la fecha del recordatorio y de hoy, así que si
+    dos copias del panel corren a la vez dejan el mismo resultado. Un error de Google corta la tanda
+    (se reintenta en el próximo control); un recordatorio borrado en Google se saltea."""
+    hoy = hoy or _dt.datetime.now(TZ).date()
+    desde_hoy = _dt.datetime.combine(hoy, _dt.time(0, 0), tzinfo=TZ)
+    with conexion() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT google_id, inicio, fin FROM calendario_eventos
+                WHERE calendar_id = %s AND tipo = %s AND NOT hecho AND inicio < %s
+                ORDER BY inicio, id
+                LIMIT 200
+                """,
+                (calendar_id(), TIPO_SEGUIMIENTO, desde_hoy),
+            )
+            filas = cur.fetchall()
+    movidos = 0
+    for google_id, inicio, fin in filas:
+        fecha, dias = _fecha_y_dias(inicio, fin)
+        nueva = fecha_pase_automatico(fecha, hoy)
+        if nueva == fecha:
+            continue
+        try:
+            _mover_recordatorio(conexion, google_id, nueva, dias)
+        except GoogleError as e:
+            if e.status in (404, 410):   # lo borraron en Google: la sincronización lo saca del panel
+                continue
+            raise
+        movidos += 1
+    return movidos
+
+
+def pase_recordatorios_activo() -> bool:
+    """El pase automático está prendido salvo que RECORDATORIOS_PASE_AUTOMATICO sea off / 0 / no."""
+    return (os.environ.get("RECORDATORIOS_PASE_AUTOMATICO") or "").strip().lower() not in ("off", "0", "no", "false")
+
+
+def iniciar_pase_recordatorios(conexion, cada: int = PASE_RECORDATORIOS_CADA):
+    """Arranca (una vez) el hilo que, mientras el panel esté prendido, pasa al día hábil siguiente los
+    recordatorios que quedaron sin marcar como hechos. Mira cada `cada` segundos, así que lo hace apenas
+    cambia el día (pasada la medianoche de Argentina). Sin calendario configurado, o con
+    RECORDATORIOS_PASE_AUTOMATICO=off, no hace nada."""
+    if not configurado():
+        return None
+    if not pase_recordatorios_activo():
+        print("[recordatorios] el pase automático al día siguiente está apagado (RECORDATORIOS_PASE_AUTOMATICO=off)")
+        return None
+
+    def bucle():
+        time.sleep(75)   # que el panel termine de arrancar y haga la primera sincronización
+        while True:
+            try:
+                n = pasar_recordatorios_atrasados(conexion)
+                if n:
+                    print(f"[recordatorios] {n} recordatorio(s) sin hacer pasaron al día hábil siguiente")
+            except Exception as e:
+                print(f"[recordatorios] falló el pase automático: {e}")
+            time.sleep(cada)
+
+    hilo = threading.Thread(target=bucle, name="pase-recordatorios", daemon=True)
+    hilo.start()
+    return hilo
+
+
 # ── Texto para pasar por WhatsApp ──────────────────────────────────────
 
 def _intro_whatsapp(ev: dict, d0: _dt.date, hoy: _dt.date) -> str:

@@ -213,6 +213,11 @@ def migrar_columnas_panel():
         calendario_core.iniciar_agenda_diaria(conexion)
     except Exception as e:
         print(f"[startup] la agenda diaria no arrancó (no bloqueante): {e}")
+    # Recordatorios sin marcar como hechos: pasan solos al día hábil siguiente (viernes → lunes).
+    try:
+        calendario_core.iniciar_pase_recordatorios(conexion)
+    except Exception as e:
+        print(f"[startup] el pase automático de recordatorios no arrancó (no bloqueante): {e}")
     # Listado de boletines de INPI (/boletines): se guarda en la base. Si todavía no está el
     # historial se arma acá mismo, en un hilo aparte (una sola vez).
     try:
