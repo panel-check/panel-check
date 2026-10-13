@@ -19,6 +19,7 @@ Rutas:
   DELETE /api/calendario/eventos/{id}         borrar (también en Google)
   GET    /api/calendario/seguimientos         recordatorios pendientes (atrasados incluidos) y los hechos hace poco
   POST   /api/calendario/eventos/{id}/hecho   marcar un recordatorio como hecho (o reabrirlo)
+  POST   /api/calendario/eventos/{id}/postergar  pasar un recordatorio pendiente al día hábil siguiente (viernes → lunes)
   POST   /api/calendario/disponibilidad/interpretar  texto como «próximo martes libre de 8 a 15» → ventanas (no guarda nada)
   POST   /api/calendario/disponibilidad       guardar ventanas de disponibilidad (con repetir_semanas = N, también las N semanas siguientes)
   GET    /api/calendario/disponibilidad?desde&hasta  días con disponibilidad: horarios libres, reuniones y resumen
@@ -276,6 +277,16 @@ def crear_router(verificar_login, conexion, verificar_admin=None) -> APIRouter:
         except cal.CalendarioError as e:
             raise _como_http(e)
         return {"evento": _evento_por_id(evento_id)}
+
+    @router.post("/api/calendario/eventos/{evento_id}/postergar")
+    def postergar(evento_id: int, _: str = Depends(verificar_login)):
+        """Pasa un recordatorio pendiente al día hábil siguiente (de viernes, al lunes)."""
+        _configurado_o_409()
+        try:
+            nueva = cal.postergar_recordatorio(conexion, evento_id)
+        except cal.CalendarioError as e:
+            raise _como_http(e)
+        return {"evento": _evento_por_id(evento_id), "fecha": nueva.isoformat()}
 
     @router.get("/api/calendario/seguimientos")
     def seguimientos(_: str = Depends(verificar_login)):

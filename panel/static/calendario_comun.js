@@ -126,10 +126,30 @@ function calAnalisisHtml(e) {
   }).join("");
 }
 
+// A qué día pasa un recordatorio pendiente al postergarlo: el día hábil siguiente a su fecha (o a hoy, si está
+// atrasado); de viernes, al lunes. Es la misma cuenta que calendario_core.fecha_postergada (el servidor decide).
+function calFechaPostergada(e) {
+  const hoy = calHoy();
+  let d = calSumarDias(e.fecha > hoy ? e.fecha : hoy, 1);
+  while (calDiaSemanaLunes(d) >= 5) d = calSumarDias(d, 1);
+  return d;
+}
+// «mañana», «el lunes» o (si cae lejos) «el jueves 22».
+function calCuandoPostergar(e) {
+  const d = calFechaPostergada(e);
+  const dif = calDiffDias(calHoy(), d);
+  if (dif === 1) return "mañana";
+  const f = calUTC(d);
+  const dia = CAL_DIAS[f.getUTCDay()];
+  return dif <= 6 ? `el ${dia}` : `el ${dia} ${f.getUTCDate()}`;
+}
+
 function calAccionesHtml(e) {
   if (e.tipo === "seguimiento") {
+    const postergar = e.hecho ? "" : `
+      <button type="button" class="cal-btn chico" data-cal-postergar="${e.id}" title="Pasarlo al ${calFechaLarga(calFechaPostergada(e))} (si cae en fin de semana, al lunes)">⏭ Postergar para ${calCuandoPostergar(e)}</button>`;
     return `
-      <button type="button" class="cal-btn chico ${e.hecho ? "" : "principal"}" data-cal-hecho="${e.id}" data-hecho="${e.hecho ? "0" : "1"}" title="${e.hecho ? "Volver a dejarlo pendiente" : "Ya se hizo: en Google Calendar queda en gris"}">${e.hecho ? "↺ Reabrir" : "✓ Hecho"}</button>
+      <button type="button" class="cal-btn chico ${e.hecho ? "" : "principal"}" data-cal-hecho="${e.id}" data-hecho="${e.hecho ? "0" : "1"}" title="${e.hecho ? "Volver a dejarlo pendiente" : "Ya se hizo: en Google Calendar queda en gris"}">${e.hecho ? "↺ Reabrir" : "✓ Hecho"}</button>${postergar}
       <button type="button" class="cal-btn chico" data-cal-editar="${e.id}">Editar</button>
       <button type="button" class="cal-btn chico peligro" data-cal-borrar="${e.id}">Borrar</button>`;
   }
@@ -181,6 +201,17 @@ function calEnlazarTarjetas(cont, porId, alCambiar, opciones = {}) {
     } catch (err) {
       b.disabled = false;
       mostrarAviso(`No se pudo actualizar el recordatorio: ${err.message}`, "aviso");
+    }
+  }));
+  cont.querySelectorAll("[data-cal-postergar]").forEach(b => b.addEventListener("click", async () => {
+    b.disabled = true;
+    try {
+      const r = await apiJson(`/api/calendario/eventos/${b.dataset.calPostergar}/postergar`, "POST", {});
+      mostrarAviso(`Recordatorio postergado para el ${calFechaLarga(r.fecha)}`);
+      if (alCambiar) alCambiar();
+    } catch (err) {
+      b.disabled = false;
+      mostrarAviso(`No se pudo postergar el recordatorio: ${err.message}`, "aviso");
     }
   }));
   cont.querySelectorAll("[data-cal-wsp]").forEach(b => b.addEventListener("click", () => {
