@@ -3225,6 +3225,53 @@ class ConGestor(BaseModel):
     nombre: Optional[str] = None
 
 
+def _revertir_con_gestor_manual(cur, actas: list) -> int:
+    """Deshace, para esas actas, el «Tiene gestor/apoderado» marcado A MANO (si
+    estaba marcado): vuelven a ser lead con su carácter y score previos.
+    Devuelve cuántas marcas cambiaron (0 si ninguna estaba marcada así). No
+    levanta excepción ni registra actividad -- lo hace el que llama."""
+    cur.execute(
+        """
+        UPDATE marcas
+        SET es_lead = true, caracter = caracter_previo,
+            lead_score = COALESCE(lead_score_previo, lead_score),
+            caracter_previo = NULL, lead_score_previo = NULL,
+            con_gestor_manual = NULL, con_gestor_manual_en = NULL,
+            con_gestor_manual_por = NULL, gestor_nombre = NULL,
+            actualizado_en = now()
+        WHERE acta = ANY(%s) AND con_gestor_manual IS TRUE
+        """,
+        (actas,),
+    )
+    return cur.rowcount
+
+
+def _revertir_apoderado_automatico(cur, actas: list) -> int:
+    """Deshace, para esas actas, el pase AUTOMÁTICO a «con agente» que hizo
+    scripts/revisar_oposiciones.py al leer en el expediente de INPI que el
+    titular sumó un apoderado/gestor después de una oposición
+    (representacion_posterior_oposicion -- ver SQL_PASAR_A_APODERADO en ese
+    script), si estaba marcado así. Devuelve cuántas marcas cambiaron (0 si
+    ninguna). No levanta excepción ni registra actividad -- lo hace el que
+    llama."""
+    cur.execute(
+        """
+        UPDATE marcas
+        SET es_lead = true,
+            caracter = '',
+            representacion_posterior_oposicion = false,
+            detalle_representacion_posterior = NULL,
+            lead_score = (CASE WHEN TRIM(COALESCE(matricula_agente, '')) IN ('', 'Part.') THEN 50 ELSE 0 END)
+                         + 50 + (CASE WHEN COALESCE(email, '') <> '' THEN 20 ELSE 0 END),
+            actualizado_en = now()
+        WHERE acta = ANY(%s) AND es_lead IS FALSE
+          AND representacion_posterior_oposicion IS TRUE AND con_gestor_manual IS NOT TRUE
+        """,
+        (actas,),
+    )
+    return cur.rowcount
+
+
 def _aplicar_con_gestor(cur, real: str, usuario: str, con_gestor: bool, nombre: Optional[str]) -> int:
     """Marca (o desmarca) que el titular `real` tiene gestor/apoderado. Devuelve
     cuántas marcas cambiaron; levanta HTTPException 400 si no había nada para
@@ -3247,26 +3294,14 @@ def _aplicar_con_gestor(cur, real: str, usuario: str, con_gestor: bool, nombre: 
         )
         if cur.rowcount == 0:
             raise HTTPException(status_code=400, detail="Este titular no tiene marcas lead para marcar")
+        marcas = cur.rowcount
         texto = "Marcado a mano: tiene gestor/apoderado" + (f" ({nombre})" if nombre else "") \
             + ". Deja de ser lead y pasa a «con agente»."
     else:
-        cur.execute(
-            """
-            UPDATE marcas
-            SET es_lead = true, caracter = caracter_previo,
-                lead_score = COALESCE(lead_score_previo, lead_score),
-                caracter_previo = NULL, lead_score_previo = NULL,
-                con_gestor_manual = NULL, con_gestor_manual_en = NULL,
-                con_gestor_manual_por = NULL, gestor_nombre = NULL,
-                actualizado_en = now()
-            WHERE acta = ANY(%s) AND con_gestor_manual IS TRUE
-            """,
-            (actas,),
-        )
-        if cur.rowcount == 0:
+        marcas = _revertir_con_gestor_manual(cur, actas)
+        if marcas == 0:
             raise HTTPException(status_code=400, detail="Este titular no estaba marcado con gestor")
         texto = "Se deshizo «tiene gestor/apoderado»: vuelve a ser lead."
-    marcas = cur.rowcount
     _registrar_actividad(cur, real, usuario, "sistema", texto)
     return marcas
 
@@ -3311,22 +3346,7 @@ def crm_deshacer_apoderado_automatico(clave: str = Query(...), usuario: str = De
             _asegurar_claves(cur)
             real = _clave_existente(cur, clave)
             actas = _actas_de_clave(cur, real)
-            cur.execute(
-                """
-                UPDATE marcas
-                SET es_lead = true,
-                    caracter = '',
-                    representacion_posterior_oposicion = false,
-                    detalle_representacion_posterior = NULL,
-                    lead_score = (CASE WHEN TRIM(COALESCE(matricula_agente, '')) IN ('', 'Part.') THEN 50 ELSE 0 END)
-                                 + 50 + (CASE WHEN COALESCE(email, '') <> '' THEN 20 ELSE 0 END),
-                    actualizado_en = now()
-                WHERE acta = ANY(%s) AND es_lead IS FALSE
-                  AND representacion_posterior_oposicion IS TRUE AND con_gestor_manual IS NOT TRUE
-                """,
-                (actas,),
-            )
-            marcas = cur.rowcount
+            marcas = _revertir_apoderado_automatico(cur, actas)
             if marcas == 0:
                 raise HTTPException(status_code=400, detail="Este titular no tiene marcas para deshacer")
             _registrar_actividad(cur, real, usuario, "sistema",
@@ -3538,8 +3558,15 @@ app.include_router(accesos_api.crear_router(verificar_login, conexion, CLAVES_AC
 def _crm_registrar_mail(cur, acta: str, usuario: str, texto: str):
     """Deja un mail mandado desde el panel como gestión «Mail» del titular en
     el CRM y marca el acta como contactada; si el lead estaba en «nuevo», pasa
-    a «contactado» (mismo criterio que registrar una gestión a mano)."""
+    a «contactado» (mismo criterio que registrar una gestión a mano).
+
+    Si esa marca estaba marcada como «tiene gestor/apoderado» (a mano con
+    con_gestor_manual, o automático por representacion_posterior_oposicion),
+    el mail efectivamente mandado la desmarca sola y la vuelve a lead -- pedido
+    el 14/10/2026: si ya le mandamos un mail, no tiene sentido seguir
+    mostrándola como «con agente»."""
     cur.execute("UPDATE marcas SET contactado = true, contactado_en = COALESCE(contactado_en, now()) WHERE acta = %s", (acta,))
+    revertidas = _revertir_con_gestor_manual(cur, [acta]) + _revertir_apoderado_automatico(cur, [acta])
     _asegurar_claves(cur)
     cur.execute(f"WITH {_cte_marcas_con_clave(filtrar_actas=True)} SELECT clave FROM mk", ([acta],))
     fila = cur.fetchone()
@@ -3547,6 +3574,9 @@ def _crm_registrar_mail(cur, acta: str, usuario: str, texto: str):
     if not clave:
         return
     _registrar_actividad(cur, clave, usuario, "email", texto)
+    if revertidas:
+        _registrar_actividad(cur, clave, usuario, "sistema",
+                              "Se mandó un mail: se deshace automáticamente «tiene gestor/apoderado» y vuelve a ser lead.")
     cur.execute("SELECT etapa FROM crm_leads WHERE clave = %s", (clave,))
     f = cur.fetchone()
     etapa = (f["etapa"] if isinstance(f, dict) else f[0]) if f else "nuevo"
