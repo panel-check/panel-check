@@ -85,6 +85,17 @@
   .an-lead:not(.modo-presu) .solo-presu { display: none !important; }
   .an-lead button.secundario.activo { background: var(--azul); color: #fff; }
   .an-lead .an-presu { border: 1px solid var(--azul); border-radius: 10px; background: #f5f8ff; padding: 12px 14px; margin-top: 4px; }
+  /* Fila principal: el toggle «Presupuesto» (verde, para no confundirse con el azul de «Exportar PDF») + el PDF + el menú de acciones secundarias. */
+  .an-lead .an-acciones-principal { align-items: flex-start; }
+  .an-lead button.an-presu-toggle { background: #fff; color: var(--verde); border: 1px solid var(--verde); border-radius: 8px; padding: 8px 14px; font: inherit; font-weight: 600; cursor: pointer; }
+  .an-lead button.an-presu-toggle.activo { background: var(--verde); color: #fff; }
+  .an-lead .an-mas-wrap { position: relative; }
+  .an-lead button.an-mas-btn { background: #fff; color: var(--gris); border: 1px solid var(--borde); border-radius: 8px; padding: 8px 14px; font: inherit; font-weight: 600; cursor: pointer; }
+  .an-lead button.an-mas-btn[aria-expanded="true"] { background: #f2f4f7; }
+  .an-lead .an-mas-menu { position: absolute; top: calc(100% + 4px); left: 0; z-index: 20; min-width: 230px; background: #fff; border: 1px solid var(--borde); border-radius: 10px; box-shadow: 0 6px 20px rgba(16,24,40,.12); padding: 6px; display: flex; flex-direction: column; gap: 2px; }
+  .an-lead .an-mas-menu button.an-mas-item { background: none; border: 0; border-radius: 6px; padding: 8px 10px; font: inherit; font-size: 14px; text-align: left; cursor: pointer; color: #1f2430; }
+  .an-lead .an-mas-menu button.an-mas-item:hover:not(:disabled) { background: #f2f4f7; }
+  .an-lead .an-mas-menu button.an-mas-item:disabled { opacity: .5; cursor: not-allowed; }
   .an-lead .an-presu-titulo { font-size: 13px; font-weight: 700; margin-bottom: 8px; }
   .an-lead .an-presu-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
   @media (max-width: 760px) { .an-lead .an-presu-grid { grid-template-columns: 1fr 1fr; } }
@@ -181,13 +192,18 @@
         </div>
         <div class="nota">Incluye las alternativas a evaluar (negociación con el oponente, continuar la defensa ante el INPI o una nueva marca), los honorarios de la negociación de la oposición y el presupuesto para registrar una nueva marca. Los datos de la marca y sus oposiciones salen igual que en el análisis.</div>
       </div>
-      <div class="acciones">
-        <button type="button" class="enviar" id="an-pdf" disabled>Exportar PDF</button>
-        <button type="button" class="secundario" id="an-presu-btn" title="Cambia el formato del PDF: en lugar del análisis escrito sale el presupuesto por el trabajo. Volvé a apretarlo para volver al análisis.">💼 Presupuesto</button>
-        <button type="button" class="secundario" id="an-drive" disabled title="Sube este mismo PDF a la carpeta «Análisis de marca» del Drive del estudio. Si esta marca ya estaba subida, reemplaza ese archivo (Drive suele conservar un tiempo las versiones anteriores).">📁 Guardar en Drive</button>
-        <button type="button" class="secundario solo-analisis" id="an-link" disabled title="Copia un link público al PDF: lo abre cualquiera que lo tenga, sin iniciar sesión, y siempre muestra el análisis guardado">🔗 Copiar link del PDF</button>
-        <button type="button" class="secundario solo-analisis" id="an-link-anular" disabled title="Apaga el link público: el que ya se mandó deja de abrir el PDF">🚫 Anular link</button>
-        <button type="button" class="secundario solo-analisis" id="an-mejorar" disabled>✨ Mejorar texto</button>
+      <div class="acciones an-acciones-principal">
+        <button type="button" class="an-presu-toggle" id="an-presu-btn" title="Cambia el formato del PDF: en lugar del análisis escrito sale el presupuesto por el trabajo. Volvé a apretarlo para volver al análisis.">💼 Presupuesto</button>
+        <button type="button" class="enviar" id="an-pdf" disabled>Exportar PDF del análisis</button>
+        <div class="an-mas-wrap">
+          <button type="button" class="an-mas-btn" id="an-mas-btn" aria-haspopup="true" aria-expanded="false">⋯ Más acciones</button>
+          <div class="an-mas-menu" id="an-mas-menu" hidden>
+            <button type="button" class="an-mas-item" id="an-drive" disabled title="Sube este mismo PDF a la carpeta «Análisis de marca» del Drive del estudio. Si esta marca ya estaba subida, reemplaza ese archivo (Drive suele conservar un tiempo las versiones anteriores).">📁 Guardar en Drive</button>
+            <button type="button" class="an-mas-item solo-analisis" id="an-link" disabled title="Copia un link público al PDF: lo abre cualquiera que lo tenga, sin iniciar sesión, y siempre muestra el análisis guardado">🔗 Copiar link del PDF</button>
+            <button type="button" class="an-mas-item solo-analisis" id="an-link-anular" disabled title="Apaga el link público: el que ya se mandó deja de abrir el PDF">🚫 Anular link</button>
+            <button type="button" class="an-mas-item solo-analisis" id="an-mejorar" disabled>✨ Mejorar texto</button>
+          </div>
+        </div>
         <button type="button" class="plegar solo-analisis" id="an-deshacer" hidden>↶ Volver al texto anterior</button>
         <span class="msg" id="an-estado"></span>
       </div>
@@ -836,9 +852,10 @@ function anPintarLote() {
 // Texto y estado de los dos botones del PDF con varias marcas (bajarlo / subirlo a Drive).
 function anBotonesLote(ocupado = false) {
   const n = anSel.size, s = n === 1 ? "" : "s";
+  const suf = anPresu ? " (presupuesto)" : "";
   const b = document.getElementById("an-lote-pdf");
   b.disabled = ocupado || n === 0;
-  b.textContent = n === 0 ? "Exportar PDF con las marcas tildadas" : `Exportar PDF con ${n} marca${s}`;
+  b.textContent = (n === 0 ? "Exportar PDF con las marcas tildadas" : `Exportar PDF con ${n} marca${s}`) + suf;
   const d = document.getElementById("an-lote-drive");
   d.disabled = ocupado || n === 0 || !anDriveDisponible;
   d.textContent = n === 0 ? "📁 Guardar en Drive las marcas tildadas" : `📁 Guardar en Drive ${n} marca${s}`;
@@ -990,6 +1007,27 @@ async function anCargar(acta) {
   anVerificar();                                       // primera vez: se consulta INPI y queda guardado
 }
 
+// Menú «⋯ Más acciones» (Guardar en Drive, Copiar link, Anular link, Mejorar texto): se cierra solo
+// al tocar afuera, al elegir una acción o con Escape.
+function anMasMenuCerrar() {
+  document.getElementById("an-mas-menu").hidden = true;
+  document.getElementById("an-mas-btn").setAttribute("aria-expanded", "false");
+}
+function anMasMenuInit() {
+  const btn = document.getElementById("an-mas-btn");
+  const menu = document.getElementById("an-mas-menu");
+  btn.addEventListener("click", () => {
+    const abrir = menu.hidden;
+    menu.hidden = !abrir;
+    btn.setAttribute("aria-expanded", String(abrir));
+  });
+  menu.addEventListener("click", ev => { if (ev.target.tagName === "BUTTON") anMasMenuCerrar(); });
+  document.addEventListener("click", ev => {
+    if (!menu.hidden && !menu.contains(ev.target) && ev.target !== btn) anMasMenuCerrar();
+  });
+  document.addEventListener("keydown", ev => { if (ev.key === "Escape") anMasMenuCerrar(); });
+}
+
 // ── Botón «Presupuesto» ──
 // Cambia el formato del PDF: en lugar del análisis escrito sale el presupuesto por el trabajo (alternativas,
 // honorarios de la negociación y presupuesto de una nueva marca). Los montos vienen de lo guardado para todo
@@ -1031,6 +1069,7 @@ function anPresuAlternar() {
   const b = document.getElementById("an-presu-btn");
   b.classList.toggle("activo", anPresu);
   b.textContent = anPresu ? "↩ Volver al análisis" : "💼 Presupuesto";
+  document.getElementById("an-pdf").textContent = anPresu ? "Exportar PDF del presupuesto" : "Exportar PDF del análisis";
   anMsg(""); anLoteMsg("");
   if (anPresu) {
     anCerrarPropuesta();
@@ -1161,6 +1200,7 @@ function anIniciar(filas) {
     document.getElementById("an-link").addEventListener("click", anCopiarLink);
     document.getElementById("an-link-anular").addEventListener("click", anAnularLink);
     document.getElementById("an-mejorar").addEventListener("click", anMejorar);
+    anMasMenuInit();
     document.getElementById("an-lote-pdf").addEventListener("click", anExportarLote);
     document.getElementById("an-lote-drive").addEventListener("click", anLoteADrive);
     document.getElementById("an-lote-unico").addEventListener("change", ev => {
