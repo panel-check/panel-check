@@ -93,6 +93,7 @@
   .an-lead button.an-mas-btn { background: #fff; color: var(--gris); border: 1px solid var(--borde); border-radius: 8px; padding: 8px 14px; font: inherit; font-weight: 600; cursor: pointer; }
   .an-lead button.an-mas-btn[aria-expanded="true"] { background: #f2f4f7; }
   .an-lead .an-mas-menu { position: absolute; top: calc(100% + 4px); left: 0; z-index: 20; min-width: 230px; background: #fff; border: 1px solid var(--borde); border-radius: 10px; box-shadow: 0 6px 20px rgba(16,24,40,.12); padding: 6px; display: flex; flex-direction: column; gap: 2px; }
+  .an-lead .an-mas-menu[hidden] { display: none; }
   .an-lead .an-mas-menu button.an-mas-item { background: none; border: 0; border-radius: 6px; padding: 8px 10px; font: inherit; font-size: 14px; text-align: left; cursor: pointer; color: #1f2430; }
   .an-lead .an-mas-menu button.an-mas-item:hover:not(:disabled) { background: #f2f4f7; }
   .an-lead .an-mas-menu button.an-mas-item:disabled { opacity: .5; cursor: not-allowed; }
@@ -196,7 +197,7 @@
         <button type="button" class="an-presu-toggle" id="an-presu-btn" title="Cambia el formato del PDF: en lugar del análisis escrito sale el presupuesto por el trabajo. Volvé a apretarlo para volver al análisis.">💼 Presupuesto</button>
         <button type="button" class="enviar" id="an-pdf" disabled>Exportar PDF del análisis</button>
         <div class="an-mas-wrap">
-          <button type="button" class="an-mas-btn" id="an-mas-btn" aria-haspopup="true" aria-expanded="false">⋯ Más acciones</button>
+          <button type="button" class="an-mas-btn" id="an-mas-btn" aria-haspopup="true" aria-expanded="false">⋯ Más acciones del análisis</button>
           <div class="an-mas-menu" id="an-mas-menu" hidden>
             <button type="button" class="an-mas-item" id="an-drive" disabled title="Sube este mismo PDF a la carpeta «Análisis de marca» del Drive del estudio. Si esta marca ya estaba subida, reemplaza ese archivo (Drive suele conservar un tiempo las versiones anteriores).">📁 Guardar en Drive</button>
             <button type="button" class="an-mas-item solo-analisis" id="an-link" disabled title="Copia un link público al PDF: lo abre cualquiera que lo tenga, sin iniciar sesión, y siempre muestra el análisis guardado">🔗 Copiar link del PDF</button>
