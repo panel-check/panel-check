@@ -626,6 +626,10 @@ tr.contactado { opacity: 0.55; }
 #mo-marca-oponente button:hover { background: var(--azul-claro); }
 
 .modal-caja .mo-estado { margin: 0 0 10px; padding: 8px 10px; background: #f6f8fa; border-radius: 6px; font-size: 13px; }
+.modal-caja .mo-verificado { margin: 0 0 12px; font-size: 12px; color: #166534; }
+.modal-caja .mo-oposicion-item { padding: 10px 0; border-top: 1px solid var(--borde); }
+.modal-caja .mo-oposicion-item:first-of-type { border-top: none; padding-top: 0; }
+.modal-caja .mo-marca-opuesta { font-size: 13px; color: #374151; margin: 0 0 4px; }
 .badge-vista {
   display: inline-block;
   padding: 2px 8px;

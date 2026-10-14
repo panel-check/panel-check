@@ -1536,6 +1536,46 @@ def listar_clases(_: str = Depends(verificar_login)):
             return [r[0] for r in cur.fetchall()]
 
 
+def _completar_oposiciones_verificadas(filas: list) -> None:
+    """Completa, en cada fila con `filas[i]["acta"]`, la lista COMPLETA de
+    oposiciones que ya se verificaron contra INPI desde la pestaña «Análisis
+    de marca» (tabla analisis_marca, botón «Verificar en INPI»/«Verificar de
+    nuevo»): `oposiciones_verificadas` (lista) y `oposiciones_verificadas_en`.
+
+    Por qué existe: la tabla `marcas` solo guarda a mano UNA oposición (la
+    que detectó scripts/revisar_oposiciones.py al revisar el lead a los 10,
+    23 o 33 días — ver clasificar_estado_oposicion, que resume varias
+    oposiciones reales a una sola para decidir si el lead "sirve"). Si
+    después alguien abre «Análisis de marca» y aprieta «Verificar en INPI»,
+    esa pantalla sí trae y guarda TODAS las oposiciones del expediente — pero
+    antes de este cambio esa verificación no tocaba `marcas`, así que el
+    popup «⚠ Ver oposición» de la pestaña Marca seguía mostrando una sola
+    oposición vieja aunque «Análisis de marca» ya mostrara las demás (ver
+    sesión del 14/10/2026). Con esto, apenas se verifica una marca en
+    «Análisis de marca», el popup de la pestaña Marca pasa a leer esa misma
+    verificación: las dos vistas quedan sincronizadas sin tocar el resumen
+    de una sola oposición que sigue usando el resto del sistema (lead
+    score, mails, CRM)."""
+    actas = [f["acta"] for f in filas if f.get("acta")]
+    if not actas:
+        return
+    with conexion() as conn:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            for f in filas:
+                acta = f.get("acta")
+                if not acta:
+                    continue
+                guardado = analisis_marca.leer_analisis(cur, acta)
+                if guardado["oposiciones"] is None:
+                    continue  # todavía no se verificó esta marca en Análisis de marca
+                op = analisis_marca.armar_oposiciones(f, guardado["oposiciones"])
+                if op["origen"] != "inpi" or not op["items"]:
+                    continue
+                op, _pendientes = analisis_marca.adjuntar_opuestas(cur, str(acta), op)
+                f["oposiciones_verificadas"] = op["items"]
+                f["oposiciones_verificadas_en"] = op.get("consultado_en")
+
+
 @app.get("/api/titular/{clave}")
 def ver_titular(clave: str, _: str = Depends(verificar_login)):
     """Todas las marcas de un mismo titular, en cualquier boletín.
@@ -1590,6 +1630,8 @@ def ver_titular(clave: str, _: str = Depends(verificar_login)):
 
     if not filas:
         raise HTTPException(status_code=404, detail="No se encontraron marcas para ese titular")
+
+    _completar_oposiciones_verificadas(filas)
 
     titular = next((f["titular"] for f in filas if f.get("titular")), None)
     cuit = next((f["cuit"] for f in filas if f.get("cuit")), None)
