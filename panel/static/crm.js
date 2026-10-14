@@ -157,6 +157,7 @@ function _crmHtmlCabecera(d, opciones = {}) {
   const alertas = [];
   if (l.oposicion_sin_apoderado) alertas.push('<div class="crm-alerta crm-alerta-opo">⚠ Tiene una marca con <strong>oposición o vista</strong> y todavía nadie se presentó como apoderado: es el momento de ofrecer ayuda.</div>');
   else if (l.oposicion_atendida) alertas.push('<div class="crm-alerta">⚖ Tuvo una oposición, marcada como <strong>atendida</strong>: no hace falta ofrecer ayuda. <button type="button" class="crm-btn-chico" data-accion="opo-reabrir">Deshacer</button></div>');
+  else if (l.apoderado_automatico) alertas.push('<div class="crm-alerta">⚖ Tuvo una oposición, pero ya se sumó un apoderado/gestor. <button type="button" class="crm-btn-chico" data-accion="apoderado-auto-reabrir" title="Por si el sistema se equivocó al leerlo del expediente de INPI (por ejemplo, un dato que en realidad era del oponente): vuelve a ser lead.">Deshacer</button></div>');
   else if (l.con_oposicion && !l.con_gestor_manual) alertas.push('<div class="crm-alerta">⚖ Tuvo una oposición, pero ya se sumó un apoderado/gestor.</div>');
   if (l.con_gestor_manual) {
     const quien = [l.con_gestor_manual_por ? `por ${crmEsc(l.con_gestor_manual_por)}` : "", l.con_gestor_manual_en ? `el ${crmFecha(l.con_gestor_manual_en)}` : ""].filter(Boolean).join(" ");
@@ -375,6 +376,21 @@ function _crmConectarFicha(cont) {
       await apiJson(`/api/crm/con-gestor?clave=${encodeURIComponent(datos.clave)}`, "POST", { con_gestor: false });
       await recargar();
     } catch (e) { btnSinGestor.disabled = false; alert(`No se pudo deshacer: ${e.message}`); }
+  });
+
+  // El sistema solo pasó el titular a «con agente» al leer el expediente tras
+  // una oposición (no fue una persona marcándolo a mano, eso es "sin-gestor"):
+  // por si esa lectura fue un error, se puede deshacer y vuelve a ser lead.
+  const btnApoderadoAuto = uno('[data-accion="apoderado-auto-reabrir"]');
+  if (btnApoderadoAuto) btnApoderadoAuto.addEventListener("click", async () => {
+    if (!confirm("¿Deshacer? El sistema leyó en el expediente de INPI que este titular ya tenía apoderado/gestor "
+      + "y por eso dejó de ser lead. Si eso fue un error, acá vuelve a ser lead y a aparecer en la lista de leads "
+      + "(si el expediente lo sigue mostrando, la próxima revisión automática lo va a volver a pasar a «con agente» solo).")) return;
+    btnApoderadoAuto.disabled = true;
+    try {
+      await apiJson(`/api/crm/apoderado-automatico?clave=${encodeURIComponent(datos.clave)}`, "POST");
+      await recargar();
+    } catch (e) { btnApoderadoAuto.disabled = false; alert(`No se pudo deshacer: ${e.message}`); }
   });
 
   const btnConvertir = uno('[data-accion="convertir"]');
