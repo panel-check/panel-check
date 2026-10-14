@@ -2580,6 +2580,13 @@ def _sql_leads(con_filtro_lead: bool = True, filtrar_actas: bool = False) -> str
                 bool_or(tuvo_oposicion IS TRUE AND representacion_posterior_oposicion IS NOT TRUE
                         AND oposicion_atendida IS NOT TRUE
                         AND con_gestor_manual IS NOT TRUE) AS oposicion_sin_apoderado,
+                -- El expediente mostró que el titular sumó un apoderado/gestor DESPUÉS de
+                -- la oposición (revisar_oposiciones.py, SQL_PASAR_A_APODERADO): a diferencia
+                -- de con_gestor_manual (marcado a mano), esto lo decidió el sistema solo y
+                -- puede ser un error de lectura -- se puede deshacer con el botón «Deshacer»
+                -- de esta alerta (ver /api/crm/apoderado-automatico).
+                bool_or(representacion_posterior_oposicion IS TRUE
+                        AND con_gestor_manual IS NOT TRUE) AS apoderado_automatico,
                 bool_or(con_gestor_manual IS TRUE) AS con_gestor_manual,
                 max(con_gestor_manual_en) FILTER (WHERE con_gestor_manual IS TRUE) AS con_gestor_manual_en,
                 (array_agg(con_gestor_manual_por ORDER BY con_gestor_manual_en DESC NULLS LAST)
@@ -3280,6 +3287,50 @@ def crm_con_gestor(body: ConGestor, clave: str = Query(...), usuario: str = Depe
             _asegurar_claves(cur)
             real = _clave_existente(cur, clave)
             marcas = _aplicar_con_gestor(cur, real, usuario, body.con_gestor, nombre)
+        conn.commit()
+    return {"ok": True, "clave": real, "marcas": marcas}
+
+
+@app.post("/api/crm/apoderado-automatico")
+def crm_deshacer_apoderado_automatico(clave: str = Query(...), usuario: str = Depends(verificar_login)):
+    """Deshace, para las marcas de este titular, el pase automático a «con
+    agente» que hizo scripts/revisar_oposiciones.py al leer en el expediente
+    de INPI que el titular sumó un apoderado/gestor DESPUÉS de una oposición
+    (representacion_posterior_oposicion -- ver SQL_PASAR_A_APODERADO en ese
+    script). A diferencia de «Tiene gestor/apoderado» (con_gestor_manual, lo
+    marca una persona a mano), esto lo decidió el sistema solo leyendo
+    GESTION DEL TRAMITE del expediente, y esa lectura puede ser un error (ej.
+    un campo que en realidad era del oponente, no del titular) -- pedido el
+    14/10/2026 después de encontrar un caso así. Vuelven a ser lead y a
+    aparecer en la lista de leads; si el expediente sigue mostrando un
+    agente del titular, la próxima revisión automática (10/23/33 días) los
+    va a volver a pasar a «con agente» solos. No toca las marcas marcadas a
+    mano con «Tiene gestor/apoderado»: esas se deshacen con ese botón."""
+    with conexion() as conn:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            _asegurar_claves(cur)
+            real = _clave_existente(cur, clave)
+            actas = _actas_de_clave(cur, real)
+            cur.execute(
+                """
+                UPDATE marcas
+                SET es_lead = true,
+                    caracter = '',
+                    representacion_posterior_oposicion = false,
+                    detalle_representacion_posterior = NULL,
+                    lead_score = (CASE WHEN TRIM(COALESCE(matricula_agente, '')) IN ('', 'Part.') THEN 50 ELSE 0 END)
+                                 + 50 + (CASE WHEN COALESCE(email, '') <> '' THEN 20 ELSE 0 END),
+                    actualizado_en = now()
+                WHERE acta = ANY(%s) AND es_lead IS FALSE
+                  AND representacion_posterior_oposicion IS TRUE AND con_gestor_manual IS NOT TRUE
+                """,
+                (actas,),
+            )
+            marcas = cur.rowcount
+            if marcas == 0:
+                raise HTTPException(status_code=400, detail="Este titular no tiene marcas para deshacer")
+            _registrar_actividad(cur, real, usuario, "sistema",
+                                  "Se deshizo el pase automático a «con agente» tras la oposición: vuelve a ser lead.")
         conn.commit()
     return {"ok": True, "clave": real, "marcas": marcas}
 
