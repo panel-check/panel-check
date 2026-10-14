@@ -1,0 +1,40 @@
+name: Deshacer gestor/apoderado en los mails de oposición de hoy (una sola vez / manual)
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "true = solo mostrar qué actas cambiarían, sin guardar (recomendado la primera vez). Para aplicar de verdad, poner false"
+        required: false
+        default: "true"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: backfill-gestor-tras-mail-oposicion
+  cancel-in-progress: false
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Instalar dependencias
+        run: pip install -r requirements.txt
+
+      - name: Deshacer «tiene gestor/apoderado» en las actas con mail de oposición mandado hoy por Resend
+        run: |
+          cd scripts
+          args=""
+          if [ "${{ inputs.dry_run }}" != "false" ]; then args="$args --dry-run"; fi
+          python3 backfill_gestor_tras_mail_oposicion.py $args
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL || secrets.DATABASE_PUBLIC_URL }}
+          PYTHONUNBUFFERED: "1"
