@@ -143,5 +143,9 @@ def texto(cfg: dict) -> str:
         f"solicitud es de **{pres.fmt_pesos(cfg['honorarios_registro'])}**, más la tasa oficial del INPI de "
         f"**{pres.fmt_pesos(cfg['tasa_inpi'])}** (valores por una marca en una clase). Antes de presentar la "
         "solicitud realizaremos una **búsqueda integral de viabilidad marcaria**, a fin de analizar "
-        "antecedentes fonéticos, gráficos y conceptuales y reducir el riesgo de nuevas oposiciones."
+        "antecedentes fonéticos, gráficos y conceptuales y reducir el riesgo de nuevas oposiciones.\n"
+        "\n"
+        "Este valor para registro de nueva marca cubre el estudio de viabilidad y la presentación de la solicitud, y **se aplica únicamente "
+        "una vez que se decida avanzar con esta opción**. En ese caso, se enviará el presupuesto correspondiente "
+        "y, una vez confirmado, el **Detalle del servicio**."
     )
