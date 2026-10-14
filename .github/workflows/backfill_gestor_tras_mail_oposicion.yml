@@ -10,6 +10,8 @@ on:
 
 permissions:
   contents: read
+  issues: write
+  pull-requests: write
 
 concurrency:
   group: backfill-gestor-tras-mail-oposicion
@@ -34,7 +36,36 @@ jobs:
           cd scripts
           args=""
           if [ "${{ inputs.dry_run }}" != "false" ]; then args="$args --dry-run"; fi
-          python3 backfill_gestor_tras_mail_oposicion.py $args
+          python3 backfill_gestor_tras_mail_oposicion.py $args 2>&1 | tee /tmp/salida_backfill.txt
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL || secrets.DATABASE_PUBLIC_URL }}
           PYTHONUNBUFFERED: "1"
+
+      # Los logs de Actions no se pueden leer desde el contenedor de Claude en la
+      # nube (el proxy bloquea el storage de blobs de GitHub), así que el resultado
+      # se publica también como comentario en el PR #120 (el de esta herramienta),
+      # que sí se puede leer por la API normal de GitHub.
+      - name: Publicar el resultado como comentario en el PR de esta herramienta
+        if: always()
+        run: |
+          python3 - <<'PY'
+          import json, os, urllib.request
+
+          modo = "DRY-RUN (no se escribió nada)" if "${{ inputs.dry_run }}" != "false" else "APLICADO"
+          with open("/tmp/salida_backfill.txt", encoding="utf-8") as f:
+              salida = f.read()
+          cuerpo = f"**Backfill gestor/apoderado — mails de oposición de hoy** ({modo})\n\n```\n{salida}\n```"
+          req = urllib.request.Request(
+              "https://api.github.com/repos/${{ github.repository }}/issues/120/comments",
+              data=json.dumps({"body": cuerpo}).encode(),
+              headers={
+                  "Authorization": "Bearer " + os.environ["GITHUB_TOKEN"],
+                  "Accept": "application/vnd.github+json",
+                  "Content-Type": "application/json",
+              },
+              method="POST",
+          )
+          urllib.request.urlopen(req)
+          PY
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
