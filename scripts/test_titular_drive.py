@@ -54,7 +54,6 @@ for (const c of casos) {
     "let anActa = " + JSON.stringify(c.acta || null) + ", anFilas = " + JSON.stringify(c.filas || []) + ";",
     "let anDriveDisponible = " + JSON.stringify(c.drive !== false) + ", anUnico = " + JSON.stringify(!!c.unico) + ";",
     "let anPresu = " + JSON.stringify(!!c.presu) + ";",
-    "const AN_PRESU_CAMPOS = [\"honorarios_negociacion\", \"horas_incluidas\", \"hora_adicional\", \"honorarios_registro\", \"tasa_inpi\"];",
     "let anSel = new Set(" + JSON.stringify(c.sel || []) + ");",
     "const anGuardarAhora = async () => " + JSON.stringify(c.guardaBien !== false) + ";",
     "const anPrepararLote = async () => { llamadas.push(['preparar']); return " + JSON.stringify(c.preparar || { unico: false, sinVerificar: 0 }) + "; };",
@@ -64,12 +63,11 @@ for (const c of casos) {
     "const anLoteMsg = (t, ok = true) => { const e = el('an-lote-estado'); e.textContent = t || ''; e.className = 'msg ' + (ok ? 'ok' : 'err'); };",
     "const anActasTildadas = () => anFilas.map(f => f.acta).filter(a => anSel.has(a));",
     "const anAvisoSinVerificar = (n) => n ? ' (' + n + ' sin verificar)' : '';",
-    funcion("anPresuValores"), funcion("anCuerpoPdf"), funcion("anCuerpoLote"),
+    funcion("anCuerpoPdf"), funcion("anCuerpoLote"),
     funcion("anBotonesLote"), funcion("anMostrarDrive"), funcion("anGuardarEnDrive"), funcion("anLoteADrive"),
     "return (async () => { " + c.accion + " })();",
   ].join("\n");
   el("an-texto").value = c.texto || "";
-  for (const [campo, valor] of Object.entries(c.montos || {})) el("an-p-" + campo).value = valor;
   const prom = new Function("el", "llamadas", cuerpo)(el, llamadas);
   salida.push(prom.then(() => {
     const v = (id) => { const e = elems[id]; return e ? { texto: e.textContent, clase: e.className, apagado: e.disabled, hijos: e.children } : null; };
@@ -105,18 +103,13 @@ class GuardarEnDrive(unittest.TestCase):
         self.assertEqual(r["estado"]["hijos"][0]["rel"], "noopener")
         self.assertFalse(r["btn"]["apagado"])
 
-    def test_con_presupuesto_manda_los_montos_y_no_el_texto_ni_lo_guarda(self):
-        montos = {"honorarios_negociacion": "800.000", "horas_incluidas": "3", "hora_adicional": "200.000"}
-        r = correr([{"acta": "4782038", "texto": "Mi análisis", "presu": True, "montos": montos, "guardaBien": False,
+    def test_con_presupuesto_no_manda_texto_ni_lo_guarda_y_usa_los_montos_guardados(self):
+        r = correr([{"acta": "4782038", "texto": "Mi análisis", "presu": True, "guardaBien": False,
                      "respuesta": NUEVO, "accion": "await anGuardarEnDrive();"}])[0]
-        # guardaBien=False: si intentara guardar el texto del análisis fallaría; en modo presupuesto no hace falta
-        self.assertEqual(r["llamadas"], [["/api/analisis-marca/4782038/drive", "POST", {"presupuesto": montos}]])
+        # guardaBien=False: si intentara guardar el texto del análisis fallaría; en modo presupuesto no hace falta.
+        # presupuesto va vacío: el PDF usa siempre los montos guardados para todo el equipo (se cargan en /mails).
+        self.assertEqual(r["llamadas"], [["/api/analisis-marca/4782038/drive", "POST", {"presupuesto": {}}]])
         self.assertIn("Guardado en Drive ✓", r["estado"]["texto"])
-
-    def test_con_presupuesto_los_campos_vacios_no_se_mandan(self):
-        r = correr([{"acta": "4782038", "presu": True, "montos": {"tasa_inpi": "  ", "hora_adicional": "190.000"},
-                     "respuesta": NUEVO, "accion": "await anGuardarEnDrive();"}])[0]
-        self.assertEqual(r["llamadas"][0][2], {"presupuesto": {"hora_adicional": "190.000"}})
 
     def test_si_ya_estaba_subida_dice_que_se_actualizo(self):
         r = correr([{"acta": "4782038", "respuesta": {**NUEVO, "reemplazo": True}, "accion": "await anGuardarEnDrive();"}])[0]
@@ -160,12 +153,11 @@ class LoteADrive(unittest.TestCase):
                      "preparar": {"unico": True, "sinVerificar": 0}, "accion": "await anLoteADrive();"}])[0]
         self.assertEqual(r["llamadas"][1][2], {"actas": ["111111", "222222"], "analisis_comun_de": "222222"})
 
-    def test_con_presupuesto_manda_los_montos_y_nunca_el_mismo_analisis(self):
+    def test_con_presupuesto_manda_vacio_y_nunca_el_mismo_analisis(self):
         r = correr([{"acta": "222222", "filas": self.FILAS, "sel": ["111111", "222222"], "respuesta": NUEVO, "presu": True,
-                     "unico": True, "montos": {"tasa_inpi": "41.259"},
-                     "preparar": {"unico": False, "sinVerificar": 0}, "accion": "await anLoteADrive();"}])[0]
+                     "unico": True, "preparar": {"unico": False, "sinVerificar": 0}, "accion": "await anLoteADrive();"}])[0]
         self.assertEqual(r["llamadas"][1], ["/api/analisis-marca-lote/drive", "POST",
-                                            {"actas": ["111111", "222222"], "presupuesto": {"tasa_inpi": "41.259"}}])
+                                            {"actas": ["111111", "222222"], "presupuesto": {}}])
 
     def test_avisa_si_inpi_no_respondio_en_alguna_marca(self):
         r = correr([{"acta": "111111", "filas": self.FILAS, "sel": ["111111"], "respuesta": NUEVO,

@@ -351,6 +351,19 @@ function pintarDetalle() {
       <div class="ayuda-campo" style="margin-top:8px">«Ver el PDF» muestra lo que hay escrito en pantalla, aunque no lo hayas guardado.</div>
     </div>` : "";
 
+  const presuOposicion = m.solo_gmail ? `
+    <div class="caja-mail" id="caja-presu-opo">
+      <h2>Montos del presupuesto por una oposición</h2>
+      <p class="desc">Son los que salen en el PDF que se arma desde la ficha del titular al apretar «💼 Presupuesto» (pestaña
+        Análisis de marca) y los que se usan en {{honorarios}} si los escribís en la plantilla de arriba. Se guardan para todo
+        el equipo; no se ajustan por envío ni desde la ficha.</p>
+      <div id="presu-opo-campos"><span class="ayuda-campo">Cargando…</span></div>
+      <div class="barra-acciones">
+        <button type="button" class="primario" id="po-guardar" ${dis}>Guardar montos</button>
+        <span class="msg" id="po-msg"></span>
+      </div>
+    </div>` : "";
+
   document.getElementById("detalle").innerHTML = `
     <div class="caja-mail">
       <h2>${esc(m.nombre)}</h2>
@@ -375,6 +388,7 @@ function pintarDetalle() {
         : '<div class="meta-guardado">Usa los valores por defecto (nada guardado todavía).</div>'}
     </div>
     ${presupuesto}
+    ${presuOposicion}
     <div class="caja-mail">
       <h2>Vista previa</h2>
       <p class="desc">${interno ? "Con datos de ejemplo. El contenido real se arma solo con los datos del momento."
@@ -419,6 +433,7 @@ function pintarDetalle() {
   }
   if (m.editable) prepararPrueba();
   if (m.adjunto) prepararPresupuesto();
+  if (m.solo_gmail) prepararPresuOposicion();
   vistaPrevia();
 }
 
@@ -480,6 +495,46 @@ async function guardarPresupuesto() {
     pintarAvisoPresupuesto(r.faltan);
     msg.textContent = "Guardado ✓"; msg.className = "msg ok";
     vistaPrevia();
+  } catch (e) { msg.textContent = e.message; msg.className = "msg err"; }
+  btn.disabled = false;
+}
+
+// ── Montos del presupuesto por una oposición (plantilla «Presupuesto de la oposición») ──
+// Mismos montos que usa el botón «💼 Presupuesto» de la ficha del titular (/api/analisis-presupuesto):
+// se editan acá, no desde la ficha.
+let poCampos = [];
+
+function leerPresuOposicion() {
+  const out = {};
+  for (const c of poCampos) { const el = document.getElementById("po-" + c); if (el) out[c] = el.value; }
+  return out;
+}
+
+async function prepararPresuOposicion() {
+  const claveAlPedir = actual;
+  try {
+    const r = await api("/api/analisis-presupuesto");
+    if (claveAlPedir !== actual) return;
+    poCampos = Object.keys(r.etiquetas);
+    document.getElementById("presu-opo-campos").innerHTML = poCampos.map(c => `
+      <div class="campo"><label for="po-${c}">${esc(r.etiquetas[c])}</label>
+        <input type="text" id="po-${c}" inputmode="numeric" ${puedeEditar() ? "" : "disabled"} value="${esc(String(r.config[c] ?? ""))}" /></div>`).join("");
+  } catch (e) {
+    document.getElementById("presu-opo-campos").innerHTML = `<span class="msg err">No se pudieron cargar los montos (${esc(e.message)}).</span>`;
+    return;
+  }
+  if (claveAlPedir !== actual) return;
+  document.getElementById("po-guardar").addEventListener("click", guardarPresuOposicion);
+}
+
+async function guardarPresuOposicion() {
+  const btn = document.getElementById("po-guardar");
+  const msg = document.getElementById("po-msg");
+  btn.disabled = true; msg.textContent = "Guardando…"; msg.className = "msg ok";
+  try {
+    const r = await apiJson("/api/analisis-presupuesto", "PUT", { valores: leerPresuOposicion() });
+    for (const c of poCampos) { const el = document.getElementById("po-" + c); if (el) el.value = r.config[c]; }
+    msg.textContent = "Guardado ✓ (son los montos habituales de todo el equipo)"; msg.className = "msg ok";
   } catch (e) { msg.textContent = e.message; msg.className = "msg err"; }
   btn.disabled = false;
 }

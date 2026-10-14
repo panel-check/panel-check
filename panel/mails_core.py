@@ -207,6 +207,18 @@ Registro de Marcas Nacional e Internacional
 [www.smartiesconsultora.com.ar](https://www.smartiesconsultora.com.ar)
 WhatsApp: [+54 9 11 5589-0784](https://wa.me/""" + WHATSAPP_PAMELA + """)"""
 
+ASUNTO_PRESUPUESTO_OPOSICION = "Presupuesto por la oposición a tu marca {{marca}}"
+CUERPO_PRESUPUESTO_OPOSICION = """Estimado/a {{nombre}}, muy buenas tardes.
+
+Te adjunto el presupuesto detallado con los honorarios correspondientes al análisis de antecedentes, el diseño de la estrategia, el contacto con la contraparte y las gestiones de negociación para buscar el retiro de la oposición a la solicitud de {{marca}}.
+
+Asimismo, al final del documento incluí una alternativa para el registro de un nuevo nombre, en caso de que finalmente decidan avanzar por ese camino.
+
+Quedo a tu disposición.
+
+Saludos cordiales,
+Pamela."""
+
 ASUNTO_CONFIRMACION_WEB = "Recibimos tu consulta de marca: {{marca}}"
 CUERPO_CONFIRMACION_WEB = """Hola {{nombre}}:
 
@@ -372,6 +384,25 @@ CATALOGO = {
         "editable": True,
         "estilo": "simple",            # mail «de persona»: sin encabezado, botón, baja ni links con seguimiento
         "adjunto": "registro_marca",   # tipo de presupuesto en presupuestos.py: se genera y se adjunta el PDF
+    },
+    "prospecto_presupuesto_oposicion": {
+        "grupo": "prospectos",
+        "nombre": "Presupuesto de la oposición",
+        "descripcion": "Texto del mail con el presupuesto por el trabajo de una oposición (el de la ficha del titular, botón "
+                       "«💼 Presupuesto»). Sale como escrito a mano (sin encabezado, botón, línea de baja ni seguimiento de "
+                       "links). Los montos que salen en el PDF se cargan arriba, en «Montos del presupuesto por una oposición». "
+                       "No se manda desde acá: se abre en Gmail con el botón «✉️ Abrir en Gmail» de la ficha del titular, con "
+                       "el PDF para adjuntar a mano (ninguna web puede adjuntarlo sola en el mail de otro sitio).",
+        "cuenta": "prospectos",
+        "remitente": "Smarties Consultora <info@smartiesconsultora.com.ar>",
+        "responder_a": "info@smartiesconsultora.com.ar",
+        "destinatarios": "",
+        "encabezado": "PRESUPUESTO POR LA OPOSICIÓN",
+        "asunto": ASUNTO_PRESUPUESTO_OPOSICION,
+        "cuerpo": CUERPO_PRESUPUESTO_OPOSICION,
+        "editable": True,
+        "estilo": "simple",     # mail «de persona»: sin encabezado, botón, baja ni links con seguimiento
+        "solo_gmail": True,     # no se manda por Resend: se abre en Gmail desde la ficha del titular
     },
 }
 
@@ -1157,9 +1188,9 @@ def vista_previa(clave: str, cfg: dict, panel_url: str = DEFAULT_PANEL, datos: d
     import mails_plantillas as mp
 
     if CATALOGO[clave].get("editable"):
-        asunto, cuerpo, _ = render_prospecto(cfg["asunto"], cfg["cuerpo"], datos or EJEMPLO_PROSPECTO, cfg.get("encabezado"),
-                                             simple=es_simple(clave))
-        return {"asunto": asunto, "html": cuerpo}
+        asunto, cuerpo, texto = render_prospecto(cfg["asunto"], cfg["cuerpo"], datos or EJEMPLO_PROSPECTO, cfg.get("encabezado"),
+                                                  simple=es_simple(clave))
+        return {"asunto": asunto, "html": cuerpo, "texto": texto}
     if clave == "formularios":
         import formularios_core as fc
         slug = "persona-fisica"

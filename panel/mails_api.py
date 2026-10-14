@@ -102,6 +102,7 @@ def crear_router(verificar_login, verificar_admin, conexion, registrar_en_crm=No
                 "clave": clave, "grupo": cat["grupo"], "nombre": cat["nombre"], "descripcion": cat["descripcion"],
                 "editable": bool(cat.get("editable")),
                 "adjunto": cat.get("adjunto"),
+                "solo_gmail": bool(cat.get("solo_gmail")),
                 "responder_a_automatico": cat.get("responder_a_automatico"),
                 "config": cfg,
             })
@@ -424,6 +425,8 @@ def crear_router(verificar_login, verificar_admin, conexion, registrar_en_crm=No
         cat = mc.CATALOGO.get(clave)
         if not cat or not cat.get("editable") or cat["grupo"] != "prospectos":
             raise HTTPException(status_code=400, detail="Solo se pueden mandar plantillas de prospectos")
+        if cat.get("solo_gmail"):
+            raise HTTPException(status_code=400, detail="Esta plantilla no se manda por mail desde el panel: se abre en Gmail desde la ficha del titular")
         para = mc.lista_de_emails(body.para)
         if len(para) != 1 or not mc._RE_EMAIL.match(para[0]):
             raise HTTPException(status_code=400, detail="Escribí un único mail válido de destino")
