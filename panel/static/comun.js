@@ -194,6 +194,57 @@ function _fechaDeDetalleCrudo(detalle) {
   return d.toLocaleDateString("es-AR");
 }
 
+// Oposiciones completas ya verificadas en INPI desde la pestaña «Análisis de
+// marca» (ver _completar_oposiciones_verificadas en app.py) — cuando están,
+// el popup de acá se arma con ellas en vez de con la única oposición que
+// guarda la tabla `marcas`, para que las dos vistas no queden desincronizadas.
+function _oposicionesVerificadas(row) {
+  return Array.isArray(row.oposiciones_verificadas) && row.oposiciones_verificadas.length
+    ? row.oposiciones_verificadas : null;
+}
+
+function _fmtFechaCorta(f) {
+  if (!f) return "";
+  const [a, m, d] = String(f).slice(0, 10).split("-");
+  return `${d}/${m}/${a}`;
+}
+
+function _bloqueMarcaOpuestaVerificada(mo) {
+  const acta = _escapeHtml(mo.acta || "");
+  const linkFicha = mo.acta
+    ? `<a class="link-acta" href="javascript:void(0)" onclick="abrirActa('${_idSeguro(mo.acta)}')">Ver ficha del acta ${acta} ↗</a>`
+    : "";
+  if (mo.estado === "no_existe") {
+    return `<div class="mo-marca-opuesta">Marca del oponente: acta ${acta} (no se encontró el expediente en INPI)</div>`;
+  }
+  const datos = [
+    mo.denominacion ? `<strong>${_escapeHtml(mo.denominacion)}</strong>` : "",
+    mo.clase ? `clase ${_escapeHtml(mo.clase)}` : "",
+    mo.tipo_marca ? _escapeHtml(mo.tipo_marca) : "",
+  ].filter(Boolean).join(" · ");
+  if (!datos && !linkFicha) return "";
+  return `<div class="mo-marca-opuesta">Marca del oponente: ${datos}${linkFicha ? ` — ${linkFicha}` : ""}</div>`;
+}
+
+function _bloqueOposicionVerificada(i, n) {
+  const fechas = [
+    i.presentacion ? `Presentada: ${_fmtFechaCorta(i.presentacion)}` : "",
+    i.notificacion ? `Notificada: ${_fmtFechaCorta(i.notificacion)}` : "",
+    i.vencimiento ? `Vence: ${_fmtFechaCorta(i.vencimiento)}` : "",
+    i.levantamiento ? `Levantada: ${_fmtFechaCorta(i.levantamiento)}` : "",
+  ].filter(Boolean).join(" · ");
+  const opuestas = (i.marcas_opuestas || []).map(_bloqueMarcaOpuestaVerificada).filter(Boolean).join("");
+  return `
+    <div class="mo-oposicion-item">
+      <p class="mo-oponente"><strong>${n}. ${_escapeHtml(i.oponente || "oponente no informado")}</strong></p>
+      ${fechas || i.agente_oponente
+        ? `<p class="mo-doc">${_escapeHtml(fechas)}${i.agente_oponente ? ` · Agente del oponente: ${_escapeHtml(i.agente_oponente)}` : ""}</p>`
+        : ""}
+      ${i.fundamento ? `<p class="mo-fundamento">${_escapeHtml(i.fundamento)}</p>` : ""}
+      ${opuestas}
+    </div>`;
+}
+
 function abrirModalOposicion(acta) {
   const row = window._filasOposicion[acta];
   if (!row) return;
@@ -231,6 +282,23 @@ function abrirModalOposicion(acta) {
 
   const contenido = document.getElementById("modal-oposicion-contenido");
   let cuerpo;
+  const verificadas = _oposicionesVerificadas(row);
+  if (verificadas) {
+    // Ya se verificaron TODAS las oposiciones del expediente desde «Análisis
+    // de marca»: se muestran todas acá (sin buscar nada más), en vez de la
+    // única que guarda `marcas`.
+    const cuando = row.oposiciones_verificadas_en
+      ? new Date(row.oposiciones_verificadas_en).toLocaleString("es-AR", { dateStyle: "short", timeStyle: "short" })
+      : "";
+    cuerpo = `
+      ${estadoHtml}${badgeRepresentacion}
+      <p class="mo-verificado">✔ ${verificadas.length} oposición${verificadas.length === 1 ? "" : "es"} verificada${verificadas.length === 1 ? "" : "s"} en INPI${cuando ? ` el ${cuando}` : ""}.</p>
+      ${verificadas.map((i, idx) => _bloqueOposicionVerificada(i, idx + 1)).join("")}
+    `;
+    contenido.innerHTML = `<h3>⚠ Oposición — acta ${_escapeHtml(row.acta)}</h3>${cuerpo}`;
+    document.getElementById("modal-oposicion").classList.add("abierto");
+    return;
+  }
   if (row.oponente_nombre || row.fundamento_oposicion) {
     cuerpo = `
       ${estadoHtml}${badgeRepresentacion}
