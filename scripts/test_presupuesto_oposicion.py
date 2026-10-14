@@ -59,18 +59,28 @@ class Texto(unittest.TestCase):
                       "oposición ante el INPI. Esta etapa se cotiza por separado.", t)
         self.assertIn("con una denominación que presente un menor riesgo de conflicto", t)
         self.assertIn("es de $180.000, más la tasa oficial del INPI de $41.259 (valores por una marca en una clase).", t)
-        self.assertTrue(t.endswith("reducir el riesgo de nuevas oposiciones."))
+        self.assertIn("a fin de analizar antecedentes fonéticos, gráficos y conceptuales y reducir el riesgo de nuevas "
+                      "oposiciones.", t)
 
-    def test_son_cinco_parrafos_sin_viñetas(self):
+    def test_aclara_que_los_180_se_aplican_solo_si_se_avanza_y_que_el_detalle_va_al_confirmar(self):
+        t = sin_negritas(po.texto(po.config_efectiva()))
+        self.assertTrue(t.endswith(
+            "Este valor para registro de nueva marca cubre el estudio de viabilidad y la presentación de la solicitud, y se "
+            "aplica únicamente una vez "
+            "que se decida avanzar con esta opción. En ese caso, se enviará el presupuesto correspondiente y, una vez "
+            "confirmado, el Detalle del servicio."))
+
+    def test_son_seis_parrafos_sin_viñetas(self):
         bloques = am._bloques_de_texto(po.texto(po.config_efectiva()))
-        self.assertEqual([b[0] for b in bloques], ["p"] * 5)
+        self.assertEqual([b[0] for b in bloques], ["p"] * 6)
 
     def test_las_negritas_estan_balanceadas_y_marcan_lo_importante(self):
         t = po.texto(po.config_efectiva())
         self.assertEqual(t.count("**") % 2, 0)
         for resaltado in ("Negociación con el oponente", "$790.000", "hasta 3 horas de trabajo profesional", "$190.000",
                           "exclusivamente a la etapa de negociación", "Esta etapa se cotiza por separado.", "$180.000",
-                          "$41.259", "búsqueda integral de viabilidad marcaria"):
+                          "$41.259", "búsqueda integral de viabilidad marcaria",
+                          "se aplica únicamente una vez que se decida avanzar con esta opción", "Detalle del servicio"):
             self.assertIn(f"**{resaltado}**", t)
 
     def test_los_montos_cambian_con_la_config(self):
