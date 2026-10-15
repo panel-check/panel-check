@@ -355,6 +355,16 @@ async function cargar({ conCRM = true } = {}) {
   }
 }
 
+// Vuelve a pintar solo la tabla de la pestaña Marca (sin tocar el análisis que se está
+// escribiendo): «Verificar de nuevo» en Análisis de marca guarda la oposición en `marcas`
+// y la tabla tiene que mostrarla (⚠ Ver oposición, estado, 🔎) sin recargar la página.
+async function recargarFilasMarca() {
+  try {
+    const data = await api(`/api/titular/${encodeURIComponent(claveDesdeUrl())}`);
+    if (data.rows.length) document.getElementById("tbody").innerHTML = data.rows.map(filaHtml).join("");
+  } catch (e) { /* la tabla queda como estaba; recargar la página la actualiza */ }
+}
+
 // ── Anterior / Siguiente ──
 // Si la ficha se abrió desde la lista de leads (comun.js guardó el orden que se
 // veía), se puede recorrer la cola sin volver a la lista.
@@ -739,6 +749,7 @@ async function anVerificar() {
     const d = await apiJson(`/api/analisis-marca/${encodeURIComponent(acta)}/oposiciones`, "POST");
     if (token !== anToken) return;
     anPintarDatos(d, { aviso: d.aviso || "" });
+    recargarFilasMarca();
   } catch (e) {
     if (token !== anToken) return;
     const b2 = document.getElementById("an-verificar");

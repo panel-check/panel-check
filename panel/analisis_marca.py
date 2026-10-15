@@ -46,8 +46,12 @@ COLUMNAS_MARCA = (
     "acta, tipo, clase, denominacion, denominacion_inpi, titular, cuit, tuvo_oposicion, "
     "oponente_nombre, oponente_cuit, estado_oposicion, oposicion_fecha_presentacion, "
     "oposicion_fecha_notificacion, oposicion_fecha_vencimiento, oposicion_fecha_levantamiento, "
-    "oposicion_agente_oponente"
+    "oposicion_agente_oponente, es_lead, fecha_publicacion, detalle_oposicion, oposicion_atendida"
 )
+
+ESTADOS_QUE_SIRVEN = ("sin_notificar", "notificada_en_plazo", "plazo_vencido",
+                      "oposicion_sin_detalle", "vista_pendiente")
+ESTADOS_CERRADOS = ("contestada", "levantada", "con_apoderado")
 
 
 # ── Tabla ─────────────────────────────────────────────────────────────────
@@ -175,6 +179,104 @@ def oposiciones_del_sistema(m: dict) -> list:
         "levantamiento": iso(m.get("oposicion_fecha_levantamiento")),
         "agente_oponente": m.get("oposicion_agente_oponente") or None,
     }]
+
+
+def _iso(v):
+    return v.isoformat()[:10] if hasattr(v, "isoformat") else (str(v)[:10] if v else None)
+
+
+def clasificar_desde_expediente(items: list, fecha_publicacion, con_representante: bool,
+                                estado_previo=None, hoy=None):
+    """Estado de la oposición según las oposiciones del expediente (las de «Verificar
+    en INPI»), con las mismas reglas que scripts/oposiciones_expediente.py pero sin
+    la Grilla Digital: solo cuentan las de la publicación vigente; levantada >
+    contestada > vencimiento > notificación > sin notificar. La contestación solo se
+    ve en la Grilla, así que una marca ya clasificada «contestada» no se vuelve a
+    abrir. Devuelve None si no hay oposición vigente (no se toca nada)."""
+    hoy_iso = (hoy or _dt.date.today()).isoformat()
+    pub = _iso(fecha_publicacion)
+    vigentes = [o for o in items if not (pub and o.get("presentacion") and o["presentacion"] < pub)]
+    if not vigentes:
+        return None
+
+    def estado_de(o):
+        if o.get("levantamiento"):
+            return "levantada"
+        if estado_previo == "contestada":
+            return "contestada"
+        if o.get("vencimiento"):
+            return "plazo_vencido" if o["vencimiento"] < hoy_iso else "notificada_en_plazo"
+        if o.get("notificacion"):
+            return "notificada_en_plazo"
+        return "sin_notificar"
+
+    orden = ("notificada_en_plazo", "sin_notificar", "plazo_vencido", "contestada", "levantada")
+    estado, o = sorted(((estado_de(x), x) for x in vigentes), key=lambda p: orden.index(p[0]))[0]
+    if con_representante:
+        estado = "con_apoderado"
+    fmt = lambda iso: f"{iso[8:10]}/{iso[5:7]}/{iso[:4]}" if iso else "—"  # noqa: E731
+    detalle = {
+        "sin_notificar": f"Oposición presentada el {fmt(o.get('presentacion'))}; INPI todavía no se la notificó al titular.",
+        "notificada_en_plazo": (f"Oposición notificada el {fmt(o.get('notificacion'))}; el titular tiene hasta el "
+                                f"{fmt(o.get('vencimiento'))} para contestar." if o.get("vencimiento")
+                                else f"Oposición notificada el {fmt(o.get('notificacion'))}; sin vencimiento cargado todavía."),
+        "plazo_vencido": f"Venció el plazo para contestar ({fmt(o.get('vencimiento'))}) y no hay contestación: riesgo de abandono.",
+        "contestada": "El titular ya contestó la oposición/vista: se está trabajando.",
+        "levantada": f"Oposición levantada{' el ' + fmt(o['levantamiento']) if o.get('levantamiento') else ''}.",
+        "con_apoderado": "El titular ya tiene representante en el expediente de INPI.",
+    }[estado]
+    if o.get("agente_oponente"):
+        detalle += f" Agente del oponente: {o['agente_oponente']}."
+    return {"estado": estado, "sirve": estado in ESTADOS_QUE_SIRVEN, "detalle": detalle,
+            "presentacion": o.get("presentacion"), "notificacion": o.get("notificacion"),
+            "vencimiento": o.get("vencimiento"), "levantamiento": o.get("levantamiento"),
+            "agente_oponente": o.get("agente_oponente"), "oponente": o.get("oponente")}
+
+
+def sincronizar_marca(cur, m: dict, items: list, con_representante: bool) -> bool:
+    """Pasa lo que «Verificar en INPI» encontró a la tabla `marcas`, que es de donde
+    la pestaña Marca saca «⚠ Ver oposición», el estado («sin notificar»…) y la fecha
+    de la última revisión (🔎). Solo para leads y solo si hay una oposición vigente:
+    una verificación sin oposiciones no borra lo que detectó la revisión nocturna
+    (puede ser una vista que solo se ve en la Grilla). No cambia si es lead ni el
+    resumen de una sola oposición que usan los mails y el CRM. True si actualizó."""
+    if not m.get("es_lead"):
+        return False
+    est = clasificar_desde_expediente(items, m.get("fecha_publicacion"), con_representante,
+                                      estado_previo=m.get("estado_oposicion"))
+    if not est:
+        return False
+    # «Ver oposición» se muestra solo si el detalle dice OPO (y no es una vista de oficio).
+    detalle = m.get("detalle_oposicion") or ""
+    if not re.search(r"OPO", detalle, re.I):
+        detalle = f"{est['presentacion'] or ''} - Oposicion - OPOSICION (verificada en Análisis de marca)".strip(" -")
+    atendida = est["estado"] in ("contestada", "levantada")
+    cur.execute(
+        """
+        UPDATE marcas
+        SET tuvo_oposicion = true, detalle_oposicion = %s,
+            opo_chequeos = GREATEST(COALESCE(opo_chequeos, 0), 1),
+            opo_ultimo_chequeo_en = now(),
+            oposicion_detectada_en = COALESCE(oposicion_detectada_en, now()),
+            oponente_nombre = COALESCE(oponente_nombre, %s),
+            estado_oposicion = %s, estado_oposicion_version = 2,
+            estado_oposicion_detalle = %s, estado_oposicion_en = now(), oposicion_sirve = %s,
+            oposicion_fecha_presentacion = %s, oposicion_fecha_notificacion = %s,
+            oposicion_fecha_vencimiento = %s, oposicion_fecha_levantamiento = %s,
+            oposicion_agente_oponente = %s,
+            oposicion_atendida = CASE WHEN %s THEN true ELSE oposicion_atendida END,
+            oposicion_atendida_en = CASE WHEN %s AND oposicion_atendida IS NOT TRUE THEN now()
+                                         ELSE oposicion_atendida_en END,
+            oposicion_atendida_por = CASE WHEN %s AND oposicion_atendida IS NOT TRUE THEN %s
+                                          ELSE oposicion_atendida_por END
+        WHERE acta = %s
+        """,
+        (detalle, est["oponente"], est["estado"], est["detalle"], est["sirve"],
+         est["presentacion"], est["notificacion"], est["vencimiento"], est["levantamiento"],
+         est["agente_oponente"], atendida, atendida, atendida, f"sistema: {est['estado']}",
+         str(m["acta"])),
+    )
+    return True
 
 
 def armar_oposiciones(m: dict, snapshot) -> dict:

@@ -981,7 +981,7 @@ def consultar_oposiciones(acta: str, s=None, timeout: int = 30) -> dict:
     oposiciones y el logo de la marca (`logo`: (bytes, mime) o None)."""
     s = s or _crear_sesion()
     out = {"acta": str(acta), "estado_consulta": "error", "error": "", "items": [], "error_lectura": False,
-           "logo": None, "expediente": None}
+           "logo": None, "expediente": None, "titular_con_representante": False}
     try:
         r = _get_con_reintentos(
             lambda: s.post(
@@ -1006,6 +1006,14 @@ def consultar_oposiciones(acta: str, s=None, timeout: int = 30) -> dict:
     out.update(res)
     out["logo"] = extraer_logo(r.text)   # (bytes, mime) o None si la marca no tiene logo
     out["expediente"] = parsear_datos_expediente(r.text)
+    # Mismo criterio que scripts/oposiciones_expediente.titular_con_representante:
+    # GESTION DEL TRAMITE con CARACTER (apoderado/gestor) o agente matriculado.
+    m_gestion = RE_GESTION.search(r.text)
+    bloque = m_gestion.group(1) if m_gestion else ""
+    m_car = RE_CARACTER_SPAN.search(bloque)
+    out["titular_con_representante"] = bool(
+        (m_car and re.sub(r"\s+", " ", m_car.group(1)).strip()) or _agente_de_bloque(bloque)["matricula_agente"]
+    )
     if res["error_lectura"]:
         out["error"] = "INPI tiene oposiciones cargadas pero no se pudieron leer"
         return out
