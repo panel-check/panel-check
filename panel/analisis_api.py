@@ -210,6 +210,8 @@ def crear_router(verificar_login, conexion) -> APIRouter:
                 am.guardar_oposiciones(cur, acta, res["items"])
                 am.guardar_logo(cur, acta, res.get("logo"))
                 am.guardar_expediente(cur, acta, res.get("expediente"))
+                # Que la pestaña Marca (⚠ Ver oposición, estado, 🔎) vea lo mismo que esta pantalla.
+                am.sincronizar_marca(cur, m, res["items"], res.get("titular_con_representante", False))
                 conn.commit()
             avisos = _consultar_opuestas(res, s_inpi, acta)
             aviso = " · ".join(avisos) or None
