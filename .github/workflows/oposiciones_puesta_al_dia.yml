@@ -11,11 +11,11 @@ name: "Oposiciones: puesta al día (una sola vez, manual)"
 # alcance a revisarse (por tiempo o por bloqueos de INPI) queda pendiente y se
 # retoma al volver a correr esta misma tarea, o solo en el proceso diario.
 #
-# Cuándo dispararlo: de noche (entre las 19:35 y las 23:00 ART o desde las 08:00
-# del día siguiente), nunca la madrugada del martes al miércoles ni el miércoles
-# a la mañana (los boletines tienen prioridad). Si hay otro proceso de INPI
-# corriendo, esta tarea espera su turno en el carril. Dura entre 2 y 4 horas
-# según cuántos leads haya (~12 s por lead).
+# Cuándo dispararlo: evitando el horario del escaneo diario «Solicitudes nuevas
+# del día» (18:00 ART, hasta 150 min) y el pipeline de boletines si está
+# corriendo (import manual, sin horario fijo): comparten el mismo carril contra
+# INPI, así que si hay otro proceso corriendo, esta tarea espera su turno. Dura
+# entre 2 y 4 horas según cuántos leads haya (~12 s por lead).
 #
 # Los avisos por mail de las oposiciones que encuentre salen a las 07:30 ART.
 

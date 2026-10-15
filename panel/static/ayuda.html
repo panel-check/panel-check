@@ -754,7 +754,7 @@ le asigna un puntaje de prioridad. Después sigue a cada marca a lo largo del ti
         <div class="dias-tabs" id="dias-tabs"></div>
         <ul class="agenda-dia" id="agenda-dia"></ul>
         <p class="agenda-nota" id="agenda-nota"></p>
-        <p class="agenda-nota">Además, todos los días a cada hora en punto: <em>Panel actualizado</em> (controla que el panel tenga la última versión). Y a mano, cuando quieras: <em>Oposiciones: puesta al día</em> (de noche, nunca entre el martes 19:35 y el miércoles 8:00).</p>
+        <p class="agenda-nota">Además, todos los días a cada hora en punto: <em>Panel actualizado</em> (controla que el panel tenga la última versión). Y a mano, cuando quieras: <em>Oposiciones: puesta al día</em> (de noche, evitando el horario del escaneo diario, 18 hs).</p>
         <p>La pantalla <strong>Más → Automatizaciones → Crons</strong> los muestra agrupados por lo que hacen para el equipo:</p>
         <ul>
           <li>Arriba, una <strong>franja de estado</strong>: verde si todo funciona; amarilla o roja si algún proceso
@@ -777,7 +777,7 @@ le asigna un puntaje de prioridad. Después sigue a cada marca a lo largo del ti
             <tr><th colspan="3" style="background:#f4f6f9;text-align:left;">Conseguir leads</th></tr>
             <tr><td><strong>Listado de boletines de INPI</strong><br><small>(sección Boletines)</small></td><td>Los miércoles de 7 a 11 hs, cada 15 minutos, y una vez más a las 11 (corre dentro del panel, no en GitHub Actions); también con el botón «↻ Actualizar ahora»</td>
               <td>Pregunta a INPI qué boletines de marcas nuevas hay publicados (los últimos 2 meses) y los guarda en la base del panel (tablas <code>boletines_inpi</code> y <code>boletines_inpi_estado</code>). El historial desde 2024 se arma una sola vez, la primera vez que arranca el panel. Si el panel estuvo apagado en esa franja, se pone al día la próxima vez que alguien abre Boletines. Si INPI falla, avisa en la pantalla y reintenta a los 5 minutos.</td></tr>
-            <tr><td><strong>Solicitudes nuevas del día</strong><br><small>(antes "Escaneo de actas nuevas")</small></td><td>Todos los días: 19:35 y 1:40 hs (escaneo largo de 150 min; el martes a la noche 120 y la madrugada del miércoles no corre) y 10:05 y 16:05 hs (sondeo de 15 min)</td>
+            <tr><td><strong>Solicitudes nuevas del día</strong><br><small>(antes "Escaneo de actas nuevas")</small></td><td>Todos los días (miércoles incluido), 18 hs. Hasta 150 minutos. <small>(antes corría en 4 tandas; se unificó el 15/10/2026)</small></td>
               <td>Prueba los números de acta siguientes al último encontrado hasta agotar el tiempo de la corrida (ya no hay un tope de 300; corta antes
                 cuando varios seguidos todavía no existen). Siempre retoma desde la última acta encontrada, aunque la corrida
                 anterior se haya cortado a mitad: nunca vuelve a revisar las que ya pasó. Guarda solo los leads (sin agente), con email si se pudo, como
@@ -785,8 +785,8 @@ le asigna un puntaje de prioridad. Después sigue a cada marca a lo largo del ti
                 (DATOS GENERALES); si ahí no está, del Formulario o del webservice de INPI por CUIT. Las marcas con abogado
                 no van al panel de leads (las carga el boletín después), pero se guardan aparte con su agente para que la
                 <strong>vigilancia</strong> las compare con las marcas de los clientes.</td></tr>
-            <tr><td><strong>Boletín publicado</strong><br><small>(antes "Pipeline de boletines")</small></td><td>Madrugada del miércoles, desde las 0:05 hs (y revisión de seguridad a la 1:35 las demás noches)</td>
-              <td>Espera a que INPI publique (mira el listado cada 10 minutos, hasta 75 min), arma la lista de los boletines de "Marcas Nuevas" nuevos que todavía no estén importados (hasta 4) y los procesa <strong>de a uno</strong>: cada boletín es un trabajo aparte, y si uno falla el siguiente corre igual. A cada uno le toca una parte equitativa del tiempo que queda hasta las 8:00. Para cada boletín: lee el PDF, separa
+            <tr><td><strong>Boletín publicado</strong><br><small>(antes "Pipeline de boletines")</small></td><td>Sin horario automático por ahora (desde el 15/10/2026): se importa a mano con el botón «Importar» de <strong>/boletines</strong> en cuanto INPI lo publica (cerca de las 8/9 hs del miércoles, no a las 0 hs como se asumía antes)</td>
+              <td>Arma la lista de boletines de "Marcas Nuevas" que todavía no estén importados (o procesa puntualmente el que se eligió con «Importar») y los procesa <strong>de a uno</strong>: cada boletín es un trabajo aparte, y si uno falla el siguiente corre igual. Para cada boletín: lee el PDF, separa
                 cada solicitud, completa el nombre de las marcas Mixtas/Figurativas (que en el PDF son solo un logo),
                 verifica en INPI cada una sin matrícula de agente (o con "Part."), marca directamente como <em>con agente</em>
                 las que el boletín trae con número de matrícula, y carga todo al panel. Cada boletín tarda alrededor de 1 h 30 porque consulta INPI de a una marca, con pausas, para no ser
@@ -795,19 +795,19 @@ le asigna un puntaje de prioridad. Después sigue a cada marca a lo largo del ti
             <tr><td><strong>Oposiciones y vistas</strong><br><small>(antes "Revisión de oposiciones/vistas")</small></td><td>Todos los días, 22 hs</td>
               <td>Revisa la Grilla Digital de cada lead a los <strong>10, 23 y 33 días</strong> de su publicación (muchas oposiciones llegan antes de los 30 días). <strong>Pasados 35 días desde la publicación ya no se busca</strong>: el plazo para oponerse es de 30 días, así que los leads de boletines viejos (y los que se cargan con atraso) no entran en el proceso diario; solo se sigue el trámite de las oposiciones ya detectadas. Para buscar en un boletín puntual, aunque ya haya vencido el plazo, está el botón «Buscar oposiciones» de /boletines (input <code>boletin</code> de este mismo workflow / opción <code>--boletin</code> del script). Si hay una oposición de un tercero o una vista de INPI la marca en el panel (con la fecha en que se vio por primera vez) y además abre el <strong>expediente</strong> para leer su estado: presentación, notificación al titular, vencimiento del plazo para contestar, levantamiento, contestación y agente del oponente. Guarda el estado (<code>sin_notificar</code>, <code>notificada_en_plazo</code>, <code>plazo_vencido</code>, <code>vista_pendiente</code>, <code>oposicion_sin_detalle</code>, <code>contestada</code>, <code>levantada</code>, <code>con_apoderado</code>) y si el lead todavía sirve. Si encontró una oposición que sirve, la vuelve a mirar todos los días hasta el día 33 y cada 3 días hasta el día 60 (salvo que la marca ya esté marcada como contactada: ahí no se rechequea, solo se hacen los 3 hitos); las ya contestadas o levantadas se marcan como atendidas y no se vuelven a mirar. Si el expediente muestra un agente o gestor del titular, la marca deja de ser lead y no se vuelve a revisar (cada corrida también corrige las que ya estaban así). Las oposiciones detectadas antes de existir el estado, y las que se clasificaron con una versión anterior de estas reglas, se vuelven a revisar una vez en la primera corrida (se ve en el log: «clasificadas con la versión anterior que se vuelven a revisar»). A mano existe la opción <code>--reverificar-apoderados</code> (script <code>revisar_oposiciones.py</code>) que devuelve a lead a los que se habían descartado solo por un poder de la Grilla Digital cuando el titular sigue sin agente. Hasta 30 minutos por noche; si no alcanza o INPI bloquea, el resto sigue la noche siguiente. El <strong>mail de aviso</strong> sale a las 7:30.</td></tr>
             <tr><td><strong>Oposiciones: puesta al día</strong><br><small>(manual, una sola vez)</small></td><td>Solo a mano (▶ Correr ahora o "Run workflow" en GitHub). 2 a 4 horas.</td>
-              <td>Pasa de una vez a los leads ya publicados antes de que existiera el esquema 10/23/33 días y que todavía están dentro del plazo de oposición (hasta ~35 días de publicados), con el hito que les corresponde por su antigüedad. Tope de 330 minutos; si no alcanza, se vuelve a correr y retoma donde quedó (también la retoma el proceso diario). <strong>No dispararla</strong> entre las 19:35 del martes y las 8:00 del miércoles: los boletines tienen prioridad. Las oposiciones que encuentre se avisan en el mail de las 7:30.</td></tr>
+              <td>Pasa de una vez a los leads ya publicados antes de que existiera el esquema 10/23/33 días y que todavía están dentro del plazo de oposición (hasta ~35 días de publicados), con el hito que les corresponde por su antigüedad. Tope de 330 minutos; si no alcanza, se vuelve a correr y retoma donde quedó (también la retoma el proceso diario). <strong>No dispararla</strong> cerca de las 18 hs: el escaneo diario de «Solicitudes nuevas del día» usa el mismo carril contra INPI y tiene prioridad. Las oposiciones que encuentre se avisan en el mail de las 7:30.</td></tr>
             <tr><td><strong>Concesiones y vencimientos</strong><br><small>(antes "Revisión de estado del trámite")</small></td><td>Lunes, 4:20 hs</td>
               <td>Para las marcas que todavía no tienen resolución, revisa si INPI la concedió o denegó, y guarda
                 fecha de concesión, número de disposición y vencimiento.</td></tr>
             <tr><th colspan="3" style="background:#f4f6f9;text-align:left;">Clientes y vigilancia</th></tr>
-            <tr><td><strong>Vigilancia marcaria</strong></td><td>Todos los días, 0:20, 6:20 y 12:20 hs (después de cada turno de escaneo)</td>
+            <tr><td><strong>Vigilancia marcaria</strong></td><td>Todos los días, apenas termina «Solicitudes nuevas del día» (se disparan encadenados; en la práctica, después de las 18 hs) <small>(antes 3 horarios fijos; se encadenó el 15/10/2026)</small></td>
               <td>1) Suma a la cartera las solicitudes presentadas con una matrícula del estudio cuando su CUIT es de un cliente
                 (las demás quedan como propuesta en Clientes → Por matrícula). 2) Compara cada solicitud nueva (boletines y
                 escaneo de actas) contra las marcas vigiladas de los clientes activos —parecido escrito, sonoro, contenida,
                 palabra en común, ajustado por clase— y crea las alertas; avisa también si un cliente presentó una marca con
                 otro agente. Solo alerta solicitudes con el plazo de oposición abierto, y nunca dos veces la misma pareja.
                 3) Recompara las marcas de la cartera cuyo nombre, términos extra o clase cambiaron. 4) El mail de
-                <em>Cartera y vigilancia</em> sale a las 7:30 (junto con los otros avisos). No consulta INPI: trabaja sobre la base, por eso no usa el carril de INPI. La comparación de los boletines de la madrugada del miércoles entra en la corrida de las 12:20.</td></tr>
+                <em>Cartera y vigilancia</em> sale a las 7:30 (junto con los otros avisos). No consulta INPI: trabaja sobre la base, por eso no usa el carril de INPI. Como compara cualquier solicitud nueva todavía no comparada, los miércoles también incluye los boletines importados a mano ese día (siempre que ya estén cargados cuando termina el escaneo).</td></tr>
             <tr><td><strong>Seguimiento de la cartera</strong></td><td>Todos los días, 22:35 hs</td>
               <td>Vuelve a leer en INPI el expediente de cada marca de un cliente activo: primero las recién cargadas o que
                 nunca se pudieron consultar, después las que siguen en trámite (una vez por día) y las concedidas o
@@ -1210,29 +1210,19 @@ if (hashInicial && !["#manual", "#ayuda"].includes(hashInicial)) {
   const TODOS = [0, 1, 2, 3, 4, 5, 6], SIN_MIE = [0, 1, 2, 4, 5, 6];
   const NOMBRES = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"];
   const EV = [
-    { h: "00:05", dias: [3], t: "Boletines nuevos, de a uno", d: "Espera que INPI publique (sale a las 0:00), y procesa los boletines nuevos en cadena: cada uno recibe una parte del tiempo que queda hasta las 8:00. Es lo único de INPI que corre esta madrugada.", tipo: "especial" },
-    { h: "00:20", dias: TODOS, t: "Vigilancia marcaria", d: "Compara las solicitudes nuevas con las marcas de los clientes y crea alertas.", tipo: "sin-inpi" },
-    { h: "01:35", dias: SIN_MIE, t: "Revisión de boletín pendiente", d: "Red de seguridad: si quedó algún boletín reciente sin cargar, lo procesa. Si no hay, termina en segundos.", tipo: "" },
-    { h: "01:40", dias: SIN_MIE, t: "Escaneo de actas (turno B)", d: "Hasta 150 minutos probando los números de acta siguientes al último encontrado.", tipo: "" },
     { h: "04:20", dias: [1], t: "Concesiones y vencimientos", d: "Revisa si INPI concedió o denegó marcas sin resolución (hasta 30 min).", tipo: "especial" },
     { h: "05:10", dias: SIN_MIE, t: "Completar: sin email", d: "Reintenta conseguir el email de los leads que lo tienen pendiente (hasta 60 min).", tipo: "" },
     { h: "05:50", dias: SIN_MIE, t: "Completar: sin nombre", d: "Busca el nombre de las marcas Mixtas/Figurativas pendientes (hasta 20 min).", tipo: "" },
-    { h: "06:20", dias: TODOS, t: "Vigilancia marcaria", d: "Segunda pasada del día.", tipo: "sin-inpi" },
     { h: "07:30", dias: TODOS, t: "Avisos por mail", d: "Oposiciones y vistas nuevas, cartera y vigilancia, y formularios de clientes.", tipo: "sin-inpi" },
-    { h: "08:00", dias: [3], t: "Tope de la cadena de boletines", d: "Aunque algún boletín no haya terminado de verificar sus leads, queda cargado; lo que falta se retoma de noche.", tipo: "especial" },
-    { h: "10:05", dias: TODOS, t: "Sondeo del escaneo de actas", d: "15 minutos para que no se acumule atraso durante el día.", tipo: "" },
-    { h: "12:20", dias: TODOS, t: "Vigilancia marcaria", d: "Tercera pasada del día.", tipo: "sin-inpi" },
-    { h: "16:05", dias: TODOS, t: "Sondeo del escaneo de actas", d: "15 minutos.", tipo: "" },
-    { h: "19:35", dias: [0, 1, 3, 4, 5, 6], t: "Escaneo de actas (turno A)", d: "Hasta 150 minutos.", tipo: "" },
-    { h: "19:35", dias: [2], t: "Escaneo de actas (turno A, recortado)", d: "120 minutos, para dejar libre el carril a las 0:05 del miércoles.", tipo: "especial" },
+    { h: "18:00", dias: TODOS, t: "Solicitudes nuevas del día", d: "Hasta 150 minutos probando los números de acta siguientes al último encontrado. Corre igual todos los días, miércoles incluido.", tipo: "" },
+    { h: "20:30", dias: TODOS, t: "Vigilancia marcaria", d: "Sin horario fijo propio: se dispara sola apenas termina el escaneo de arriba (el horario es aproximado). Compara las solicitudes nuevas —boletines incluidos los miércoles, si ya se importaron— con las marcas de los clientes.", tipo: "sin-inpi" },
     { h: "22:00", dias: TODOS, t: "Oposiciones y vistas", d: "Revisa a los leads en sus hitos de 10, 23 y 33 días (solo dentro del plazo de oposición) y sigue los que tienen oposición (hasta 30 min).", tipo: "" },
     { h: "22:35", dias: TODOS, t: "Seguimiento de la cartera", d: "Vuelve a leer en INPI los expedientes de las marcas de clientes (hasta 15 min).", tipo: "" },
     { h: "23:05", dias: [0, 1, 3, 4, 5, 6], t: "Completar: sin verificar", d: "Reintenta confirmar las marcas que quedaron sin verificar (hasta 60 min).", tipo: "" },
   ];
   const NOTAS = {
-    2: "El martes a la noche el carril se despeja a propósito: no corre «sin verificar» y el escaneo se acorta, para que los boletines arranquen a las 0:05 sin cola.",
-    3: "El miércoles de madrugada no corren el turno B ni los «Completar»: la prioridad es tener todos los boletines cargados a las 8:00.",
     1: "El lunes, además, se revisan las concesiones y vencimientos.",
+    3: "Los boletines se importan a mano desde /boletines en cuanto INPI los publica (cerca de las 8/9 hs); no tienen horario automático.",
   };
   const tabs = document.getElementById("dias-tabs"), lista = document.getElementById("agenda-dia"), nota = document.getElementById("agenda-nota");
   if (!tabs) return;

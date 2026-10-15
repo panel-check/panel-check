@@ -1,11 +1,16 @@
 name: "Vigilancia marcaria"
 
 on:
-  schedule:
-    # 3 veces por día (UTC): 03:20, 09:20 y 15:20 = 00:20, 06:20 y 12:20 ART, después
-    # de cada turno de escaneo. No consulta INPI (solo compara contra la base), por
-    # eso no usa el carril de INPI. Los mails salen a las 07:30 ART (avisos_manana.yml).
-    - cron: "20 3,9,15 * * *"
+  # Se dispara sola apenas termina "Solicitudes nuevas del día" (escanear_actas.yml),
+  # en vez de tener un horario propio (decidido el 15/10/2026). Como compara() ya
+  # mira cualquier solicitud nueva todavía no comparada —boletines incluidos—, esto
+  # alcanza también para los miércoles: los boletines se importan a mano durante la
+  # mañana, y para cuando el escaneo (18:00 ART) termina y dispara esta corrida, ya
+  # están cargados. No consulta INPI (solo compara contra la base), por eso no usa
+  # el carril de INPI. Los mails salen a las 07:30 ART (avisos_manana.yml).
+  workflow_run:
+    workflows: ["Solicitudes nuevas del día (escaneo de actas)"]
+    types: [completed]
   workflow_dispatch:
 
 permissions:
@@ -18,6 +23,10 @@ concurrency:
 
 jobs:
   vigilar:
+    # Si lo disparó el escaneo (workflow_run), solo seguir cuando terminó bien:
+    # si falló o se canceló no hay solicitudes nuevas confiables para comparar.
+    # Un disparo manual (workflow_dispatch) no tiene esa condición.
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     env:
       RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}

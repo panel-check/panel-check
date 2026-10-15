@@ -2,17 +2,16 @@ name: "Solicitudes nuevas del día (escaneo de actas)"
 
 on:
   schedule:
-    # Horarios en UTC (Argentina = UTC-3). GitHub arranca los crons ~15 min tarde.
-    # Turno A, 19:35 ART: escaneo largo (150 min; los martes 120, porque a las
-    # 00:05 del miércoles el carril tiene que quedar libre para los boletines).
-    - cron: "35 22 * * *"
-    # Turno B, 01:40 ART: escaneo largo (150 min). NO corre la madrugada del
-    # martes al miércoles (UTC miércoles): ahí el carril es de los boletines.
-    - cron: "40 4 * * 0,1,2,4,5,6"
-    # Sondeo diurno, 10:05 y 16:05 ART: 15 min, solo para no dejar acumular
-    # atraso y que la vigilancia vea lo nuevo del día.
-    - cron: "5 13 * * *"
-    - cron: "5 19 * * *"
+    # Horario en UTC (Argentina = UTC-3). GitHub arranca los crons ~15 min tarde.
+    # Una sola corrida diaria, 18:00 ART (21:00 UTC) — decidido el 15/10/2026:
+    # antes corría en 4 tandas (turnos A/B de noche + 2 sondeos diurnos), con
+    # el turno A recortado los martes y el turno B salteado los miércoles para
+    # dejarle el carril libre al pipeline de boletines, que arrancaba a las
+    # 00:05. Ese pipeline ya no tiene disparo automático (ver pipeline.yml),
+    # así que esa coordinación dejó de hacer falta y se simplificó a una
+    # corrida por día, todos los días (miércoles incluido). "Vigilancia
+    # marcaria" (vigilancia.yml) se dispara sola apenas termina esta corrida.
+    - cron: "0 21 * * *"
   workflow_dispatch:
     inputs:
       max_minutes:
@@ -64,15 +63,11 @@ jobs:
       - name: Probar los siguientes números de acta contra INPI
         run: |
           cd scripts
-          # Presupuesto de tiempo según qué horario disparó la corrida.
+          # Presupuesto de tiempo: 150 min por defecto (una sola corrida diaria,
+          # ya no hace falta distinguir por horario), salvo que lo pisen a mano.
           MAXMIN="${{ inputs.max_minutes }}"
           if [ -z "$MAXMIN" ]; then
-            case "${{ github.event.schedule }}" in
-              "35 22 * * *") MAXMIN=150; [ "$(date -u +%u)" = "2" ] && MAXMIN=120 ;;  # martes: recortado
-              "40 4 * * 0,1,2,4,5,6") MAXMIN=150 ;;
-              "") MAXMIN=150 ;;  # disparo manual sin indicar minutos
-              *) MAXMIN=15 ;;  # sondeo diurno
-            esac
+            MAXMIN=150
           fi
           echo "Presupuesto de escaneo: $MAXMIN min"
           TOPE="${{ inputs.tope }}"
