@@ -592,7 +592,7 @@ GRUPOS_AUTOMATIZACIONES = [
                 "nombre": "Solicitudes nuevas del día",
                 "descripcion": "Busca en INPI las solicitudes presentadas en los últimos días, antes de que "
                                "salgan en el boletín, para poder contactar al titular semanas antes que nadie.",
-                "horario": "Todos los días: 19:35 y 1:40 hs (escaneo largo) y 10:05 y 16:05 hs (sondeo corto)",
+                "horario": "Todos los días (miércoles incluido), 18 hs",
                 "metricas": [
                     {"sql": "SELECT COUNT(*) FROM marcas WHERE fuente = 'escaneo_directo' "
                             "AND creado_en >= date_trunc('day', now() AT TIME ZONE 'America/Argentina/Buenos_Aires') "
@@ -608,16 +608,17 @@ GRUPOS_AUTOMATIZACIONES = [
                      "etiqueta": "última acta encontrada en INPI"},
                 ],
                 "procesos": [
-                    {"workflow_file": "escanear_actas.yml",
-                     "cron": ["35 22 * * *", "40 4 * * 0,1,2,4,5,6", "5 13 * * *", "5 19 * * *"]},
+                    {"workflow_file": "escanear_actas.yml", "cron": "0 21 * * *"},
                 ],
             },
             {
                 "nombre": "Boletín publicado",
                 "descripcion": "Cuando INPI publica un boletín de Marcas Nuevas, lo importa entero y marca "
-                               "cuáles son leads (sin abogado). Procesa los boletines nuevos de a uno, desde "
-                               "las 0:05 del miércoles (INPI los publica a las 0:00); cada uno tarda ~1 h 30.",
-                "horario": "Madrugada del miércoles, desde las 0:05 hs (y red de seguridad 1:35 hs los demás días)",
+                               "cuáles son leads (sin abogado). Sin horario automático por ahora (15/10/2026): "
+                               "INPI publica cerca de las 8/9 hs, no a las 0 hs como se asumía, así que se "
+                               "importa a mano con el botón «Importar» de /boletines en cuanto aparece; cada "
+                               "boletín tarda ~1 h 30.",
+                "horario": "Solo a mano (botón «Importar» en /boletines)",
                 "metricas": [
                     {"sql": "SELECT boletin || ' (' || COUNT(*) FILTER (WHERE es_lead) || ' leads)' "
                             "FROM marcas WHERE boletin IS NOT NULL "
@@ -625,7 +626,7 @@ GRUPOS_AUTOMATIZACIONES = [
                      "etiqueta": "último boletín importado", "destacada": True},
                 ],
                 "procesos": [
-                    {"workflow_file": "pipeline.yml", "cron": ["5 3 * * 3", "35 4 * * 0,1,2,4,5,6"]},
+                    {"workflow_file": "pipeline.yml", "cron": None},
                 ],
             },
         ],
@@ -693,7 +694,7 @@ GRUPOS_AUTOMATIZACIONES = [
                 "descripcion": "Compara las solicitudes nuevas (boletines y escaneo de actas) con las marcas de los "
                                "clientes, crea alertas por parecidos y por clientes que presentan con otro agente, "
                                "suma por matrícula. El mail con alertas, plazos y novedades sale a las 7:30.",
-                "horario": "Todos los días, 0:20, 6:20 y 12:20 hs",
+                "horario": "Todos los días, apenas termina «Solicitudes nuevas del día» (en la práctica, después de las 18 hs)",
                 "metricas": [
                     {"sql": "SELECT COUNT(*) FROM vigilancia_alertas WHERE estado IN ('nueva','monitorear','oponer')",
                      "etiqueta": "alertas abiertas", "destacada": True},
@@ -704,7 +705,7 @@ GRUPOS_AUTOMATIZACIONES = [
                      "etiqueta": "marcas vigiladas"},
                 ],
                 "procesos": [
-                    {"workflow_file": "vigilancia.yml", "cron": "20 3,9,15 * * *"},
+                    {"workflow_file": "vigilancia.yml", "cron": None},
                 ],
             },
             {

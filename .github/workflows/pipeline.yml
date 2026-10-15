@@ -1,18 +1,13 @@
 name: "Boletín publicado (pipeline de boletines)"
 
 on:
-  schedule:
-    # Horarios en UTC (Argentina = UTC-3). GitHub arranca los crons ~15 min tarde.
-    #
-    # Madrugada del martes al miércoles, 00:05 ART (03:05 UTC miércoles): INPI
-    # publica los boletines de marcas nuevas a las 00:00 del miércoles. El primer
-    # paso espera la publicación (mira el listado cada 10 min) y después procesa
-    # los boletines nuevos de a uno, en cadena, hasta las 08:00 ART como mucho.
-    - cron: "5 3 * * 3"
-    # Red de seguridad, 01:35 ART (04:35 UTC) las demás noches: si quedó algún
-    # boletín reciente sin cargar (falla puntual), lo procesa. Si no hay ninguno,
-    # termina en segundos.
-    - cron: "35 4 * * 0,1,2,4,5,6"
+  # Sin horario automático (15/10/2026): se asumía que INPI publica los
+  # boletines a las 00:00 del miércoles, pero en realidad los publica cerca de
+  # las 8/9 ART — el disparo automático de madrugada no servía de nada. Por
+  # ahora se importa a mano desde /boletines (botón "Importar", que dispara
+  # este mismo workflow con workflow_dispatch) en cuanto aparecen. Si más
+  # adelante se detecta de forma confiable cuándo publica INPI, se puede volver
+  # a agregar un `schedule:` acá.
   workflow_dispatch:
     inputs:
       boletin:
@@ -66,15 +61,14 @@ jobs:
             limite=$(( ahora + 240 * 60 ))
             echo "Boletín forzado manualmente: $BOLETIN"
           else
+            # Sin $BOLETIN: autodetecta los boletines pendientes del listado de
+            # INPI. Ya no hay disparo programado que espere la publicación (ver
+            # comentario en el `on:` de este workflow) — este caso solo lo pisa
+            # un workflow_dispatch manual sin boletín indicado (por ejemplo,
+            # desde /crons), así que no hace falta esperar: si no hay nada
+            # pendiente todavía, corta al toque.
             espera_max=0
-            limite=$(( ahora + 150 * 60 ))
-            if [ "$SCHEDULE" = "5 3 * * 3" ]; then
-              espera_max=75   # minutos esperando que INPI publique
-              limite=$(date -u -d "today 11:00" +%s)   # 08:00 ART
-              if [ "$limite" -le "$ahora" ]; then limite=$(( ahora + 120 * 60 )); fi
-            elif [ "$EVENTO" = "workflow_dispatch" ]; then
-              limite=$(( ahora + 450 * 60 ))
-            fi
+            limite=$(( ahora + 450 * 60 ))
             while true; do
               python3 scripts/listar_boletines.py --out data/boletines_todos.json || echo "No se pudo leer el listado de INPI esta vez."
               if [ "$espera_max" -eq 0 ]; then break; fi
@@ -103,8 +97,6 @@ jobs:
           if [ "$hay" = "false" ]; then echo "No hay boletines pendientes: no se procesa nada."; fi
         env:
           BOLETIN: ${{ inputs.boletin }}
-          SCHEDULE: ${{ github.event.schedule }}
-          EVENTO: ${{ github.event_name }}
           PYTHONUNBUFFERED: "1"
           DATABASE_URL: ${{ secrets.DATABASE_URL || secrets.DATABASE_PUBLIC_URL }}
 
