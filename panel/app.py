@@ -1383,24 +1383,55 @@ def total_pre_boletin(_: str = Depends(verificar_login)):
             return {"total": cur.fetchone()[0]}
 
 
-def _dias_restantes_oposicion(fecha) -> int | None:
-    """Días que le quedan a un boletín para recibir oposiciones (30 días desde
-    su publicación). 0 o menos = plazo cerrado. None si no hay fecha legible."""
+def _hoy_ar():
+    """Fecha de hoy en huso horario de Argentina (UTC-3), sin hora."""
+    import datetime as _dt
+    return _dt.datetime.now(_dt.timezone(_dt.timedelta(hours=-3))).date()
+
+
+def _parse_fecha_boletin(fecha):
+    """Convierte la fecha de un boletín (ISO de nuestra base, o DD/MM/AAAA
+    tal como la devuelve el listado de INPI) a date. None si no se puede leer."""
     if not fecha:
         return None
     import datetime as _dt
     if isinstance(fecha, _dt.datetime):
-        d = fecha.date()
-    elif isinstance(fecha, _dt.date):
-        d = fecha
-    else:
-        txt = str(fecha).split("T")[0]
-        try:
-            d = _dt.datetime.strptime(txt, "%d/%m/%Y").date() if "/" in txt else _dt.date.fromisoformat(txt)
-        except ValueError:
-            return None
-    hoy = _dt.datetime.now(_dt.timezone(_dt.timedelta(hours=-3))).date()
-    return 30 - (hoy - d).days
+        return fecha.date()
+    if isinstance(fecha, _dt.date):
+        return fecha
+    txt = str(fecha).split("T")[0]
+    try:
+        return _dt.datetime.strptime(txt, "%d/%m/%Y").date() if "/" in txt else _dt.date.fromisoformat(txt)
+    except ValueError:
+        return None
+
+
+def _dias_restantes_oposicion(fecha) -> int | None:
+    """Días que le quedan a un boletín para recibir oposiciones (30 días desde
+    su publicación). 0 o menos = plazo cerrado. None si no hay fecha legible."""
+    d = _parse_fecha_boletin(fecha)
+    if d is None:
+        return None
+    return 30 - (_hoy_ar() - d).days
+
+
+def _fecha_notificacion_boletin(fecha):
+    """INPI no avisa a los titulares el mismo día que cierra el plazo de 30
+    días: notifica las oposiciones en tanda, todos los miércoles. Esta función
+    devuelve la fecha de ese miércoles (el primero en la fecha de cierre o
+    después; si el cierre cae en miércoles, ese mismo día).
+
+    Por eso un boletín sigue apareciendo por defecto en /boletines hasta esa
+    fecha aunque el plazo de 30 días ya haya cerrado: a la gente recién se le
+    notifica ese miércoles, no el día del cierre. Ej.: boletín publicado el
+    16/09 cierra el 16/10 (viernes) pero se notifica el miércoles 21/10, así
+    que sigue en el listado (con el plazo marcado como cerrado) hasta el 21/10."""
+    import datetime as _dt
+    d = _parse_fecha_boletin(fecha)
+    if d is None:
+        return None
+    cierre = d + _dt.timedelta(days=30)
+    return cierre + _dt.timedelta(days=(2 - cierre.weekday()) % 7)  # 2 = miércoles
 
 
 @app.get("/api/boletines/completo")
@@ -1445,11 +1476,21 @@ def listar_boletines_completo(_: str = Depends(verificar_login)):
         importado_fila = importados.get(numero)
         fecha = (importado_fila or {}).get("fecha") or (de_inpi_fila or {}).get("fecha")
         dias_plazo = _dias_restantes_oposicion(fecha)
+        fecha_notif = _fecha_notificacion_boletin(fecha)
+        # Por defecto el listado solo muestra boletines con el plazo de oposición
+        # todavía abierto. La excepción: aunque el plazo ya haya cerrado, INPI
+        # recién notifica a los titulares el miércoles siguiente al cierre (ver
+        # _fecha_notificacion_boletin), así que seguimos mostrándolo hasta ese
+        # miércoles inclusive. Sin fecha legible no hay forma de saber si ya
+        # pasó, así que por las dudas se muestra.
+        visible_por_defecto = fecha_notif is None or _hoy_ar() <= fecha_notif
         cuenta = conteos.get(numero)
         filas.append({
             "numero": numero,
             "fecha": fecha,
             "dias_plazo_oposicion": dias_plazo,  # <= 0: el plazo ya cerró; None: sin fecha
+            "fecha_notificacion_oposicion": fecha_notif.isoformat() if fecha_notif else None,
+            "visible_por_defecto": visible_por_defecto,
             "leads": cuenta["leads"] if cuenta else None,
             "con_agente": cuenta["con_agente"] if cuenta else None,
             "importado": bool(importado_fila) and importado_fila["estado"] == "procesado",
