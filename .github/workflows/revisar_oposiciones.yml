@@ -2,24 +2,29 @@ name: "Oposiciones y vistas"
 
 on:
   schedule:
-    # Todos los días a las 01:00 UTC (22:00 ART), después del escaneo del turno A.
-    # Revisa a cada lead a los 10, 23 y 33 días de su publicación (el plazo para
-    # oponerse es de 30 días: pasados ~35 ya no se busca) y sigue el trámite de los
-    # que tienen oposición (ver revisar_oposiciones.py). El mail de aviso
-    # sale a las 07:30 ART (avisos_manana.yml).
-    - cron: "0 1 * * *"
+    # Rotación nocturna automática (decidido el 15/10/2026: reemplaza el
+    # esquema anterior de hitos a los 10/23/33 días). Todas las noches, a
+    # las 23:10 ART (02:10 UTC), revisa el boletín COMPLETO -- todos sus
+    # leads, misma lógica que el botón manual «Buscar oposiciones» de
+    # /boletines -- de hasta 5 boletines: los que estén más cerca de cerrar
+    # el plazo de oposición (o ya cerrados, esperando que INPI notifique a
+    # los titulares el miércoles siguiente). Elegidos por
+    # elegir_boletines_oposicion.py. Corre dentro de la ventana libre
+    # 23:05-07:00 ART; cada boletín es un job aparte (como pipeline.yml)
+    # para no pegar contra el límite de 6 h por job de GitHub Actions.
+    - cron: "10 2 * * *"
   workflow_dispatch:
     inputs:
+      boletin:
+        description: "Búsqueda manual: número de boletín cuyos leads se revisan TODOS, aunque ya haya vencido el plazo de oposición (dejar vacío = no hace búsqueda manual de un boletín)"
+        required: false
+        default: ""
       max_minutes:
-        description: "Minutos máximos de esta corrida (default 30)"
+        description: "Con boletín: minutos máximos de esta corrida (default 30)"
         required: false
         default: "30"
       limit:
-        description: "Tope de actas a revisar en esta corrida (dejar vacío = todas)"
-        required: false
-        default: ""
-      boletin:
-        description: "Búsqueda manual: número de boletín cuyos leads se revisan TODOS, aunque ya haya vencido el plazo de oposición (dejar vacío = proceso diario normal)"
+        description: "Con boletín: tope de actas a revisar en esta corrida (dejar vacío = todas)"
         required: false
         default: ""
       reverificar_apoderados:
@@ -27,6 +32,10 @@ on:
         type: boolean
         required: false
         default: false
+      cantidad:
+        description: "Si no se indica boletín ni reverificar_apoderados: dispara la rotación ahora. Cuántos boletines revisar esta corrida (5 = lo normal de cada noche; se puede subir para ponerse al día)"
+        required: false
+        default: "5"
 
 permissions:
   contents: read
@@ -39,9 +48,58 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  revisar:
+  planificar:
+    # Arma la lista de boletines a rotar esta noche: automático (cron), con
+    # el botón genérico "Correr ahora" del panel (dispara sin inputs), o a
+    # mano sin indicar boletín ni reverificar_apoderados.
+    if: >-
+      github.event_name == 'schedule' ||
+      (github.event_name == 'workflow_dispatch' &&
+       github.event.inputs.boletin == '' &&
+       github.event.inputs.reverificar_apoderados != 'true')
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 15
+    outputs:
+      lista: ${{ steps.elegir.outputs.lista }}
+      hay: ${{ steps.elegir.outputs.hay }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Instalar dependencias
+        run: pip install -r requirements.txt
+
+      - name: Elegir los boletines de esta rotación
+        id: elegir
+        run: |
+          cd scripts
+          cantidad="${{ github.event.inputs.cantidad }}"
+          lista=$(python3 elegir_boletines_oposicion.py --max "${cantidad:-5}")
+          if [ "$lista" = "[]" ]; then hay=false; else hay=true; fi
+          echo "lista=$lista" >> "$GITHUB_OUTPUT"
+          echo "hay=$hay" >> "$GITHUB_OUTPUT"
+          echo "Boletines elegidos: $lista"
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL || secrets.DATABASE_PUBLIC_URL }}
+          PYTHONUNBUFFERED: "1"
+
+  revisar_rotacion:
+    # Un job por boletín, de a uno (max-parallel 1): así cada uno tiene sus
+    # propias 6 h de margen (límite por job de GitHub Actions) y si uno
+    # falla el resto sigue igual.
+    name: "Rotación — boletín ${{ matrix.numero }}"
+    needs: planificar
+    if: needs.planificar.outputs.hay == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 345
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        numero: ${{ fromJSON(needs.planificar.outputs.lista) }}
     env:
       # Alarma de bloqueo masivo de INPI (scripts/monitor_bloqueo.py)
       RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
@@ -57,7 +115,38 @@ jobs:
       - name: Instalar dependencias
         run: pip install -r requirements.txt
 
-      - name: Revisar Grilla Digital de los leads en sus hitos de 10, 23 y 33 días
+      - name: Revisar todos los leads de este boletín
+        run: |
+          cd scripts
+          python3 revisar_oposiciones.py --boletin "${{ matrix.numero }}" --max-minutes 330
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL || secrets.DATABASE_PUBLIC_URL }}
+          PYTHONUNBUFFERED: "1"
+
+  revisar:
+    # Búsqueda manual de un boletín puntual, o --reverificar-apoderados: el
+    # mismo comportamiento de siempre, sin cambios. Es lo que dispara el
+    # botón «Buscar oposiciones» de /boletines (con el input `boletin`).
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      (github.event.inputs.boletin != '' || github.event.inputs.reverificar_apoderados == 'true')
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+      RESEND_FROM: ${{ secrets.RESEND_FROM }}
+      NOTIFICAR_A: ${{ secrets.NOTIFICAR_A }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Instalar dependencias
+        run: pip install -r requirements.txt
+
+      - name: Revisar (búsqueda manual de boletín, o reverificar apoderados)
         run: |
           cd scripts
           args="--max-minutes ${{ inputs.max_minutes || '30' }}"

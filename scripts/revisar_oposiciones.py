@@ -5,6 +5,17 @@ oposición de tercero o una vista de oficio de INPI durante la ventana de 30
 días para oponerse, y EN QUÉ ESTADO ESTÁ, para saber si todavía vale la pena
 ofrecerle ayuda al titular.
 
+NOTA (15/10/2026): el disparo automático diario (.github/workflows/
+revisar_oposiciones.yml) ya NO usa el esquema de hitos 10/23/33 descripto
+más abajo -- pasó a una rotación nocturna que revisa el boletín COMPLETO de
+hasta 5 boletines por noche (los más próximos a cerrar el plazo), llamando
+a este mismo script con --boletin (ver elegir_boletines_oposicion.py). El
+esquema de hitos (HITOS, SQL_PENDIENTES, opo_chequeos) se deja tal cual en
+el código porque sigue alimentando columnas que usa el panel (badge de
+"última revisión", gráfico de /crons) y porque --reverificar-apoderados y
+una corrida manual sin --boletin todavía lo pueden disparar a mano, pero el
+proceso automático de todos los días ya no pasa por acá.
+
 Estado de la oposición (estado_oposicion; ver oposiciones_expediente.py):
   SIRVEN (nadie la está trabajando):
     sin_notificar        presentada pero INPI todavía no se la notificó al titular
