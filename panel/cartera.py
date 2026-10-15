@@ -170,6 +170,8 @@ def crear_tablas(cur):
     # Grupo de marcas: nombre con el que se muestra esta marca en Clientes → Marcas cuando el equipo la
     # junta a mano con otras (por ejemplo «LA BONNE VIE» + «LBV BONVIELA»). Vacío = se agrupa sola por nombre.
     cur.execute("ALTER TABLE cartera_marcas ADD COLUMN IF NOT EXISTS grupo_marca TEXT")
+    # Umbral de similitud propio de esta marca (40-100). Vacío = usa el de Ajustes.
+    cur.execute("ALTER TABLE cartera_marcas ADD COLUMN IF NOT EXISTS umbral_vigilancia INTEGER")
     cur.execute(
         """
         CREATE TABLE IF NOT EXISTS cartera_novedades (

@@ -81,6 +81,7 @@ function cargarVista() {
 async function cargarResumen() {
   try {
     const r = await api("/api/cartera/resumen");
+    est.resumen = r;
     const chips = [
       `<span class="crm-chip"><strong>${fmtNum(r.clientes)}</strong> clientes</span>`,
       `<span class="crm-chip"><strong>${fmtNum(r.marcas)}</strong> marcas en cartera</span>`,
@@ -93,6 +94,7 @@ async function cargarResumen() {
     chips.push(`<span class="crm-chip crm-gris">Última vigilancia: ${r.ultima_vigilancia ? fmtFechaHora(r.ultima_vigilancia) : "todavía no corrió"}</span>`);
     $("resumen").innerHTML = chips.join("");
     $("badge-vigilancia").textContent = r.alertas_altas_nuevas ? String(r.alertas_altas_nuevas) : "";
+    if ($("mk-kpis")) pintarKpisMarcas();
   } catch (e) {
     $("resumen").innerHTML = `<span class="crm-error">No se pudo cargar el resumen (${esc(e.message)}).</span>`;
   }
@@ -155,6 +157,7 @@ async function pintarMarcas() {
     if (!est.clientes.length) { const r = await api("/api/clientes?activos=true"); est.clientes = r.clientes; est.origenes = r.origenes; }
     cont.innerHTML = `
       <div class="cl-vista">
+        <div class="kpis" id="mk-kpis"></div>
         <div class="cl-barra">
           <label>Buscar<input type="search" id="mk-q" placeholder="marca, acta, titular o cliente…" style="min-width:240px"></label>
           <label>Cliente<select id="mk-cliente"><option value="">Todos</option>${est.clientes.map(c => `<option value="${c.id}">${esc(c.nombre)}</option>`).join("")}</select></label>
@@ -165,13 +168,14 @@ async function pintarMarcas() {
           <label class="check" style="flex-direction:row;align-items:center;gap:6px"><input type="checkbox" id="mk-opo"> Con oposición</label>
           <label class="check" style="flex-direction:row;align-items:center;gap:6px"><input type="checkbox" id="mk-alertas"> Con alertas</label>
           <label class="check" style="flex-direction:row;align-items:center;gap:6px"><input type="checkbox" id="mk-sinvig"> Sin vigilar</label>
+          <label class="check" style="flex-direction:row;align-items:center;gap:6px"><input type="checkbox" id="mk-vigiladas"> Solo vigiladas</label>
           <label class="check" style="flex-direction:row;align-items:center;gap:6px"><input type="checkbox" id="mk-agrupar" checked> Agrupar por marca</label>
         </div>
         <div id="mk-tabla"></div>
       </div>`;
     let t;
     $("mk-q").addEventListener("input", () => { clearTimeout(t); t = setTimeout(pintarMarcas, 250); });
-    ["mk-cliente", "mk-referido", "mk-estado", "mk-clase", "mk-vence", "mk-opo", "mk-alertas", "mk-sinvig", "mk-agrupar"].forEach(id => $(id).addEventListener("change", pintarMarcas));
+    ["mk-cliente", "mk-referido", "mk-estado", "mk-clase", "mk-vence", "mk-opo", "mk-alertas", "mk-sinvig", "mk-vigiladas", "mk-agrupar"].forEach(id => $(id).addEventListener("change", pintarMarcas));
   }
   const p = new URLSearchParams();
   if ($("mk-q").value.trim()) p.set("q", $("mk-q").value.trim());
@@ -183,8 +187,11 @@ async function pintarMarcas() {
   if ($("mk-opo").checked) p.set("con_oposicion", "true");
   if ($("mk-alertas").checked) p.set("alertas", "true");
   if ($("mk-sinvig").checked) p.set("sin_vigilar", "true");
+  if ($("mk-vigiladas").checked) p.set("vigiladas", "true");
   const tabla = $("mk-tabla");
   try {
+    if (!est.resumen) est.resumen = await api("/api/cartera/resumen");
+    pintarKpisMarcas();
     const r = await api(`/api/cartera/marcas?${p}`);
     llenarSelectReferidos($("mk-referido"), r.referidos || [], $("mk-referido").value);
     if (!r.marcas.length) { tabla.innerHTML = '<p class="vacio">No hay marcas con estos filtros.</p>'; return; }
@@ -206,6 +213,30 @@ async function pintarMarcas() {
       ev.stopPropagation(); abrirCliente(+(el.dataset.cliente || el.dataset.verCliente));
     }));
   } catch (e) { tabla.innerHTML = `<p class="crm-error">No se pudo cargar (${esc(e.message)}).</p>`; }
+}
+
+/* Tarjetas de arriba de la lista de marcas: cada una es un atajo que aplica su filtro (la primera los limpia). */
+function pintarKpisMarcas() {
+  const r = est.resumen || {};
+  const v = id => $(id) && ($(id).type === "checkbox" ? $(id).checked : $(id).value);
+  const activa = v("mk-estado") === "concedida" ? "concedida" : v("mk-vence") === "180" ? "vencen" : v("mk-vigiladas") ? "vigiladas"
+    : (!v("mk-q") && !v("mk-cliente") && !v("mk-estado") && !v("mk-clase") && !v("mk-vence") && !v("mk-opo") && !v("mk-alertas") && !v("mk-sinvig") ? "total" : "");
+  const kpis = [
+    ["total", "🛡", r.marcas, "Expedientes en cartera", "Todos los expedientes de clientes activos (sin filtros)"],
+    ["concedida", "✅", r.marcas_concedidas, "Concedidas", "Expedientes con el registro concedido: ver solo esos"],
+    ["vencen", "⏰", r.marcas_vencen, "Vencen en 6 meses", "Registros que vencen en los próximos 6 meses: ver solo esos"],
+    ["vigiladas", "👁", r.marcas_vigiladas, "Vigiladas", "Expedientes que se comparan contra las solicitudes nuevas de INPI: ver solo esos"],
+  ];
+  $("mk-kpis").innerHTML = kpis.map(([k, ico, n, t, ayuda]) => `<button type="button" class="kpi kpi-${k}${activa === k ? " activa" : ""}" data-kpi="${k}" title="${esc(ayuda)}">
+    <span class="kpi-ico" aria-hidden="true">${ico}</span><span class="kpi-n">${n == null ? "…" : fmtNum(n)}</span><span class="kpi-t">${t}</span></button>`).join("");
+  $("mk-kpis").querySelectorAll("[data-kpi]").forEach(b => b.addEventListener("click", () => {
+    ["mk-q", "mk-cliente", "mk-estado", "mk-clase", "mk-vence"].forEach(id => { $(id).value = ""; });
+    ["mk-opo", "mk-alertas", "mk-sinvig", "mk-vigiladas"].forEach(id => { $(id).checked = false; });
+    if (b.dataset.kpi === "concedida") $("mk-estado").value = "concedida";
+    if (b.dataset.kpi === "vencen") $("mk-vence").value = "180";
+    if (b.dataset.kpi === "vigiladas") $("mk-vigiladas").checked = true;
+    pintarMarcas();
+  }));
 }
 
 /* Marcas en lista plana (una fila por acta), para quien prefiera no agrupar. */
@@ -283,6 +314,7 @@ function marcasAgrupadasHtml(marcas) {
   if (!est.gruposAbiertos) est.gruposAbiertos = new Set();
   const { grupos, nombreDe } = gruposDeMarcas(marcas);
   est.clavesGrupos = [...grupos.keys()];
+  est.fichasGrupos = [...grupos].map(([k, ms]) => ({ nombre: nombreDe.get(k), actas: ms.map(m => m.acta) }));
   const filas = [...grupos].map(([k, ms], i) => {
     const abierto = est.gruposAbiertos.has(k);
     const nombre = nombreDe.get(k);
@@ -293,7 +325,8 @@ function marcasAgrupadasHtml(marcas) {
     const cab = `<tr class="mk-grupo${abierto ? " abierto" : ""}" data-grupo="${i}">
       <td class="mk-chev-td"><span class="mk-chev" aria-hidden="true">›</span></td>
       <td><span class="mk-nombre">${esc(nombre)}</span>
-        ${conOpo ? ` <span class="cl-tag aviso" title="Tiene oposición o vista sin resolver">⚖ ${conOpo}</span>` : ""}${alertas ? ` <span class="cl-tag mal" title="Alertas de vigilancia abiertas">${alertas} alerta(s)</span>` : ""}</td>
+        ${conOpo ? ` <span class="cl-tag aviso" title="Tiene oposición o vista sin resolver">⚖ ${conOpo}</span>` : ""}${alertas ? ` <span class="cl-tag mal" title="Alertas de vigilancia abiertas">${alertas} alerta(s)</span>` : ""}
+        <button type="button" class="cl-btn sec mini" data-ficha="${i}" title="Abrir la ficha de la marca: expedientes, clases, plazos, vigilancia e historial">Abrir ficha</button></td>
       <td class="mk-exp">📄 <strong>${ms.length}</strong> expediente${ms.length === 1 ? "" : "s"}</td>
       <td>${esc(clases || "—")}</td>
       <td>${esc(ms[0].cliente_nombre)}${ms[0].cliente_referido ? "<br>" + tagReferido(ms[0].cliente_referido) : ""}</td>
@@ -329,6 +362,11 @@ function enlazarMarcasAgrupadas(tabla) {
     if (abrir) est.gruposAbiertos.add(k); else est.gruposAbiertos.delete(k);
   };
   tabla.querySelectorAll("tr.mk-grupo").forEach(tr => tr.addEventListener("click", () => fijar(tr, !tr.classList.contains("abierto"))));
+  tabla.querySelectorAll("[data-ficha]").forEach(b => b.addEventListener("click", ev => {
+    ev.stopPropagation();
+    const f = est.fichasGrupos[+b.dataset.ficha];
+    abrirFichaMarca(f.nombre, f.actas);
+  }));
   $("mk-expandir").addEventListener("click", () => tabla.querySelectorAll("tr.mk-grupo").forEach(tr => fijar(tr, true)));
   $("mk-contraer").addEventListener("click", () => tabla.querySelectorAll("tr.mk-grupo").forEach(tr => fijar(tr, false)));
 }
@@ -448,7 +486,8 @@ async function abrirCliente(id) {
         <label title="Comparar también contra todas las clases, no solo la propia y las relacionadas"><input type="checkbox" data-campo="vigilar_todas_clases" ${m.vigilar_todas_clases ? "checked" : ""}> En todas las clases</label>
         <input type="text" data-campo="terminos_vigilancia" value="${esc(m.terminos_vigilancia || "")}" placeholder="otros nombres a vigilar (coma)" title="Nombres extra para vigilar: variantes, abreviaturas, el nombre comercial…">
       </div></td>
-      <td style="white-space:nowrap"><button type="button" class="cl-btn sec mini" data-accion="actualizar" title="Volver a consultar el expediente en INPI">↻</button>
+      <td style="white-space:nowrap"><button type="button" class="cl-btn sec mini" data-accion="ficha" title="Abrir la ficha de la marca (con todos sus expedientes)">Ficha</button>
+        <button type="button" class="cl-btn sec mini" data-accion="actualizar" title="Volver a consultar el expediente en INPI">↻</button>
         <button type="button" class="cl-btn sec mini" data-accion="mover">Mover</button>
         <button type="button" class="cl-btn peligro mini" data-accion="sacar">Sacar</button></td>
     </tr>`).join("")}</tbody></table></div>` : '<p class="crm-gris">Todavía no hay marcas cargadas.</p>';
@@ -612,6 +651,11 @@ function conectarFichaCliente(cont, d) {
       try { await apiJson(`/api/cartera/marcas/${encodeURIComponent(acta)}`, "PUT", { [campo]: valor }); inp.style.outline = "2px solid var(--verde)"; setTimeout(() => { inp.style.outline = ""; }, 900); }
       catch (e) { alert(e.message); }
     }));
+    tr.querySelector('[data-accion="ficha"]').addEventListener("click", () => {
+      const { grupos, nombreDe } = gruposDeMarcas(d.marcas);
+      const clave = [...grupos].find(([, ms]) => ms.some(m => m.acta === acta));
+      abrirFichaMarca(clave ? nombreDe.get(clave[0]) : acta, clave ? clave[1].map(m => m.acta) : [acta]);
+    });
     tr.querySelector('[data-accion="actualizar"]').addEventListener("click", async ev => {
       ev.currentTarget.disabled = true;
       try {
@@ -646,15 +690,19 @@ function htmlAlerta(a, { sinCliente = false } = {}) {
   const otro = a.tipo === "otro_agente";
   const agente = a.agente_nuevo ? ` · ${esc(a.agente_nuevo)}` : "";
   const plazo = !otro && a.plazo_oposicion
-    ? `<div class="vg-plazo ${a.dias_oposicion !== null && a.dias_oposicion <= 7 ? "urgente" : ""}">⏱ ${a.dias_oposicion >= 0 ? "Se puede presentar oposición hasta el" : "El plazo de oposición cerró el"} <strong>${crmFecha(a.plazo_oposicion)}</strong> (${crmUrgencia({ dias: a.dias_oposicion })})</div>`
-    : (!otro && abierta ? '<div class="vg-plazo">⏱ Todavía no se publicó en el boletín: el plazo de 30 días para oponerse empieza cuando se publique.</div>' : "");
+    ? `<div class="vg-plazo ${a.dias_oposicion !== null && a.dias_oposicion <= 7 ? "urgente" : ""}">⚠ ${a.dias_oposicion >= 0 ? "Posible oposición: tenés 30 días corridos desde la publicación (Art. 13, Ley 22.362), hasta el" : "El plazo de oposición (30 días corridos desde la publicación, Art. 13, Ley 22.362) cerró el"} <strong>${crmFecha(a.plazo_oposicion)}</strong> (${crmUrgencia({ dias: a.dias_oposicion })})</div>`
+    : (!otro && abierta ? '<div class="vg-plazo vg-temprana">ℹ Detección temprana: todavía no fue publicada en el boletín, no corre plazo. Los 30 días corridos para oponerse (Art. 13, Ley 22.362) empiezan cuando se publique.</div>' : "");
+  const REL = { misma: ["mal", "Misma clase", "La marca nueva está en la misma clase que la del cliente"],
+    relacionada: ["aviso", "Clase conexa", "Clase distinta pero relacionada (tabla de Ajustes → Clases relacionadas)"],
+    distinta: ["", "Clase distinta", "Clases sin relación: alerta porque el nombre es casi idéntico o la marca se vigila en todas las clases"] };
+  const rel = !otro && REL[a.relacion_clases] ? `<span class="cl-tag ${REL[a.relacion_clases][0]}" title="${esc(REL[a.relacion_clases][2])}">${REL[a.relacion_clases][1]}</span>` : "";
   const botones = otro
     ? [["monitorear", "Lo sigo"], ["opuesta", "Ya lo hablé"], ["descartada", "Descartar"]]
     : [["monitorear", "Monitorear"], ["oponer", "Hay que oponer"], ["opuesta", "Oposición presentada"], ["descartada", "Descartar"]];
   return `
     <div class="vg-card ${otro ? "vg-otro" : "vg-" + esc(a.nivel)} ${abierta ? "" : "vg-cerrada"}" data-alerta="${a.id}">
       <div class="vg-cab">
-        ${otro ? '<span class="cl-tag azul">🔀 OTRO AGENTE</span>' : `${tagNivel(a.nivel)} <span class="vg-puntaje">${a.puntaje}%</span>`}
+        ${otro ? '<span class="cl-tag azul">🔀 OTRO AGENTE</span>' : `${tagNivel(a.nivel)} <span class="vg-puntaje">${a.puntaje}%</span> ${rel}${a.clase_nueva != null ? ` <span class="cl-tag" title="Clase de la solicitud nueva">Clase ${esc(a.clase_nueva)}</span>` : ""}`}
         <span class="cl-tag ${abierta ? "azul" : ""}">${esc(est.estadosAlerta[a.estado] || a.estado)}</span>
         ${sinCliente ? "" : `<a href="javascript:void(0)" data-cliente="${a.cliente_id}"><strong>${esc(a.cliente_nombre || "(cliente borrado)")}</strong></a>
           ${a.vigilancia_contratada ? '<span class="cl-tag ok">Contratada</span>' : '<span class="cl-tag" title="No paga la vigilancia: oportunidad para ofrecerla">Sin contratar</span>'}`}
@@ -709,6 +757,9 @@ async function pintarVigilancia() {
             <label>Clase (opcional)<input id="pr-clase" type="number" min="1" max="45" style="width:90px"></label>
             <button type="button" class="cl-btn" id="pr-ir">Buscar parecidas</button></div>
           <div id="pr-res"></div></div>
+        <details class="cl-caja" id="vg-marcas-det" style="margin-top:12px">
+          <summary><strong>Qué se vigila</strong> <span class="crm-gris">— marcas vigiladas, umbral de parecido de cada una y alertas abiertas</span></summary>
+          <div id="vg-marcas" style="margin-top:8px"></div></details>
         <div class="cl-barra">
           <label>Estado<select id="vg-estado"></select></label>
           <label>Nivel<select id="vg-nivel"><option value="">Todos</option><option value="alta">Alta</option><option value="media">Media</option><option value="baja">Baja</option></select></label>
@@ -723,6 +774,7 @@ async function pintarVigilancia() {
     const aj = await api("/api/cartera/alertas?estado=abiertas&cliente_id=-1"); est.estadosAlerta = aj.estados;
     $("vg-estado").innerHTML = `<option value="abiertas">Abiertas</option>` + Object.entries(aj.estados).map(([k, v]) => `<option value="${k}">${esc(v)}</option>`).join("") + `<option value="">Todas</option>`;
     ["vg-estado", "vg-nivel", "vg-tipo", "vg-cliente", "vg-sc"].forEach(id => $(id).addEventListener("change", pintarVigilancia));
+    $("vg-marcas-det").addEventListener("toggle", () => { if ($("vg-marcas-det").open) pintarVigilanciaMarcas(); });
     $("pr-ir").addEventListener("click", probarNombre);
     $("pr-nombre").addEventListener("keydown", ev => { if (ev.key === "Enter") probarNombre(); });
   }
@@ -739,7 +791,44 @@ async function pintarVigilancia() {
     lista.innerHTML = r.alertas.length ? r.alertas.map(a => htmlAlerta(a)).join("") + `<p class="cl-pie">${r.alertas.length} alerta(s).</p>`
       : '<p class="vacio">No hay alertas con estos filtros. La vigilancia corre todos los días: cuando aparezca una solicitud parecida a una marca de la cartera, va a figurar acá.</p>';
     conectarAlertas(lista, pintarVigilancia);
+    if ($("vg-marcas-det").open) pintarVigilanciaMarcas();
   } catch (e) { lista.innerHTML = `<p class="crm-error">No se pudo cargar (${esc(e.message)}).</p>`; }
+}
+
+/* Tabla «Qué se vigila»: una fila por marca vigilada, con su umbral (editable) y sus alertas abiertas. */
+async function pintarVigilanciaMarcas() {
+  const cont = $("vg-marcas");
+  if (!est.vgMarcas) cont.innerHTML = '<p class="crm-cargando">Cargando…</p>';
+  try {
+    const r = await api("/api/cartera/vigilancia/marcas");
+    est.vgMarcas = r;
+    const o = est.vgOrden || (est.vgOrden = { col: "denominacion", dir: 1 });
+    const valor = m => o.col === "alertas_abiertas" ? Number(m.alertas_abiertas) : o.col === "umbral" ? (m.umbral_vigilancia || r.umbral_general)
+      : String(m[o.col] ?? "").toLowerCase();
+    const marcas = [...r.marcas].sort((a, b) => (valor(a) > valor(b) ? 1 : valor(a) < valor(b) ? -1 : 0) * o.dir);
+    const th = (col, t) => `<th class="vg-orden" data-orden="${col}">${t}${o.col === col ? (o.dir > 0 ? " ▲" : " ▼") : ""}</th>`;
+    cont.innerHTML = `<p class="crm-gris" style="margin:0 0 6px">Umbral general (Ajustes): <strong>${r.umbral_general}%</strong> · Última corrida: <strong>${r.ultima_vigilancia ? fmtFechaHora(r.ultima_vigilancia) : "todavía no corrió"}</strong> (la vigilancia corre todos los días).</p>
+      ${marcas.length ? `<div style="overflow-x:auto"><table class="cl-tabla"><thead><tr>${th("denominacion", "Marca")}${th("clase", "Clase")}${th("cliente_nombre", "Cliente")}${th("umbral", "Umbral")}<th>Otros nombres</th>${th("alertas_abiertas", "Alertas")}</tr></thead><tbody>
+      ${marcas.map(m => `<tr data-acta="${esc(m.acta)}"><td><a href="javascript:void(0)" data-ficha-acta="${esc(m.acta)}" data-nombre="${esc(m.denominacion || m.acta)}"><strong>${esc(m.denominacion || "(sin nombre)")}</strong></a><br><small class="crm-gris">acta ${esc(m.acta)}</small></td>
+        <td>${esc(m.clase ?? "")}${m.vigilar_todas_clases ? ' <span class="cl-tag azul" title="Se compara contra todas las clases">todas</span>' : ""}</td>
+        <td><a href="javascript:void(0)" data-cliente="${m.cliente_id}">${esc(m.cliente_nombre)}</a></td>
+        <td><input type="number" min="40" max="100" data-umbral value="${m.umbral_vigilancia ?? ""}" placeholder="${r.umbral_general}" style="width:72px" title="Vacío = el general (${r.umbral_general}%)"> %${m.umbral_vigilancia ? "" : ' <small class="crm-gris">general</small>'}</td>
+        <td><small>${esc(m.terminos_vigilancia || "—")}</small></td>
+        <td>${m.alertas_abiertas ? `<span class="cl-tag mal">${m.alertas_abiertas}</span>` : "—"}</td></tr>`).join("")}</tbody></table></div>
+      <p class="cl-pie">${marcas.length} marca(s) vigilada(s). El umbral propio de una marca reemplaza al general; se aplica en la próxima corrida.</p>` : '<p class="vacio">No hay marcas vigiladas.</p>'}`;
+    cont.querySelectorAll("[data-orden]").forEach(h => h.addEventListener("click", () => {
+      o.dir = o.col === h.dataset.orden ? -o.dir : 1; o.col = h.dataset.orden; pintarVigilanciaMarcas();
+    }));
+    cont.querySelectorAll("[data-cliente]").forEach(a => a.addEventListener("click", () => abrirCliente(+a.dataset.cliente)));
+    cont.querySelectorAll("[data-ficha-acta]").forEach(a => a.addEventListener("click", () => abrirFichaMarca(a.dataset.nombre, [a.dataset.fichaActa], "vigilancia")));
+    cont.querySelectorAll("tr[data-acta] [data-umbral]").forEach(inp => inp.addEventListener("change", async () => {
+      const valor = inp.value.trim() === "" ? null : parseInt(inp.value, 10);
+      try {
+        await apiJson(`/api/cartera/marcas/${encodeURIComponent(inp.closest("tr").dataset.acta)}`, "PUT", { umbral_vigilancia: valor });
+        pintarVigilanciaMarcas();
+      } catch (e) { alert(e.message); }
+    }));
+  } catch (e) { cont.innerHTML = `<p class="crm-error">No se pudo cargar (${esc(e.message)}).</p>`; }
 }
 
 async function probarNombre() {

@@ -91,7 +91,7 @@ def _cartera_en_memoria(cur, ajustes):
     cur.execute(
         """
         SELECT cm.acta, cm.cliente_id, cm.denominacion, cm.terminos_vigilancia, cm.clase, cm.tipo,
-               cm.vigilar_todas_clases, cm.vigilancia_firma, cm.cuit, c.nombre AS cliente_nombre, c.cuit AS cliente_cuit
+               cm.vigilar_todas_clases, cm.umbral_vigilancia, cm.vigilancia_firma, cm.cuit, c.nombre AS cliente_nombre, c.cuit AS cliente_cuit
         FROM cartera_marcas cm JOIN clientes c ON c.id = cm.cliente_id
         WHERE cm.vigilar AND c.activo
         """
@@ -113,7 +113,8 @@ def _cartera_en_memoria(cur, ajustes):
 
 def firma_cartera(m) -> str:
     return "|".join([sim.normalizar(m.get("denominacion") or ""), (m.get("terminos_vigilancia") or "").strip().upper(),
-                     str(m.get("clase") or ""), "T" if m.get("vigilar_todas_clases") else "C"])
+                     str(m.get("clase") or ""), "T" if m.get("vigilar_todas_clases") else "C"]) \
+        + (f"|U{m['umbral_vigilancia']}" if m.get("umbral_vigilancia") else "")   # sin umbral propio, la firma no cambia
 
 
 def _mejor_contra(nombre_nuevo, clase_nueva, m, ajustes):
@@ -209,7 +210,8 @@ def _evaluar_fila(fila, candidatas, ajustes, mis_cuits, acta_en_cartera):
         if cuit_fila and (_solo_digitos(m.get("cuit")) == cuit_fila or _solo_digitos(m.get("cliente_cuit")) == cuit_fila):
             continue
         r = _mejor_contra(fila["nombre"], fila.get("clase"), m, ajustes)
-        if not r or r["puntaje"] < umbral:
+        # Cada marca puede tener su propio umbral (Clientes → ficha de la marca); si no, el de Ajustes.
+        if not r or r["puntaje"] < (m.get("umbral_vigilancia") or umbral):
             continue
         niv = sim.nivel(r["puntaje"], ajustes["config"]["nivel_alta"], ajustes["config"]["nivel_media"])
         out.append(_alerta_base(fila, "similitud", m["cliente_id"], m["acta"], r["puntaje"], niv, r["motivos"]))

@@ -1177,6 +1177,55 @@ a.mk-acta { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-si
 .vg-cab a:hover { text-decoration: underline; }
 .cl-marcas td:last-child { white-space: nowrap; }
 
+/* ── Clientes → Marcas: tarjetas KPI y ficha de marca ── */
+.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; padding: 12px 0 2px; }
+.kpi { display: grid; grid-template-columns: auto 1fr; grid-template-areas: "ico n" "ico t"; column-gap: 12px; align-items: center; text-align: left; font: inherit; cursor: pointer;
+  background: white; border: 1px solid var(--borde); border-radius: 10px; padding: 12px 14px; }
+.kpi:hover { border-color: var(--azul); }
+.kpi.activa { border-color: var(--azul); box-shadow: var(--foco); }
+.kpi-ico { grid-area: ico; width: 40px; height: 40px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 20px; background: #eef0f2; }
+.kpi-n { grid-area: n; font-size: 24px; font-weight: 700; line-height: 1.1; color: var(--texto); }
+.kpi-t { grid-area: t; font-size: 12px; color: var(--gris); }
+.kpi-concedida .kpi-ico { background: #e6f4ea; }
+.kpi-vencen .kpi-ico { background: #fff3cd; }
+.kpi-vigiladas .kpi-ico { background: #f1e8fb; }
+.vg-plazo.vg-temprana { background: #eef4ff; color: #1f3a6b; }
+.vg-orden { cursor: pointer; user-select: none; }
+.vg-orden:hover { color: var(--azul); }
+.modal-caja.modal-marca { max-width: 1040px; width: 100%; }
+.fm-ficha { min-height: 70vh; }
+.fm-cab h3 { margin: 0 0 4px; font-size: 20px; color: var(--texto); display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.fm-tabs { display: flex; flex-wrap: wrap; gap: 2px; margin: 14px 0 0; border-bottom: 1px solid var(--borde); }
+.fm-tabs button { font: inherit; font-size: 13px; font-weight: 500; padding: 8px 12px; border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--gris); cursor: pointer; }
+.fm-tabs button:hover { color: var(--azul); }
+.fm-tabs button.activa { color: var(--azul); font-weight: 600; border-bottom-color: var(--azul); }
+.fm-n { background: #eef0f2; color: #4b5563; border-radius: 9px; font-size: 11px; font-weight: 700; padding: 1px 7px; margin-left: 4px; }
+.fm-cuerpo { min-height: 360px; padding-top: 4px; }
+.fm-resumen { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; margin: 14px 0 4px; }
+.fm-resumen > div { background: #fafbfc; border: 1px solid var(--borde); border-radius: 8px; padding: 10px 12px; }
+.fm-resumen small, .fm-exp-datos small { display: block; color: var(--gris); font-size: 11px; text-transform: uppercase; letter-spacing: .04em; }
+.fm-exps { display: grid; gap: 10px; }
+.fm-exp { background: white; border: 1px solid var(--borde); border-radius: 8px; padding: 10px 14px; }
+.fm-exp-cab { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.fm-exp-cab .cl-logo { float: none; margin: 0; }
+.fm-exp-datos { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 8px 14px; margin-top: 8px; font-size: 13px; }
+.fm-exp-acc { display: flex; gap: 6px; margin-top: 8px; }
+#fm-buscar-clase { font: inherit; font-size: 13px; padding: 6px 9px; border: 1px solid var(--borde-control); border-radius: 6px; }
+#fm-buscar-clase:focus { outline: none; box-shadow: var(--foco); border-color: var(--azul); }
+.fm-niza { max-height: 280px; overflow-y: auto; border: 1px solid var(--borde); border-radius: 8px; background: white; }
+.fm-niza-fila { display: grid; grid-template-columns: auto 34px 1fr; gap: 8px; align-items: start; padding: 7px 10px; border-bottom: 1px solid #f0f1f4; cursor: pointer; font-size: 13px; }
+.fm-niza-fila[hidden] { display: none; }
+.fm-niza-fila:hover { background: var(--azul-claro); }
+.fm-niza-fila.ya { background: #f6fbf7; cursor: default; }
+.fm-niza-fila input { margin-top: 3px; accent-color: var(--azul); }
+.fm-niza-n { font-weight: 700; color: var(--azul); }
+.fm-costos { background: #fafbfc; border: 1px solid var(--borde); border-radius: 8px; padding: 4px 14px; max-width: 560px; }
+.fm-costo { display: flex; justify-content: space-between; gap: 12px; align-items: center; padding: 8px 0; border-bottom: 1px solid #eef0f4; }
+.fm-costo:last-child { border-bottom: 0; }
+.fm-total { font-weight: 700; font-size: 15px; }
+.fm-monto { font-variant-numeric: tabular-nums; font-weight: 600; white-space: nowrap; }
+.fm-pre { white-space: pre-wrap; font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; background: #fafbfc; border: 1px solid var(--borde); border-radius: 8px; padding: 12px 14px; margin: 0; }
+
 /* ── Clientes → Formularios ── */
 .fm-links { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 10px; }
 .fm-link { display: flex; flex-direction: column; gap: 8px; }
