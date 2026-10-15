@@ -568,18 +568,20 @@ GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN")
 # útil de la tarjeta ("leads nuevos hoy"), no el detalle técnico.
 # "cron" tiene que coincidir con el schedule del .yml (UTC); "horario" es el
 # mismo horario en hora Argentina, escrito para humanos.
-# Leads publicados que todavía tienen pendiente alguno de sus hitos de revisión
-# (10, 23 y 33 días) y todavía están dentro del plazo de oposición (hasta 35 días
-# desde la publicación). Los ya revisados con el esquema viejo cuentan como hechos.
-_SQL_OPOSICIONES_PENDIENTES = (
-    "SELECT COUNT(*) FROM marcas WHERE es_lead = true AND fecha_publicacion IS NOT NULL "
-    "AND fecha_publicacion <= current_date - 10 AND fecha_publicacion >= current_date - 35 AND ("
-    "COALESCE(opo_chequeos, CASE WHEN revisado_oposicion_en IS NOT NULL THEN 3 ELSE 0 END) < 1 "
-    "OR (COALESCE(opo_chequeos, CASE WHEN revisado_oposicion_en IS NOT NULL THEN 3 ELSE 0 END) < 2 "
-    "AND fecha_publicacion <= current_date - 23) "
-    "OR (COALESCE(opo_chequeos, CASE WHEN revisado_oposicion_en IS NOT NULL THEN 3 ELSE 0 END) < 3 "
-    "AND fecha_publicacion <= current_date - 33))"
-)
+# Leads de boletines que todavía están en la ventana de rotación nocturna de
+# oposiciones (plazo de 30 días abierto, o ya cerrado pero pendiente de que
+# INPI notifique a los titulares -- ver elegir_boletines_oposicion.py /
+# _fecha_notificacion_boletin más abajo). Se calcula igual que /boletines por
+# defecto, pero a nivel de boletín completo (no hay más hitos por lead desde
+# el 15/10/2026: cada noche se revisa el boletín entero de a 5 por rotación).
+_SQL_OPOSICIONES_PENDIENTES = """
+    SELECT COUNT(*) FROM marcas m
+    WHERE m.es_lead = true AND m.boletin IS NOT NULL AND EXISTS (
+      SELECT 1 FROM boletines b WHERE b.numero = m.boletin AND b.fecha IS NOT NULL AND (
+        b.fecha + 30 + make_interval(days => (3 - extract(isodow from b.fecha + 30)::int + 7) % 7)
+      ) >= current_date
+    )
+"""
 
 GRUPOS_AUTOMATIZACIONES = [
     {
@@ -639,21 +641,21 @@ GRUPOS_AUTOMATIZACIONES = [
         "tarjetas": [
             {
                 "nombre": "Oposiciones y vistas",
-                "descripcion": "Revisa a cada lead a los 10, 23 y 33 días de su publicación en el boletín "
-                               "(muchas oposiciones llegan antes de los 30 días; pasado el plazo ya no busca) y vuelve a "
-                               "mirar seguido los que ya tienen una oposición. El mail de aviso sale a las 7:30.",
-                "horario": "Todos los días, 22 hs",
+                "descripcion": "Todas las noches revisa el boletín COMPLETO (todos sus leads) de hasta 5 "
+                               "boletines -- los que estén más cerca de cerrar el plazo de 30 días para "
+                               "oponerse, o ya cerrados esperando que INPI notifique a los titulares el "
+                               "miércoles siguiente -- así se van rotando todos los boletines abiertos cada "
+                               "pocas noches (decidido el 15/10/2026, reemplaza el esquema anterior de "
+                               "revisar a cada lead a los 10/23/33 días). El mail de aviso sale a las 7:30.",
+                "horario": "Todos los días, 23:10 hs",
                 "metricas": [
                     {"sql": "SELECT COUNT(*) FROM marcas WHERE es_lead = true AND tuvo_oposicion = true "
                             "AND COALESCE(oposicion_detectada_en, revisado_oposicion_en) >= now() - interval '7 days'",
                      "etiqueta": "detectadas en los últimos 7 días", "destacada": True},
                 ],
                 "procesos": [
-                    {"etiqueta": "Diario", "workflow_file": "revisar_oposiciones.yml", "cron": "0 1 * * *",
-                     "horario": "todos los días, 22 hs",
-                     "pendientes_sql": _SQL_OPOSICIONES_PENDIENTES},
-                    {"etiqueta": "Puesta al día (manual)", "workflow_file": "oposiciones_puesta_al_dia.yml",
-                     "cron": None, "horario": "solo a mano, una vez (2 a 4 hs)",
+                    {"etiqueta": "Rotación nocturna", "workflow_file": "revisar_oposiciones.yml", "cron": "10 2 * * *",
+                     "horario": "todos los días, 23:10 hs",
                      "pendientes_sql": _SQL_OPOSICIONES_PENDIENTES},
                 ],
             },

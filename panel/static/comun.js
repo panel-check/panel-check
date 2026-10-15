@@ -81,9 +81,11 @@ function badgeBoletin(row) {
 // cada vez que se renderiza una fila con badgeOposicion.
 window._filasOposicion = window._filasOposicion || {};
 
-// Cuándo se revisó por última vez la oposición de este lead (la revisa
-// scripts/revisar_oposiciones.py a los 10, 23 y 33 días de la publicación).
-// Chip gris chico, solo para leads ya revisados al menos una vez.
+// Cuándo se revisó por última vez la oposición de este lead. Desde el
+// 15/10/2026 scripts/revisar_oposiciones.py revisa el boletín COMPLETO por
+// rotación nocturna (5 boletines por noche, los que estén más cerca de
+// cerrar el plazo), no por hitos de 10/23/33 días. Chip gris chico, solo
+// para leads ya revisados al menos una vez.
 function badgeRevisionOposicion(row) {
   if (!row.es_lead || !row.opo_ultimo_chequeo_en) return "";
   const d = new Date(row.opo_ultimo_chequeo_en);
@@ -91,8 +93,7 @@ function badgeRevisionOposicion(row) {
   const opciones = { timeZone: "America/Argentina/Buenos_Aires", day: "2-digit", month: "2-digit" };
   const corta = d.toLocaleDateString("es-AR", opciones);
   const larga = d.toLocaleDateString("es-AR", { ...opciones, year: "numeric" });
-  const hito = Math.min(row.opo_chequeos ?? 0, 3);
-  const detalle = `Oposición revisada por última vez el ${larga} · revisión ${hito} de 3 (a los 10, 23 y 33 días de la publicación; pasado el plazo de oposición ya no se busca)`
+  const detalle = `Oposición revisada por última vez el ${larga} · el boletín se revisa entero por rotación nocturna (mientras el plazo de oposición siga abierto o pendiente de notificación)`
     + (row.tuvo_oposicion === true ? " · con oposición: se sigue mirando" : "");
   return `<span class="tooltip badge sin-dato">🔎 ${corta}<span class="globo">${detalle}</span></span>`;
 }
