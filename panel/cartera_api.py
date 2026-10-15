@@ -23,9 +23,12 @@ import cartera
 import formularios_api
 import formularios_core
 import inpi_lead
+import presupuestos
+import similitud as sim
 import vigilancia_core as vig
 
 RE_ACTA = re.compile(r"^\d{4,9}$")
+DIAS_VENCEN = 180   # «Vencen»: marcas cuyo registro vence dentro de este plazo (tarjeta de Clientes → Marcas)
 
 
 class ClienteNuevo(BaseModel):
@@ -93,6 +96,7 @@ class MarcaCambios(BaseModel):
     vigilar: Optional[bool] = None
     vigilar_todas_clases: Optional[bool] = None
     terminos_vigilancia: Optional[str] = None
+    umbral_vigilancia: Optional[int] = None   # 40-100; null = usar el de Ajustes
     notas: Optional[str] = None
 
 
@@ -198,7 +202,7 @@ def crear_router(verificar_login, conexion, crm) -> APIRouter:
     @router.get("/api/cartera/marcas")
     def listar_marcas_cartera(q: str = "", cliente_id: Optional[int] = None, estado: str = "",
                               clase: Optional[int] = None, con_oposicion: bool = False, sin_vigilar: bool = False,
-                              alertas: bool = False, vence_dias: Optional[int] = None, referido: str = "",
+                              alertas: bool = False, vence_dias: Optional[int] = None, referido: str = "", vigiladas: bool = False,
                               _: str = Depends(verificar_login)):
         cond, val = ["c.activo"], []
         if q.strip():
@@ -231,6 +235,8 @@ def crear_router(verificar_login, conexion, crm) -> APIRouter:
             cond.append("cm.tuvo_oposicion AND COALESCE(cm.estado_tramite,'') NOT IN ('Concedida','Denegada')")
         if sin_vigilar:
             cond.append("NOT cm.vigilar")
+        if vigiladas:
+            cond.append("cm.vigilar")
         if alertas:
             cond.append("EXISTS (SELECT 1 FROM vigilancia_alertas a WHERE a.acta_cliente = cm.acta AND a.estado IN ('nueva','monitorear','oponer'))")
         if vence_dias:
@@ -243,7 +249,7 @@ def crear_router(verificar_login, conexion, crm) -> APIRouter:
                     SELECT cm.acta, cm.cliente_id, c.nombre AS cliente_nombre, c.referido AS cliente_referido, cm.denominacion, cm.tipo, cm.clase, cm.fecha_publicacion, cm.grupo_marca,
                            cm.titular, cm.estado_tramite, cm.fecha_presentacion, cm.fecha_concesion,
                            cm.fecha_vencimiento_marca, cm.tuvo_oposicion, cm.agente, cm.matricula_agente,
-                           cm.vigilar, cm.vigilar_todas_clases, cm.terminos_vigilancia, cm.consultado_en,
+                           cm.vigilar, cm.vigilar_todas_clases, cm.terminos_vigilancia, cm.umbral_vigilancia, cm.consultado_en,
                            cm.ultimo_movimiento, cm.ultimo_movimiento_fecha,
                            EXISTS (SELECT 1 FROM analisis_marca am WHERE am.acta = cm.acta AND am.logo IS NOT NULL) AS tiene_logo,
                            (SELECT COUNT(*) FROM vigilancia_alertas a WHERE a.acta_cliente = cm.acta
@@ -275,8 +281,15 @@ def crear_router(verificar_login, conexion, crm) -> APIRouter:
                       (SELECT COUNT(*) FROM vigilancia_alertas a JOIN clientes c ON c.id = a.cliente_id
                         WHERE a.estado IN ('nueva','monitorear','oponer') AND NOT c.vigilancia_contratada) AS alertas_sin_contratar,
                       (SELECT COUNT(*) FROM vigilancia_alertas WHERE estado = 'nueva' AND tipo = 'otro_agente') AS otro_agente_nuevas,
-                      (SELECT COUNT(*) FROM cartera_marcas WHERE consultado_en IS NULL) AS sin_consultar
-                    """
+                      (SELECT COUNT(*) FROM cartera_marcas WHERE consultado_en IS NULL) AS sin_consultar,
+                      (SELECT COUNT(*) FROM cartera_marcas cm JOIN clientes c ON c.id = cm.cliente_id
+                        WHERE c.activo AND cm.estado_tramite = 'Concedida') AS marcas_concedidas,
+                      (SELECT COUNT(*) FROM cartera_marcas cm JOIN clientes c ON c.id = cm.cliente_id
+                        WHERE c.activo AND cm.fecha_vencimiento_marca BETWEEN current_date AND current_date + %s) AS marcas_vencen,
+                      (SELECT COUNT(*) FROM cartera_marcas cm JOIN clientes c ON c.id = cm.cliente_id
+                        WHERE c.activo AND cm.vigilar) AS marcas_vigiladas
+                    """,
+                    (DIAS_VENCEN,)
                 )
                 fila = cur.fetchone()
                 cur.execute("SELECT COUNT(DISTINCT acta) AS n FROM vigilancia_comparadas")
@@ -624,6 +637,11 @@ def crear_router(verificar_login, conexion, crm) -> APIRouter:
         if "terminos_vigilancia" in enviados:
             t = _limpio(body.terminos_vigilancia, 500)
             sets.append("terminos_vigilancia = %s"); val.append(t)
+        if "umbral_vigilancia" in enviados:
+            u = body.umbral_vigilancia
+            if u is not None and not 40 <= int(u) <= 100:
+                raise HTTPException(status_code=400, detail="El umbral va de 40 a 100 (vacío = usar el de Ajustes)")
+            sets.append("umbral_vigilancia = %s"); val.append(int(u) if u is not None else None)
         if "notas" in enviados:
             sets.append("notas = %s"); val.append(_limpio(body.notas, 2000))
         if "grupo_marca" in enviados:
@@ -698,6 +716,8 @@ def crear_router(verificar_login, conexion, crm) -> APIRouter:
             cond.append("a.tipo = %s"); val.append(filtros["tipo"])
         if filtros.get("sin_contratar"):
             cond.append("NOT COALESCE(c.vigilancia_contratada, false)")
+        if filtros.get("actas"):
+            cond.append("a.acta_cliente = ANY(%s)"); val.append(list(filtros["actas"]))
         donde = ("WHERE " + " AND ".join(cond)) if cond else ""
         cur.execute(
             f"""
@@ -719,7 +739,11 @@ def crear_router(verificar_login, conexion, crm) -> APIRouter:
         )
         filas = cur.fetchall()
         hoy = cartera.hoy_ar()
+        cur.execute("SELECT clase_a, clase_b FROM vigilancia_clases_relacionadas")
+        pares = {(r["clase_a"], r["clase_b"]) for r in cur.fetchall()}
         for f in filas:
+            # misma / relacionada / distinta: se calcula al leer con la tabla de clases relacionadas de Ajustes
+            f["relacion_clases"] = sim.relacion_clases(f.get("clase_cliente"), f.get("clase_nueva"), pares) if f["tipo"] == "similitud" else None
             p = cartera.plazo_oposicion_alerta(f, hoy) if f["tipo"] == "similitud" else None
             f["plazo_oposicion"] = p["fecha"] if p else None
             f["dias_oposicion"] = p["dias"] if p else None
@@ -757,6 +781,68 @@ def crear_router(verificar_login, conexion, crm) -> APIRouter:
                     raise HTTPException(status_code=404, detail="No existe esa alerta")
             conn.commit()
         return {"ok": True}
+
+    # ── Ficha de una marca (carpeta): todo lo de sus expedientes junto ─
+    @router.get("/api/cartera/ficha-marca")
+    def ficha_marca(actas: str = Query(..., description="Actas de la marca, separadas por coma"),
+                    _: str = Depends(verificar_login)):
+        lista = list(dict.fromkeys(a.strip() for a in actas.split(",") if a.strip()))
+        if not lista or len(lista) > 60 or any(len(a) > 20 for a in lista):
+            raise HTTPException(status_code=400, detail="Pasá entre 1 y 60 números de acta")
+        hoy = cartera.hoy_ar()
+        with nueva_conexion() as conn:
+            with rcur(conn) as cur:
+                cur.execute(
+                    "SELECT cm.*, (SELECT COUNT(*) FROM vigilancia_alertas a WHERE a.acta_cliente = cm.acta "
+                    "AND a.estado IN ('nueva','monitorear','oponer')) AS alertas_abiertas, "
+                    "EXISTS (SELECT 1 FROM analisis_marca am WHERE am.acta = cm.acta AND am.logo IS NOT NULL) AS tiene_logo "
+                    "FROM cartera_marcas cm WHERE cm.acta = ANY(%s) "
+                    "ORDER BY cm.fecha_presentacion DESC NULLS LAST, cm.acta DESC", (lista,))
+                marcas = cur.fetchall()
+                if not marcas:
+                    raise HTTPException(status_code=404, detail="Esas marcas no están en la cartera")
+                cur.execute("SELECT id, nombre, referido, vigilancia_contratada, activo FROM clientes WHERE id = %s",
+                            (marcas[0]["cliente_id"],))
+                cliente = cur.fetchone()
+                cur.execute("SELECT id, acta, tipo, texto, detectado_en FROM cartera_novedades WHERE acta = ANY(%s) "
+                            "ORDER BY detectado_en DESC LIMIT 100", (lista,))
+                novedades = cur.fetchall()
+                alertas = _alertas(cur, {"actas": lista}, limite=200)
+                tasa = presupuestos.leer_config(cur, "registro_marca")
+                conf = cartera.leer_config(cur)
+        plazos = []
+        for m in marcas:
+            m["cliente_nombre"] = cliente["nombre"] if cliente else ""
+            plazos += cartera.plazos_marca_cartera(m, hoy)
+        plazos += [p for p in (cartera.plazo_oposicion_alerta(a, hoy) for a in alertas
+                               if a["estado"] in cartera.ESTADOS_ALERTA_ABIERTOS and a["tipo"] == "similitud") if p]
+        plazos.sort(key=lambda p: p["fecha"])
+        return {"cliente": cliente, "marcas": marcas, "novedades": novedades, "alertas": alertas, "plazos": plazos,
+                "estados_alerta": cartera.ESTADOS_ALERTA, "umbral_general": conf["umbral"],
+                # Tasa de INPI por clase: es la misma que se carga en Mails → plantilla «Presupuesto de registro de marca»
+                "arancel": {"tasa_clase": tasa["tasas"], "mes": tasa.get("valores_mes") or ""}}
+
+    # ── Qué se vigila y con qué sensibilidad (tabla de Vigilancia) ────
+    @router.get("/api/cartera/vigilancia/marcas")
+    def vigilancia_marcas(_: str = Depends(verificar_login)):
+        with nueva_conexion() as conn:
+            with rcur(conn) as cur:
+                cur.execute(
+                    """
+                    SELECT cm.acta, cm.cliente_id, c.nombre AS cliente_nombre, cm.denominacion, cm.clase,
+                           cm.vigilar_todas_clases, cm.terminos_vigilancia, cm.umbral_vigilancia,
+                           (SELECT COUNT(*) FROM vigilancia_alertas a WHERE a.acta_cliente = cm.acta
+                              AND a.estado IN ('nueva','monitorear','oponer')) AS alertas_abiertas
+                    FROM cartera_marcas cm JOIN clientes c ON c.id = cm.cliente_id
+                    WHERE c.activo AND cm.vigilar
+                    ORDER BY lower(COALESCE(cm.denominacion, '')), cm.acta
+                    LIMIT 3000
+                    """)
+                marcas = cur.fetchall()
+                conf = cartera.leer_config(cur)
+                cur.execute("SELECT max(comparada_en) AS ult FROM vigilancia_comparadas")
+                ultima = cur.fetchone()["ult"]
+        return {"marcas": marcas, "umbral_general": conf["umbral"], "ultima_vigilancia": ultima}
 
     # ── Vencimientos y plazos de toda la cartera ──────────────────────
     @router.get("/api/cartera/agenda")
