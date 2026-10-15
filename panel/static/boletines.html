@@ -31,6 +31,9 @@
   .ultima-busqueda { font-size: 11px; color: var(--gris); margin-top: 3px; }
   td.num, th.num { text-align: right !important; }
   .estado-badge-b.error { background: #fde8e8; color: var(--rojo); }
+  .toggle-ver-todos { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--gris); cursor: pointer; user-select: none; }
+  .toggle-ver-todos input { cursor: pointer; }
+  .contador-boletines { font-size: 12px; color: var(--gris); margin: 0 0 10px; }
   button.importar-boletin, button.buscar-opo {
     padding: 4px 10px;
     border-radius: 6px;
@@ -90,6 +93,16 @@ function formatFecha(f) {
   return (f.split("T")[0] || f);
 }
 
+function formatFechaCorta(f) {
+  // ISO (AAAA-MM-DD) -> DD/MM, para la fecha de notificación.
+  if (!f) return "";
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(f);
+  return m ? `${m[3]}/${m[2]}` : f;
+}
+
+let ultimoData = null;
+let verTodos = false;
+
 function filaBoletin(b) {
   const badge = b.importado
     ? '<span class="estado-badge-b importado">✓ Importado</span>'
@@ -103,9 +116,17 @@ function filaBoletin(b) {
   const d = b.dias_plazo_oposicion;
   let plazo = "—";
   if (b.importado && d != null) {
-    plazo = d <= 0
-      ? '<span class="estado-badge-b plazo-cerrado" title="Pasaron 30 días desde la publicación: ya no recibe oposiciones">🔒 Plazo cerrado</span>'
-      : `<span class="estado-badge-b plazo-abierto" title="Todavía puede recibir oposiciones">Abierto · ${d} ${d === 1 ? "día" : "días"}</span>`;
+    if (d <= 0) {
+      plazo = '<span class="estado-badge-b plazo-cerrado" title="Pasaron 30 días desde la publicación: ya no recibe oposiciones">🔒 Plazo cerrado</span>';
+      // Aunque el plazo de 30 días ya cerró, INPI notifica a los titulares
+      // recién el miércoles siguiente al cierre (en tanda), así que mientras
+      // esa fecha no pasó mostramos cuándo se enteran.
+      if (b.visible_por_defecto && b.fecha_notificacion_oposicion) {
+        plazo += `<div class="ultima-busqueda" title="INPI notifica las oposiciones a los titulares los miércoles, en tanda">Notifican miér. ${formatFechaCorta(b.fecha_notificacion_oposicion)}</div>`;
+      }
+    } else {
+      plazo = `<span class="estado-badge-b plazo-abierto" title="Todavía puede recibir oposiciones">Abierto · ${d} ${d === 1 ? "día" : "días"}</span>`;
+    }
   }
   const leads = b.importado && b.leads != null ? b.leads : "—";
   const conAgente = b.importado && b.con_agente != null ? b.con_agente : "—";
@@ -138,34 +159,55 @@ async function cargar() {
   const contenido = document.getElementById("contenido");
   try {
     const data = await api("/api/boletines/completo");
-    const aviso = data.aviso ? `<div class="aviso-boletines">${_escapeHtml(data.aviso)}</div>` : "";
-    const chequeo = data.listado_actualizado_en
-      ? new Date(data.listado_actualizado_en).toLocaleString("es-AR", { dateStyle: "short", timeStyle: "short" })
-      : "todavía no";
-    contenido.innerHTML = `
-      ${aviso}
-      <div style="display:flex;gap:12px;align-items:center;margin:0 0 10px;font-size:13px;color:var(--gris);">
-        <span>Listado de INPI revisado: ${_escapeHtml(chequeo)}. Se actualiza solo los miércoles de 7 a 11 hs.</span>
-        <button type="button" id="actualizar-listado" class="importar-boletin">↻ Actualizar ahora</button>
-      </div>
-      <table class="tabla-boletines">
-        <thead>
-          <tr><th>Número</th><th>Fecha</th><th>Estado</th><th class="num">Marcas</th><th class="num" title="Sin agente ni apoderado">Leads</th><th class="num">Con agente</th><th>Plazo de oposición</th><th></th></tr>
-        </thead>
-        <tbody>${data.boletines.map(filaBoletin).join("")}</tbody>
-      </table>
-    `;
-    document.getElementById("actualizar-listado").addEventListener("click", actualizarListado);
+    ultimoData = data;
+    render();
     if (data.cargando) setTimeout(cargar, 4000);  // el listado de INPI se está armando: reintenta solo
-    contenido.querySelectorAll(".importar-boletin").forEach((b) => {
-      b.addEventListener("click", () => importar(b));
-    });
-    contenido.querySelectorAll(".buscar-opo").forEach((b) => {
-      b.addEventListener("click", () => buscarOposiciones(b));
-    });
   } catch (e) {
     contenido.innerHTML = `<p style="color:var(--rojo);">No se pudo cargar (${e.message}).</p>`;
   }
+}
+
+function render() {
+  const data = ultimoData;
+  if (!data) return;
+  const contenido = document.getElementById("contenido");
+  const aviso = data.aviso ? `<div class="aviso-boletines">${_escapeHtml(data.aviso)}</div>` : "";
+  const chequeo = data.listado_actualizado_en
+    ? new Date(data.listado_actualizado_en).toLocaleString("es-AR", { dateStyle: "short", timeStyle: "short" })
+    : "todavía no";
+  // Por defecto solo se muestran los boletines con el plazo de oposición
+  // todavía abierto, o cerrado pero sin notificar aún (INPI notifica recién
+  // el miércoles siguiente al cierre). "Ver todos" tilda para ver el resto.
+  const boletines = verTodos ? data.boletines : data.boletines.filter((b) => b.visible_por_defecto !== false);
+  const contador = verTodos
+    ? ""
+    : `<p class="contador-boletines">Mostrando ${boletines.length} de ${data.boletines.length} boletines (con plazo de oposición abierto o pendiente de notificación).</p>`;
+  contenido.innerHTML = `
+    ${aviso}
+    <div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap;margin:0 0 10px;font-size:13px;color:var(--gris);">
+      <span>Listado de INPI revisado: ${_escapeHtml(chequeo)}. Se actualiza solo los miércoles de 7 a 11 hs.</span>
+      <button type="button" id="actualizar-listado" class="importar-boletin">↻ Actualizar ahora</button>
+      <label class="toggle-ver-todos"><input type="checkbox" id="ver-todos" ${verTodos ? "checked" : ""} /> Ver todos</label>
+    </div>
+    ${contador}
+    <table class="tabla-boletines">
+      <thead>
+        <tr><th>Número</th><th>Fecha</th><th>Estado</th><th class="num">Marcas</th><th class="num" title="Sin agente ni apoderado">Leads</th><th class="num">Con agente</th><th>Plazo de oposición</th><th></th></tr>
+      </thead>
+      <tbody>${boletines.map(filaBoletin).join("")}</tbody>
+    </table>
+  `;
+  document.getElementById("actualizar-listado").addEventListener("click", actualizarListado);
+  document.getElementById("ver-todos").addEventListener("change", (e) => {
+    verTodos = e.target.checked;
+    render();
+  });
+  contenido.querySelectorAll(".importar-boletin").forEach((b) => {
+    b.addEventListener("click", () => importar(b));
+  });
+  contenido.querySelectorAll(".buscar-opo").forEach((b) => {
+    b.addEventListener("click", () => buscarOposiciones(b));
+  });
 }
 
 async function actualizarListado() {
