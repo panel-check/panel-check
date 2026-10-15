@@ -4,9 +4,9 @@
  * pasa por esc() antes de ir al HTML; los datos viajan en atributos data-*. */
 
 const esc = crmEsc;
-const VISTAS = ["clientes", "marcas", "formularios", "vigilancia", "vencimientos", "matricula", "ajustes"];
+const VISTAS = ["marcas", "clientes", "formularios", "vigilancia", "vencimientos", "matricula", "ajustes"];
 const est = {
-  vista: "clientes",
+  vista: "marcas",
   clientes: [], origenes: {},
   alertas: { estado: "abiertas", nivel: "", tipo: "", cliente_id: "", sin_contratar: false },
   estadosAlerta: {},
@@ -69,7 +69,7 @@ function cambiarVista(v, { sinURL = false } = {}) {
   est.vista = v;
   document.querySelectorAll("#pestanas button").forEach(b => b.classList.toggle("activa", b.dataset.vista === v));
   VISTAS.forEach(x => { vista(x).hidden = x !== v; });
-  if (!sinURL) history.replaceState(null, "", v === "clientes" ? "/clientes" : `/clientes?vista=${v}`);
+  if (!sinURL) history.replaceState(null, "", v === "marcas" ? "/clientes" : `/clientes?vista=${v}`);
   cargarVista();
 }
 
@@ -342,14 +342,14 @@ function marcasAgrupadasHtml(marcas) {
         <td><small>${esc(m.agente || (m.matricula_agente ? "matrícula " + m.matricula_agente : "—"))}</small></td>
         <td>${m.vigilar ? '<span class="cl-tag ok">Vigilada</span>' : '<span class="cl-tag">No</span>'}</td>
         <td><a class="link-acta" href="javascript:void(0)" data-ver-cliente="${m.cliente_id}">Ver cliente →</a><br><a class="link-acta" href="javascript:void(0)" data-agrupar="${esc(m.acta)}" data-nombre="${esc(m.grupo_marca || nombre)}" title="Elegir a qué grupo de marcas pertenece esta acta">Agrupar…</a></td></tr>`).join("");
-    const det = `<tr class="mk-detalle" ${abierto ? "" : "hidden"}><td></td><td colspan="5">
-      <table class="mk-sub"><colgroup><col style="width:104px"><col><col style="width:50px"><col style="width:104px"><col style="width:150px"><col style="width:96px"><col style="width:96px"><col style="width:120px"><col style="width:84px"><col style="width:96px"></colgroup><thead><tr><th>Acta</th><th>Denominación</th><th>Clase</th><th>Tipo</th><th>Estado</th><th>Presentación</th><th>Vencimiento</th><th>Agente</th><th>Vigilancia</th><th></th></tr></thead>
-      <tbody>${filasActas}</tbody></table></td></tr>`;
+    const det = `<tr class="mk-detalle" ${abierto ? "" : "hidden"}><td colspan="6">
+      <div class="mk-sub-wrap"><table class="mk-sub"><colgroup><col style="width:104px"><col><col style="width:50px"><col style="width:104px"><col style="width:150px"><col style="width:96px"><col style="width:96px"><col style="width:120px"><col style="width:84px"><col style="width:96px"></colgroup><thead><tr><th>Acta</th><th>Denominación</th><th>Clase</th><th>Tipo</th><th>Estado</th><th>Presentación</th><th>Vencimiento</th><th>Agente</th><th>Vigilancia</th><th></th></tr></thead>
+      <tbody>${filasActas}</tbody></table></div></td></tr>`;
     return cab + det;
   }).join("");
   return `<div class="mk-barra"><span class="cl-pie" style="margin:0">${grupos.size} marca(s) · ${marcas.length} expediente(s)</span>
       <span><button type="button" class="cl-btn sec mini" id="mk-expandir">Expandir todo</button> <button type="button" class="cl-btn sec mini" id="mk-contraer">Contraer todo</button></span></div>
-    <div style="overflow-x:auto"><table class="mk-tabla"><thead><tr><th style="width:28px"></th><th>Marca</th><th>Expedientes</th><th>Clases</th><th>Cliente</th><th>Último movimiento INPI</th></tr></thead>
+    <div style="overflow-x:auto"><table class="mk-tabla"><colgroup><col style="width:28px"><col><col style="width:112px"><col style="width:92px"><col style="width:17%"><col style="width:17%"></colgroup><thead><tr><th></th><th>Marca</th><th>Expedientes</th><th>Clases</th><th>Cliente</th><th>Último movimiento INPI</th></tr></thead>
     <tbody>${filas}</tbody></table></div>
     <p class="cl-pie">Un click en una marca muestra sus actas. El número de acta abre el expediente en INPI y «Ver cliente» abre la ficha del cliente.</p>`;
 }
@@ -1206,7 +1206,7 @@ async function abrirRespuesta(id) {
 document.querySelectorAll("#pestanas button").forEach(b => b.addEventListener("click", () => cambiarVista(b.dataset.vista)));
 (async function () {
   const p = new URLSearchParams(location.search);
-  const v = VISTAS.includes(p.get("vista")) ? p.get("vista") : "clientes";
+  const v = VISTAS.includes(p.get("vista")) ? p.get("vista") : "marcas";
   cargarResumen();
   cambiarVista(v, { sinURL: true });
   if (p.get("cliente")) abrirCliente(+p.get("cliente"));

@@ -1101,18 +1101,24 @@ tr.crm-fila:hover { background: var(--azul-claro); }
 a.cl-logo-link { display: inline-block; line-height: 0; }
 /* Marcas agrupadas por nombre (Clientes → Marcas) */
 .mk-barra { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin: 6px 0 8px; flex-wrap: wrap; }
-.mk-tabla { width: 100%; border-collapse: separate; border-spacing: 0; background: white; border: 1px solid var(--borde); border-radius: 10px; font-size: 14px; }
+.mk-tabla { width: 100%; table-layout: fixed; border-collapse: separate; border-spacing: 0; background: white; border: 1px solid var(--borde); border-radius: 10px; font-size: 14px; }
 .mk-tabla > thead > tr > th { text-align: left; font-size: 12px; font-weight: 600; color: var(--gris); padding: 10px 12px; background: #fafbfc; border-bottom: 1px solid var(--borde); }
-.mk-tabla > tbody > tr > td { padding: 12px; border-bottom: 1px solid #f0f1f4; vertical-align: middle; }
+.mk-tabla > tbody > tr > td { padding: 12px 8px; overflow-wrap: anywhere; border-bottom: 1px solid #f0f1f4; vertical-align: middle; }
 .mk-grupo { cursor: pointer; }
 .mk-grupo:hover { background: var(--azul-claro); }
 .mk-chev-td { width: 28px; padding-right: 0 !important; }
 .mk-chev { display: inline-block; font-size: 20px; line-height: 1; color: var(--gris); transition: transform .15s; }
 .mk-grupo.abierto .mk-chev { transform: rotate(90deg); }
 .mk-nombre { font-weight: 600; }
-.mk-exp { white-space: nowrap; color: #4b5563; }
+.mk-exp { color: #4b5563; }
+/* El detalle expandido (tabla de actas, ancha) se desplaza solo, sin ensanchar la lista de marcas */
+.mk-sub-wrap { overflow-x: auto; }
+.mk-sub { min-width: 1080px; }
+.mk-sub td { overflow-wrap: anywhere; white-space: normal; }
+.mk-grupo td { white-space: normal; }
+.mk-grupo .cl-btn { white-space: nowrap; }
 .mk-detalle > td { background: #fafbff; padding: 0 !important; }
-.mk-detalle > td:last-child { border-left: 3px solid var(--azul); padding: 4px 10px 10px !important; }
+.mk-detalle > td { border-left: 3px solid var(--azul); padding: 4px 10px 10px !important; }
 .mk-sub { width: 100%; table-layout: fixed; border-collapse: collapse; font-size: 13px; }
 .mk-sub th { text-align: left; font-size: 11px; font-weight: 600; color: var(--gris); padding: 8px 8px 6px; border-bottom: 1px solid var(--borde); white-space: nowrap; }
 .mk-sub td { padding: 8px; border-bottom: 1px solid #eef0f4; vertical-align: middle; }
