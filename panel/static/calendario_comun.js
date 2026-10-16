@@ -109,10 +109,18 @@ function calComoHtml(e) {
 
 // plegado: tarjeta «cerrada» (una sola línea: hora y título) que se despliega al tocarla. Se usa en la agenda
 // para lo que ya pasó hoy, así lo próximo queda a la vista.
-// Botones del análisis de marca de cada marca vinculada: «Ver» (abre el PDF) si ya está escrito;
-// si no, «Generar» (lleva a la pestaña Análisis de marca de esa marca, en la ficha del titular).
+// Botón del análisis de marca de cada MARCA vinculada: «Ver» (abre el PDF) si ya está escrito; si no, «Generar»
+// (lleva a la pestaña Análisis de marca de esa marca, en la ficha del titular). Las actas de la misma marca y el
+// mismo titular (ej. una por clase) cuentan como una sola: un solo botón, y si en alguna ya hay análisis, el «Ver».
 function calAnalisisHtml(e) {
-  const marcas = (e.vinculos || []).filter(v => v.en_marcas).slice(0, 4);
+  const grupos = new Map();
+  for (const v of (e.vinculos || []).filter(v => v.en_marcas)) {
+    const k = `${v.clave || ""}|${(v.denominacion || v.acta || "").toString().trim().toLowerCase()}`;
+    const g = grupos.get(k);
+    if (!g) grupos.set(k, v);
+    else if (v.tiene_analisis && !g.tiene_analisis) grupos.set(k, v);
+  }
+  const marcas = [...grupos.values()].slice(0, 4);
   const varios = marcas.length > 1;
   return marcas.map(v => {
     const suf = varios ? ` · ${_escapeHtml(v.denominacion || v.acta)}` : "";
