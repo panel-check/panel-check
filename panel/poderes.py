@@ -35,7 +35,7 @@ CUERPO = (
     "cobrar y percibir; firmar instrumentos públicos, privados y escrituras públicas; para renunciar o no a "
     "las gestiones judiciales; y hacer cuanto fuere necesario ante las autoridades nacionales, judiciales "
     "y/o administrativas, sea como demandante o como demandado, para proteger los intereses del "
-    "demandante, con facultad de substituir este instrumento y revocar tal substitución."
+    "mandante, con facultad de substituir este instrumento y revocar tal substitución."
 )
 CONSTANCIA = (
     "Se deja constancia que las facultades enumeradas en este mandato, son meramente ejemplificadas y no "
