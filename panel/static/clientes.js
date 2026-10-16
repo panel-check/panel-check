@@ -539,8 +539,10 @@ async function abrirCliente(id) {
       </div>
 
       <div data-cpanel="poderes" ${est.clienteTab === "poderes" ? "" : "hidden"}>
-        <div class="cl-acciones" style="margin-top:12px"><button type="button" class="cl-btn" id="cli-poder-btn2">📄 Generar poder para firmar</button></div>
+        <div class="cl-acciones" style="margin-top:12px"><button type="button" class="cl-btn" id="cli-poder-btn2">📄 Generar poder para firmar</button>
+          <button type="button" class="cl-btn" id="cli-toma-btn">📑 Generar toma de intervención</button></div>
         <div class="cl-caja" id="cli-poder" hidden style="margin-top:10px"></div>
+        <div class="cl-caja" id="cli-toma" hidden style="margin-top:10px"></div>
         <div id="cli-poderes-lista">${d.poderes && d.poderes.length ? "<h4>Poderes generados</h4>" + htmlPoderes(d.poderes) : '<p class="crm-gris">Todavía no se generó ningún poder.</p>'}</div>
       </div>
 
@@ -585,6 +587,7 @@ async function abrirCliente(id) {
   const abrirPoder = () => { irTab("poderes"); if ($("cli-poder").hidden) abrirGeneradorPoder(id); };
   $("cli-poder-btn").addEventListener("click", abrirPoder);
   $("cli-poder-btn2").addEventListener("click", abrirPoder);
+  $("cli-toma-btn").addEventListener("click", () => abrirGeneradorToma(id));
   conectarPoderes(id);
   conectarFichaCliente(cont, d);
 }
@@ -1110,6 +1113,46 @@ async function abrirGeneradorPoder(clienteId) {
       const d = await api(`/api/clientes/${clienteId}`);
       $("cli-poderes-lista").innerHTML = "<h4>Poderes generados</h4>" + htmlPoderes(d.poderes);
       conectarPoderes(clienteId);
+    } catch (err) { e.textContent = err.message; e.className = "cl-estado mal"; }
+    b.disabled = false;
+  }));
+}
+
+// Toma de intervención: un documento por marca. Las marcas con oposición abierta vienen tildadas.
+async function abrirGeneradorToma(clienteId) {
+  const caja = $("cli-toma");
+  if (!caja.hidden) { caja.hidden = true; return; }
+  caja.hidden = false;
+  caja.innerHTML = '<p class="crm-cargando">Preparando…</p>';
+  let r;
+  try { r = await api(`/api/clientes/${clienteId}/toma-intervencion`); }
+  catch (e) { caja.innerHTML = `<p class="crm-error">No se pudo preparar (${esc(e.message)}).</p>`; return; }
+  if (!r.marcas.length) { caja.innerHTML = '<p class="crm-gris">Este cliente no tiene marcas cargadas.</p>'; return; }
+  const hayOp = r.marcas.some(m => m.con_oposicion);
+  caja.innerHTML = `
+    <p class="crm-gris" style="margin:0 0 8px">Se genera <strong>un documento por marca</strong> con el modelo del estudio. ${hayOp ? "Vienen tildadas las marcas con oposición abierta." : "Ninguna marca tiene oposición abierta: tildá las que necesites."} Podés corregir los datos antes de bajarlos; si elegís varias, se baja un ZIP.</p>
+    <div style="overflow-x:auto"><table class="cl-tabla"><thead><tr><th></th><th>Acta</th><th>Marca</th><th>Clase</th><th>Tipo</th><th>Solicitante</th><th>Fecha</th></tr></thead><tbody>
+    ${r.marcas.map((m, i) => `<tr data-i="${i}">
+      <td><input type="checkbox" data-sel ${m.con_oposicion ? "checked" : ""}></td>
+      <td><input data-k="acta" value="${esc(m.acta)}" size="9"></td>
+      <td><input data-k="marca" value="${esc(m.marca)}">${m.con_oposicion ? '<br><span class="cl-tag aviso">⚖ oposición / vista</span>' : ""}</td>
+      <td><input data-k="clase" value="${esc(m.clase)}" size="3"></td>
+      <td><input data-k="tipo" value="${esc(m.tipo)}" size="12"></td>
+      <td><input data-k="solicitante" value="${esc(m.solicitante)}"></td>
+      <td><input type="date" data-k="fecha" value="${esc(m.fecha)}"></td></tr>`).join("")}</tbody></table></div>
+    <div class="cl-acciones"><button type="button" class="cl-btn" data-toma="docx">Descargar Word</button>
+      <button type="button" class="cl-btn sec" data-toma="pdf">Descargar PDF</button>
+      <span class="cl-estado" id="toma-estado"></span></div>`;
+  caja.querySelectorAll("[data-toma]").forEach(b => b.addEventListener("click", async () => {
+    const items = [...caja.querySelectorAll("tr[data-i]")].filter(tr => tr.querySelector("[data-sel]").checked).map(tr => {
+      const o = {}; tr.querySelectorAll("[data-k]").forEach(i => { o[i.dataset.k] = i.value; }); return o; });
+    const e = $("toma-estado"); e.className = "cl-estado";
+    if (!items.length) { e.textContent = "Tildá al menos una marca."; e.className = "cl-estado mal"; return; }
+    e.textContent = "Generando…"; b.disabled = true;
+    try {
+      await bajarArchivo(`/api/clientes/${clienteId}/toma-intervencion?formato=${b.dataset.toma}`,
+        { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ items }) }, "Toma_de_intervencion");
+      e.textContent = items.length > 1 ? `Listo: se descargó un ZIP con ${items.length} documentos.` : "Listo: se descargó.";
     } catch (err) { e.textContent = err.message; e.className = "cl-estado mal"; }
     b.disabled = false;
   }));
