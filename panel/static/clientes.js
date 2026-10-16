@@ -372,7 +372,18 @@ function enlazarMarcasAgrupadas(tabla) {
 }
 
 /* ── Modal ──────────────────────────────────────────────────────── */
-function cerrarModal() { $("modal-cliente").classList.remove("abierto"); est.clienteAbierto = null; }
+// URL interna de la ficha: /clientes?cliente=ID (con la vista actual si no es "marcas")
+function urlCliente(id) {
+  const p = new URLSearchParams();
+  if (est.vista && est.vista !== "marcas") p.set("vista", est.vista);
+  if (id) p.set("cliente", id);
+  const q = p.toString();
+  return q ? `/clientes?${q}` : "/clientes";
+}
+function cerrarModal() {
+  $("modal-cliente").classList.remove("abierto"); est.clienteAbierto = null;
+  history.replaceState(null, "", urlCliente(null));
+}
 $("modal-cliente").addEventListener("click", cerrarModal);
 document.querySelector("#modal-cliente .modal-cerrar").addEventListener("click", cerrarModal);
 document.addEventListener("keydown", ev => { if (ev.key === "Escape") cerrarModal(); });
@@ -458,6 +469,7 @@ async function abrirModalNuevoCliente(precarga = {}, alCrear = null) {
 
 async function abrirCliente(id) {
   est.clienteAbierto = id;
+  history.replaceState(null, "", urlCliente(id));
   $("modal-cliente").classList.add("abierto");
   const cont = $("modal-cliente-contenido");
   if (!cont.querySelector(".cl-ficha") || cont.dataset.id !== String(id)) cont.innerHTML = '<p class="crm-cargando">Cargando…</p>';
