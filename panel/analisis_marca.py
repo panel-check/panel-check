@@ -689,27 +689,43 @@ def nombre_archivo(d, presupuesto: bool = False) -> str:
 
 # ── PDF ───────────────────────────────────────────────────────────────────
 _RE_VINETA = re.compile(r"^\s*(?:[-*•]\s+)(.*)$")
+_RE_NUMERADA = re.compile(r"^\s*(\d{1,3})[.)]\s+(.*)$")
+_RE_TITULO = re.compile(r"^\s*#{1,6}\s+(.*?)\s*#*\s*$")
+_RE_SEPARADOR = re.compile(r"^\s*(?:-{3,}|\*{3,}|_{3,})\s*$")
+_RE_NEGRITA = re.compile(r"\*\*(?=\S)(.+?)(?<=\S)\*\*")
+_RE_CURSIVA = re.compile(r"(?<![*\w])\*(?=[^\s*])([^*\n]+?)(?<=[^\s*])\*(?![*\w])")
 
 
 def _bloques_de_texto(texto: str):
-    """Parte el texto escrito en bloques: ('p', texto) o ('v', texto de viñeta).
-    Una línea en blanco separa párrafos; un salto simple queda como salto de
-    línea; las líneas que empiezan con «- », «* » o «• » son viñetas."""
+    """Parte el texto escrito en bloques: ('p', texto), ('v', texto de viñeta), ('n', texto, número),
+    ('h', texto de título) o ('hr',). Una línea en blanco separa párrafos; un salto simple queda como
+    salto de línea; las líneas que empiezan con «- », «* » o «• » son viñetas, «1. » es una lista
+    numerada, «### » es un título y «---» una línea separadora (el markdown que pegan las IA)."""
     bloques = []
     for parrafo in re.split(r"\n\s*\n", texto.strip("\n")):
-        lineas = parrafo.split("\n")
         actual = []
-        for ln in lineas:
-            v = _RE_VINETA.match(ln)
-            if v:
-                if actual:
-                    bloques.append(("p", "\n".join(actual)))
-                    actual = []
+
+        def cerrar():
+            if actual and "".join(actual).strip():
+                bloques.append(("p", "\n".join(actual)))
+            actual.clear()
+
+        for ln in parrafo.split("\n"):
+            if _RE_SEPARADOR.match(ln):
+                cerrar()
+                bloques.append(("hr",))
+            elif (t := _RE_TITULO.match(ln)):
+                cerrar()
+                bloques.append(("h", t.group(1)))
+            elif (v := _RE_VINETA.match(ln)):
+                cerrar()
                 bloques.append(("v", v.group(1)))
+            elif (n := _RE_NUMERADA.match(ln)):
+                cerrar()
+                bloques.append(("n", n.group(2), n.group(1)))
             else:
                 actual.append(ln)
-        if actual and "".join(actual).strip():
-            bloques.append(("p", "\n".join(actual)))
+        cerrar()
     return bloques
 
 
@@ -717,10 +733,13 @@ def _xml(t: str) -> str:
     return escape(t).replace("\n", "<br/>")
 
 
-def _xml_negrita(t: str) -> str:
-    """Como _xml, pero lo que va entre **dobles asteriscos** sale en negrita. Solo lo usa el texto del
-    presupuesto (el análisis que escribe el equipo se muestra tal cual: un ** ahí es un ** y nada más)."""
-    return "".join(f"<b>{_xml(p)}</b>" if i % 2 else _xml(p) for i, p in enumerate(t.split("**")))
+def _xml_md(t: str) -> str:
+    """Como _xml, pero **doble asterisco** sale en negrita y *un asterisco* en cursiva (lo que dejan las IA
+    al pegar texto). Un asterisco suelto, sin pareja, queda como asterisco."""
+    x = escape(t)
+    x = _RE_NEGRITA.sub(r"<b>\1</b>", x)
+    x = _RE_CURSIVA.sub(r"<i>\1</i>", x)
+    return x.replace("\n", "<br/>")
 
 
 def generar_pdf(datos, texto_comun=None, texto_presupuesto=None) -> bytes:
@@ -764,6 +783,7 @@ def generar_pdf(datos, texto_comun=None, texto_presupuesto=None) -> bytes:
     dato_op = estilo("dato_op", leftIndent=18.7, bulletIndent=6, bulletFontName=F["r"], bulletFontSize=11 * esc)
     chico = estilo("chico", "i", 9, 12.8)
     seccion = estilo("seccion", "b", 12, 17, TA_LEFT, pres.COLOR_SUBTITULO)
+    subtitulo = estilo("subtitulo", "b", 11.5, 16, TA_LEFT, pres.COLOR_SUBTITULO, keepWithNext=1)
     marca_n = estilo("marca_n", "b", 13, 18, TA_LEFT, pres.COLOR_TITULO)
     cuerpo = estilo("cuerpo", alin=TA_JUSTIFY)
     fundamento = estilo("fundamento", size=10, leading=14, alin=TA_JUSTIFY, leftIndent=18.7)
@@ -813,23 +833,31 @@ def generar_pdf(datos, texto_comun=None, texto_presupuesto=None) -> bytes:
                                ("BOTTOMPADDING", (0, 0), (-1, -1), 0)]))
         return [t]
 
-    def flujo_analisis(texto, titulo_seccion, negritas=False):
-        """Título «Análisis» (si hay) y el texto escrito (párrafos y viñetas). Con negritas=True, lo que va
-        entre **dobles asteriscos** sale en negrita (el presupuesto)."""
-        xml = _xml_negrita if negritas else _xml
+    def flujo_analisis(texto, titulo_seccion):
+        """Título «Análisis» (si hay) y el texto escrito (párrafos, viñetas, listas numeradas, títulos y
+        separadores; **negrita** y *cursiva* dentro del texto)."""
         out = [Paragraph(titulo_seccion, seccion), Spacer(1, 4)] if titulo_seccion else []
         bloques = _bloques_de_texto(texto)
         if not bloques:
             out.append(Paragraph("(Sin análisis escrito.)", chico))
         previo = None
-        for tipo, t in bloques:
-            if tipo == "v":
-                out.append(Paragraph(xml(t), vineta, bulletText="•"))
+        for b in bloques:
+            tipo = b[0]
+            if tipo in ("v", "n"):
+                out.append(Paragraph(_xml_md(b[1]), vineta, bulletText="•" if tipo == "v" else f"{b[2]}."))
                 out.append(Spacer(1, 3))
+            elif tipo == "h":
+                out.append(Spacer(1, 4))
+                out.append(Paragraph(_xml_md(b[1]), subtitulo))
+                out.append(Spacer(1, 4))
+            elif tipo == "hr":
+                out.append(Spacer(1, 4))
+                out.append(HRFlowable(width="100%", thickness=0.6, color=HexColor(pres.COLOR_SUBTITULO)))
+                out.append(Spacer(1, 8))
             else:
-                if previo == "v":
+                if previo in ("v", "n"):
                     out.append(Spacer(1, 5))  # un poco de aire al volver al texto después de una lista
-                out.append(Paragraph(xml(t), cuerpo))
+                out.append(Paragraph(_xml_md(b[1]), cuerpo))
                 out.append(Spacer(1, 8))
             previo = tipo
         return out
@@ -913,7 +941,7 @@ def generar_pdf(datos, texto_comun=None, texto_presupuesto=None) -> bytes:
         if presu:
             h.append(Spacer(1, 16))
             h.append(CondPageBreak(150))
-            h.extend(flujo_analisis(texto_presupuesto, "Presupuesto", negritas=True))
+            h.extend(flujo_analisis(texto_presupuesto, "Presupuesto"))
         else:
             h.append(Spacer(1, 14))
             h.append(HRFlowable(width="100%", thickness=0.6, color=HexColor(pres.COLOR_SUBTITULO)))
