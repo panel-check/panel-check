@@ -5,7 +5,8 @@ Después de que el cliente completa el formulario (Clientes → Formularios),
 desde su ficha se genera el poder ya lleno —en PDF o en Word— para mandárselo
 y que solo tenga que firmarlo. Es el mismo texto del modelo del estudio
 (persona física o jurídica); lo único que cambia es el párrafo del otorgante,
-el lugar y fecha, y la aclaración/cargo de quien firma.
+y el lugar y fecha. La aclaración (y el cargo, en persona jurídica) quedan en
+blanco: los completa a mano quien firma.
 
 Los datos del apoderado (nombre, matrícula, domicilio) se editan en
 Clientes → Ajustes y se guardan en vigilancia_config (clave poder_apoderado).
@@ -43,6 +44,8 @@ CONSTANCIA = (
     "sean consecuencia del objeto del presente poder y ya sea ello en razón de la legislación vigente y/o de "
     "la legislación que en el futuro se promulgue."
 )
+
+LINEA_FIRMA = "_" * 38
 
 MESES = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre",
          "octubre", "noviembre", "diciembre"]
@@ -94,8 +97,6 @@ def propuesta(cliente: dict, hoy=None) -> dict:
                 dom += ", " + (CABA if _es_caba(provincia) else f"Provincia de {provincia}")
             partes.append(f"domiciliada en {dom}")
         otorgante = ", ".join(partes) + ", República Argentina."
-        aclaracion = (c.get("firmante_nombre") or c.get("contacto") or "").strip()
-        cargo = (c.get("firmante_cargo") or "").strip()
     else:
         lugar_dom = [domicilio] if domicilio else []
         if _es_caba(provincia):
@@ -111,16 +112,13 @@ def propuesta(cliente: dict, hoy=None) -> dict:
         if lugar_dom:
             partes.append("domiciliado en " + ", ".join(lugar_dom))
         otorgante = ", ".join(partes) + ", República Argentina."
-        aclaracion = nombre
-        cargo = ""
     if _es_caba(provincia) or (tipo == "juridica" and _es_caba(domicilio)):
         lugar = CABA
     elif provincia:
         lugar = f"Provincia de {provincia}"
     else:
         lugar = CABA
-    return {"tipo_persona": tipo, "otorgante": otorgante, "lugar": lugar, "fecha": hoy.isoformat(),
-            "aclaracion": aclaracion, "cargo": cargo}
+    return {"tipo_persona": tipo, "otorgante": otorgante, "lugar": lugar, "fecha": hoy.isoformat()}
 
 
 def _parrafo_inicial(d, apoderado):
@@ -161,9 +159,9 @@ def generar_pdf(d: dict, apoderado: str) -> bytes:
           Paragraph(escape(_lugar_fecha(d)), normal),
           Spacer(1, 1.8 * cm),
           Paragraph("FIRMA", normal), Spacer(1, 1.0 * cm),
-          Paragraph("ACLARACIÓN: " + escape((d.get("aclaracion") or "").upper()), normal)]
-    if d.get("tipo_persona") == "juridica" or d.get("cargo"):
-        h += [Spacer(1, 0.7 * cm), Paragraph("CARGO: " + escape((d.get("cargo") or "").upper()), normal)]
+          Paragraph("ACLARACIÓN: " + LINEA_FIRMA, normal)]
+    if d.get("tipo_persona") == "juridica":
+        h += [Spacer(1, 0.9 * cm), Paragraph("CARGO: " + LINEA_FIRMA, normal)]
     doc.build(h)
     return buf.getvalue()
 
@@ -200,15 +198,14 @@ def generar_docx(d: dict, apoderado: str) -> bytes:
     par(CONSTANCIA, WD_ALIGN_PARAGRAPH.JUSTIFY)
     par(_lugar_fecha(d), antes=54)
     par("FIRMA", antes=50)
-    par("ACLARACIÓN: " + (d.get("aclaracion") or "").upper(), antes=28)
-    if d.get("tipo_persona") == "juridica" or d.get("cargo"):
-        par("CARGO: " + (d.get("cargo") or "").upper(), antes=20)
+    par("ACLARACIÓN: " + LINEA_FIRMA, antes=28)
+    if d.get("tipo_persona") == "juridica":
+        par("CARGO: " + LINEA_FIRMA, antes=24)
     buf = io.BytesIO()
     doc.save(buf)
     return buf.getvalue()
 
 
 def nombre_archivo(d: dict, ext: str) -> str:
-    base = re.sub(r"[^A-Za-z0-9ÁÉÍÓÚÑáéíóúñ]+", "_", (d.get("aclaracion") if d.get("tipo_persona") == "fisica" else "")
-                  or d.get("otorgante", "").split(",")[0]).strip("_")[:60] or "cliente"
+    base = re.sub(r"[^A-Za-z0-9ÁÉÍÓÚÑáéíóúñ]+", "_", d.get("otorgante", "").split(",")[0]).strip("_")[:60] or "cliente"
     return f"Poder_{base}.{ext}"
