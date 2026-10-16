@@ -11,6 +11,7 @@ const est = {
   alertas: { estado: "abiertas", nivel: "", tipo: "", cliente_id: "", sin_contratar: false },
   estadosAlerta: {},
   clienteAbierto: null,
+  clienteTab: "datos", clienteTabId: null,
   tiposPersona: { fisica: "Persona física", juridica: "Persona jurídica" },
 };
 
@@ -482,6 +483,7 @@ async function abrirCliente(id) {
   if (d.tipos_persona) est.tiposPersona = d.tipos_persona;
   const c = d.cliente;
   const scroll = cont.parentElement.scrollTop;
+  if (est.clienteTabId !== id) { est.clienteTab = "datos"; est.clienteTabId = id; }
 
   const marcasHtml = d.marcas.length ? `
     <div style="overflow-x:auto"><table class="cl-tabla cl-marcas"><thead><tr><th>Acta</th><th>Marca</th><th>Clase</th><th>Estado</th><th>Agente</th><th>Vigilancia</th><th></th></tr></thead><tbody>
@@ -513,11 +515,19 @@ async function abrirCliente(id) {
   const novedadesHtml = d.novedades.length ? `<ul class="cl-lista-simple">${d.novedades.map(n => `
       <li><span class="crm-gris">${fmtFechaHora(n.detectado_en)}</span> · acta ${esc(n.acta)} · ${esc(n.texto)}</li>`).join("")}</ul>` : '<p class="crm-gris">Sin novedades detectadas todavía.</p>';
 
+  const alertasAbiertas = d.alertas.filter(a => ["nueva", "monitorear", "oponer"].includes(a.estado)).length;
+  const tabsCli = [["datos", "Datos"], ["poderes", "Poderes", (d.poderes || []).length], ["formularios", "Formularios", (d.formularios || []).length],
+    ["marcas", "Marcas", d.marcas.length], ["plazos", "Plazos", d.plazos.length], ["alertas", "Alertas", alertasAbiertas],
+    ["novedades", "Novedades", d.novedades.length]];
+
   cont.innerHTML = `
     <div class="cl-ficha">
       <h3>${esc(c.nombre)} ${c.vigilancia_contratada ? '<span class="cl-tag ok">Vigilancia contratada</span>' : '<span class="cl-tag">Vigilancia interna</span>'}${c.activo ? "" : ' <span class="cl-tag">inactivo</span>'}${c.referido ? " " + tagReferido(c.referido) : ""}</h3>
       <div class="crm-gris">Cargado el ${crmFecha(c.alta_en)}${c.alta_por ? " por " + esc(c.alta_por) : ""}${c.clave_crm ? ` · <a href="/titular/${encodeURIComponent(c.clave_crm)}" target="_blank">ver como lead ↗</a>` : ""}</div>
 
+      <div class="fm-tabs" role="tablist">${tabsCli.map(([k, t, n]) => `<button type="button" role="tab" data-ctab="${k}" class="${est.clienteTab === k ? "activa" : ""}">${t}${n ? ` <span class="fm-n">${n}</span>` : ""}</button>`).join("")}</div>
+
+      <div data-cpanel="datos" ${est.clienteTab === "datos" ? "" : "hidden"}>
       <form class="cl-form" id="form-cliente">${camposClienteHtml(c)}
         <label class="check"><input type="checkbox" name="activo" ${c.activo ? "checked" : ""}> Cliente activo (los inactivos no se vigilan)</label></form>
       <div class="cl-acciones">
@@ -526,12 +536,19 @@ async function abrirCliente(id) {
         <button type="button" class="cl-btn sec" id="cli-unir" title="Pasa las marcas y todo lo demás de otro cliente duplicado a este, y borra el duplicado">🔗 Unir otro cliente a este</button>
         <button type="button" class="cl-btn peligro" id="cli-borrar">Borrar cliente</button>
         <span class="cl-estado" id="cli-estado"></span></div>
-      <div class="cl-caja" id="cli-poder" hidden style="margin-top:10px"></div>
-      <div id="cli-poderes-lista">${d.poderes && d.poderes.length ? "<h4>Poderes generados</h4>" + htmlPoderes(d.poderes) : ""}</div>
+      </div>
 
-      ${d.formularios && d.formularios.length ? `<h4>Formularios completados (${d.formularios.length})</h4>
-        ${d.formularios.map(f => htmlRespuesta(f, { enFicha: true })).join("")}` : ""}
+      <div data-cpanel="poderes" ${est.clienteTab === "poderes" ? "" : "hidden"}>
+        <div class="cl-acciones" style="margin-top:12px"><button type="button" class="cl-btn" id="cli-poder-btn2">📄 Generar poder para firmar</button></div>
+        <div class="cl-caja" id="cli-poder" hidden style="margin-top:10px"></div>
+        <div id="cli-poderes-lista">${d.poderes && d.poderes.length ? "<h4>Poderes generados</h4>" + htmlPoderes(d.poderes) : '<p class="crm-gris">Todavía no se generó ningún poder.</p>'}</div>
+      </div>
 
+      <div data-cpanel="formularios" ${est.clienteTab === "formularios" ? "" : "hidden"}>
+        ${d.formularios && d.formularios.length ? d.formularios.map(f => htmlRespuesta(f, { enFicha: true })).join("") : '<p class="crm-gris">Este cliente no completó ningún formulario.</p>'}
+      </div>
+
+      <div data-cpanel="marcas" ${est.clienteTab === "marcas" ? "" : "hidden"}>
       <h4>Sumar marcas</h4>
       <div class="cl-caja">
         <label class="crm-gris" style="display:block;margin-bottom:4px">Números de acta (uno por línea o separados por coma). Se consulta cada uno en INPI y se cargan todos los datos.</label>
@@ -548,17 +565,26 @@ async function abrirCliente(id) {
 
       <h4>Marcas en cartera (${d.marcas.length})</h4>
       ${marcasHtml}
+      </div>
 
-      <h4>Plazos y fechas</h4>${plazosHtml}
+      <div data-cpanel="plazos" ${est.clienteTab === "plazos" ? "" : "hidden"}><div style="margin-top:12px">${plazosHtml}</div></div>
 
-      <h4>Alertas de vigilancia (${d.alertas.filter(a => ["nueva", "monitorear", "oponer"].includes(a.estado)).length} abiertas)</h4>
-      ${d.alertas.length ? d.alertas.slice(0, 30).map(a => htmlAlerta(a, { sinCliente: true })).join("") : '<p class="crm-gris">Sin alertas.</p>'}
+      <div data-cpanel="alertas" ${est.clienteTab === "alertas" ? "" : "hidden"}><div style="margin-top:12px">
+        ${d.alertas.length ? d.alertas.slice(0, 30).map(a => htmlAlerta(a, { sinCliente: true })).join("") : '<p class="crm-gris">Sin alertas.</p>'}</div></div>
 
-      <h4>Novedades del expediente</h4>${novedadesHtml}
+      <div data-cpanel="novedades" ${est.clienteTab === "novedades" ? "" : "hidden"}><div style="margin-top:12px">${novedadesHtml}</div></div>
     </div>`;
   cont.parentElement.scrollTop = scroll;
   conectarRespuestas(cont, () => abrirCliente(id));
-  $("cli-poder-btn").addEventListener("click", () => abrirGeneradorPoder(id));
+  const irTab = k => {
+    est.clienteTab = k;
+    cont.querySelectorAll("[data-ctab]").forEach(b => b.classList.toggle("activa", b.dataset.ctab === k));
+    cont.querySelectorAll("[data-cpanel]").forEach(p => { p.hidden = p.dataset.cpanel !== k; });
+  };
+  cont.querySelectorAll("[data-ctab]").forEach(b => b.addEventListener("click", () => irTab(b.dataset.ctab)));
+  const abrirPoder = () => { irTab("poderes"); if ($("cli-poder").hidden) abrirGeneradorPoder(id); };
+  $("cli-poder-btn").addEventListener("click", abrirPoder);
+  $("cli-poder-btn2").addEventListener("click", abrirPoder);
   conectarPoderes(id);
   conectarFichaCliente(cont, d);
 }
