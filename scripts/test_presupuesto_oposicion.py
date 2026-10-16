@@ -202,11 +202,22 @@ class PdfPresupuesto(unittest.TestCase):
         pdf = am.generar_pdf(marca(), texto_presupuesto=po.texto(po.config_efectiva()))
         self.assertNotIn("**", self._texto_pdf(pdf))
 
-    def test_en_el_analisis_escrito_los_asteriscos_no_hacen_negrita(self):
+    def test_en_el_analisis_escrito_el_markdown_sale_con_formato_y_sin_simbolos(self):
         d = marca()
-        d["texto"] = "Riesgo **alto** de confusión"
+        d["texto"] = ("### 1. ESTADO\n\nRiesgo **alto** de *confusión*\n\n---\n\n* **Plazo:** 14/01/2027\n"
+                      "1. Primero\n2. Segundo")
         t = self._texto_pdf(am.generar_pdf(d))
-        self.assertIn("Riesgo **alto** de confusión", t)
+        for simbolo in ("**", "###", "---"):
+            self.assertNotIn(simbolo, t)
+        self.assertIn("1. ESTADO", t)
+        self.assertIn("Riesgo alto de confusión", t)
+        self.assertIn("Plazo: 14/01/2027", t)
+
+    def test_markdown_bloques_e_inline(self):
+        self.assertEqual(am._bloques_de_texto("### Tit\n---\n1. Uno\n- v\ntexto"),
+                         [("h", "Tit"), ("hr",), ("n", "Uno", "1"), ("v", "v"), ("p", "texto")])
+        self.assertEqual(am._xml_md("a **b** *c* 2 * 3 * 4 **sin cerrar & <x>"),
+                         "a <b>b</b> <i>c</i> 2 * 3 * 4 **sin cerrar &amp; &lt;x&gt;")
 
     def test_el_pdf_de_siempre_no_cambia(self):
         t = self._texto_pdf(am.generar_pdf(marca()))
