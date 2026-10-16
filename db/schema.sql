@@ -415,7 +415,9 @@ CREATE TABLE IF NOT EXISTS formularios_respuestas (
     revisado_por      TEXT,
     revisado_en       TIMESTAMPTZ,
     aviso_enviado_en  TIMESTAMPTZ,
-    aviso_error       TEXT
+    aviso_error       TEXT,
+    poder_enviado_en  TIMESTAMPTZ,           -- mail con el poder al cliente (solo persona física)
+    poder_error       TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_form_resp_cliente ON formularios_respuestas(cliente_id);
 CREATE INDEX IF NOT EXISTS idx_form_resp_recibido ON formularios_respuestas(recibido_en DESC);

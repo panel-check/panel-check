@@ -241,6 +241,21 @@ Equipo de Smarties Consultora
 Registro de Marcas Nacional e Internacional
 www.smartiesconsultora.com.ar"""
 
+ASUNTO_PODER_FISICA = "Tu poder para firmar – Smarties Consultora"
+CUERPO_PODER_FISICA = """Hola {{nombre}},
+
+Recibimos tu formulario correctamente, muchas gracias.
+
+Te adjunto el PDF del poder. Para que tenga validez, por favor seguí estos pasos:
+1. Imprimí el documento y firmalo de puño y letra (con lapicera, no sirve firma digital pegada).
+2. Escanealo o sacale una foto bien nítida, con buena luz y sin recortar los bordes.
+3. Reenviámelo por este medio así podemos avanzar con las presentaciones. Cualquier duda, avisame.
+
+Saludos,
+Equipo de Smarties Consultora
+Registro de Marcas Nacional e Internacional
+www.smartiesconsultora.com.ar"""
+
 CATALOGO = {
     "oposiciones": {
         "grupo": "interno",
@@ -304,6 +319,22 @@ CATALOGO = {
         "encabezado": "TU CONSULTA DE MARCA",
         "asunto": ASUNTO_CONFIRMACION_WEB,
         "cuerpo": CUERPO_CONFIRMACION_WEB,
+        "editable": True,
+        "estilo": "simple",
+    },
+    "poder_persona_fisica": {
+        "grupo": "web",
+        "nombre": "Poder para firmar (formulario de persona física)",
+        "descripcion": "Mail que recibe la persona en el momento en que completa el formulario de Persona Física: lleva adjunto el PDF del poder "
+                       "ya armado con sus datos y le explica cómo firmarlo y reenviarlo. Sale solo, con formato simple (sin encabezado ni botón), "
+                       "desde el dominio de Smarties. El formulario de Persona Jurídica no lo manda.",
+        "cuenta": "prospectos",
+        "remitente": "Smarties Consultora <info@smartiesconsultora.com.ar>",
+        "responder_a": "info@smartiesconsultora.com.ar",
+        "destinatarios": "",
+        "encabezado": "TU PODER PARA FIRMAR",
+        "asunto": ASUNTO_PODER_FISICA,
+        "cuerpo": CUERPO_PODER_FISICA,
         "editable": True,
         "estilo": "simple",
     },
@@ -1024,6 +1055,7 @@ _ASUNTOS_INTERNOS = [
     ("formularios", re.compile(r"Formulario recibido", re.I)),
     ("consultas_web", re.compile(r"^Consulta web", re.I)),
     ("consulta_web_confirmacion", re.compile(r"^Recibimos tu consulta de marca", re.I)),
+    ("poder_persona_fisica", re.compile(r"^Tu poder para firmar", re.I)),
     ("bloqueo", re.compile(r"INPI está bloqueando", re.I)),
     ("agenda", re.compile(r"^AGENDA\b")),
 ]

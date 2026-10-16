@@ -55,7 +55,8 @@ FORMULARIOS = {
     "persona-fisica": {
         "tipo_persona": "fisica",
         "titulo": "Formulario para Registro de Marca – Persona Física",
-        "descripcion": "Completá este formulario si querés registrar la marca a tu nombre (como persona física).",
+        "descripcion": "Completá este formulario si querés registrar la marca a tu nombre (como persona física). "
+                       "Algunos de los datos solicitados al completar el formulario generarán un PDF automático que se te enviará por email.",
         "otro": {"slug": "persona-juridica", "texto": "¿La marca va a nombre de una empresa? Completá el formulario de Persona Jurídica"},
         "campos": [
             {"id": "email", "tipo": "email", "etiqueta": "Correo electrónico", "obligatorio": True, "cliente": "email"},
@@ -145,6 +146,8 @@ def crear_tablas(cur):
         )
         """
     )
+    cur.execute("ALTER TABLE formularios_respuestas ADD COLUMN IF NOT EXISTS poder_enviado_en TIMESTAMPTZ")
+    cur.execute("ALTER TABLE formularios_respuestas ADD COLUMN IF NOT EXISTS poder_error TEXT")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_form_resp_cliente ON formularios_respuestas(cliente_id)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_form_resp_recibido ON formularios_respuestas(recibido_en DESC)")
     cur.execute(
@@ -313,6 +316,15 @@ def guardar_respuesta(cur, slug: str, datos: dict, archivos: list, ip: str) -> d
             (rid, a["campo"], a["nombre"], a["mime"], len(a["contenido"]), a["contenido"]),
         )
     return {"respuesta_id": rid, "cliente_id": cliente_id, "cliente_nuevo": nuevo}
+
+
+CLAVE_MAIL_PODER = "poder_persona_fisica"
+PODER_MAX_24H = 3  # poderes por mail en 24 hs: evita que usen el formulario para spamear a un tercero
+
+
+def datos_mail_poder(datos: dict) -> dict:
+    """Variables de la plantilla del mail del poder, a partir de lo que completó la persona."""
+    return {"titular": datos.get("nombre") or ""}
 
 
 def respuestas_legibles(slug: str, datos: dict, archivos: list = ()) -> list:
