@@ -1111,13 +1111,14 @@ function htmlRespuesta(f, { enFicha = false } = {}) {
     : f.aviso_error ? `<span class="crm-error" style="padding:0" title="${esc(f.aviso_error)}">mail pendiente (se reintenta solo)</span>` : "mail pendiente (se envía en minutos)";
   return `<div class="fm-resp cl-caja" data-resp="${f.id}">
     <div class="fm-cab"><strong>${esc(f.tipo_legible)}</strong> · recibido ${fmtFechaHora(f.recibido_en)}
-      ${f.estado === "nueva" ? '<span class="cl-tag azul">Nueva</span>' : `<span class="cl-tag ok" title="${esc(f.revisado_por || "")}">Revisada</span>`}
+      ${f.estado === "nueva" ? '<span class="cl-tag azul">Nueva</span>' : f.estado === "archivada" ? '<span class="cl-tag">Archivada</span>' : `<span class="cl-tag ok" title="${esc(f.revisado_por || "")}">Revisada</span>`}
       ${f.cliente_nuevo ? '<span class="cl-tag">creó el cliente</span>' : '<span class="cl-tag">actualizó datos del cliente</span>'}
       <small class="crm-gris">· ${aviso}</small></div>
     <details ${enFicha ? "" : "open"}><summary>Ver respuestas${f.archivos.length ? ` y ${f.archivos.length} archivo(s)` : ""}</summary>
       <table class="fm-tabla">${filas}</table>${archivos}</details>
     <div class="cl-acciones">
-      ${f.estado === "nueva" ? '<button type="button" class="cl-btn sec mini" data-fm="revisada">✓ Marcar revisada</button>' : '<button type="button" class="cl-btn sec mini" data-fm="nueva">Volver a «nueva»</button>'}
+      ${f.estado === "nueva" ? '<button type="button" class="cl-btn sec mini" data-fm="revisada">✓ Marcar revisada</button>' : f.estado === "revisada" ? '<button type="button" class="cl-btn sec mini" data-fm="nueva">Volver a «nueva»</button>' : ""}
+      ${f.estado === "archivada" ? '<button type="button" class="cl-btn sec mini" data-fm="revisada">Desarchivar</button>' : '<button type="button" class="cl-btn sec mini" data-fm="archivada" title="La saca de la lista; se ve en «Ver archivados».">Archivar</button>'}
       <button type="button" class="cl-btn peligro mini" data-fm="borrar" title="Borra la respuesta y sus archivos. El cliente queda.">Borrar respuesta</button></div>
   </div>`;
 }
@@ -1148,14 +1149,21 @@ async function pintarFormularios() {
     cont.innerHTML = `<div class="cl-vista">
       <div id="fm-links"></div>
       <div class="cl-barra" style="margin-top:14px"><label>Mostrar<select id="fm-estado">
-        <option value="">Todas</option><option value="nueva" selected>Nuevas (sin revisar)</option><option value="revisada">Revisadas</option></select></label></div>
+        <option value="">Todas</option><option value="nueva" selected>Nuevas (sin revisar)</option><option value="revisada">Revisadas</option><option value="archivada">Archivadas</option></select></label>
+        <button type="button" class="cl-btn sec mini" id="fm-ver-arch"></button></div>
       <div id="fm-lista"></div></div>`;
     $("fm-estado").addEventListener("change", pintarFormularios);
+    $("fm-ver-arch").addEventListener("click", () => {
+      $("fm-estado").value = $("fm-estado").value === "archivada" ? "nueva" : "archivada";
+      pintarFormularios();
+    });
   }
   const lista = $("fm-lista");
   try {
     const r = await api(`/api/formularios?estado=${$("fm-estado").value}`);
     $("badge-formularios").textContent = r.nuevas ? String(r.nuevas) : "";
+    const verArch = $("fm-estado").value === "archivada";
+    $("fm-ver-arch").textContent = verArch ? "← Volver a los formularios" : `🗄 Ver archivados (${r.archivadas})`;
     $("fm-links").innerHTML = `<div class="fm-links">${r.formularios.map(f => {
       const url = location.origin + f.ruta;
       return `<div class="cl-caja fm-link"><div><strong>${esc(f.tipo)}</strong><br><small class="crm-gris">${esc(f.titulo)}</small></div>
@@ -1171,7 +1179,7 @@ async function pintarFormularios() {
       setTimeout(() => { b.textContent = "Copiar link"; }, 1800);
     }));
     if (!r.respuestas.length) {
-      lista.innerHTML = `<p class="vacio">${$("fm-estado").value === "nueva" ? "No hay formularios nuevos sin revisar." : "Todavía no llegó ningún formulario."}</p>`;
+      lista.innerHTML = `<p class="vacio">${verArch ? "No hay formularios archivados." : $("fm-estado").value === "nueva" ? "No hay formularios nuevos sin revisar." : "Todavía no llegó ningún formulario."}</p>`;
       return;
     }
     lista.innerHTML = `<table class="cl-tabla"><thead><tr><th>Recibido</th><th>Tipo</th><th>Titular</th><th>CUIT</th><th>Marca</th><th>Archivos</th><th>Estado</th><th></th></tr></thead><tbody>
@@ -1182,13 +1190,25 @@ async function pintarFormularios() {
         <td>${esc(f.cuit || "")}</td>
         <td>${esc(f.marca || "—")}</td>
         <td>${f.archivos ? "📎 " + f.archivos : "—"}</td>
-        <td>${f.estado === "nueva" ? '<span class="cl-tag azul">Nueva</span>' : '<span class="cl-tag ok">Revisada</span>'}
+        <td>${f.estado === "nueva" ? '<span class="cl-tag azul">Nueva</span>' : f.estado === "archivada" ? '<span class="cl-tag">Archivada</span>' : '<span class="cl-tag ok">Revisada</span>'}
           ${f.cliente_nuevo ? "" : '<br><small class="crm-gris">ya era cliente</small>'}</td>
         <td style="white-space:nowrap">${f.cliente_id ? `<button type="button" class="cl-btn mini" data-ver-cliente="${f.cliente_id}">Ver cliente</button>` : '<small class="crm-gris">cliente borrado</small>'}
-          <button type="button" class="cl-btn sec mini" data-ver-resp="${f.id}">Respuestas</button></td></tr>`).join("")}
+          <button type="button" class="cl-btn sec mini" data-ver-resp="${f.id}">Respuestas</button>
+          <button type="button" class="cl-btn sec mini" data-fm-fila="${f.estado === "archivada" ? "revisada" : "archivada"}">${f.estado === "archivada" ? "Desarchivar" : "Archivar"}</button>
+          <button type="button" class="cl-btn peligro mini" data-fm-fila="borrar" title="Borra la respuesta y sus archivos. El cliente queda.">Borrar</button></td></tr>`).join("")}
       </tbody></table><p class="cl-pie">${r.respuestas.length} formulario(s).</p>`;
     lista.querySelectorAll("[data-ver-cliente]").forEach(b => b.addEventListener("click", () => abrirCliente(+b.dataset.verCliente)));
     lista.querySelectorAll("[data-ver-resp]").forEach(b => b.addEventListener("click", () => abrirRespuesta(+b.dataset.verResp)));
+    lista.querySelectorAll("[data-fm-fila]").forEach(b => b.addEventListener("click", async () => {
+      const id = b.closest("[data-resp]").dataset.resp, acc = b.dataset.fmFila;
+      if (acc === "borrar" && !confirm("¿Borrar esta respuesta y sus archivos? El cliente y sus datos quedan como están.")) return;
+      b.disabled = true;
+      try {
+        if (acc === "borrar") await apiJson(`/api/formularios/${id}`, "DELETE");
+        else await apiJson(`/api/formularios/${id}/estado`, "POST", { estado: acc });
+        pintarFormularios();
+      } catch (e) { alert(e.message); b.disabled = false; }
+    }));
   } catch (e) {
     lista.innerHTML = `<p class="crm-error">No se pudo cargar (${esc(e.message)}).</p>`;
   }

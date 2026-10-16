@@ -9,7 +9,7 @@ Públicas (sin login — son las que abre el cliente):
 Del panel (con login):
   GET    /api/formularios                    links + respuestas recibidas
   GET    /api/formularios/{id}               una respuesta completa
-  POST   /api/formularios/{id}/estado        marcar revisada / nueva
+  POST   /api/formularios/{id}/estado        marcar revisada / nueva / archivada
   DELETE /api/formularios/{id}               borrar respuesta y archivos (no el cliente)
   GET    /api/formularios/archivos/{id}      descargar / ver un archivo
 """
@@ -239,9 +239,11 @@ def crear_router(verificar_login, conexion) -> APIRouter:
     @router.get("/api/formularios")
     def listar(estado: str = "", _: str = Depends(verificar_login)):
         cond, val = [], []
-        if estado in ("nueva", "revisada"):
+        if estado in ("nueva", "revisada", "archivada"):
             cond.append("r.estado = %s")
             val.append(estado)
+        else:  # «todas» no incluye las archivadas
+            cond.append("r.estado <> 'archivada'")
         donde = ("WHERE " + " AND ".join(cond)) if cond else ""
         with conexion() as conn:
             with rcur(conn) as cur:
@@ -260,7 +262,9 @@ def crear_router(verificar_login, conexion) -> APIRouter:
                 filas = cur.fetchall()
                 cur.execute("SELECT COUNT(*) AS n FROM formularios_respuestas WHERE estado = 'nueva'")
                 nuevas = cur.fetchone()["n"]
-        return {"respuestas": filas, "nuevas": nuevas,
+                cur.execute("SELECT COUNT(*) AS n FROM formularios_respuestas WHERE estado = 'archivada'")
+                archivadas = cur.fetchone()["n"]
+        return {"respuestas": filas, "nuevas": nuevas, "archivadas": archivadas,
                 "formularios": [{"slug": s, "titulo": f["titulo"], "tipo": fc.TIPO_LEGIBLE[f["tipo_persona"]],
                                  "ruta": f"/formulario/{s}"} for s, f in fc.FORMULARIOS.items()]}
 
@@ -275,13 +279,13 @@ def crear_router(verificar_login, conexion) -> APIRouter:
 
     @router.post("/api/formularios/{rid}/estado")
     def cambiar_estado(rid: int, body: CambioEstado, usuario: str = Depends(verificar_login)):
-        if body.estado not in ("nueva", "revisada"):
+        if body.estado not in ("nueva", "revisada", "archivada"):
             raise HTTPException(status_code=400, detail="Estado inválido")
         with conexion() as conn:
             with conn.cursor() as cur:
                 cur.execute(
                     "UPDATE formularios_respuestas SET estado = %s, revisado_por = %s, revisado_en = now() WHERE id = %s",
-                    (body.estado, usuario if body.estado == "revisada" else None, rid),
+                    (body.estado, usuario if body.estado != "nueva" else None, rid),
                 )
                 if not cur.rowcount:
                     raise HTTPException(status_code=404, detail="No existe esa respuesta")
