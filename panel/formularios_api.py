@@ -26,6 +26,7 @@ from collections import defaultdict, deque
 import psycopg2.extras
 import requests
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
+from starlette.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse, JSONResponse, Response
 from pydantic import BaseModel
 
@@ -190,6 +191,57 @@ def crear_router(verificar_login, conexion) -> APIRouter:
         except Exception as e:  # noqa: BLE001 — queda pendiente para el respaldo
             print(f"[formularios] aviso de la respuesta {respuesta_id} no enviado: {e}")
 
+    def _enviar_poder(respuesta_id: int) -> bool:
+        """Persona física: arma el PDF del poder con los datos que acaba de completar y se lo manda por mail
+        (plantilla editable «poder_persona_fisica» de Mails). Nunca rompe el envío del formulario: si falla,
+        el motivo queda en poder_error y devuelve False."""
+        error = None
+        try:
+            with conexion() as conn:
+                with rcur(conn) as cur:
+                    cur.execute("SELECT c.*, r.datos AS datos_form FROM formularios_respuestas r JOIN clientes c ON c.id = r.cliente_id "
+                                "WHERE r.id = %s", (respuesta_id,))
+                    fila = cur.fetchone()
+                    if not fila:
+                        return False
+                    datos = fila.pop("datos_form") or {}
+                    email = (datos.get("email") or "").strip()
+                    cur.execute("SELECT COUNT(*) AS n FROM formularios_respuestas WHERE id <> %s AND lower(datos->>'email') = lower(%s) "
+                                "AND poder_enviado_en > now() - interval '24 hours'", (respuesta_id, email))
+                    previos = cur.fetchone()["n"]
+                    cur.execute("SELECT * FROM mails_config WHERE clave = %s", (fc.CLAVE_MAIL_PODER,))
+                    guardada = cur.fetchone() or {}
+                    apoderado = leer_apoderado(cur)
+            if previos >= fc.PODER_MAX_24H:
+                error = f"No se mandó: ya se enviaron {previos} poderes a este mail en las últimas 24 hs."
+            else:
+                hoy = _dt.datetime.now(_dt.timezone(_dt.timedelta(hours=-3))).date()
+                d = poderes.propuesta(fila, hoy)
+                pdf = poderes.generar_pdf(d, apoderado)
+                cfg = mails_core.combinar(fc.CLAVE_MAIL_PODER, guardada)
+                asunto, cuerpo_html, texto = mails_core.render_prospecto(
+                    cfg["asunto"], cfg["cuerpo"], fc.datos_mail_poder(datos), cfg.get("encabezado"),
+                    simple=mails_core.es_simple(fc.CLAVE_MAIL_PODER))
+                mails_core.enviar(cfg["cuenta"], cfg["remitente"], cfg["responder_a"], [email], asunto, cuerpo_html, texto,
+                                  [{"filename": poderes.nombre_archivo(d, "pdf"), "content": pdf}])
+                with conexion() as conn:
+                    with conn.cursor() as cur:
+                        cur.execute("INSERT INTO poderes_generados (cliente_id, datos, apoderado, generado_por) VALUES (%s, %s, %s, %s)",
+                                    (fila["id"], json.dumps(d, ensure_ascii=False), apoderado, "formulario web"))
+                    conn.commit()
+        except Exception as e:  # noqa: BLE001 — el formulario ya está guardado: el aviso al equipo avisa igual
+            error = str(e)[:500]
+            print(f"[formularios] poder de la respuesta {respuesta_id} no enviado: {e}")
+        try:
+            with conexion() as conn:
+                with conn.cursor() as cur:
+                    cur.execute("UPDATE formularios_respuestas SET poder_enviado_en = CASE WHEN %s IS NULL THEN now() END, "
+                                "poder_error = %s WHERE id = %s", (error, error, respuesta_id))
+                conn.commit()
+        except Exception as e:  # noqa: BLE001
+            print(f"[formularios] no se pudo anotar el poder de la respuesta {respuesta_id}: {e}")
+        return error is None
+
     # ── Públicas ──────────────────────────────────────────────────────
     @router.get("/formulario/{slug}", include_in_schema=False)
     def pagina_formulario(slug: str):
@@ -205,7 +257,7 @@ def crear_router(verificar_login, conexion) -> APIRouter:
         f = fc.FORMULARIOS.get(slug)
         if not f:
             raise HTTPException(status_code=404, detail="Formulario inexistente")
-        return {"slug": slug, **{k: f[k] for k in ("titulo", "descripcion", "otro")},
+        return {"slug": slug, "tipo_persona": f["tipo_persona"], **{k: f[k] for k in ("titulo", "descripcion", "otro")},
                 "campos": [{k: v for k, v in c.items() if k != "cliente"} for c in f["campos"]],
                 "max_archivo": fc.MAX_ARCHIVO,
                 "turnstile_site_key": os.environ.get("TURNSTILE_SITE_KEY") if _turnstile_activo() else None}
@@ -248,6 +300,8 @@ def crear_router(verificar_login, conexion) -> APIRouter:
                 res = fc.guardar_respuesta(cur, slug, datos, validos, ip)
             conn.commit()
         background.add_task(_aviso_en_segundo_plano, res["respuesta_id"])
+        if fc.FORMULARIOS[slug]["tipo_persona"] == "fisica":
+            return {"ok": True, "poder_enviado": await run_in_threadpool(_enviar_poder, res["respuesta_id"])}
         return {"ok": True}
 
     # ── Del panel ─────────────────────────────────────────────────────

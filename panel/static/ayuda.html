@@ -467,7 +467,7 @@
     </ul>
     <p><strong>📝 Formularios para clientes.</strong> Reemplazan a los Google Forms. En la pestaña <em>Formularios</em> están los dos links —<strong>Persona física</strong> y <strong>Persona jurídica</strong>— con botones para <em>Copiar link</em>, <em>Abrir</em> y mandarlo por <em>WhatsApp</em>. Son links públicos: el cliente los abre desde el celular o la compu sin usuario ni clave, y cada uno tiene un link al otro por si eligió mal.</p>
     <ul>
-      <li><strong>Persona física</strong> pide: correo, apellido y nombre, nacionalidad, DNI, CUIL/CUIT, teléfono/WhatsApp (opcional), domicilio particular, localidad, provincia, código postal, estado civil, domicilio comercial (opcional), datos del cónyuge (solo aparecen si elige «Casado/a»), nombre de la marca, descripción de productos/servicios, si tiene logo y, si tiene, el archivo del logo.</li>
+      <li><strong>Persona física</strong> pide: correo, apellido y nombre, nacionalidad, DNI, CUIL/CUIT, teléfono/WhatsApp (opcional), domicilio particular, localidad, provincia, código postal, estado civil, domicilio comercial (opcional), datos del cónyuge (solo aparecen si elige «Casado/a»), nombre de la marca, descripción de productos/servicios, si tiene logo y, si tiene, el archivo del logo. Al enviarlo, el cliente recibe por mail el poder en PDF para imprimir y firmar (ver «Poder para firmar»); en la pantalla de confirmación se muestra una barra de carga de 2 segundos y el aviso «Poder generado y enviado por mail».</li>
       <li><strong>Persona jurídica</strong> pide: correo, razón social, CUIT, teléfono/WhatsApp (opcional), nombre y cargo de quien firma por la empresa, constancia de CUIT (archivo), domicilio completo, provincia y estatuto / contrato social / poder (archivo).</li>
       <li>Los archivos pueden ser PDF, imagen (JPG, PNG, WEBP; GIF solo para el logo) o Word <strong>.docx</strong>, de hasta 10 MB cada uno. El .doc viejo no se acepta.</li>
     </ul>
@@ -874,6 +874,10 @@ le asigna un puntaje de prioridad. Después sigue a cada marca a lo largo del ti
               oponerse a una marca parecida a 14, 7 y 3 días; cada umbral se avisa una sola vez) y <strong>novedades de los
               expedientes</strong> de la cartera (concesión, oposición o vista, publicación, cambio de titular, movimientos). Cada
               cosa se avisa una sola vez. Las alertas de clientes sin vigilancia contratada salen marcadas como tales.</p>
+          </div>
+          <div class="tarjeta-mini">
+            <h4>📄 Poder para firmar (formulario de persona física)</h4>
+            <p>Mail <strong>a la persona</strong> que completa el formulario de Persona Física, en el momento de enviarlo (el de Persona Jurídica no lo manda). Lleva adjunto el PDF del poder armado con sus datos (el mismo de <em>Generar poder para firmar</em>, con el apoderado de Ajustes) y le explica cómo firmarlo de puño y letra, escanearlo o sacarle una foto nítida y reenviarlo. Plantilla editable <code>poder_persona_fisica</code> en Mails (cuenta Prospectos, desde info@smartiesconsultora.com.ar, formato simple). Mientras se genera, el formulario muestra durante 2 segundos «Estamos generando el poder» con una barra y después «Poder generado y enviado por mail (revisá spam o promociones)». Si el envío falla, la persona ve igual que recibimos sus datos y el motivo queda en <code>formularios_respuestas.poder_error</code>; se manda como máximo 3 veces por día al mismo mail. El poder queda en la ficha del cliente, en <em>Poderes generados</em>.</p>
           </div>
           <div class="tarjeta-mini">
             <h4>🗓️ Agenda diaria (20 hs)</h4>

@@ -63,6 +63,13 @@
   .ok h2 { margin: 0 0 6px; font-size: 22px; }
   .ok p { color: var(--gris); margin: 0; }
   .cargando { color: var(--gris); text-align: center; padding: 40px 0; }
+  .generando { position: fixed; inset: 0; background: rgba(243,245,248,.96); z-index: 50; display: grid; place-items: center; padding: 16px; }
+  .generando .tarjeta { max-width: 420px; width: 100%; text-align: center; padding: 36px 24px; margin: 0; }
+  .generando h2 { margin: 0 0 6px; font-size: 20px; }
+  .generando p { color: var(--gris); margin: 0 0 20px; }
+  .barra { height: 8px; border-radius: 4px; background: var(--azul-claro); overflow: hidden; }
+  .barra span { display: block; height: 100%; width: 0; background: var(--azul); border-radius: 4px; animation: llenar 2s ease-out forwards; }
+  @keyframes llenar { to { width: 100%; } }
   @media (max-width: 520px) { .tarjeta { padding: 18px 16px; } h1 { font-size: 21px; } .acciones { flex-direction: column-reverse; align-items: stretch; } .btn { width: 100%; } }
 </style>
 </head>
@@ -183,18 +190,39 @@ async function enviar(ev) {
     }
     datos.append("cf-turnstile-response", token);
   }
+  // Persona física: se arma y se manda el poder por mail. Mientras tanto, 2 segundos de barra de carga.
+  const conPoder = def.tipo_persona === "fisica";
+  let carga = null;
+  if (conPoder) {
+    carga = document.createElement("div");
+    carga.className = "generando";
+    carga.innerHTML = `<div class="tarjeta"><h2>Estamos generando el poder</h2><p>Aguardá un momento…</p><div class="barra"><span></span></div></div>`;
+    document.body.appendChild(carga);
+  }
   try {
-    const r = await fetch(`/api/publico/formulario/${encodeURIComponent(slug)}`, { method: "POST", body: datos });
+    const [r] = await Promise.all([
+      fetch(`/api/publico/formulario/${encodeURIComponent(slug)}`, { method: "POST", body: datos }),
+      conPoder ? new Promise(res => setTimeout(res, 2000)) : null,
+    ]);
+    if (carga) { carga.remove(); carga = null; }
     if (!r.ok) {
       let msg = "No se pudo enviar el formulario. Probá de nuevo en unos minutos.";
       try { msg = (await r.json()).detail || msg; } catch (_) {}
       if (r.status === 413) msg = "Los archivos pesan demasiado (máximo 10 MB cada uno).";
       throw new Error(msg);
     }
-    app.innerHTML = `<div class="tarjeta cabecera ok"><div class="tilde">✓</div><h2>¡Gracias! Recibimos tus datos</h2>
-      <p>Ya nos llegó el formulario. Nos vamos a poner en contacto con vos a la brevedad.</p></div>`;
+    let resp = {};
+    try { resp = await r.json(); } catch (_) {}
+    if (conPoder && resp.poder_enviado) {
+      app.innerHTML = `<div class="tarjeta cabecera ok"><div class="tilde">✓</div><h2>Poder generado y enviado por mail</h2>
+        <p>Revisá spam o promociones. En el mail te indicamos cómo debés firmarlo.</p></div>`;
+    } else {
+      app.innerHTML = `<div class="tarjeta cabecera ok"><div class="tilde">✓</div><h2>¡Gracias! Recibimos tus datos</h2>
+        <p>Ya nos llegó el formulario. ${conPoder ? "No pudimos enviarte el poder automáticamente: te lo mandamos por mail a la brevedad. " : ""}Nos vamos a poner en contacto con vos a la brevedad.</p></div>`;
+    }
     window.scrollTo(0, 0);
   } catch (e) {
+    if (carga) carga.remove();
     errGen.textContent = e.message; errGen.style.display = "block";
     if (window.turnstile && captchaId !== null) turnstile.reset(captchaId);
     errGen.scrollIntoView({ behavior: "smooth", block: "center" });
