@@ -484,7 +484,10 @@ def _correr_alters_panel(cur):
                         ("vista_detalle", "TEXT"), ("vista_fecha", "DATE"),
                         ("vista_fecha_notificacion", "DATE"), ("vista_fecha_vencimiento", "DATE"),
                         ("vista_detectada_en", "TIMESTAMPTZ"), ("vista_revisada_en", "TIMESTAMPTZ"),
-                        ("vista_grilla_estado", "TEXT")):
+                        ("vista_grilla_estado", "TEXT"), ("vista_tipo", "TEXT"), ("vista_articulos", "TEXT"),
+                        ("vista_antecedente", "TEXT"), ("vista_plazo", "TEXT"),
+                        ("vista_vencimiento_calculado", "DATE"), ("vista_texto", "TEXT"),
+                        ("vista_pdf_leido_en", "TIMESTAMPTZ")):
         cur.execute(f"ALTER TABLE marcas ADD COLUMN IF NOT EXISTS {_col} {_tipo}")
     # Lead marcado a mano como "tiene gestor/apoderado" desde la ficha: sale de los
     # leads (es_lead = false) y guarda lo anterior para poder deshacerlo.
@@ -553,7 +556,8 @@ COLUMNAS_MARCA = """
     estado_tramite, fecha_concesion, numero_disposicion, fecha_vencimiento_marca,
     fuente,
     tuvo_vista, vista_estado, vista_sirve, vista_detalle, vista_fecha,
-    vista_fecha_notificacion, vista_fecha_vencimiento, vista_revisada_en
+    vista_fecha_notificacion, vista_fecha_vencimiento, vista_revisada_en,
+    vista_tipo, vista_articulos, vista_antecedente, vista_plazo, vista_vencimiento_calculado
 """
 
 RE_CUIT_VALIDO = re.compile(r"^\d{10,11}$")
@@ -1116,7 +1120,8 @@ def filtros_marcas(
     tuvo_oposicion: Optional[bool] = None,
     tipo_oposicion: Optional[str] = None,  # "oposicion" | "vista" (implica tuvo_oposicion)
     # Vistas de INPI ANTES de publicar (pre-boletín): filtro aparte de la oposición.
-    # "sirve" = vista sin contestar; "cualquiera" = tuvo una vista, esté como esté.
+    # "sirve" = vista sin contestar; "fondo" = sin contestar y de fondo (la que se puede
+    # defender); "cualquiera" = tuvo una vista, esté como esté.
     vista_pre: Optional[str] = None,
     fecha_desde: Optional[str] = None,
     fecha_hasta: Optional[str] = None,
@@ -1141,8 +1146,8 @@ def filtros_marcas(
     coinciden"), para que las dos vean exactamente lo mismo."""
     if tipo_oposicion and tipo_oposicion not in TIPOS_OPOSICION:
         raise HTTPException(status_code=400, detail="tipo_oposicion tiene que ser 'oposicion' o 'vista'")
-    if vista_pre and vista_pre not in ("sirve", "cualquiera"):
-        raise HTTPException(status_code=400, detail="vista_pre tiene que ser 'sirve' o 'cualquiera'")
+    if vista_pre and vista_pre not in ("sirve", "fondo", "cualquiera"):
+        raise HTTPException(status_code=400, detail="vista_pre tiene que ser 'sirve', 'fondo' o 'cualquiera'")
     return dict(locals())
 
 
@@ -1184,6 +1189,8 @@ def _consulta_marcas(f: dict) -> dict:
         valores.append(f["tuvo_oposicion"])
     if f["vista_pre"] == "sirve":
         condiciones.append("(tuvo_vista IS TRUE AND vista_sirve IS TRUE)")
+    elif f["vista_pre"] == "fondo":
+        condiciones.append("(tuvo_vista IS TRUE AND vista_sirve IS TRUE AND vista_tipo IN ('fondo', 'fondo_y_formal'))")
     elif f["vista_pre"] == "cualquiera":
         condiciones.append("tuvo_vista IS TRUE")
     fecha_desde, fecha_hasta, fecha_dias = f["fecha_desde"], f["fecha_hasta"], f["fecha_dias"]

@@ -75,6 +75,7 @@
     <select id="f-vista-pre" title="Vista de INPI en una marca que todavía no salió en el boletín (pre-boletín). No es una oposición: es una observación de INPI que frena la publicación hasta que se contesta.">
       <option value="" selected>Todas</option>
       <option value="sirve">Vista sin contestar</option>
+      <option value="fondo">Vista de fondo sin contestar</option>
       <option value="cualquiera">Con vista (cualquiera)</option>
     </select>
   </label>
@@ -230,7 +231,7 @@
   <button onclick="pagina(1)">Siguiente &rarr;</button>
 </div>
 
-<script src="/static/comun.js?v=vp1"></script>
+<script src="/static/comun.js?v=vp2"></script>
 <script src="/static/crm.js"></script>
 <script>
 const LIMIT = 100;
@@ -684,7 +685,7 @@ function filtrosDesdeURL() {
   document.getElementById("f-oposicion").value =
     (tipoOpo === "oposicion" || tipoOpo === "vista") ? tipoOpo
       : tuvoOpo === "true" ? "con" : tuvoOpo === "false" ? "sin" : "";
-  document.getElementById("f-vista-pre").value = ["sirve", "cualquiera"].includes(p.get("vista_pre")) ? p.get("vista_pre") : "";
+  document.getElementById("f-vista-pre").value = ["sirve", "fondo", "cualquiera"].includes(p.get("vista_pre")) ? p.get("vista_pre") : "";
   document.getElementById("f-fecha-desde").value = p.get("fecha_desde") ?? "";
   document.getElementById("f-fecha-hasta").value = p.get("fecha_hasta") ?? "";
   document.getElementById("f-fecha-dias").value = /^\d+$/.test(p.get("fecha_dias") ?? "") ? p.get("fecha_dias") : "";

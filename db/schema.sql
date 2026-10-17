@@ -131,6 +131,17 @@ ALTER TABLE marcas ADD COLUMN IF NOT EXISTS vista_fecha_vencimiento DATE;
 ALTER TABLE marcas ADD COLUMN IF NOT EXISTS vista_detectada_en TIMESTAMPTZ;
 ALTER TABLE marcas ADD COLUMN IF NOT EXISTS vista_revisada_en TIMESTAMPTZ;
 ALTER TABLE marcas ADD COLUMN IF NOT EXISTS vista_grilla_estado TEXT;
+-- Lo que se lee del PDF de la vista (scripts/vistas_pdf.py), agregado el 17/10/2026:
+--   vista_tipo: fondo (observa el signo: 30 días corridos) | formal (logotipos: 10 días hábiles) |
+--     fondo_y_formal | desconocido. vista_vencimiento_calculado sale del plazo que dice el texto
+--     (los hábiles no descuentan feriados); vista_fecha_vencimiento es el que marca INPI.
+ALTER TABLE marcas ADD COLUMN IF NOT EXISTS vista_tipo TEXT;
+ALTER TABLE marcas ADD COLUMN IF NOT EXISTS vista_articulos TEXT;
+ALTER TABLE marcas ADD COLUMN IF NOT EXISTS vista_antecedente TEXT;
+ALTER TABLE marcas ADD COLUMN IF NOT EXISTS vista_plazo TEXT;
+ALTER TABLE marcas ADD COLUMN IF NOT EXISTS vista_vencimiento_calculado DATE;
+ALTER TABLE marcas ADD COLUMN IF NOT EXISTS vista_texto TEXT;
+ALTER TABLE marcas ADD COLUMN IF NOT EXISTS vista_pdf_leido_en TIMESTAMPTZ;
 
 -- Agregado el 30/09/2026: aviso por mail (Resend) de leads con oposición/vista
 -- nueva -- ver scripts/notificar_oposiciones.py. Cada lead se avisa una sola vez.
