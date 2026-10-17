@@ -113,6 +113,25 @@ ALTER TABLE marcas ADD COLUMN IF NOT EXISTS oposicion_agente_oponente TEXT;
 ALTER TABLE marcas ADD COLUMN IF NOT EXISTS oposicion_posible_apoderado BOOLEAN;
 ALTER TABLE marcas ADD COLUMN IF NOT EXISTS estado_oposicion_version INTEGER; -- 2 = reglas actuales
 
+-- Agregado el 17/10/2026: VISTAS de INPI en marcas PRE-BOLETÍN (antes de publicarse)
+-- -- ver scripts/probar_vistas_preboletin.py. Son una cosa distinta de la oposición de
+-- un tercero: tienen sus propias columnas y NO usan tuvo_oposicion ni estado_oposicion.
+--   vista_estado: sin_notificar | notificada_en_plazo | plazo_vencido (la vista SIRVE:
+--     nadie la contestó) | resuelta | con_apoderado (ya no sirve).
+--   vista_grilla_estado: lo último que mostró la Grilla Digital al revisarla
+--     (en_examen | vista_pendiente | vista_resuelta | vista_con_apoderado |
+--     orden_publicacion | publicada). Las dos últimas dejan de revisarse.
+ALTER TABLE marcas ADD COLUMN IF NOT EXISTS tuvo_vista BOOLEAN;
+ALTER TABLE marcas ADD COLUMN IF NOT EXISTS vista_estado TEXT;
+ALTER TABLE marcas ADD COLUMN IF NOT EXISTS vista_sirve BOOLEAN;
+ALTER TABLE marcas ADD COLUMN IF NOT EXISTS vista_detalle TEXT;
+ALTER TABLE marcas ADD COLUMN IF NOT EXISTS vista_fecha DATE;
+ALTER TABLE marcas ADD COLUMN IF NOT EXISTS vista_fecha_notificacion DATE;
+ALTER TABLE marcas ADD COLUMN IF NOT EXISTS vista_fecha_vencimiento DATE;
+ALTER TABLE marcas ADD COLUMN IF NOT EXISTS vista_detectada_en TIMESTAMPTZ;
+ALTER TABLE marcas ADD COLUMN IF NOT EXISTS vista_revisada_en TIMESTAMPTZ;
+ALTER TABLE marcas ADD COLUMN IF NOT EXISTS vista_grilla_estado TEXT;
+
 -- Agregado el 30/09/2026: aviso por mail (Resend) de leads con oposición/vista
 -- nueva -- ver scripts/notificar_oposiciones.py. Cada lead se avisa una sola vez.
 ALTER TABLE marcas ADD COLUMN IF NOT EXISTS notificado_oposicion_en TIMESTAMPTZ;

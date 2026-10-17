@@ -478,6 +478,14 @@ def _correr_alters_panel(cur):
                         ("oposicion_agente_oponente", "TEXT"), ("oposicion_posible_apoderado", "BOOLEAN"),
                         ("estado_oposicion_version", "INTEGER")):
         cur.execute(f"ALTER TABLE marcas ADD COLUMN IF NOT EXISTS {_col} {_tipo}")
+    # Vistas de INPI en marcas pre-boletín (scripts/probar_vistas_preboletin.py): columnas
+    # propias, separadas de la oposición de un tercero (tuvo_oposicion / estado_oposicion).
+    for _col, _tipo in (("tuvo_vista", "BOOLEAN"), ("vista_estado", "TEXT"), ("vista_sirve", "BOOLEAN"),
+                        ("vista_detalle", "TEXT"), ("vista_fecha", "DATE"),
+                        ("vista_fecha_notificacion", "DATE"), ("vista_fecha_vencimiento", "DATE"),
+                        ("vista_detectada_en", "TIMESTAMPTZ"), ("vista_revisada_en", "TIMESTAMPTZ"),
+                        ("vista_grilla_estado", "TEXT")):
+        cur.execute(f"ALTER TABLE marcas ADD COLUMN IF NOT EXISTS {_col} {_tipo}")
     # Lead marcado a mano como "tiene gestor/apoderado" desde la ficha: sale de los
     # leads (es_lead = false) y guarda lo anterior para poder deshacerlo.
     for _col, _tipo in (("con_gestor_manual", "BOOLEAN"), ("con_gestor_manual_en", "TIMESTAMPTZ"),
@@ -543,7 +551,9 @@ COLUMNAS_MARCA = """
     oposicion_agente_oponente, oposicion_posible_apoderado,
     con_gestor_manual, con_gestor_manual_en, con_gestor_manual_por, gestor_nombre,
     estado_tramite, fecha_concesion, numero_disposicion, fecha_vencimiento_marca,
-    fuente
+    fuente,
+    tuvo_vista, vista_estado, vista_sirve, vista_detalle, vista_fecha,
+    vista_fecha_notificacion, vista_fecha_vencimiento, vista_revisada_en
 """
 
 RE_CUIT_VALIDO = re.compile(r"^\d{10,11}$")
@@ -1105,6 +1115,9 @@ def filtros_marcas(
     contactado: Optional[bool] = None,
     tuvo_oposicion: Optional[bool] = None,
     tipo_oposicion: Optional[str] = None,  # "oposicion" | "vista" (implica tuvo_oposicion)
+    # Vistas de INPI ANTES de publicar (pre-boletín): filtro aparte de la oposición.
+    # "sirve" = vista sin contestar; "cualquiera" = tuvo una vista, esté como esté.
+    vista_pre: Optional[str] = None,
     fecha_desde: Optional[str] = None,
     fecha_hasta: Optional[str] = None,
     # Atajo "últimos N días" de Fecha Boletín: se calcula con la fecha de HOY
@@ -1128,6 +1141,8 @@ def filtros_marcas(
     coinciden"), para que las dos vean exactamente lo mismo."""
     if tipo_oposicion and tipo_oposicion not in TIPOS_OPOSICION:
         raise HTTPException(status_code=400, detail="tipo_oposicion tiene que ser 'oposicion' o 'vista'")
+    if vista_pre and vista_pre not in ("sirve", "cualquiera"):
+        raise HTTPException(status_code=400, detail="vista_pre tiene que ser 'sirve' o 'cualquiera'")
     return dict(locals())
 
 
@@ -1167,6 +1182,10 @@ def _consulta_marcas(f: dict) -> dict:
     elif f["tuvo_oposicion"] is not None:
         condiciones.append("tuvo_oposicion = %s")
         valores.append(f["tuvo_oposicion"])
+    if f["vista_pre"] == "sirve":
+        condiciones.append("(tuvo_vista IS TRUE AND vista_sirve IS TRUE)")
+    elif f["vista_pre"] == "cualquiera":
+        condiciones.append("tuvo_vista IS TRUE")
     fecha_desde, fecha_hasta, fecha_dias = f["fecha_desde"], f["fecha_hasta"], f["fecha_dias"]
     if fecha_desde or fecha_hasta or fecha_dias:
         # Mismo criterio que muestra el panel como "Fecha Boletín"

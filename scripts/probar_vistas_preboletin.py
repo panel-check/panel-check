@@ -1,5 +1,5 @@
 """
-PRUEBA (solo lectura) de la revisión de vistas de INPI en marcas PRE-BOLETÍN.
+Revisión de vistas de INPI en marcas PRE-BOLETÍN (antes de que salgan en un boletín).
 
 Toma los leads que todavía no tienen boletín (boletin IS NULL, es_lead = true)
 y se presentaron hace --dias-minimos días o más, mira la Grilla Digital de cada
@@ -18,12 +18,17 @@ una y las clasifica:
   sin_datos          la Grilla vino vacía (bloqueo del WAF o sin filas)
 
 Mide además cuánto tarda cada consulta, para dimensionar un proceso diario
-(cuántas marcas entran en una corrida y cuánto dura). NO modifica nada: ni la
-base ni el panel.
+(cuántas marcas entran en una corrida y cuánto dura).
+
+Sin --guardar es solo lectura. Con --guardar escribe el resultado en las
+columnas propias de la vista (tuvo_vista, vista_estado, vista_fecha...) -- NO
+toca tuvo_oposicion ni los campos de la oposición: una vista de INPI antes de
+publicar es otra cosa que una oposición de un tercero. Las marcas que ya llegaron
+a "Orden de Publicación" o a la publicación no se vuelven a consultar.
 
 Uso:
     DATABASE_URL=... python3 probar_vistas_preboletin.py [--dias-minimos 7]
-        [--limite 600] [--delay 1.5] [--max-minutes 90]
+        [--limite 600] [--delay 1.5] [--max-minutes 90] [--guardar]
 """
 
 import argparse
@@ -77,6 +82,58 @@ def clasificar(archivos):
     return "en_examen", ingreso, None
 
 
+ESTADOS_VISTA_QUE_SIRVEN = ("sin_notificar", "notificada_en_plazo", "plazo_vencido")
+
+
+def _estado_vista(est, hoy_iso):
+    """Estado de la vista para guardar, a partir de clasificar_estado_oposicion.
+    None si el expediente devolvió algo que no es una vista (no se guarda)."""
+    e = est["estado"]
+    if e == "con_apoderado":
+        return "con_apoderado"
+    if e == "vista_pendiente":
+        if est["vencimiento"]:
+            return "plazo_vencido" if est["vencimiento"] < hoy_iso else "notificada_en_plazo"
+        return "notificada_en_plazo" if est["notificacion"] else "sin_notificar"
+    if e == "sin_oposicion":
+        return "resuelta"  # el expediente la muestra contestada
+    return None
+
+
+def guardar_resultado(conn, acta, categoria, datos_vista):
+    """Escribe el resultado de la revisión. Solo columnas de vista: nunca toca
+    tuvo_oposicion ni los campos de la oposición de un tercero."""
+    with conn.cursor() as cur:
+        if datos_vista:
+            cur.execute(
+                """
+                UPDATE marcas SET
+                    vista_grilla_estado = %s, vista_revisada_en = now(),
+                    tuvo_vista = true,
+                    vista_estado = %s, vista_sirve = %s, vista_detalle = %s,
+                    vista_fecha = %s, vista_fecha_notificacion = %s, vista_fecha_vencimiento = %s,
+                    vista_detectada_en = COALESCE(vista_detectada_en, now())
+                WHERE acta = %s
+                """,
+                (categoria, datos_vista["estado"], datos_vista["estado"] in ESTADOS_VISTA_QUE_SIRVEN,
+                 datos_vista["detalle"], datos_vista["fecha"], datos_vista["notificacion"],
+                 datos_vista["vencimiento"], acta),
+            )
+        else:
+            cur.execute(
+                "UPDATE marcas SET vista_grilla_estado = %s, vista_revisada_en = now() WHERE acta = %s",
+                (categoria, acta),
+            )
+            if categoria in ("publicada", "orden_publicacion"):
+                # Para llegar a la publicación la vista tuvo que resolverse.
+                cur.execute(
+                    "UPDATE marcas SET vista_estado = 'resuelta', vista_sirve = false "
+                    "WHERE acta = %s AND tuvo_vista IS TRUE AND vista_estado IS DISTINCT FROM 'resuelta'",
+                    (acta,),
+                )
+    conn.commit()
+
+
 def _percentil(valores, p):
     v = sorted(valores)
     return v[min(len(v) - 1, int(round(p * (len(v) - 1))))]
@@ -88,6 +145,7 @@ def main():
     ap.add_argument("--limite", type=int, default=600, help="tope de marcas a consultar (las más viejas primero)")
     ap.add_argument("--delay", type=float, default=1.5, help="segundos entre marcas (freno de mano)")
     ap.add_argument("--max-minutes", type=float, default=90, help="corta solo pasados estos minutos")
+    ap.add_argument("--guardar", action="store_true", help="escribe el resultado en las columnas de vista de la marca (sin esto, solo lectura)")
     args = ap.parse_args()
 
     database_url = os.environ.get("DATABASE_URL") or os.environ.get("DATABASE_PUBLIC_URL")
@@ -96,6 +154,10 @@ def main():
         sys.exit(1)
 
     conn = psycopg2.connect(database_url)
+    with conn.cursor() as cur:
+        cur.execute("SELECT count(*) FROM information_schema.columns WHERE table_name = 'marcas' AND column_name = 'vista_grilla_estado'")
+        if not cur.fetchone()[0]:
+            sys.exit("Faltan las columnas de vista en la tabla marcas: se crean solas cuando el panel arranca con el último deploy. Reintentar en unos minutos.")
     with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
         cur.execute(
             """
@@ -104,15 +166,18 @@ def main():
             WHERE es_lead = true AND boletin IS NULL
               AND fecha_presentacion IS NOT NULL
               AND fecha_presentacion::date <= CURRENT_DATE - %s
-            ORDER BY fecha_presentacion ASC
+              AND COALESCE(vista_grilla_estado, '') NOT IN ('orden_publicacion', 'publicada')
+            ORDER BY vista_revisada_en ASC NULLS FIRST, fecha_presentacion ASC
             """,
             (args.dias_minimos,),
         )
         todas = cur.fetchall()
-    conn.close()
+    if not args.guardar:
+        conn.close()
     marcas = todas[: args.limite]
     print(f"Leads pre-boletín con {args.dias_minimos}+ días: {len(todas)}. A consultar en esta prueba: {len(marcas)}.", flush=True)
 
+    hoy_iso = datetime.date.today().isoformat()
     s = crear_sesion()
     inicio = time.time()
     duraciones, duraciones_exp = [], []
@@ -143,20 +208,43 @@ def main():
             categoria, ingreso, vista = clasificar(archivos)
 
         extra = ""
+        datos_vista = None  # lo que se guarda en las columnas de vista (None = nada que guardar)
+        guardable = categoria != "sin_datos"
         if categoria == "vista_pendiente":
             t1 = time.time()
             try:
                 exp = consultar_expediente(s, m["acta"])
-                est = clasificar_estado_oposicion(exp, archivos, None)
-                extra = f" | expediente: {est['estado']}, notif {est['notificacion'] or '—'}, vence {est['vencimiento'] or '—'}"
-                if est["estado"] == "con_apoderado":
-                    categoria = "vista_con_apoderado"
+                if exp.get("bloqueado"):
+                    categoria, guardable = "vista_sin_expediente", False
+                    extra = " | expediente: bloqueado por el WAF, se reintenta"
+                else:
+                    est = clasificar_estado_oposicion(exp, archivos, None)
+                    estado_v = _estado_vista(est, hoy_iso)
+                    if estado_v is None:
+                        categoria, guardable = "vista_sin_expediente", False
+                    else:
+                        extra = f" | expediente: {estado_v}, notif {est['notificacion'] or '—'}, vence {est['vencimiento'] or '—'}"
+                        datos_vista = {"estado": estado_v, "detalle": est["detalle"], "fecha": vista,
+                                       "notificacion": est["notificacion"], "vencimiento": est["vencimiento"]}
+                        if estado_v == "con_apoderado":
+                            categoria = "vista_con_apoderado"
             except Exception as e:  # noqa: BLE001
+                categoria, guardable = "vista_sin_expediente", False
                 extra = f" | expediente: error {e}"
             duraciones_exp.append(time.time() - t1)
             time.sleep(args.delay)
             if categoria == "vista_pendiente":
                 candidatas.append((m, ingreso, vista, extra))
+        elif categoria == "vista_resuelta":
+            datos_vista = {"estado": "resuelta", "fecha": vista, "notificacion": None, "vencimiento": None,
+                           "detalle": "La vista ya se resolvió: hay una Orden de Publicación o una contestación posterior."}
+
+        if args.guardar and guardable:
+            try:
+                guardar_resultado(conn, m["acta"], categoria, datos_vista)
+            except Exception as e:  # noqa: BLE001
+                conn.rollback()
+                extra += f" | NO se pudo guardar: {e}"
 
         conteo[categoria] = conteo.get(categoria, 0) + 1
         dias = (datetime.date.today() - m["presentada"]).days
@@ -180,6 +268,9 @@ def main():
     if corte:
         lineas.append(f"AVISO: la prueba se cortó antes de terminar: {corte}")
 
+    if args.guardar:
+        conn.close()
+        lineas.append("Resultado guardado en el panel (columnas de vista de cada marca)")
     print("\n=== Resultado de la prueba ===")
     print("\n".join(lineas))
     print("\nPor categoría:")
