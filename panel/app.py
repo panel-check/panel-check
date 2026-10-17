@@ -597,6 +597,21 @@ _SQL_OPOSICIONES_PENDIENTES = """
     )
 """
 
+# Marcas que la revisión de vistas miraría hoy (misma regla que la consulta de
+# scripts/probar_vistas_preboletin.py -- si se cambia una, cambiar la otra).
+_SQL_VISTAS_PENDIENTES = """
+    SELECT COUNT(*) FROM marcas
+    WHERE es_lead = true AND boletin IS NULL AND contactado IS NOT TRUE
+      AND fecha_presentacion IS NOT NULL
+      AND fecha_presentacion::date <= current_date - 7
+      AND COALESCE(vista_grilla_estado, '') NOT IN ('orden_publicacion', 'publicada', 'vista_con_apoderado')
+      AND COALESCE(vista_estado, '') <> 'con_apoderado'
+      AND NOT COALESCE(tuvo_vista IS TRUE AND vista_sirve IS TRUE
+               AND LEAST(vista_vencimiento_calculado, vista_fecha_vencimiento) < current_date - 7, false)
+      AND (vista_revisada_en IS NULL
+           OR vista_revisada_en < now() - make_interval(days => CASE WHEN tuvo_vista IS TRUE AND vista_sirve IS TRUE THEN 3 ELSE 7 END))
+"""
+
 GRUPOS_AUTOMATIZACIONES = [
     {
         "id": "leads",
@@ -654,7 +669,7 @@ GRUPOS_AUTOMATIZACIONES = [
         "plegado": False,
         "tarjetas": [
             {
-                "nombre": "Oposiciones y vistas",
+                "nombre": "Oposiciones",
                 "descripcion": "Todas las noches revisa el boletín COMPLETO (todos sus leads) de hasta 5 "
                                "boletines -- los que estén más cerca de cerrar el plazo de 30 días para "
                                "oponerse, o ya cerrados esperando que INPI notifique a los titulares el "
@@ -663,7 +678,10 @@ GRUPOS_AUTOMATIZACIONES = [
                                "revisar a cada lead a los 10/23/33 días). El mail de aviso sale a las 7:30.",
                 "horario": "Todos los días, 23:10 hs",
                 "metricas": [
+                    # Solo oposiciones de un tercero (el detalle trae "OPO"); las vistas de INPI
+                    # antes de publicar tienen su propia tarjeta, más abajo.
                     {"sql": "SELECT COUNT(*) FROM marcas WHERE es_lead = true AND tuvo_oposicion = true "
+                            "AND COALESCE(detalle_oposicion, '') ~* 'OPO' "
                             "AND COALESCE(oposicion_detectada_en, revisado_oposicion_en) >= now() - interval '7 days'",
                      "etiqueta": "detectadas en los últimos 7 días", "destacada": True},
                 ],
@@ -671,6 +689,36 @@ GRUPOS_AUTOMATIZACIONES = [
                     {"etiqueta": "Rotación nocturna", "workflow_file": "revisar_oposiciones.yml", "cron": "10 2 * * *",
                      "horario": "todos los días, 23:10 hs",
                      "pendientes_sql": _SQL_OPOSICIONES_PENDIENTES},
+                ],
+            },
+            {
+                "nombre": "Vistas antes de publicar",
+                "descripcion": "Revisa las marcas que todavía no salieron en un boletín (pre-boletín, con 7 o más "
+                               "días desde la presentación) y mira en INPI si recibieron una vista antes de "
+                               "publicarse: de fondo (INPI observa el signo, 30 días corridos) o formal (pide "
+                               "logotipos, 10 días hábiles). Baja y lee el PDF de la vista y guarda el tipo, el "
+                               "artículo, la marca anterior con la que se parece y el vencimiento. No revisa las "
+                               "marcas contactadas, las que ya llegaron a Orden de Publicación ni las que ya "
+                               "tienen apoderado; una marca sin vista se vuelve a mirar a los 7 días y una con "
+                               "vista sin contestar a los 3. Hasta 600 marcas por corrida (~30 min). Por ahora "
+                               "corre solo a mano.",
+                "horario": "Solo a mano (botón «Correr ahora»)",
+                "metricas": [
+                    {"sql": "SELECT COUNT(*) FROM marcas WHERE es_lead = true AND boletin IS NULL "
+                            "AND tuvo_vista IS TRUE AND vista_sirve IS TRUE",
+                     "etiqueta": "vistas sin contestar", "destacada": True},
+                    {"sql": "SELECT COUNT(*) FROM marcas WHERE es_lead = true AND boletin IS NULL "
+                            "AND tuvo_vista IS TRUE AND vista_sirve IS TRUE "
+                            "AND vista_tipo IN ('fondo', 'fondo_y_formal')",
+                     "etiqueta": "de fondo (las que se pueden defender)"},
+                    {"sql": "SELECT COUNT(*) FROM marcas WHERE tuvo_vista IS TRUE "
+                            "AND vista_detectada_en >= now() - interval '7 days'",
+                     "etiqueta": "detectadas en los últimos 7 días"},
+                ],
+                "procesos": [
+                    {"etiqueta": "Revisión de vistas", "workflow_file": "probar_vistas_preboletin.yml", "cron": None,
+                     "horario": "solo a mano",
+                     "pendientes_sql": _SQL_VISTAS_PENDIENTES},
                 ],
             },
             {
