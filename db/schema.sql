@@ -131,6 +131,9 @@ ALTER TABLE marcas ADD COLUMN IF NOT EXISTS vista_fecha_vencimiento DATE;
 ALTER TABLE marcas ADD COLUMN IF NOT EXISTS vista_detectada_en TIMESTAMPTZ;
 ALTER TABLE marcas ADD COLUMN IF NOT EXISTS vista_revisada_en TIMESTAMPTZ;
 ALTER TABLE marcas ADD COLUMN IF NOT EXISTS vista_grilla_estado TEXT;
+-- Agregado el 17/10/2026: una marca contactada mientras era pre-boletín vuelve a «sin contactar»
+-- cuando sale en el boletín (cargar_db.py); acá queda la fecha en que se la había contactado.
+ALTER TABLE marcas ADD COLUMN IF NOT EXISTS contactado_prebol_en TIMESTAMPTZ;
 -- Lo que se lee del PDF de la vista (scripts/vistas_pdf.py), agregado el 17/10/2026:
 --   vista_tipo: fondo (observa el signo: 30 días corridos) | formal (logotipos: 10 días hábiles) |
 --     fondo_y_formal | desconocido. vista_vencimiento_calculado sale del plazo que dice el texto

@@ -7,13 +7,13 @@ una y las clasifica:
 
   publicada          ya tiene "Hoja Publicacion": salió en un boletín; sigue el
                      flujo de oposiciones de siempre
-  orden_publicacion  tiene "Orden de Publicación" (y ninguna vista sin resolver):
+  orden_publicacion  tiene "Orden de Publicación" (con o sin vista antes, ya resuelta):
                      sale en el próximo miércoles, no hay nada que ofrecer
   vista_pendiente    tiene "Vista de Marcas" y todavía no hay Orden de
                      Publicación ni contestación posterior: CANDIDATA. Se pide
                      además el expediente para ver notificación/vencimiento
-  vista_resuelta     tuvo una vista pero ya hay Orden de Publicación o
-                     contestación posterior
+  vista_resuelta     tuvo una vista y ya hay una contestación posterior, pero
+                     todavía no la Orden de Publicación (puede llegar otra vista)
   en_examen          sin vista ni orden: INPI todavía la está examinando
   sin_datos          la Grilla vino vacía (bloqueo del WAF o sin filas)
 
@@ -24,6 +24,14 @@ Para las vistas pendientes además baja el PDF de la vista y lo lee (scripts/vis
 tipo (de fondo o formal), artículo de la ley, marca anterior con la que se parece y plazo
 que dice el texto (30 días corridos / 10 días hábiles). Con eso calcula un vencimiento
 propio y usa el más cercano entre ese y el que marca INPI en el expediente.
+
+Qué marcas se vuelven a revisar (sin --actas):
+  - nunca las contactadas (contactado): ya se les ofreció ayuda, igual que en el seguimiento de oposiciones;
+  - dejan de revisarse las que llegaron a Orden de Publicación o se publicaron, o cuyo titular ya
+    tiene apoderado, y las que pasó el vencimiento de la vista hace más de --dias-despues-vencimiento días;
+  - una marca sin vista se mira de nuevo a los --dias-entre-revisiones días (7) y una con vista sin
+    contestar a los --dias-entre-revisiones-vista (3). El expediente se vuelve a leer en cada revisión de
+    una vista pendiente porque la contestación no siempre aparece como fila en la Grilla.
 
 Sin --guardar es solo lectura. Con --guardar escribe el resultado en las
 columnas propias de la vista (tuvo_vista, vista_estado, vista_fecha...) -- NO
@@ -82,7 +90,9 @@ def clasificar(archivos):
     contestaciones = _fechas(archivos, "CONTEST")
     if vistas:
         ultima = vistas[-1]
-        resuelta = any(o >= ultima for o in ordenes) or any(c >= ultima for c in contestaciones)
+        if any(o >= ultima for o in ordenes):
+            return "orden_publicacion", ingreso, ultima  # la vista se resolvió y ya sale: no se vuelve a mirar
+        resuelta = any(c >= ultima for c in contestaciones)
         return ("vista_resuelta" if resuelta else "vista_pendiente"), ingreso, ultima
     if ordenes:
         return "orden_publicacion", ingreso, None
@@ -189,6 +199,9 @@ def main():
     ap.add_argument("--delay", type=float, default=1.5, help="segundos entre marcas (freno de mano)")
     ap.add_argument("--max-minutes", type=float, default=90, help="corta solo pasados estos minutos")
     ap.add_argument("--guardar", action="store_true", help="escribe el resultado en las columnas de vista de la marca (sin esto, solo lectura)")
+    ap.add_argument("--dias-entre-revisiones", type=int, default=7, help="días hasta volver a mirar una marca sin vista")
+    ap.add_argument("--dias-entre-revisiones-vista", type=int, default=3, help="días hasta volver a mirar una marca con vista sin contestar")
+    ap.add_argument("--dias-despues-vencimiento", type=int, default=7, help="días después del vencimiento de la vista en que se deja de revisar")
     ap.add_argument("--actas", default="", help="revisar SOLO estas actas (separadas por coma), sin los filtros de antigüedad y estado")
     args = ap.parse_args()
     actas_pedidas = [a.strip() for a in args.actas.split(",") if a.strip()]
@@ -223,12 +236,20 @@ def main():
                 SELECT acta, COALESCE(NULLIF(denominacion, ''), denominacion_inpi) AS denominacion, titular, fecha_presentacion::date AS presentada
                 FROM marcas
                 WHERE es_lead = true AND boletin IS NULL
+                  AND contactado IS NOT TRUE
                   AND fecha_presentacion IS NOT NULL
                   AND fecha_presentacion::date <= CURRENT_DATE - %s
-                  AND COALESCE(vista_grilla_estado, '') NOT IN ('orden_publicacion', 'publicada')
+                  AND COALESCE(vista_grilla_estado, '') NOT IN ('orden_publicacion', 'publicada', 'vista_con_apoderado')
+                  AND COALESCE(vista_estado, '') <> 'con_apoderado'
+                  -- pasó el vencimiento de la vista hace más de N días: ya no hay nada que ofrecer
+                  AND NOT (tuvo_vista IS TRUE AND vista_sirve IS TRUE
+                           AND LEAST(vista_vencimiento_calculado, vista_fecha_vencimiento) < CURRENT_DATE - %s)
+                  -- no volver a mirar antes de tiempo
+                  AND (vista_revisada_en IS NULL
+                       OR vista_revisada_en < now() - make_interval(days => CASE WHEN tuvo_vista IS TRUE AND vista_sirve IS TRUE THEN %s ELSE %s END))
                 ORDER BY vista_revisada_en ASC NULLS FIRST, fecha_presentacion ASC
                 """,
-                (args.dias_minimos,),
+                (args.dias_minimos, args.dias_despues_vencimiento, args.dias_entre_revisiones_vista, args.dias_entre_revisiones),
             )
             todas = cur.fetchall()
     if not args.guardar:

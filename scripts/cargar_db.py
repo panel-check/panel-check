@@ -138,6 +138,22 @@ def main():
                     -- el boletín "real" (que siempre trae estos datos) los
                     -- completa/corrige sin perder nada si por algún motivo
                     -- viniera vacío en esta corrida puntual.
+                    -- Pedido el 17/10/2026: una marca contactada mientras era pre-boletín
+                    -- (marcas.boletin IS NULL) vuelve a «sin contactar» cuando el boletín la
+                    -- alcanza, para que el equipo la vea como novedad (marca publicada). Se
+                    -- guarda en contactado_prebol_en cuándo se la había contactado. Solo pasa
+                    -- en el momento del paso a boletín: reimportar un boletín viejo (la marca
+                    -- ya tiene boletin) no toca `contactado`. Las tres columnas se leen con los
+                    -- valores de antes del UPDATE, así que el orden de las asignaciones no importa.
+                    contactado_prebol_en = CASE
+                        WHEN marcas.boletin IS NULL AND EXCLUDED.boletin IS NOT NULL AND marcas.contactado IS TRUE
+                        THEN COALESCE(marcas.contactado_en, now()) ELSE marcas.contactado_prebol_en END,
+                    contactado_en = CASE
+                        WHEN marcas.boletin IS NULL AND EXCLUDED.boletin IS NOT NULL AND marcas.contactado IS TRUE
+                        THEN NULL ELSE marcas.contactado_en END,
+                    contactado = CASE
+                        WHEN marcas.boletin IS NULL AND EXCLUDED.boletin IS NOT NULL AND marcas.contactado IS TRUE
+                        THEN false ELSE marcas.contactado END,
                     boletin = COALESCE(EXCLUDED.boletin, marcas.boletin),
                     clase = COALESCE(EXCLUDED.clase, marcas.clase),
                     tipo = COALESCE(EXCLUDED.tipo, marcas.tipo),
@@ -174,6 +190,7 @@ def main():
                     -- por el escaneo directo, queremos que siga diciendo
                     -- 'escaneo_directo' (para poder medir cuánto adelantamos el
                     -- contacto) aunque el boletín la vuelva a cargar.
+                    -- `contactado` solo se toca en el paso de pre-boletín a boletín (arriba).
                     -- tuvo_oposicion / detalle_oposicion / revisado_oposicion_en NO
                     -- se tocan acá a propósito: los administra únicamente
                     -- scripts/revisar_oposiciones.py. Si el pipeline reprocesa un
