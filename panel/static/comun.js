@@ -240,7 +240,6 @@ function abrirModalVistaPre(acta) {
 
   document.getElementById("modal-oposicion-contenido").innerHTML = `
     <h3>👁 Vista antes de publicar — acta ${_escapeHtml(row.acta)}</h3>
-    <p class="mo-doc">No es una oposición de un tercero: es una observación de INPI sobre la solicitud antes de publicarla.</p>
     ${estadoHtml}${bloqueFondo}${bloqueFormal}${bloqueTipo}${bloqueAntecedente}
     <p><a class="link-acta" href="javascript:void(0)" onclick="abrirActa('${_idSeguro(row.acta)}')">Ver expediente completo en INPI ↗</a></p>`;
   document.getElementById("modal-oposicion").classList.add("abierto");
