@@ -1,0 +1,55 @@
+name: Probar vistas en pre-boletín (manual, solo lectura)
+
+on:
+  workflow_dispatch:
+    inputs:
+      dias_minimos:
+        description: "Solo leads pre-boletín presentados hace N días o más"
+        required: false
+        default: "7"
+      limite:
+        description: "Tope de marcas a consultar en la prueba (las más viejas primero)"
+        required: false
+        default: "600"
+      max_minutes:
+        description: "Minutos máximos de la prueba"
+        required: false
+        default: "90"
+
+permissions:
+  contents: read
+
+# Un solo carril contra INPI: si hay otro proceso de INPI corriendo, este espera su turno.
+concurrency:
+  group: inpi-lane
+  cancel-in-progress: false
+
+jobs:
+  probar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      # Alarma de bloqueo masivo de INPI (scripts/monitor_bloqueo.py)
+      RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+      RESEND_FROM: ${{ secrets.RESEND_FROM }}
+      NOTIFICAR_A: ${{ secrets.NOTIFICAR_A }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Instalar dependencias
+        run: pip install -r requirements.txt
+
+      - name: Mirar la Grilla de los leads pre-boletín y buscar vistas
+        run: |
+          cd scripts
+          python3 probar_vistas_preboletin.py \
+            --dias-minimos "${{ inputs.dias_minimos }}" \
+            --limite "${{ inputs.limite }}" \
+            --max-minutes "${{ inputs.max_minutes }}"
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL || secrets.DATABASE_PUBLIC_URL }}
+          PYTHONUNBUFFERED: "1"
