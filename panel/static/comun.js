@@ -159,21 +159,33 @@ const ESTADOS_VISTA_PRE = {
   con_apoderado:       { texto: "ya tiene apoderado",  clase: "sin-dato", sirve: false },
 };
 
+// Tipo de vista según el PDF: de fondo (observa el signo, 30 días corridos) o formal (pide logotipos, 10 días hábiles).
+const TIPOS_VISTA_PRE = { fondo: "de fondo", formal: "formal (logos)", fondo_y_formal: "de fondo y formal" };
+
 function badgeVistaPre(row) {
   if (row.tuvo_vista !== true) return "";
   const e = ESTADOS_VISTA_PRE[row.vista_estado];
+  const tipo = TIPOS_VISTA_PRE[row.vista_tipo] || "";
+  // Vence lo más cercano entre lo que dice el texto de la vista y lo que marca INPI.
+  const fechas = [row.vista_vencimiento_calculado, row.vista_fecha_vencimiento].filter(Boolean).map(f => String(f).slice(0, 10));
+  const venc = fechas.sort()[0] || "";
   let chip = "";
   if (e) {
     let texto = e.texto;
-    if (row.vista_estado === "notificada_en_plazo" && row.vista_fecha_vencimiento) {
-      const [a, m, d] = String(row.vista_fecha_vencimiento).slice(0, 10).split("-");
+    if (row.vista_estado === "notificada_en_plazo" && venc) {
+      const [a, m, d] = venc.split("-");
       texto += ` hasta ${d}/${m}`;
     }
     const detalle = _escapeHtml(row.vista_detalle || "")
       + (e.sirve ? " · Nadie la contestó: sirve para ofrecer ayuda." : " · Ya se resolvió o se está trabajando: no sirve.");
     chip = ` <span class="tooltip badge ${e.clase}">${texto}<span class="globo">${detalle}</span></span>`;
   }
-  return `<span class="tooltip badge-vista">👁 VISTA ANTES DE PUBLICAR<span class="globo">Observación de INPI sobre la solicitud, antes de publicarse. No es una oposición de un tercero.</span></span>${chip}`;
+  const extra = [row.vista_articulos ? `${row.vista_articulos} de la Ley 22.362` : "",
+                 row.vista_antecedente ? `parecida a ${row.vista_antecedente}` : "",
+                 row.vista_plazo ? `plazo: ${row.vista_plazo}` : ""].filter(Boolean).join(" · ");
+  const globo = "Observación de INPI sobre la solicitud, antes de publicarse. No es una oposición de un tercero."
+    + (extra ? ` ${extra}.` : "");
+  return `<span class="tooltip badge-vista">👁 VISTA ANTES DE PUBLICAR${tipo ? " · " + tipo : ""}<span class="globo">${_escapeHtml(globo)}</span></span>${chip}`;
 }
 
 function _escapeHtml(s) {

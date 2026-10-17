@@ -20,6 +20,11 @@ una y las clasifica:
 Mide además cuánto tarda cada consulta, para dimensionar un proceso diario
 (cuántas marcas entran en una corrida y cuánto dura).
 
+Para las vistas pendientes además baja el PDF de la vista y lo lee (scripts/vistas_pdf.py):
+tipo (de fondo o formal), artículo de la ley, marca anterior con la que se parece y plazo
+que dice el texto (30 días corridos / 10 días hábiles). Con eso calcula un vencimiento
+propio y usa el más cercano entre ese y el que marca INPI en el expediente.
+
 Sin --guardar es solo lectura. Con --guardar escribe el resultado en las
 columnas propias de la vista (tuvo_vista, vista_estado, vista_fecha...) -- NO
 toca tuvo_oposicion ni los campos de la oposición: una vista de INPI antes de
@@ -29,6 +34,7 @@ a "Orden de Publicación" o a la publicación no se vuelven a consultar.
 Uso:
     DATABASE_URL=... python3 probar_vistas_preboletin.py [--dias-minimos 7]
         [--limite 600] [--delay 1.5] [--max-minutes 90] [--guardar]
+        [--actas 4797016,4797046]   # revisa SOLO esas actas (y lee el PDF de la vista aunque ya esté resuelta)
 """
 
 import argparse
@@ -45,6 +51,7 @@ import psycopg2.extras
 import monitor_bloqueo
 from oposiciones_expediente import clasificar_estado_oposicion, consultar_expediente
 from validar_leads import _parsear_fecha_grilla, buscar_archivos_grilla, crear_sesion
+from vistas_pdf import leer_vista, plazo_legible
 
 
 def _norm(texto: str) -> str:
@@ -85,19 +92,46 @@ def clasificar(archivos):
 ESTADOS_VISTA_QUE_SIRVEN = ("sin_notificar", "notificada_en_plazo", "plazo_vencido")
 
 
-def _estado_vista(est, hoy_iso):
+def _estado_vista(est, hoy_iso, venc_texto=None):
     """Estado de la vista para guardar, a partir de clasificar_estado_oposicion.
-    None si el expediente devolvió algo que no es una vista (no se guarda)."""
+    El vencimiento que cuenta es el más cercano entre el de INPI (expediente) y el que sale
+    del texto de la vista (venc_texto). None si el expediente devolvió algo que no es una
+    vista (no se guarda)."""
     e = est["estado"]
     if e == "con_apoderado":
         return "con_apoderado"
     if e == "vista_pendiente":
-        if est["vencimiento"]:
-            return "plazo_vencido" if est["vencimiento"] < hoy_iso else "notificada_en_plazo"
+        venc = min((v for v in (est["vencimiento"], venc_texto) if v), default=None)
+        if venc:
+            return "plazo_vencido" if venc < hoy_iso else "notificada_en_plazo"
         return "notificada_en_plazo" if est["notificacion"] else "sin_notificar"
     if e == "sin_oposicion":
         return "resuelta"  # el expediente la muestra contestada
     return None
+
+
+TIPOS_LEGIBLES = {"fondo": "de fondo", "formal": "formal (logotipos)", "fondo_y_formal": "de fondo y formal"}
+
+
+def _fmt(iso):
+    return f"{iso[8:10]}/{iso[5:7]}/{iso[:4]}" if iso else "—"
+
+
+def _detalle_vista(est, pdf):
+    """Texto para la ficha: qué pide la vista y hasta cuándo, con las dos fechas."""
+    partes = [f"Vista {TIPOS_LEGIBLES.get(pdf.get('tipo'), 'de INPI')}"]
+    if pdf.get("articulos"):
+        partes[0] += f": {', '.join(pdf['articulos'])} de la Ley 22.362"
+    if pdf.get("antecedentes"):
+        partes.append("parecida a " + "; ".join(pdf["antecedentes"]))
+    if est.get("notificacion"):
+        partes.append(f"notificada el {_fmt(est['notificacion'])}")
+    if pdf.get("vencimiento_texto"):
+        marca = " (estimado, todavía sin notificación)" if pdf.get("vencimiento_estimado") else ""
+        partes.append(f"plazo según el texto: {plazo_legible(pdf)}, hasta el {_fmt(pdf['vencimiento_texto'])}{marca}")
+    if est.get("vencimiento"):
+        partes.append(f"INPI marca el {_fmt(est['vencimiento'])}")
+    return " · ".join(partes)
 
 
 def guardar_resultado(conn, acta, categoria, datos_vista):
@@ -112,12 +146,21 @@ def guardar_resultado(conn, acta, categoria, datos_vista):
                     tuvo_vista = true,
                     vista_estado = %s, vista_sirve = %s, vista_detalle = %s,
                     vista_fecha = %s, vista_fecha_notificacion = %s, vista_fecha_vencimiento = %s,
-                    vista_detectada_en = COALESCE(vista_detectada_en, now())
+                    vista_detectada_en = COALESCE(vista_detectada_en, now()),
+                    -- lo que sale del PDF: si esta vez no se pudo leer, queda lo que ya había
+                    vista_tipo = COALESCE(%s, vista_tipo), vista_articulos = COALESCE(%s, vista_articulos),
+                    vista_antecedente = COALESCE(%s, vista_antecedente), vista_plazo = COALESCE(%s, vista_plazo),
+                    vista_vencimiento_calculado = COALESCE(%s, vista_vencimiento_calculado),
+                    vista_texto = COALESCE(%s, vista_texto),
+                    vista_pdf_leido_en = CASE WHEN %s THEN now() ELSE vista_pdf_leido_en END
                 WHERE acta = %s
                 """,
                 (categoria, datos_vista["estado"], datos_vista["estado"] in ESTADOS_VISTA_QUE_SIRVEN,
                  datos_vista["detalle"], datos_vista["fecha"], datos_vista["notificacion"],
-                 datos_vista["vencimiento"], acta),
+                 datos_vista["vencimiento"],
+                 datos_vista.get("tipo"), datos_vista.get("articulos"), datos_vista.get("antecedente"),
+                 datos_vista.get("plazo"), datos_vista.get("vencimiento_calculado"), datos_vista.get("texto"),
+                 bool(datos_vista.get("tipo")), acta),
             )
         else:
             cur.execute(
@@ -146,7 +189,9 @@ def main():
     ap.add_argument("--delay", type=float, default=1.5, help="segundos entre marcas (freno de mano)")
     ap.add_argument("--max-minutes", type=float, default=90, help="corta solo pasados estos minutos")
     ap.add_argument("--guardar", action="store_true", help="escribe el resultado en las columnas de vista de la marca (sin esto, solo lectura)")
+    ap.add_argument("--actas", default="", help="revisar SOLO estas actas (separadas por coma), sin los filtros de antigüedad y estado")
     args = ap.parse_args()
+    actas_pedidas = [a.strip() for a in args.actas.split(",") if a.strip()]
 
     database_url = os.environ.get("DATABASE_URL") or os.environ.get("DATABASE_PUBLIC_URL")
     if not database_url:
@@ -159,19 +204,33 @@ def main():
         if not cur.fetchone()[0]:
             sys.exit("Faltan las columnas de vista en la tabla marcas: se crean solas cuando el panel arranca con el último deploy. Reintentar en unos minutos.")
     with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-        cur.execute(
-            """
-            SELECT acta, COALESCE(NULLIF(denominacion, ''), denominacion_inpi) AS denominacion, titular, fecha_presentacion::date AS presentada
-            FROM marcas
-            WHERE es_lead = true AND boletin IS NULL
-              AND fecha_presentacion IS NOT NULL
-              AND fecha_presentacion::date <= CURRENT_DATE - %s
-              AND COALESCE(vista_grilla_estado, '') NOT IN ('orden_publicacion', 'publicada')
-            ORDER BY vista_revisada_en ASC NULLS FIRST, fecha_presentacion ASC
-            """,
-            (args.dias_minimos,),
-        )
-        todas = cur.fetchall()
+        if actas_pedidas:
+            cur.execute(
+                """
+                SELECT acta, COALESCE(NULLIF(denominacion, ''), denominacion_inpi) AS denominacion, titular,
+                       COALESCE(fecha_presentacion::date, CURRENT_DATE) AS presentada
+                FROM marcas WHERE acta = ANY(%s)
+                """,
+                (actas_pedidas,),
+            )
+            todas = sorted(cur.fetchall(), key=lambda r: actas_pedidas.index(r["acta"]))
+            faltan = set(actas_pedidas) - {r["acta"] for r in todas}
+            if faltan:
+                print(f"AVISO: estas actas no están en la base: {', '.join(sorted(faltan))}", flush=True)
+        else:
+            cur.execute(
+                """
+                SELECT acta, COALESCE(NULLIF(denominacion, ''), denominacion_inpi) AS denominacion, titular, fecha_presentacion::date AS presentada
+                FROM marcas
+                WHERE es_lead = true AND boletin IS NULL
+                  AND fecha_presentacion IS NOT NULL
+                  AND fecha_presentacion::date <= CURRENT_DATE - %s
+                  AND COALESCE(vista_grilla_estado, '') NOT IN ('orden_publicacion', 'publicada')
+                ORDER BY vista_revisada_en ASC NULLS FIRST, fecha_presentacion ASC
+                """,
+                (args.dias_minimos,),
+            )
+            todas = cur.fetchall()
     if not args.guardar:
         conn.close()
     marcas = todas[: args.limite]
@@ -180,7 +239,7 @@ def main():
     hoy_iso = datetime.date.today().isoformat()
     s = crear_sesion()
     inicio = time.time()
-    duraciones, duraciones_exp = [], []
+    duraciones, duraciones_exp, duraciones_pdf = [], [], []
     conteo, candidatas = {}, []
     consultadas = 0
     corte = None
@@ -210,7 +269,8 @@ def main():
         extra = ""
         datos_vista = None  # lo que se guarda en las columnas de vista (None = nada que guardar)
         guardable = categoria != "sin_datos"
-        if categoria == "vista_pendiente":
+        leer_pdf = categoria == "vista_pendiente" or (actas_pedidas and categoria == "vista_resuelta")
+        if leer_pdf:
             t1 = time.time()
             try:
                 exp = consultar_expediente(s, m["acta"])
@@ -219,20 +279,50 @@ def main():
                     extra = " | expediente: bloqueado por el WAF, se reintenta"
                 else:
                     est = clasificar_estado_oposicion(exp, archivos, None)
-                    estado_v = _estado_vista(est, hoy_iso)
+                    duraciones_exp.append(time.time() - t1)
+                    time.sleep(args.delay)
+                    # PDF de la vista: tipo, artículo, antecedente y plazo que dice el texto
+                    pdf = {}
+                    if est["estado"] in ("vista_pendiente", "con_apoderado") or actas_pedidas:
+                        t2 = time.time()
+                        try:
+                            pdf = leer_vista(s, archivos, ingreso, est["notificacion"])
+                        except Exception as e:  # noqa: BLE001
+                            extra += f" | pdf: error {e}"
+                        duraciones_pdf.append(time.time() - t2)
+                        time.sleep(args.delay)
+                    estado_v = _estado_vista(est, hoy_iso, pdf.get("vencimiento_texto"))
                     if estado_v is None:
                         categoria, guardable = "vista_sin_expediente", False
                     else:
-                        extra = f" | expediente: {estado_v}, notif {est['notificacion'] or '—'}, vence {est['vencimiento'] or '—'}"
-                        datos_vista = {"estado": estado_v, "detalle": est["detalle"], "fecha": vista,
-                                       "notificacion": est["notificacion"], "vencimiento": est["vencimiento"]}
+                        extra = (f" | expediente: {estado_v}, notif {est['notificacion'] or '—'}, vence {est['vencimiento'] or '—'}"
+                                 + extra)
+                        if pdf:
+                            extra += (f" | PDF: {pdf['tipo']}, {', '.join(pdf['articulos']) or 'sin artículo'}"
+                                      f"{', parecida a ' + '; '.join(pdf['antecedentes']) if pdf['antecedentes'] else ''}"
+                                      f", plazo {plazo_legible(pdf) or 'no encontrado'}, vence según texto {pdf.get('vencimiento_texto') or '—'}")
+                        elif est["estado"] in ("vista_pendiente", "con_apoderado"):
+                            extra += " | PDF: no se pudo leer"
+                        datos_vista = {
+                            "estado": estado_v, "fecha": vista, "notificacion": est["notificacion"],
+                            "vencimiento": est["vencimiento"],
+                            "detalle": _detalle_vista(est, pdf) if pdf else est["detalle"],
+                            "tipo": pdf.get("tipo"),
+                            "articulos": ", ".join(pdf["articulos"]) if pdf.get("articulos") else None,
+                            "antecedente": "; ".join(pdf["antecedentes"]) if pdf.get("antecedentes") else None,
+                            "plazo": plazo_legible(pdf) if pdf.get("plazos") else None,
+                            "vencimiento_calculado": pdf.get("vencimiento_texto"),
+                            "texto": pdf.get("texto"),
+                        }
                         if estado_v == "con_apoderado":
                             categoria = "vista_con_apoderado"
+                        elif estado_v == "resuelta":
+                            categoria = "vista_resuelta"
+                        if actas_pedidas and pdf.get("texto"):
+                            print(f"      texto de la vista: {pdf['texto'][:500]}", flush=True)
             except Exception as e:  # noqa: BLE001
                 categoria, guardable = "vista_sin_expediente", False
                 extra = f" | expediente: error {e}"
-            duraciones_exp.append(time.time() - t1)
-            time.sleep(args.delay)
             if categoria == "vista_pendiente":
                 candidatas.append((m, ingreso, vista, extra))
         elif categoria == "vista_resuelta":
@@ -264,6 +354,8 @@ def main():
         ]
     if duraciones_exp:
         lineas.append(f"Expediente (solo marcas con vista): {len(duraciones_exp)} consultas, promedio {statistics.mean(duraciones_exp):.1f} s")
+    if duraciones_pdf:
+        lineas.append(f"PDF de la vista (descarga + lectura): {len(duraciones_pdf)} consultas, promedio {statistics.mean(duraciones_pdf):.1f} s")
     lineas.append(f"Consultas OK / bloqueadas por el WAF: {monitor_bloqueo._estado['ok']} / {monitor_bloqueo._estado['bloqueadas']}")
     if corte:
         lineas.append(f"AVISO: la prueba se cortó antes de terminar: {corte}")
