@@ -162,13 +162,21 @@ const ESTADOS_VISTA_PRE = {
 // Tipo de vista según el PDF: de fondo (observa el signo, 30 días corridos) o formal (pide logotipos, 10 días hábiles).
 const TIPOS_VISTA_PRE = { fondo: "de fondo", formal: "formal (logos)", fondo_y_formal: "de fondo y formal" };
 
+// Cache de filas con vista antes de publicar, clave = acta: el popup (abrirModalVistaPre) lee de acá.
+window._filasVistaPre = window._filasVistaPre || {};
+
+function _vencimientoVistaPre(row) {
+  // Vence lo más cercano entre lo que dice el texto de la vista y lo que marca INPI.
+  const fechas = [row.vista_vencimiento_calculado, row.vista_fecha_vencimiento].filter(Boolean).map(f => String(f).slice(0, 10));
+  return fechas.sort()[0] || "";
+}
+
 function badgeVistaPre(row) {
   if (row.tuvo_vista !== true) return "";
   const e = ESTADOS_VISTA_PRE[row.vista_estado];
   const tipo = TIPOS_VISTA_PRE[row.vista_tipo] || "";
-  // Vence lo más cercano entre lo que dice el texto de la vista y lo que marca INPI.
-  const fechas = [row.vista_vencimiento_calculado, row.vista_fecha_vencimiento].filter(Boolean).map(f => String(f).slice(0, 10));
-  const venc = fechas.sort()[0] || "";
+  const venc = _vencimientoVistaPre(row);
+  window._filasVistaPre[row.acta] = row;
   let chip = "";
   if (e) {
     let texto = e.texto;
@@ -180,12 +188,62 @@ function badgeVistaPre(row) {
       + (e.sirve ? " · Nadie la contestó: sirve para ofrecer ayuda." : " · Ya se resolvió o se está trabajando: no sirve.");
     chip = ` <span class="tooltip badge ${e.clase}">${texto}<span class="globo">${detalle}</span></span>`;
   }
-  const extra = [row.vista_articulos ? `${row.vista_articulos} de la Ley 22.362` : "",
-                 row.vista_antecedente ? `parecida a ${row.vista_antecedente}` : "",
-                 row.vista_plazo ? `plazo: ${row.vista_plazo}` : ""].filter(Boolean).join(" · ");
-  const globo = "Observación de INPI sobre la solicitud, antes de publicarse. No es una oposición de un tercero."
-    + (extra ? ` ${extra}.` : "");
-  return `<span class="tooltip badge-vista">👁 VISTA ANTES DE PUBLICAR${tipo ? " · " + tipo : ""}<span class="globo">${_escapeHtml(globo)}</span></span>${chip}`;
+  return `<button type="button" class="badge-vista badge-vista-btn" title="Ver el detalle de la vista" onclick="abrirModalVistaPre('${_idSeguro(row.acta)}')">👁 VISTA ANTES DE PUBLICAR${tipo ? " · " + tipo : ""}</button>${chip}`;
+}
+
+// Qué significa cada artículo de la Ley 22.362 que cita una vista de fondo (resumen orientativo).
+const ARTICULOS_VISTA = {
+  "Art. 2 inc. a)": "El signo sería la designación necesaria o habitual del producto o servicio, o descriptivo de sus características (no distingue).",
+  "Art. 2 inc. b)": "El signo habría pasado al uso general antes de la solicitud (no distingue).",
+  "Art. 3 inc. a)": "El signo sería idéntico o parecido a una marca ya registrada o solicitada antes para productos o servicios iguales o parecidos.",
+};
+
+function abrirModalVistaPre(acta) {
+  const row = window._filasVistaPre[acta];
+  if (!row) return;
+  _asegurarModalOposicion();
+  const fmtF = (f) => { if (!f) return ""; const [a, m, d] = String(f).slice(0, 10).split("-"); return `${d}/${m}/${a}`; };
+  const e = ESTADOS_VISTA_PRE[row.vista_estado];
+  const tipo = row.vista_tipo;
+  const esFondo = tipo === "fondo" || tipo === "fondo_y_formal";
+  const esFormal = tipo === "formal" || tipo === "fondo_y_formal";
+  const venc = _vencimientoVistaPre(row);
+
+  const fechas = [
+    row.vista_fecha ? `Vista: ${fmtF(row.vista_fecha)}` : "",
+    row.vista_fecha_notificacion ? `Notificada al titular: ${fmtF(row.vista_fecha_notificacion)}` : "",
+    row.vista_vencimiento_calculado ? `Vence según el texto de la vista (${_escapeHtml(row.vista_plazo || "")}): ${fmtF(row.vista_vencimiento_calculado)}` : "",
+    row.vista_fecha_vencimiento ? `INPI marca en el expediente: ${fmtF(row.vista_fecha_vencimiento)}` : "",
+  ].filter(Boolean).join(" · ");
+  const estadoHtml = e
+    ? `<p class="mo-estado"><strong>${e.sirve ? "✔ Sirve" : "✖ No sirve"} — ${_escapeHtml(e.texto)}${e.sirve && venc ? ` (vence ${_escapeHtml(fmtF(venc))})` : ""}.</strong> ` +
+      `${e.sirve ? "Nadie la contestó todavía: la publicación de la marca está frenada hasta que se conteste." : "Ya se resolvió o el titular se está ocupando."}` +
+      `${fechas ? `<br><span class="mo-doc">${fechas}</span>` : ""}</p>`
+    : "";
+
+  const articulos = (row.vista_articulos || "").split(",").map(a => a.trim()).filter(Boolean);
+  const bloqueFondo = esFondo ? `
+    <p class="mo-oponente"><strong>Vista de fondo</strong> — INPI observa el signo${articulos.length ? "" : ""}:</p>
+    ${articulos.map(a => `<p class="mo-fundamento"><strong>${_escapeHtml(a)} de la Ley 22.362.</strong> ${_escapeHtml(ARTICULOS_VISTA[a] || "")}</p>`).join("")}
+    <p class="mo-doc">Plazo: 30 días corridos (Res. INPI P 123/2019), ampliable con las extensiones automáticas pagando el arancel (cód. 770.001). Es la que se puede defender: el servicio es contestar la vista con argumentos.</p>` : "";
+  const bloqueFormal = esFormal ? `
+    <p class="mo-oponente"><strong>Vista formal</strong> — INPI pide subir los logotipos de nuevo:</p>
+    <p class="mo-fundamento">Archivo JPG o BMP de 200 a 300 DPI y hasta 2 MB; trazos de al menos 0,3 mm y tipografías de al menos 2 mm; si se reivindican colores, el logo en esos colores, y si no, en negro o escala de grises. Se contesta pagando el arancel de contestación de vista formal (cód. 750001): sin pagarlo la contestación es nula.</p>
+    <p class="mo-doc">Plazo: 10 días hábiles (art. 12 del decreto 242/19) bajo apercibimiento de resolución denegatoria. Es un trámite más simple y barato; muchos titulares lo resuelven solos.</p>` : "";
+  const bloqueTipo = (esFondo || esFormal) ? "" : `<p class="mo-fundamento">No se pudo leer el tipo de esta vista. ${row.vista_detalle ? _escapeHtml(row.vista_detalle) : ""}</p>`;
+
+  const antecedentes = (row.vista_antecedente || "").split(";").map(a => a.trim()).filter(Boolean);
+  const bloqueAntecedente = antecedentes.length ? `
+    <div class="mo-titulo">Marca anterior con la que se parece:</div>
+    ${antecedentes.map(a => { const n = (a.match(/^\d+/) || [""])[0];
+      return `<p class="mo-fundamento">${_escapeHtml(a)} ${n ? `<a class="link-acta" href="javascript:void(0)" onclick="abrirActa('${_idSeguro(n)}')">Ver ficha del acta ${_escapeHtml(n)} ↗</a>` : ""}</p>`; }).join("")}` : "";
+
+  document.getElementById("modal-oposicion-contenido").innerHTML = `
+    <h3>👁 Vista antes de publicar — acta ${_escapeHtml(row.acta)}</h3>
+    <p class="mo-doc">No es una oposición de un tercero: es una observación de INPI sobre la solicitud antes de publicarla.</p>
+    ${estadoHtml}${bloqueFondo}${bloqueFormal}${bloqueTipo}${bloqueAntecedente}
+    <p><a class="link-acta" href="javascript:void(0)" onclick="abrirActa('${_idSeguro(row.acta)}')">Ver expediente completo en INPI ↗</a></p>`;
+  document.getElementById("modal-oposicion").classList.add("abierto");
 }
 
 function _escapeHtml(s) {

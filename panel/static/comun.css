@@ -641,6 +641,8 @@ tr.contactado { opacity: 0.55; }
   border-bottom: none;
   cursor: help;
 }
+button.badge-vista-btn { border: none; font-family: inherit; cursor: pointer; }
+button.badge-vista-btn:hover { background: #cfe1f5; }
 .badge-concedida {
   display: inline-block;
   padding: 2px 8px;
