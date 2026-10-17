@@ -487,7 +487,7 @@ def _correr_alters_panel(cur):
                         ("vista_grilla_estado", "TEXT"), ("vista_tipo", "TEXT"), ("vista_articulos", "TEXT"),
                         ("vista_antecedente", "TEXT"), ("vista_plazo", "TEXT"),
                         ("vista_vencimiento_calculado", "DATE"), ("vista_texto", "TEXT"),
-                        ("vista_pdf_leido_en", "TIMESTAMPTZ")):
+                        ("vista_pdf_leido_en", "TIMESTAMPTZ"), ("contactado_prebol_en", "TIMESTAMPTZ")):
         cur.execute(f"ALTER TABLE marcas ADD COLUMN IF NOT EXISTS {_col} {_tipo}")
     # Lead marcado a mano como "tiene gestor/apoderado" desde la ficha: sale de los
     # leads (es_lead = false) y guarda lo anterior para poder deshacerlo.
