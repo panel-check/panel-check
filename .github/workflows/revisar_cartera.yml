@@ -2,7 +2,7 @@ name: "Seguimiento de la cartera"
 
 on:
   schedule:
-    # Una vez por día, 01:35 UTC (22:35 ART), después de "Oposiciones y vistas".
+    # Una vez por día, 01:35 UTC (22:35 ART), después de "Oposiciones".
     - cron: "35 1 * * *"
   workflow_dispatch:
     inputs:

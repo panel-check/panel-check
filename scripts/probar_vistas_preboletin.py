@@ -242,8 +242,8 @@ def main():
                   AND COALESCE(vista_grilla_estado, '') NOT IN ('orden_publicacion', 'publicada', 'vista_con_apoderado')
                   AND COALESCE(vista_estado, '') <> 'con_apoderado'
                   -- pasó el vencimiento de la vista hace más de N días: ya no hay nada que ofrecer
-                  AND NOT (tuvo_vista IS TRUE AND vista_sirve IS TRUE
-                           AND LEAST(vista_vencimiento_calculado, vista_fecha_vencimiento) < CURRENT_DATE - %s)
+                  AND NOT COALESCE(tuvo_vista IS TRUE AND vista_sirve IS TRUE
+                           AND LEAST(vista_vencimiento_calculado, vista_fecha_vencimiento) < CURRENT_DATE - %s, false)
                   -- no volver a mirar antes de tiempo
                   AND (vista_revisada_en IS NULL
                        OR vista_revisada_en < now() - make_interval(days => CASE WHEN tuvo_vista IS TRUE AND vista_sirve IS TRUE THEN %s ELSE %s END))
