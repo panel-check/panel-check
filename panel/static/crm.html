@@ -6,7 +6,7 @@
 <title>CRM de leads — Kom Marcas Inpi</title>
 <link rel="icon" type="image/png" href="/static/favicon.png" />
 <link rel="apple-touch-icon" href="/static/apple-touch-icon.png" />
-<link rel="stylesheet" href="/static/comun.css?v=logo2" />
+<link rel="stylesheet" href="/static/comun.css?v=vp3" />
 <script src="/static/sesion.js" defer></script>
 <script src="/static/menu.js?v=tel3" defer></script>
 </head>
@@ -61,7 +61,7 @@
     <input type="text" id="f-q" class="campo-buscar" placeholder="titular, marca, CUIT, acta, email..." />
   </label>
   <label class="crm-check no-agenda"><span>&nbsp;</span><span><input type="checkbox" id="f-email" /> Solo con email</span></label>
-  <label class="crm-check no-agenda"><span>&nbsp;</span><span><input type="checkbox" id="f-oposicion" /> Con oposición sin apoderado</span></label>
+  <label class="crm-check no-agenda"><span>&nbsp;</span><span><input type="checkbox" id="f-oposicion" /> Con oposición o vista sin apoderado</span></label>
   <label class="crm-check no-agenda"><span>&nbsp;</span><span><input type="checkbox" id="f-pre" /> Con marcas pre-boletín</span></label>
   <button type="button" id="btn-filtrar">Filtrar</button>
 </div>
@@ -99,7 +99,7 @@
 
 <div id="vista-agenda" class="crm-vista crm-agenda" hidden></div>
 
-<script src="/static/comun.js?v=vp2"></script>
+<script src="/static/comun.js?v=vp3"></script>
 <script src="/static/crm.js"></script>
 <script>
 const estado = {
@@ -184,12 +184,13 @@ function tarjetaHtml(l) {
     : "";
   const clases = (l.clases || []).slice().sort((a, b) => a - b).join(", ");
   return `
-    <div class="crm-card ${l.oposicion_sin_apoderado ? "crm-card-opo" : ""}" draggable="true" data-clave="${crmEsc(l.clave)}" data-etapa="${crmEsc(l.etapa)}">
+    <div class="crm-card ${l.oposicion_sin_apoderado || l.vista_sin_apoderado ? "crm-card-opo" : ""}" draggable="true" data-clave="${crmEsc(l.clave)}" data-etapa="${crmEsc(l.etapa)}">
       <div class="crm-card-tit">${crmEsc(l.titular || l.clave)} ${crmIniciales(l.asignado)}</div>
       <div class="crm-card-marcas" title="${crmEsc(l.marcas || "")}">${crmEsc(l.marcas || "(nombre pendiente)")}</div>
       <div class="crm-card-meta">${l.cant_marcas} marca${l.cant_marcas == 1 ? "" : "s"}${clases ? ` · clase ${crmEsc(clases)}` : ""}</div>
       <div class="crm-card-badges">
         ${l.oposicion_sin_apoderado ? '<span class="crm-mini crm-mini-opo">⚠ oposición</span>' : ""}
+        ${l.vista_sin_apoderado ? '<span class="crm-mini crm-mini-opo" title="INPI hizo una vista a una marca todavía no publicada y nadie la contestó">👁 vista</span>' : ""}
         ${l.pre_boletin ? '<span class="crm-mini">🆕 pre-boletín</span>' : ""}
         ${l.email ? '<span class="crm-mini crm-mini-ok" title="Tiene email">✉</span>' : '<span class="crm-mini crm-mini-no" title="Sin email todavía">sin email</span>'}
         ${l.telefono ? '<span class="crm-mini crm-mini-ok" title="Tiene teléfono cargado">☎</span>' : ""}
@@ -291,6 +292,7 @@ async function cargarLista() {
     <tr class="crm-fila" data-abrir-clave="${crmEsc(l.clave)}">
       <td class="titular" title="${crmEsc(l.titular || "")}"><strong>${crmEsc(l.titular || l.clave)}</strong>
         ${l.oposicion_sin_apoderado ? ' <span class="crm-mini crm-mini-opo">⚠ oposición</span>' : ""}
+        ${l.vista_sin_apoderado ? ' <span class="crm-mini crm-mini-opo" title="INPI hizo una vista a una marca todavía no publicada y nadie la contestó">👁 vista</span>' : ""}
         <div class="crm-gris crm-celda-marcas">${crmEsc(l.marcas || "")}</div></td>
       <td>${crmBadgeEtapa(l.etapa)}${l.etapa === "descartado" && l.motivo_descarte ? `<div class="crm-gris">${crmEsc(l.motivo_descarte)}</div>` : ""}</td>
       <td>${crmEsc(l.asignado || "—")}</td>

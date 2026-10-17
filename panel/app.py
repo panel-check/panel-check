@@ -1183,9 +1183,12 @@ def _consulta_marcas(f: dict) -> dict:
     if f["tipo_oposicion"] == "oposicion":
         condiciones.append(SQL_ES_OPOSICION_TERCERO)
     elif f["tipo_oposicion"] == "vista":
-        condiciones.append(SQL_ES_SOLO_VISTA)
+        # Vista de oficio de INPI: después de publicar (tuvo_oposicion) o antes (tuvo_vista).
+        condiciones.append(f"({SQL_ES_SOLO_VISTA} OR tuvo_vista IS TRUE)")
+    elif f["tuvo_oposicion"] is True:
+        condiciones.append("(tuvo_oposicion IS TRUE OR tuvo_vista IS TRUE)")
     elif f["tuvo_oposicion"] is not None:
-        condiciones.append("tuvo_oposicion = %s")
+        condiciones.append("(tuvo_oposicion = %s AND tuvo_vista IS NOT TRUE)")
         valores.append(f["tuvo_oposicion"])
     if f["vista_pre"] == "sirve":
         condiciones.append("(tuvo_vista IS TRUE AND vista_sirve IS TRUE)")
@@ -2625,7 +2628,7 @@ def _sql_leads(con_filtro_lead: bool = True, filtrar_actas: bool = False) -> str
             SELECT m.acta, m.titular, m.cuit, m.email, m.es_lead, m.actualizado_en, m.clase,
                    m.denominacion_inpi, m.denominacion, m.lead_score, m.tuvo_oposicion,
                    m.representacion_posterior_oposicion, m.revisado_oposicion_en, m.boletin,
-                   m.oposicion_atendida,
+                   m.oposicion_atendida, m.tuvo_vista, m.vista_sirve,
                    m.con_gestor_manual, m.con_gestor_manual_en, m.con_gestor_manual_por, m.gestor_nombre,
                    m.estado_tramite, m.creado_en, m.fecha_publicacion, m.fecha_presentacion,
                    COALESCE(cc.clave, {CLAVE_RESPALDO_SQL}) AS clave
@@ -2662,6 +2665,11 @@ def _sql_leads(con_filtro_lead: bool = True, filtrar_actas: bool = False) -> str
                 (array_agg(con_gestor_manual_por ORDER BY con_gestor_manual_en DESC NULLS LAST)
                     FILTER (WHERE con_gestor_manual IS TRUE))[1] AS con_gestor_manual_por,
                 max(gestor_nombre) FILTER (WHERE con_gestor_manual IS TRUE) AS gestor_nombre,
+                -- Vista de INPI antes de publicar (distinta de la oposición de un tercero):
+                -- con_vista = alguna vez tuvo una; vista_sin_apoderado = hay una sin contestar.
+                bool_or(tuvo_vista IS TRUE) AS con_vista,
+                bool_or(tuvo_vista IS TRUE AND vista_sirve IS TRUE
+                        AND con_gestor_manual IS NOT TRUE) AS vista_sin_apoderado,
                 bool_or(tuvo_oposicion IS TRUE AND oposicion_atendida IS TRUE) AS oposicion_atendida,
                 max(revisado_oposicion_en) FILTER (WHERE tuvo_oposicion IS TRUE) AS oposicion_detectada_en,
                 bool_or(boletin IS NULL) AS pre_boletin,
@@ -2787,7 +2795,7 @@ def _condiciones_leads(asignado, usuario, q, con_email, con_oposicion, pre_bolet
     if con_email:
         condiciones.append("email IS NOT NULL AND email <> ''")
     if con_oposicion:
-        condiciones.append("oposicion_sin_apoderado")
+        condiciones.append("(oposicion_sin_apoderado OR vista_sin_apoderado)")
     if pre_boletin:
         condiciones.append("pre_boletin")
     where_sql = f"WHERE {' AND '.join(condiciones)}" if condiciones else ""
