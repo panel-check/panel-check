@@ -1,4 +1,4 @@
-name: Probar vistas en pre-boletín (manual, solo lectura)
+name: Revisar vistas en pre-boletín (manual)
 
 on:
   workflow_dispatch:
@@ -8,13 +8,18 @@ on:
         required: false
         default: "7"
       limite:
-        description: "Tope de marcas a consultar en la prueba (las más viejas primero)"
+        description: "Tope de marcas a consultar en esta corrida (las que se revisaron hace más tiempo primero)"
         required: false
         default: "600"
       max_minutes:
-        description: "Minutos máximos de la prueba"
+        description: "Minutos máximos de la corrida"
         required: false
         default: "90"
+      guardar:
+        description: "Guardar el resultado en el panel (columnas de vista de cada marca). Sin tildar, solo lee."
+        type: boolean
+        required: false
+        default: true
 
 permissions:
   contents: read
@@ -25,7 +30,7 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  probar:
+  revisar:
     runs-on: ubuntu-latest
     timeout-minutes: 120
     env:
@@ -46,10 +51,9 @@ jobs:
       - name: Mirar la Grilla de los leads pre-boletín y buscar vistas
         run: |
           cd scripts
-          python3 probar_vistas_preboletin.py \
-            --dias-minimos "${{ inputs.dias_minimos }}" \
-            --limite "${{ inputs.limite }}" \
-            --max-minutes "${{ inputs.max_minutes }}"
+          args="--dias-minimos ${{ inputs.dias_minimos }} --limite ${{ inputs.limite }} --max-minutes ${{ inputs.max_minutes }}"
+          if [ "${{ inputs.guardar }}" = "true" ]; then args="$args --guardar"; fi
+          python3 probar_vistas_preboletin.py $args
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL || secrets.DATABASE_PUBLIC_URL }}
           PYTHONUNBUFFERED: "1"

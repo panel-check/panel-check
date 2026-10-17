@@ -291,7 +291,7 @@ function filaHtml(r) {
       <td>${_escapeHtml(r.clase ?? "")}</td>
       <td>${_escapeHtml(tipoLegible(r.tipo))}</td>
       <td class="denominacion" title="${_escapeHtml(r.denominacion_inpi || r.denominacion || "")}">${_escapeHtml(r.denominacion_inpi || r.denominacion || "") || `<em>${sinNombre(r.tipo)}</em>`}</td>
-      <td>${badgeLead(r)} ${badgeOposicion(r)} ${badgeRevisionOposicion(r)}</td>
+      <td>${badgeLead(r)} ${badgeOposicion(r)} ${badgeVistaPre(r)} ${badgeRevisionOposicion(r)}</td>
       <td>${celdaEmail(r)}</td>
       <td>${fechaPublicacionOFallback(r) || (!r.boletin && r.fecha_presentacion ? `${fmtFecha(r.fecha_presentacion)} <span class="nota">(present.)</span>` : "")}</td>
       <td>${fmtFecha(r.fecha_concesion) || "—"}</td>

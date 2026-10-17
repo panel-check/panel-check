@@ -148,6 +148,34 @@ function badgeOposicion(row) {
   return `<span class="tooltip badge-vista">👁 VISTA DE INPI<span class="globo">${_escapeHtml(detalle) || "observación de oficio de INPI detectada en Grilla Digital"}</span></span>${chipEstadoOposicion(row)}`;
 }
 
+// Vista de INPI en una marca PRE-BOLETÍN (scripts/probar_vistas_preboletin.py).
+// Es una alerta aparte de la oposición de un tercero: INPI observó la solicitud
+// antes de publicarla y la publicación queda frenada hasta que el titular contesta.
+const ESTADOS_VISTA_PRE = {
+  sin_notificar:       { texto: "sin notificar",       clase: "lead",     sirve: true  },
+  notificada_en_plazo: { texto: "plazo corriendo",     clase: "lead",     sirve: true  },
+  plazo_vencido:       { texto: "plazo vencido",       clase: "lead",     sirve: true  },
+  resuelta:            { texto: "ya resuelta",         clase: "sin-dato", sirve: false },
+  con_apoderado:       { texto: "ya tiene apoderado",  clase: "sin-dato", sirve: false },
+};
+
+function badgeVistaPre(row) {
+  if (row.tuvo_vista !== true) return "";
+  const e = ESTADOS_VISTA_PRE[row.vista_estado];
+  let chip = "";
+  if (e) {
+    let texto = e.texto;
+    if (row.vista_estado === "notificada_en_plazo" && row.vista_fecha_vencimiento) {
+      const [a, m, d] = String(row.vista_fecha_vencimiento).slice(0, 10).split("-");
+      texto += ` hasta ${d}/${m}`;
+    }
+    const detalle = _escapeHtml(row.vista_detalle || "")
+      + (e.sirve ? " · Nadie la contestó: sirve para ofrecer ayuda." : " · Ya se resolvió o se está trabajando: no sirve.");
+    chip = ` <span class="tooltip badge ${e.clase}">${texto}<span class="globo">${detalle}</span></span>`;
+  }
+  return `<span class="tooltip badge-vista">👁 VISTA ANTES DE PUBLICAR<span class="globo">Observación de INPI sobre la solicitud, antes de publicarse. No es una oposición de un tercero.</span></span>${chip}`;
+}
+
 function _escapeHtml(s) {
   return (s ?? "").toString()
     .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
