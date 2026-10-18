@@ -1159,6 +1159,9 @@ def _cruce_clases_sql(minimo, clase_a, clase_b, titular):
 TIPOS_OPOSICION = ("oposicion", "vista")
 SQL_ES_OPOSICION_TERCERO = "(tuvo_oposicion IS TRUE AND COALESCE(detalle_oposicion, '') ~* 'OPO')"
 SQL_ES_SOLO_VISTA = "(tuvo_oposicion IS TRUE AND COALESCE(detalle_oposicion, '') !~* 'OPO')"
+# Vista de INPI ANTES de publicar que todavía cuenta: una ya resuelta no tiene nada para ofrecer, así que no se
+# muestra ni entra en ningún filtro (pedido del 18/10/2026).
+SQL_VISTA_PRE_ABIERTA = "(tuvo_vista IS TRUE AND COALESCE(vista_estado, '') <> 'resuelta')"
 
 
 def filtros_marcas(
@@ -1170,7 +1173,7 @@ def filtros_marcas(
     tipo_oposicion: Optional[str] = None,  # "oposicion" | "vista" (implica tuvo_oposicion)
     # Vistas de INPI ANTES de publicar (pre-boletín): filtro aparte de la oposición.
     # "sirve" = vista sin contestar; "fondo" = sin contestar y de fondo (la que se puede
-    # defender); "cualquiera" = tuvo una vista, esté como esté.
+    # defender); "cualquiera" = con vista que todavía cuenta (las ya resueltas no se muestran).
     vista_pre: Optional[str] = None,
     fecha_desde: Optional[str] = None,
     fecha_hasta: Optional[str] = None,
@@ -1233,18 +1236,18 @@ def _consulta_marcas(f: dict) -> dict:
         condiciones.append(SQL_ES_OPOSICION_TERCERO)
     elif f["tipo_oposicion"] == "vista":
         # Vista de oficio de INPI: después de publicar (tuvo_oposicion) o antes (tuvo_vista).
-        condiciones.append(f"({SQL_ES_SOLO_VISTA} OR tuvo_vista IS TRUE)")
+        condiciones.append(f"({SQL_ES_SOLO_VISTA} OR {SQL_VISTA_PRE_ABIERTA})")
     elif f["tuvo_oposicion"] is True:
-        condiciones.append("(tuvo_oposicion IS TRUE OR tuvo_vista IS TRUE)")
+        condiciones.append(f"(tuvo_oposicion IS TRUE OR {SQL_VISTA_PRE_ABIERTA})")
     elif f["tuvo_oposicion"] is not None:
-        condiciones.append("(tuvo_oposicion = %s AND tuvo_vista IS NOT TRUE)")
+        condiciones.append(f"(tuvo_oposicion = %s AND NOT {SQL_VISTA_PRE_ABIERTA})")
         valores.append(f["tuvo_oposicion"])
     if f["vista_pre"] == "sirve":
         condiciones.append("(tuvo_vista IS TRUE AND vista_sirve IS TRUE)")
     elif f["vista_pre"] == "fondo":
         condiciones.append("(tuvo_vista IS TRUE AND vista_sirve IS TRUE AND vista_tipo IN ('fondo', 'fondo_y_formal', 'convenio_paris'))")
     elif f["vista_pre"] == "cualquiera":
-        condiciones.append("tuvo_vista IS TRUE")
+        condiciones.append(SQL_VISTA_PRE_ABIERTA)
     fecha_desde, fecha_hasta, fecha_dias = f["fecha_desde"], f["fecha_hasta"], f["fecha_dias"]
     if fecha_desde or fecha_hasta or fecha_dias:
         # Mismo criterio que muestra el panel como "Fecha Boletín"
