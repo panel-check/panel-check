@@ -1,0 +1,47 @@
+name: Verificar orden de publicación (manual, solo lectura)
+
+on:
+  workflow_dispatch:
+    inputs:
+      boletin:
+        description: "Número de boletín del que se toman las actas (vacío = el último importado; si no existe, se usa el último importado y se avisa)"
+        required: false
+        default: ""
+      cantidad:
+        description: "Cuántas actas mirar"
+        required: false
+        default: "10"
+
+permissions:
+  contents: read
+
+# Un solo carril contra INPI: si hay otro proceso de INPI corriendo, este espera su turno.
+concurrency:
+  group: inpi-lane
+  cancel-in-progress: false
+
+jobs:
+  verificar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+      RESEND_FROM: ${{ secrets.RESEND_FROM }}
+      NOTIFICAR_A: ${{ secrets.NOTIFICAR_A }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Instalar dependencias
+        run: pip install -r requirements.txt
+
+      - name: Comparar la orden de publicación con la fecha del boletín
+        run: |
+          cd scripts
+          python3 verificar_orden_publicacion.py --boletin "${{ inputs.boletin }}" --cantidad "${{ inputs.cantidad }}"
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL || secrets.DATABASE_PUBLIC_URL }}
+          PYTHONUNBUFFERED: "1"
