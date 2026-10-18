@@ -91,6 +91,48 @@ class DeseVista(unittest.TestCase):
         self.assertEqual(parsear_vista("conforme al artículo 12, inciso a) del decreto 242/19")["articulos"], [])
 
 
+# Textos reales de la corrida del 18/10/2026 (recortados al comienzo que muestra el log).
+PLAZO_30 = (" La presente vista se notifica por 30 días corridos de acuerdo a la Resolución INPI P 123/2019, anexo, artículo 5°, "
+            "pudiendo hacer uso el solicitante de las extensiones automáticas previstas en el artículo 6° de la misma norma, "
+            "abonando el arancel correspondiente (Cod. 770.001). NOTIFÍQUESE")
+DOS_INCISOS = "Dese vista al interesado de lo establecido en el artículo 2°, incisos a) y b), de la Ley 22.362. Notifíquese." + PLAZO_30
+INC_E_Y_ART_4 = "Dese vista al interesado de lo establecido en los artículos 3º inc. e) y 4º de la Ley 22.362. Notifíquese." + PLAZO_30
+GRADO_Y_DASH = ("acta_antecedente: 4794747 – denom: ALBOR. Dese vista al interesado de lo establecido en el artículo 3°, inciso a), "
+                "de la Ley 22.362. Notifíquese." + PLAZO_30)
+ART_MINUSCULA = ("acta_antecedente: 4794746 - denom: ALBOR. En virtud de encontrarse alcanzada por la prohibición del art. 3 inc. a) "
+                 "de la Ley 22.362, cúrsese vista al solicitante a efectos de que manifieste lo que estime corresponder a su derecho, "
+                 "bajo apercibimiento de denegatoria. PEREYRA DIEGO ARIEL - 20292482478")
+OFENSIVOS = ("Dese vista al interesado de lo establecido en el artículo 3°, inciso e) y 4° de la Ley 22.362 (DI-2024-141-APN-DNM#INPI – "
+             "Disposición 141/24: signos alta o manifiestamente ofensivos). Notifíquese." + PLAZO_30)
+
+
+class FormatosReales(unittest.TestCase):
+    def test_dos_incisos_juntos(self):
+        r = parsear_vista(DOS_INCISOS)
+        self.assertEqual((r["tipo"], r["articulos"], r["plazos"]), ("fondo", ["Art. 2 inc. a)", "Art. 2 inc. b)"], [(30, "corridos")]))
+
+    def test_inciso_y_otro_articulo(self):
+        self.assertEqual(parsear_vista(INC_E_Y_ART_4)["articulos"], ["Art. 3 inc. e)", "Art. 4"])
+        self.assertEqual(parsear_vista(OFENSIVOS)["articulos"], ["Art. 3 inc. e)", "Art. 4"])
+
+    def test_grado_y_guion_largo_en_el_antecedente(self):
+        r = parsear_vista(GRADO_Y_DASH)
+        self.assertEqual((r["tipo"], r["articulos"], r["antecedentes"]), ("fondo", ["Art. 3 inc. a)"], ["4794747 (ALBOR)"]))
+
+    def test_art_en_minuscula_sin_plazo(self):
+        r = parsear_vista(ART_MINUSCULA)
+        self.assertEqual((r["tipo"], r["articulos"], r["antecedentes"], r["plazos"]), ("fondo", ["Art. 3 inc. a)"], ["4794746 (ALBOR)"], []))
+
+    def test_el_articulo_de_la_resolucion_no_se_cuela(self):
+        # «artículo 5°» y «artículo 6°» son de la Resolución P 123/2019, no de la Ley
+        for t in (DOS_INCISOS, GRADO_Y_DASH, OFENSIVOS):
+            self.assertFalse([a for a in parsear_vista(t)["articulos"] if a in ("Art. 5", "Art. 6")])
+
+    def test_motivo_sin_puntos(self):
+        r = parsear_vista('Convenio de París artículo 6bis marca notoriamente conocida, a saber "...........RAPSODIA............" otro')
+        self.assertEqual(r["motivo"], "RAPSODIA")
+
+
 class ProblemasDeLectura(unittest.TestCase):
     def test_una_vista_clara_no_da_problemas(self):
         for t in (FONDO_2B, FONDO_3A_ANTECEDENTE, FORMAL, DESE_VISTA):
