@@ -72,7 +72,6 @@ header.app-header {
 @media (max-width: 520px) { .app-header .marca-img { height: 26px; } }
 @media (max-width: 380px) { .app-header .marca-img { height: 24px; } }
 @media (max-width: 340px) { .app-header .marca-img { height: 20px; } }
-}
 .app-header .marca:hover .marca-nombre { color: var(--azul); }
 .app-header .marca-sep { color: #c3c8d0; font-size: 18px; font-weight: 300; }
 .app-header h1 {
@@ -760,6 +759,104 @@ button.flecha-grupo {
   overflow: auto;
   max-height: calc(100vh - 160px);
 }
+
+/* ── Leads (/) en celular: la tabla pasa a ser una lista de tarjetas ──────
+   Solo #tabla-marcas (la tabla de la home). Las demás tablas del panel
+   (CRM lista, ficha de titular, boletines, mails, etc.) siguen con scroll
+   horizontal como antes. El orden de las columnas en la tarjeta está fijado
+   por posición (filaHtml() en index.html siempre arma las <td> en el mismo
+   orden: sel, score, clase, marca, titular, badges, email, 3 fechas,
+   acciones) — si ese orden cambia en el JS, hay que ajustar los
+   nth-child de acá. Boceto aprobado 18/10/2026. */
+@media (max-width: 640px) {
+  .contenedor-tabla:has(#tabla-marcas) {
+    overflow: visible;
+    max-height: none;
+    padding: 10px;
+  }
+  #tabla-marcas, #tabla-marcas tbody { display: block; width: 100%; }
+  #tabla-marcas thead { display: none; }
+  #tabla-marcas tr {
+    display: flex;
+    flex-wrap: wrap;
+    column-gap: 10px;
+    row-gap: 4px;
+    align-items: baseline;
+    background: #fff;
+    border: 1px solid var(--borde);
+    border-radius: 12px;
+    padding: 12px 14px;
+    margin: 0 0 10px;
+  }
+  #tabla-marcas tr.fila-oculta { display: none; }
+  #tabla-marcas tr:has(td.vacio) { display: block; border: 0; background: none; padding: 0; margin: 0; }
+  #tabla-marcas td {
+    display: block;
+    border: 0;
+    padding: 0;
+    white-space: normal;
+  }
+  #tabla-marcas tbody tr td.vacio { padding: 30px 10px; text-align: center; }
+
+  #tabla-marcas td.col-sel { order: 1; flex: 0 0 auto; width: auto; padding: 0; align-self: center; }
+  #tabla-marcas td.score {
+    order: 2; flex: 0 0 auto; font-size: 13px;
+    background: #eef0f2; color: #1f2430; padding: 2px 8px; border-radius: 10px;
+  }
+  #tabla-marcas td.score:empty { display: none; }
+  #tabla-marcas td.denominacion {
+    order: 3; flex: 1 1 120px; min-width: 0; max-width: none;
+    font-weight: 700; font-size: 14.5px;
+  }
+  #tabla-marcas td:nth-child(3) {
+    /* Clase: 3ª columna, sin clase propia en el HTML */
+    order: 4; flex: 0 0 auto;
+    background: #eef0f2; color: #4b5563; font-size: 11px; font-weight: 600;
+    padding: 2px 7px; border-radius: 8px;
+  }
+  #tabla-marcas td:nth-child(3)::before { content: "Clase "; }
+  #tabla-marcas td.titular {
+    order: 5; flex: 1 1 140px; min-width: 0; max-width: none;
+    font-size: 12.5px; color: #4b5563;
+  }
+  #tabla-marcas td:nth-child(6) {
+    /* Badges: Lead, CRM, pre-boletín, oposición, vista, estado de trámite */
+    order: 6; flex: 1 1 100%;
+    display: flex; flex-wrap: wrap; gap: 4px; align-items: center;
+  }
+  #tabla-marcas td.celda-email {
+    order: 7; flex: 1 1 100%; text-align: left; font-size: 12px; color: var(--gris);
+  }
+  #tabla-marcas td.celda-email:empty { display: none; }
+  #tabla-marcas td.celda-email::before { content: "Email "; }
+  #tabla-marcas td.col-boletin, #tabla-marcas td.col-present, #tabla-marcas td:nth-child(10) {
+    flex: 1 1 30%; font-size: 12px;
+    border-top: 1px solid #eef0f2; padding-top: 8px; margin-top: 4px;
+  }
+  #tabla-marcas td.col-boletin::before,
+  #tabla-marcas td.col-present::before,
+  #tabla-marcas td:nth-child(10)::before {
+    display: block; font-size: 9.5px; font-weight: 700; letter-spacing: .03em;
+    color: #9aa1ab; text-transform: uppercase;
+  }
+  #tabla-marcas td.col-boletin { order: 8; }
+  #tabla-marcas td.col-boletin::before { content: "Boletín"; }
+  #tabla-marcas td.col-present { order: 9; }
+  #tabla-marcas td.col-present::before { content: "Present."; }
+  #tabla-marcas td:nth-child(10) { order: 10; } /* Fecha concedida */
+  #tabla-marcas td:nth-child(10)::before { content: "Concedida"; }
+  #tabla-marcas td.celda-acciones {
+    order: 11; flex: 1 1 100%;
+    border-top: 1px solid #eef0f2; padding-top: 8px; margin-top: 4px;
+    display: flex; flex-wrap: wrap; gap: 8px; white-space: normal;
+  }
+  #tabla-marcas td.celda-acciones .abrir {
+    flex: 1 1 auto; min-height: 34px;
+    display: inline-flex; align-items: center; justify-content: center;
+  }
+  #tabla-marcas td.celda-acciones .btn-coment { flex: 0 0 auto; min-height: 34px; min-width: 34px; }
+}
+
 .vacio {
   padding: 40px;
   text-align: center;
