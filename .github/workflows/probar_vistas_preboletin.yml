@@ -19,6 +19,11 @@ on:
         description: "Revisar SOLO estas actas (separadas por coma; vacío = los leads pre-boletín de siempre). Lee el PDF de la vista aunque ya esté resuelta."
         required: false
         default: ""
+      reinterpretar:
+        description: "No consulta a INPI: vuelve a interpretar el texto ya guardado de las vistas con el lector actual y corrige tipo, artículo, motivo, plazo y vencimiento."
+        type: boolean
+        required: false
+        default: false
       guardar:
         description: "Guardar el resultado en el panel (columnas de vista de cada marca). Sin tildar, solo lee."
         type: boolean
@@ -58,6 +63,7 @@ jobs:
           args="--dias-minimos ${{ inputs.dias_minimos }} --limite ${{ inputs.limite }} --max-minutes ${{ inputs.max_minutes }}"
           if [ "${{ inputs.guardar }}" = "true" ]; then args="$args --guardar"; fi
           if [ -n "${{ inputs.actas }}" ]; then args="$args --actas ${{ inputs.actas }}"; fi
+          if [ "${{ inputs.reinterpretar }}" = "true" ]; then args="--reinterpretar"; fi
           python3 probar_vistas_preboletin.py $args
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL || secrets.DATABASE_PUBLIC_URL }}

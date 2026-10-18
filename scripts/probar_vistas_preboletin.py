@@ -33,6 +33,9 @@ Qué marcas se vuelven a revisar (sin --actas):
     contestar a los --dias-entre-revisiones-vista (3). El expediente se vuelve a leer en cada revisión de
     una vista pendiente porque la contestación no siempre aparece como fila en la Grilla.
 
+Con --reinterpretar no consulta a INPI: vuelve a leer el texto ya guardado de cada vista con el
+lector actual (para corregir lo guardado cuando mejora el lector).
+
 Sin --guardar es solo lectura. Con --guardar escribe el resultado en las
 columnas propias de la vista (tuvo_vista, vista_estado, vista_fecha...) -- NO
 toca tuvo_oposicion ni los campos de la oposición: una vista de INPI antes de
@@ -120,7 +123,8 @@ def _estado_vista(est, hoy_iso, venc_texto=None):
     return None
 
 
-TIPOS_LEGIBLES = {"fondo": "de fondo", "formal": "formal (logotipos)", "fondo_y_formal": "de fondo y formal"}
+TIPOS_LEGIBLES = {"fondo": "de fondo", "formal": "formal (logotipos)", "fondo_y_formal": "de fondo y formal",
+                  "convenio_paris": "por el Convenio de París", "clasificacion": "formal (productos y servicios)"}
 
 
 def _fmt(iso):
@@ -131,7 +135,10 @@ def _detalle_vista(est, pdf):
     """Texto para la ficha: qué pide la vista y hasta cuándo, con las dos fechas."""
     partes = [f"Vista {TIPOS_LEGIBLES.get(pdf.get('tipo'), 'de INPI')}"]
     if pdf.get("articulos"):
-        partes[0] += f": {', '.join(pdf['articulos'])} de la Ley 22.362"
+        # los de la Ley 22.362 empiezan con «Art.»; el Convenio de París ya viene con su nombre
+        partes[0] += ": " + ", ".join(a + (" de la Ley 22.362" if a.startswith("Art.") else "") for a in pdf["articulos"])
+    if pdf.get("motivo"):
+        partes.append(f"motivo: «{pdf['motivo']}»")
     if pdf.get("antecedentes"):
         partes.append("parecida a " + "; ".join(pdf["antecedentes"]))
     if est.get("notificacion"):
@@ -142,6 +149,51 @@ def _detalle_vista(est, pdf):
     if est.get("vencimiento"):
         partes.append(f"INPI marca el {_fmt(est['vencimiento'])}")
     return " · ".join(partes)
+
+
+def reinterpretar(conn, hoy_iso):
+    """Vuelve a interpretar, SIN consultar a INPI, el texto de las vistas ya guardadas
+    (vista_texto) con el lector actual: corrige tipo, artículo, motivo, plazo y vencimiento
+    propio cuando el lector mejora. Las fechas de INPI y la notificación no se tocan."""
+    from vistas_pdf import parsear_vista, vencimiento_desde_texto
+    iso = lambda d: d.isoformat() if d else None
+    cambiadas = 0
+    with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+        cur.execute(
+            """SELECT acta, vista_texto, vista_fecha, vista_fecha_notificacion, vista_fecha_vencimiento,
+                      vista_estado, vista_tipo, vista_articulos, vista_motivo, vista_vencimiento_calculado
+               FROM marcas WHERE tuvo_vista IS TRUE AND COALESCE(vista_texto, '') <> '' ORDER BY acta"""
+        )
+        filas = cur.fetchall()
+    print(f"Vistas guardadas con texto: {len(filas)}", flush=True)
+    for f in filas:
+        pdf = parsear_vista(f["vista_texto"])
+        venc, estimado = vencimiento_desde_texto(pdf, iso(f["vista_fecha_notificacion"]), iso(f["vista_fecha"]))
+        pdf.update({"vencimiento_texto": venc, "vencimiento_estimado": estimado})
+        est = {"notificacion": iso(f["vista_fecha_notificacion"]), "vencimiento": iso(f["vista_fecha_vencimiento"])}
+        estado = f["vista_estado"]
+        if estado in ("sin_notificar", "notificada_en_plazo", "plazo_vencido"):
+            estado = _estado_vista({"estado": "vista_pendiente", **est}, hoy_iso, venc)
+        nuevo = (pdf["tipo"], ", ".join(pdf["articulos"]) or None, pdf["motivo"] or None)
+        anterior = (f["vista_tipo"], f["vista_articulos"], f["vista_motivo"])
+        with conn.cursor() as cur:
+            cur.execute(
+                """UPDATE marcas SET vista_tipo = %s, vista_articulos = %s, vista_motivo = %s, vista_plazo = %s,
+                          vista_antecedente = COALESCE(%s, vista_antecedente),
+                          vista_vencimiento_calculado = %s, vista_estado = %s,
+                          vista_sirve = %s, vista_detalle = %s
+                   WHERE acta = %s""",
+                (pdf["tipo"], ", ".join(pdf["articulos"]) or None, pdf["motivo"] or None,
+                 plazo_legible(pdf) or None, "; ".join(pdf["antecedentes"]) or None, venc, estado,
+                 estado in ESTADOS_VISTA_QUE_SIRVEN, _detalle_vista(est, pdf), f["acta"]),
+            )
+        conn.commit()
+        if nuevo != anterior:
+            cambiadas += 1
+        print(f"  acta {f['acta']}: {pdf['tipo']} · {', '.join(pdf['articulos']) or 'sin artículo'}"
+              f"{' · motivo ' + pdf['motivo'] if pdf['motivo'] else ''} · {plazo_legible(pdf) or 'sin plazo'} · vence {venc or '—'}"
+              f"{'  (antes: ' + str(anterior[0]) + ')' if nuevo != anterior else ''}", flush=True)
+    print(f"Reinterpretadas: {len(filas)}; con tipo, artículo o motivo distinto: {cambiadas}", flush=True)
 
 
 def guardar_resultado(conn, acta, categoria, datos_vista):
@@ -159,6 +211,7 @@ def guardar_resultado(conn, acta, categoria, datos_vista):
                     vista_detectada_en = COALESCE(vista_detectada_en, now()),
                     -- lo que sale del PDF: si esta vez no se pudo leer, queda lo que ya había
                     vista_tipo = COALESCE(%s, vista_tipo), vista_articulos = COALESCE(%s, vista_articulos),
+                    vista_motivo = %s,
                     vista_antecedente = COALESCE(%s, vista_antecedente), vista_plazo = COALESCE(%s, vista_plazo),
                     vista_vencimiento_calculado = COALESCE(%s, vista_vencimiento_calculado),
                     vista_texto = COALESCE(%s, vista_texto),
@@ -168,7 +221,8 @@ def guardar_resultado(conn, acta, categoria, datos_vista):
                 (categoria, datos_vista["estado"], datos_vista["estado"] in ESTADOS_VISTA_QUE_SIRVEN,
                  datos_vista["detalle"], datos_vista["fecha"], datos_vista["notificacion"],
                  datos_vista["vencimiento"],
-                 datos_vista.get("tipo"), datos_vista.get("articulos"), datos_vista.get("antecedente"),
+                 datos_vista.get("tipo"), datos_vista.get("articulos"), datos_vista.get("motivo") or None,
+                 datos_vista.get("antecedente"),
                  datos_vista.get("plazo"), datos_vista.get("vencimiento_calculado"), datos_vista.get("texto"),
                  bool(datos_vista.get("tipo")), acta),
             )
@@ -202,6 +256,8 @@ def main():
     ap.add_argument("--dias-entre-revisiones", type=int, default=7, help="días hasta volver a mirar una marca sin vista")
     ap.add_argument("--dias-entre-revisiones-vista", type=int, default=3, help="días hasta volver a mirar una marca con vista sin contestar")
     ap.add_argument("--dias-despues-vencimiento", type=int, default=7, help="días después del vencimiento de la vista en que se deja de revisar")
+    ap.add_argument("--reinterpretar", action="store_true",
+                    help="vuelve a interpretar el texto ya guardado de las vistas con el lector actual y sale (no consulta a INPI)")
     ap.add_argument("--actas", default="", help="revisar SOLO estas actas (separadas por coma), sin los filtros de antigüedad y estado")
     args = ap.parse_args()
     actas_pedidas = [a.strip() for a in args.actas.split(",") if a.strip()]
@@ -212,8 +268,12 @@ def main():
         sys.exit(1)
 
     conn = psycopg2.connect(database_url)
+    if args.reinterpretar:
+        reinterpretar(conn, datetime.date.today().isoformat())
+        conn.close()
+        return
     with conn.cursor() as cur:
-        cur.execute("SELECT count(*) FROM information_schema.columns WHERE table_name = 'marcas' AND column_name = 'vista_grilla_estado'")
+        cur.execute("SELECT count(*) FROM information_schema.columns WHERE table_name = 'marcas' AND column_name = 'vista_motivo'")
         if not cur.fetchone()[0]:
             sys.exit("Faltan las columnas de vista en la tabla marcas: se crean solas cuando el panel arranca con el último deploy. Reintentar en unos minutos.")
     with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
@@ -330,6 +390,7 @@ def main():
                             "detalle": _detalle_vista(est, pdf) if pdf else est["detalle"],
                             "tipo": pdf.get("tipo"),
                             "articulos": ", ".join(pdf["articulos"]) if pdf.get("articulos") else None,
+                            "motivo": pdf.get("motivo") or None,
                             "antecedente": "; ".join(pdf["antecedentes"]) if pdf.get("antecedentes") else None,
                             "plazo": plazo_legible(pdf) if pdf.get("plazos") else None,
                             "vencimiento_calculado": pdf.get("vencimiento_texto"),

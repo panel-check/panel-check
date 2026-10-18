@@ -487,7 +487,8 @@ def _correr_alters_panel(cur):
                         ("vista_grilla_estado", "TEXT"), ("vista_tipo", "TEXT"), ("vista_articulos", "TEXT"),
                         ("vista_antecedente", "TEXT"), ("vista_plazo", "TEXT"),
                         ("vista_vencimiento_calculado", "DATE"), ("vista_texto", "TEXT"),
-                        ("vista_pdf_leido_en", "TIMESTAMPTZ"), ("contactado_prebol_en", "TIMESTAMPTZ")):
+                        ("vista_pdf_leido_en", "TIMESTAMPTZ"), ("contactado_prebol_en", "TIMESTAMPTZ"),
+                        ("vista_motivo", "TEXT")):
         cur.execute(f"ALTER TABLE marcas ADD COLUMN IF NOT EXISTS {_col} {_tipo}")
     # Lead marcado a mano como "tiene gestor/apoderado" desde la ficha: sale de los
     # leads (es_lead = false) y guarda lo anterior para poder deshacerlo.
@@ -557,7 +558,7 @@ COLUMNAS_MARCA = """
     fuente,
     tuvo_vista, vista_estado, vista_sirve, vista_detalle, vista_fecha,
     vista_fecha_notificacion, vista_fecha_vencimiento, vista_revisada_en,
-    vista_tipo, vista_articulos, vista_antecedente, vista_plazo, vista_vencimiento_calculado
+    vista_tipo, vista_articulos, vista_motivo, vista_antecedente, vista_plazo, vista_vencimiento_calculado
 """
 
 RE_CUIT_VALIDO = re.compile(r"^\d{10,11}$")
@@ -709,7 +710,7 @@ GRUPOS_AUTOMATIZACIONES = [
                      "etiqueta": "vistas sin contestar", "destacada": True},
                     {"sql": "SELECT COUNT(*) FROM marcas WHERE es_lead = true AND boletin IS NULL "
                             "AND tuvo_vista IS TRUE AND vista_sirve IS TRUE "
-                            "AND vista_tipo IN ('fondo', 'fondo_y_formal')",
+                            "AND vista_tipo IN ('fondo', 'fondo_y_formal', 'convenio_paris')",
                      "etiqueta": "de fondo (las que se pueden defender)"},
                     {"sql": "SELECT COUNT(*) FROM marcas WHERE tuvo_vista IS TRUE "
                             "AND vista_detectada_en >= now() - interval '7 days'",
@@ -1241,7 +1242,7 @@ def _consulta_marcas(f: dict) -> dict:
     if f["vista_pre"] == "sirve":
         condiciones.append("(tuvo_vista IS TRUE AND vista_sirve IS TRUE)")
     elif f["vista_pre"] == "fondo":
-        condiciones.append("(tuvo_vista IS TRUE AND vista_sirve IS TRUE AND vista_tipo IN ('fondo', 'fondo_y_formal'))")
+        condiciones.append("(tuvo_vista IS TRUE AND vista_sirve IS TRUE AND vista_tipo IN ('fondo', 'fondo_y_formal', 'convenio_paris'))")
     elif f["vista_pre"] == "cualquiera":
         condiciones.append("tuvo_vista IS TRUE")
     fecha_desde, fecha_hasta, fecha_dias = f["fecha_desde"], f["fecha_hasta"], f["fecha_dias"]

@@ -41,6 +41,53 @@ FORMAL = (
 )
 
 
+# Textos reales del 17/10/2026 (recortados a lo que se vio en el log de la corrida; el resto del PDF no se conoce).
+PARIS_6TER = (
+    'Visto el expediente bajo análisis se notifica al solicitante que: El término "PATAGONIA" ha obtenido el reconocimiento el 30/9/2022 '
+    'como Símbolo/Emblema de Estado Nacional en organismo pertinente para nuestro país conforme Tratado Internacional art. 6 Ter Convenio '
+    'Unión de Paris, por lo que se encontraría vedado el registro para otro titular. En virtud de ello se corre vista a los fines que estime '
+    'corresponder bajo apercibimiento que, en caso de falta de respuesta o respuesta que no supere la ob'
+)
+PARIS_6BIS = (
+    'Visto el expediente bajo análisis se notifica al solicitante que: El signo bajo análisis podría constituir la reproducción, imitación o '
+    'traducción, -susceptibles de crear confusión- de una marca notoriamente conocida, a saber "NIKE" motivo por el cual deberá expresar las '
+    'razones que hagan a su derecho, dentro del plazo que más abajo se indica. Conforme al Convenio de París (Aprobado por la Ley 17.011), '
+    'artículo 6bis, ap1 "Los países de la Unión se comprometen, bien de oficio, si la '
+)
+CLASIFICACION = (
+    'Se le hace saber al solicitante que deberá presentar escrito limitando correctamente los productos/servicios a distinguir, toda vez que '
+    'la expresión "STOCK" resulta imprecisa a los fines de una correcta descripción de los productos/servicios que quiere proteger. Por tanto '
+    'es necesario que especifique que productos incluye tal término. Se la hace saber también que deberá eliminar los siguientes productos/ '
+    'servicios por no corresponder a la clase solicitada: "FACTURACIÓN; ADMINISTRACIÓN DE NEGOCIO'
+)
+
+
+class TiposNuevos(unittest.TestCase):
+    def test_convenio_de_paris_6_ter_emblema_de_estado(self):
+        r = parsear_vista(PARIS_6TER)
+        self.assertEqual((r["tipo"], r["articulos"], r["motivo"]), ("convenio_paris", ["Convenio de París, art. 6 ter"], "PATAGONIA"))
+
+    def test_convenio_de_paris_6_bis_marca_notoria(self):
+        r = parsear_vista(PARIS_6BIS)
+        self.assertEqual((r["tipo"], r["articulos"], r["motivo"]), ("convenio_paris", ["Convenio de París, art. 6 bis"], "NIKE"))
+        # "Ley 17.011" (el Convenio) no se confunde con un artículo de la Ley 22.362
+        self.assertFalse([a for a in r["articulos"] if a.startswith("Art.")])
+
+    def test_formal_de_clasificacion_no_es_de_logotipos(self):
+        r = parsear_vista(CLASIFICACION)
+        self.assertEqual((r["tipo"], r["motivo"]), ("clasificacion", "STOCK"))
+
+    def test_los_plazos_se_leen_igual_en_los_tipos_nuevos(self):
+        r = parsear_vista(PARIS_6TER + " La presente vista se notifica por 30 días corridos de acuerdo a la Resolución INPI P 123/2019")
+        self.assertEqual((r["tipo"], r["plazos"]), ("convenio_paris", [(30, "corridos")]))
+        r = parsear_vista(CLASIFICACION + " Notifíquese: por el plazo de 10 (diez) días hábiles bajo apercibimiento de dictar resolución denegatoria")
+        self.assertEqual((r["tipo"], r["plazos"]), ("clasificacion", [(10, "habiles")]))
+
+    def test_los_logotipos_siguen_siendo_formal(self):
+        self.assertEqual(parsear_vista(FORMAL)["tipo"], "formal")
+        self.assertEqual(parsear_vista(FORMAL)["motivo"], "")
+
+
 class ParsearVista(unittest.TestCase):
     def test_fondo_art_2_b(self):
         r = parsear_vista(FONDO_2B)

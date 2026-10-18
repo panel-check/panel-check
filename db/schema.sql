@@ -145,6 +145,9 @@ ALTER TABLE marcas ADD COLUMN IF NOT EXISTS vista_plazo TEXT;
 ALTER TABLE marcas ADD COLUMN IF NOT EXISTS vista_vencimiento_calculado DATE;
 ALTER TABLE marcas ADD COLUMN IF NOT EXISTS vista_texto TEXT;
 ALTER TABLE marcas ADD COLUMN IF NOT EXISTS vista_pdf_leido_en TIMESTAMPTZ;
+-- vista_tipo también puede ser convenio_paris (art. 6 bis / 6 ter) o clasificacion (productos/servicios);
+-- vista_motivo es lo que INPI cita como causa («NIKE», «PATAGONIA», «STOCK»). Agregado el 18/10/2026.
+ALTER TABLE marcas ADD COLUMN IF NOT EXISTS vista_motivo TEXT;
 
 -- Agregado el 30/09/2026: aviso por mail (Resend) de leads con oposición/vista
 -- nueva -- ver scripts/notificar_oposiciones.py. Cada lead se avisa una sola vez.
