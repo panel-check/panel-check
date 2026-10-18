@@ -47,6 +47,10 @@ RE_PLAZO = re.compile(
 RE_ARTICULO = re.compile(
     r"\bART\.?\s*(\d+)\s*(?:INC\.?\s*)?\(?\s*((?-i:[A-Z]))?\s*\)?\s*(?:d\s*e\s*)?(?:l\s*a\s*|l\s*)?Ley",
     re.I)
+# Variante «Dese vista al interesado de lo establecido en el artículo 3, inciso a), de la Ley 22.362»
+RE_ARTICULO_LARGO = re.compile(
+    r"\bart[ií]culos?\s*(\d+)\s*,?\s*inc(?:iso|\.)?\s*\(?\s*([a-z])\s*\)?\s*,?\s*(?:d\s*e\s*)?(?:l\s*a\s*|l\s*)?Ley\s*(?:N[°º.]?\s*)?22\.?362",
+    re.I)
 # Convenio de París: 6 bis (marca notoriamente conocida) o 6 ter (emblemas oficiales)
 RE_PARIS = re.compile(r"\b6\s*(bis|ter)\b", re.I)
 RE_CONVENIO = re.compile(r"Convenio\s+(?:de\s+|Uni[oó]n\s+de\s+)?(?:la\s+Uni[oó]n\s+de\s+)?Par[ií]s", re.I)
@@ -55,7 +59,11 @@ RE_MOTIVO_TERMINO = re.compile(r"t[eé]rmino\s*[\"“«]([^\"”»]{1,80})[\"”
 RE_MOTIVO_EXPRESION = re.compile(r"expresi[oó]n\s*[\"“«]([^\"”»]{1,80})[\"”»]", re.I)
 RE_CLASIFICACION = re.compile(
     r"limitando\s*correctamente\s*los\s*productos|no\s*corresponder\s*a\s*la\s*clase|clasificaci[oó]n\s*de\s*(?:los\s*)?productos", re.I)
-RE_ANTECEDENTE = re.compile(r"acta_antecedente:\s*(\d+)\s*;?\s*(?:denom:\s*(.*?))?\s*(?=El\s*signo|acta_antecedente|$)", re.I)
+# La denominación del antecedente termina donde empieza lo siguiente: «El signo…», otro antecedente,
+# «Dese vista…», «Notifíquese» o «Visto…» (si no, se llevaba pegado el resto del texto).
+RE_ANTECEDENTE = re.compile(
+    r"acta_antecedente:\s*(\d+)\s*;?\s*(?:denom:\s*(.*?))?\s*"
+    r"(?=El\s*signo|acta_antecedente|D[eé]se\s*vista|Not[ií]f[ií]quese|Visto\s*el|$)", re.I)
 
 
 def _plano(texto: str) -> str:
@@ -78,7 +86,7 @@ def parsear_vista(texto: str) -> dict:
     """
     p = _plano(texto)
     articulos = []
-    for m in RE_ARTICULO.finditer(p):
+    for m in sorted(list(RE_ARTICULO.finditer(p)) + list(RE_ARTICULO_LARGO.finditer(p)), key=lambda x: x.start()):
         art = f"Art. {m.group(1)}"
         if m.group(2):
             art += f" inc. {m.group(2).lower()})"
@@ -87,7 +95,7 @@ def parsear_vista(texto: str) -> dict:
     es_ley = bool(articulos)
     antecedentes = []
     for m in RE_ANTECEDENTE.finditer(p):
-        denom = (m.group(2) or "").strip(" ;")
+        denom = (m.group(2) or "").strip(" ;.")
         antecedentes.append(f"{m.group(1)} ({denom})" if denom else m.group(1))
     plazos = []
     for m in RE_PLAZO.finditer(p):
