@@ -419,6 +419,17 @@ CATALOGO = {
         "env_remitente": "RESEND_FROM",
         "env_destinatarios": "NOTIFICAR_A",
     },
+    "vista_sin_entender": {
+        "grupo": "interno",
+        "nombre": "Vista que el sistema no supo leer",
+        "descripcion": "Cuando la revisión de vistas en pre-boletín baja el PDF de una vista y no logra entender el tipo, el artículo o el plazo (o no puede leer el PDF), manda un solo mail por corrida con esas marcas y un trozo del texto, para poder corregir el lector.",
+        "cuenta": "interna",
+        "remitente": DEFAULT_FROM_INTERNO,
+        "responder_a": "",
+        "destinatarios": DEFAULT_TO_INTERNO,
+        "env_remitente": "RESEND_FROM",
+        "env_destinatarios": "NOTIFICAR_A",
+    },
     "agenda": {
         "grupo": "interno",
         "nombre": "Agenda diaria (20 hs)",
@@ -1153,6 +1164,7 @@ _ASUNTOS_INTERNOS = [
     ("consulta_web_confirmacion", re.compile(r"^Recibimos tu consulta de marca", re.I)),
     ("poder_persona_fisica", re.compile(r"^Tu poder para firmar", re.I)),
     ("bloqueo", re.compile(r"INPI está bloqueando", re.I)),
+    ("vista_sin_entender", re.compile(r"que el sistema no supo leer", re.I)),
     ("agenda", re.compile(r"^AGENDA\b")),
 ]
 

@@ -3,8 +3,11 @@ Pruebas de probar_vistas_preboletin.py (sin red ni base). Correr con:
     cd scripts && python3 -m unittest test_probar_vistas -v
 """
 
+import os
 import unittest
+from unittest import mock
 
+import probar_vistas_preboletin as pv
 from probar_vistas_preboletin import _estado_vista, clasificar
 
 
@@ -62,6 +65,33 @@ class EstadoVista(unittest.TestCase):
         self.assertEqual(_estado_vista({"estado": "sin_oposicion"}, "2026-10-17"), "resuelta")
         self.assertEqual(_estado_vista({"estado": "con_apoderado"}, "2026-10-17"), "con_apoderado")
         self.assertIsNone(_estado_vista({"estado": "contestada"}, "2026-10-17"))
+
+
+class AvisoDeVistasSinEntender(unittest.TestCase):
+    ITEMS = [{"acta": "4800811", "marca": "ANIMA", "tipo": "desconocido", "problemas": ["no se reconoce el tipo de vista"], "texto": "x"}]
+
+    def test_sin_vistas_no_manda_nada(self):
+        with mock.patch("requests.post") as post:
+            pv.enviar_aviso_vistas([])
+        post.assert_not_called()
+
+    def test_manda_un_solo_mail_con_todas(self):
+        env = {"RESEND_API_KEY": "re_x", "RESEND_FROM": "Avisos <a@b.com>", "NOTIFICAR_A": "yo@b.com"}
+        with mock.patch.dict(os.environ, env), \
+             mock.patch("mails_core.preparar", side_effect=RuntimeError("sin base")), \
+             mock.patch("requests.post") as post:
+            pv.enviar_aviso_vistas(self.ITEMS + self.ITEMS)
+        self.assertEqual(post.call_count, 1)
+        enviado = post.call_args.kwargs["json"]
+        self.assertEqual(enviado["to"], ["yo@b.com"])
+        self.assertIn("2 vistas", enviado["subject"])
+
+    def test_sin_clave_no_rompe(self):
+        with mock.patch.dict(os.environ, {}, clear=True), \
+             mock.patch("mails_core.preparar", return_value={"api_key": None, "env_key": "RESEND_API_KEY", "remitente": "a", "destinatarios": ["b"], "responder_a": None}), \
+             mock.patch("requests.post") as post:
+            pv.enviar_aviso_vistas(self.ITEMS)
+        post.assert_not_called()
 
 
 if __name__ == "__main__":

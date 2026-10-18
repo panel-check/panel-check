@@ -10,7 +10,7 @@ bloques mezclados.
 import unittest
 
 from vistas_pdf import (
-    descargar_texto_pdf, filas_de_vista, parsear_vista, plazo_legible,
+    descargar_texto_pdf, filas_de_vista, parsear_vista, plazo_legible, problemas_de_lectura,
     sumar_dias_habiles, vencimiento_desde_texto,
 )
 
@@ -89,6 +89,30 @@ class DeseVista(unittest.TestCase):
 
     def test_el_decreto_no_se_confunde_con_la_ley(self):
         self.assertEqual(parsear_vista("conforme al artículo 12, inciso a) del decreto 242/19")["articulos"], [])
+
+
+class ProblemasDeLectura(unittest.TestCase):
+    def test_una_vista_clara_no_da_problemas(self):
+        for t in (FONDO_2B, FONDO_3A_ANTECEDENTE, FORMAL, DESE_VISTA):
+            self.assertEqual(problemas_de_lectura(parsear_vista(t)), [], t[:40])
+
+    def test_pdf_ilegible(self):
+        self.assertEqual(len(problemas_de_lectura(None)), 1)
+        self.assertEqual(len(problemas_de_lectura({})), 1)
+
+    def test_texto_desconocido_sin_plazo(self):
+        p = problemas_de_lectura(parsear_vista("texto raro que no dice nada"))
+        self.assertEqual(len(p), 2)  # no se reconoce el tipo + no hay plazo
+
+    def test_fondo_sin_plazo_se_avisa(self):
+        r = parsear_vista("Dese vista al interesado de lo establecido en el artículo 3, inciso a), de la Ley 22.362.")
+        self.assertEqual(r["tipo"], "fondo")
+        self.assertEqual(problemas_de_lectura(r), ["no se encontró el plazo para contestar"])
+
+    def test_antecedente_con_texto_de_mas(self):
+        r = parsear_vista(FONDO_3A_ANTECEDENTE)
+        r["antecedentes"] = ["4632039 (" + "x" * 100 + ")"]
+        self.assertEqual(problemas_de_lectura(r), ["la marca anterior parece traer texto de más"])
 
 
 class TiposNuevos(unittest.TestCase):

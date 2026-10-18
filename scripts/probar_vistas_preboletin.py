@@ -62,7 +62,7 @@ import psycopg2.extras
 import monitor_bloqueo
 from oposiciones_expediente import clasificar_estado_oposicion, consultar_expediente
 from validar_leads import _parsear_fecha_grilla, buscar_archivos_grilla, crear_sesion
-from vistas_pdf import leer_vista, plazo_legible
+from vistas_pdf import leer_vista, plazo_legible, problemas_de_lectura
 
 
 def _norm(texto: str) -> str:
@@ -151,6 +151,46 @@ def _detalle_vista(est, pdf):
     return " · ".join(partes)
 
 
+def _texto_guardado(conn, acta):
+    with conn.cursor() as cur:
+        cur.execute("SELECT vista_texto FROM marcas WHERE acta = %s", (acta,))
+        r = cur.fetchone()
+    return (r[0] if r else None) or ""
+
+
+def enviar_aviso_vistas(items):
+    """Un solo mail con las vistas que el lector no supo interpretar (plantilla «vista_sin_entender»
+    de la pestaña Mails; si no se puede leer esa configuración, valen RESEND_FROM / NOTIFICAR_A)."""
+    if not items:
+        return
+    import requests
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "panel"))
+    import mails_plantillas
+    asunto, cuerpo = mails_plantillas.armar_mail_vistas_sin_entender(items, monitor_bloqueo._link_corrida())
+    try:
+        import mails_core
+        cfg = mails_core.preparar("vista_sin_entender")
+        api_key, remitente, destinatarios, responder_a, env_key = (
+            cfg["api_key"], cfg["remitente"], cfg["destinatarios"], cfg["responder_a"], cfg["env_key"])
+    except Exception as e:  # noqa: BLE001 — el aviso no puede depender de la configuración
+        print(f"::warning::No se pudo leer la configuración de mails ({e}); se usan los valores de respaldo")
+        api_key, env_key = os.environ.get("RESEND_API_KEY"), "RESEND_API_KEY"
+        remitente = os.environ.get("RESEND_FROM") or monitor_bloqueo.DEFAULT_FROM
+        destinatarios = [d.strip() for d in (os.environ.get("NOTIFICAR_A") or monitor_bloqueo.DEFAULT_TO).split(",") if d.strip()]
+        responder_a = None
+    if not api_key:
+        print(f"::warning::No hay {env_key}: no se pudo mandar el aviso de {len(items)} vistas sin entender")
+        return
+    payload = {"from": remitente, "to": destinatarios, "subject": asunto, "html": cuerpo}
+    if responder_a:
+        payload["reply_to"] = responder_a
+    try:
+        r = requests.post("https://api.resend.com/emails", headers={"Authorization": f"Bearer {api_key}"}, json=payload, timeout=30)
+        print(f"Aviso de {len(items)} vistas sin entender: HTTP {r.status_code}", flush=True)
+    except Exception as e:  # noqa: BLE001
+        print(f"::warning::No se pudo mandar el aviso de vistas sin entender: {e}")
+
+
 def reinterpretar(conn, hoy_iso):
     """Vuelve a interpretar, SIN consultar a INPI, el texto de las vistas ya guardadas
     (vista_texto) con el lector actual: corrige tipo, artículo, motivo, plazo y vencimiento
@@ -158,9 +198,10 @@ def reinterpretar(conn, hoy_iso):
     from vistas_pdf import parsear_vista, vencimiento_desde_texto
     iso = lambda d: d.isoformat() if d else None
     cambiadas = 0
+    sin_entender = []
     with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
         cur.execute(
-            """SELECT acta, vista_texto, vista_fecha, vista_fecha_notificacion, vista_fecha_vencimiento,
+            """SELECT acta, denominacion, vista_texto, vista_fecha, vista_fecha_notificacion, vista_fecha_vencimiento,
                       vista_estado, vista_tipo, vista_articulos, vista_motivo, vista_vencimiento_calculado
                FROM marcas WHERE tuvo_vista IS TRUE AND COALESCE(vista_texto, '') <> '' ORDER BY acta"""
         )
@@ -188,14 +229,18 @@ def reinterpretar(conn, hoy_iso):
                  estado in ESTADOS_VISTA_QUE_SIRVEN, _detalle_vista(est, pdf), f["acta"]),
             )
         conn.commit()
-        if pdf["tipo"] == "desconocido":
-            print(f"    texto sin reconocer: {(f['vista_texto'] or '')[:400]}", flush=True)
+        problemas = problemas_de_lectura(pdf) if estado != "resuelta" else []
+        if problemas:
+            print(f"    sin entender ({'; '.join(problemas)}): {(f['vista_texto'] or '')[:400]}", flush=True)
+            sin_entender.append({"acta": f["acta"], "marca": f["denominacion"], "tipo": pdf["tipo"],
+                                 "problemas": problemas, "texto": f["vista_texto"]})
         if nuevo != anterior:
             cambiadas += 1
         print(f"  acta {f['acta']}: {pdf['tipo']} · {', '.join(pdf['articulos']) or 'sin artículo'}"
               f"{' · motivo ' + pdf['motivo'] if pdf['motivo'] else ''} · {plazo_legible(pdf) or 'sin plazo'} · vence {venc or '—'}"
               f"{'  (antes: ' + str(anterior[0]) + ')' if nuevo != anterior else ''}", flush=True)
-    print(f"Reinterpretadas: {len(filas)}; con tipo, artículo o motivo distinto: {cambiadas}", flush=True)
+    print(f"Reinterpretadas: {len(filas)}; con tipo, artículo o motivo distinto: {cambiadas}; sin entender: {len(sin_entender)}", flush=True)
+    enviar_aviso_vistas(sin_entender)
 
 
 def guardar_resultado(conn, acta, categoria, datos_vista):
@@ -324,6 +369,7 @@ def main():
     inicio = time.time()
     duraciones, duraciones_exp, duraciones_pdf = [], [], []
     conteo, candidatas = {}, []
+    sin_entender = []  # vistas que el lector no supo interpretar (se avisa por mail al final)
     consultadas = 0
     corte = None
 
@@ -386,6 +432,15 @@ def main():
                                       f", plazo {plazo_legible(pdf) or 'no encontrado'}, vence según texto {pdf.get('vencimiento_texto') or '—'}")
                         elif est["estado"] in ("vista_pendiente", "con_apoderado"):
                             extra += " | PDF: no se pudo leer"
+                        if est["estado"] in ("vista_pendiente", "con_apoderado") or actas_pedidas:
+                            problemas = problemas_de_lectura(pdf or None)
+                            # el mismo texto ya avisado en una corrida anterior no se repite
+                            if problemas and args.guardar and pdf.get("texto") and _texto_guardado(conn, m["acta"]) == pdf["texto"]:
+                                problemas = []
+                            if problemas:
+                                sin_entender.append({"acta": m["acta"], "marca": m["denominacion"], "tipo": pdf.get("tipo"),
+                                                     "problemas": problemas, "texto": pdf.get("texto")})
+                                extra += " | LECTOR: " + "; ".join(problemas)
                         datos_vista = {
                             "estado": estado_v, "fecha": vista, "notificacion": est["notificacion"],
                             "vencimiento": est["vencimiento"],
@@ -445,6 +500,7 @@ def main():
         lineas.append(f"AVISO: la prueba se cortó antes de terminar: {corte}")
 
     if args.guardar:
+        enviar_aviso_vistas(sin_entender)
         conn.close()
         lineas.append("Resultado guardado en el panel (columnas de vista de cada marca)")
     print("\n=== Resultado de la prueba ===")

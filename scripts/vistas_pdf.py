@@ -146,6 +146,26 @@ def parsear_vista(texto: str) -> dict:
     }
 
 
+MAX_LARGO_ANTECEDENTE = 80  # un «acta (denominación)» más largo que esto casi seguro arrastra texto de más
+
+
+def problemas_de_lectura(parsed: dict | None) -> list[str]:
+    """Qué no pudo entender el lector de una vista ([] = todo claro). Es lo que dispara el mail
+    «Una vista que el sistema no supo leer» para que alguien mire el texto y mejore el lector."""
+    if not parsed:
+        return ["no se pudo bajar o leer el PDF de la vista"]
+    problemas = []
+    if parsed["tipo"] == "desconocido":
+        problemas.append("no se reconoce el tipo de vista")
+    elif parsed["tipo"] in ("fondo", "fondo_y_formal") and not parsed["articulos"]:
+        problemas.append("es de fondo pero no se encontró el artículo")
+    if not parsed["plazos"]:
+        problemas.append("no se encontró el plazo para contestar")
+    if any(len(a) > MAX_LARGO_ANTECEDENTE for a in parsed["antecedentes"]):
+        problemas.append("la marca anterior parece traer texto de más")
+    return problemas
+
+
 def sumar_dias_habiles(inicio_iso: str, n: int) -> str:
     """n días hábiles después de inicio (lunes a viernes; no descuenta feriados)."""
     d = dt.date.fromisoformat(inicio_iso)
