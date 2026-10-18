@@ -188,6 +188,8 @@ def reinterpretar(conn, hoy_iso):
                  estado in ESTADOS_VISTA_QUE_SIRVEN, _detalle_vista(est, pdf), f["acta"]),
             )
         conn.commit()
+        if pdf["tipo"] == "desconocido":
+            print(f"    texto sin reconocer: {(f['vista_texto'] or '')[:400]}", flush=True)
         if nuevo != anterior:
             cambiadas += 1
         print(f"  acta {f['acta']}: {pdf['tipo']} · {', '.join(pdf['articulos']) or 'sin artículo'}"

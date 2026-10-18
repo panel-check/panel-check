@@ -62,6 +62,35 @@ CLASIFICACION = (
 )
 
 
+# Formato «Dese vista…» (actas 4800811 ANIMA y 4802093 SOCIALMENTE, corrida del 18/10/2026). Reconstruido a
+# partir de lo que se vio en el panel: antecedente con denominación y la providencia con el artículo escrito.
+DESE_VISTA = (
+    "acta_antecedente: 4632039; denom: ANIMA. . Dese vista al interesado de lo establecido en el artículo 3, "
+    "inciso a), de la Ley 22.362 por el plazo de 30 días corridos. NOTIFÍQUESE. FERREIRA LIA CAROLINA - 27230862759"
+)
+
+
+class DeseVista(unittest.TestCase):
+    def test_articulo_escrito_con_palabras(self):
+        r = parsear_vista(DESE_VISTA)
+        self.assertEqual((r["tipo"], r["articulos"]), ("fondo", ["Art. 3 inc. a)"]))
+        self.assertEqual(r["plazos"], [(30, "corridos")])
+
+    def test_antecedente_no_arrastra_el_resto_del_texto(self):
+        self.assertEqual(parsear_vista(DESE_VISTA)["antecedentes"], ["4632039 (ANIMA)"])
+
+    def test_sin_antecedente_tambien_se_reconoce(self):
+        r = parsear_vista("Dese vista al interesado de lo establecido en el artículo 2, inciso b) de la Ley 22.362. NOTIFÍQUESE.")
+        self.assertEqual((r["tipo"], r["articulos"], r["antecedentes"]), ("fondo", ["Art. 2 inc. b)"], []))
+
+    def test_la_forma_abreviada_sigue_andando(self):
+        self.assertEqual(parsear_vista(FONDO_3A_ANTECEDENTE)["antecedentes"], ["4011896 (FELICIANO)"])
+        self.assertEqual(parsear_vista(FONDO_3A_ANTECEDENTE)["articulos"], ["Art. 3 inc. a)"])
+
+    def test_el_decreto_no_se_confunde_con_la_ley(self):
+        self.assertEqual(parsear_vista("conforme al artículo 12, inciso a) del decreto 242/19")["articulos"], [])
+
+
 class TiposNuevos(unittest.TestCase):
     def test_convenio_de_paris_6_ter_emblema_de_estado(self):
         r = parsear_vista(PARIS_6TER)
