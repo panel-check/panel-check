@@ -95,6 +95,13 @@
       boton.setAttribute("aria-label", boton.title);
     }
     if (badge) badge.textContent = n > 0 ? (n > 9 ? "9+" : String(n)) : "";
+    // Mismo aviso en la versión celular: el puntito del cuadrado «Chat» en la
+    // hoja de secciones, y el de la pestaña «Más» para que se note sin
+    // necesidad de abrirla.
+    const puntoChat = document.querySelector('.seccion-tile[data-accion="chat"] .seccion-tile-badge');
+    if (puntoChat) puntoChat.hidden = !(n > 0);
+    const puntoMas = document.querySelector(".tab-bar-mobil .tab-mas .tab-badge");
+    if (puntoMas) puntoMas.hidden = !(n > 0);
     document.title = n > 0 ? `(${n}) ${TITULO_ORIGINAL}` : TITULO_ORIGINAL;
   }
 
@@ -206,6 +213,7 @@
     const iframe = panel.querySelector("iframe");
     if (abrir) {
       if (typeof agendaAbierta === "function" && agendaAbierta()) abrirAgenda(false);   // comparten el mismo lugar
+      if (typeof sheetAbierto === "function" && sheetAbierto()) abrirSheet(false);      // idem con la hoja de secciones (celular)
       cerrarCartel();
       const url = "/comentarios?embebido=1" + (acta ? "&acta=" + encodeURIComponent(acta) : "");
       // Se carga al abrir por primera vez (o si piden un acta puntual); al reabrir se refresca la lista.
@@ -219,6 +227,8 @@
       boton.classList.toggle("activa", !!abrir);
       boton.setAttribute("aria-expanded", abrir ? "true" : "false");
     }
+    const tileChat = document.querySelector('.seccion-tile[data-accion="chat"]');
+    if (tileChat) tileChat.classList.toggle("activa", !!abrir);
     if (abrir) {
       await marcarVisto();   // al abrir el chat, lo que había queda leído
       pintarNuevos(0);
@@ -602,6 +612,7 @@
     }
     if (abrir) {
       if (panelAbierto()) abrirChat(false);   // comparten el mismo lugar
+      if (typeof sheetAbierto === "function" && sheetAbierto()) abrirSheet(false);   // idem con la hoja de secciones (celular)
       pestanaAgenda(pestanaActual, true);
     }
     void panelAgenda.offsetWidth;   // reflow para que la animación arranque aunque se haya recién creado
@@ -611,6 +622,10 @@
       boton.classList.toggle("activa", !!abrir);
       boton.setAttribute("aria-expanded", abrir ? "true" : "false");
     }
+    // Mismo estado «activo» en la versión celular: la pestaña «Llamada» de
+    // la barra de abajo y su cuadrado en la hoja de secciones.
+    document.querySelectorAll('.tab-bar-mobil .tab[data-accion="llamada"], .seccion-tile[data-accion="llamada"]')
+      .forEach((b) => b.classList.toggle("activa", !!abrir));
   }
 
   function enlaceNav(clase, href, titulo, svg) {
@@ -650,7 +665,163 @@
     if (window.top === window && guardado("kom-agenda-panel") === "1") abrirAgenda(true);
   }
 
-  function iniciar() { iniciarAccesos(); iniciarBusqueda(); iniciarAtajos(); iniciarGrupos(); iniciarChat(); }
+  // ── Secciones (celular) ──────────────────────────────────────────────
+  // A partir de 640px de ancho (mismo corte que las tarjetas de Leads y de
+  // la ficha de titular) el menú de arriba se esconde — ver el CSS — y se
+  // reemplaza por esto: una barra fija abajo con 4 accesos (Leads,
+  // Calendario, Llamada, Clientes) + «Más», que abre una hoja con esas 4
+  // más el resto de las secciones. En «/» la hoja se abre sola al entrar:
+  // es el «home» de la versión celular. Llamada y Chat no son páginas,
+  // abren el panel que ya existe (Agendar llamada / Chat). Boceto aprobado
+  // 18/10/2026 (variante B: hoja que sube desde la barra de abajo).
+  const FIJAS = [
+    { id: "leads", nombre: "Leads", href: "/", color: "#015197",
+      svg: '<path d="M3 5h18M3 12h18M3 19h12"/>' },
+    { id: "calendario", nombre: "Calendario", href: "/calendario", color: "#015197",
+      svg: '<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/>' },
+    { id: "llamada", nombre: "Llamada", color: "#1a8754", accion: "llamada",
+      svg: '<path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/>' },
+    { id: "clientes", nombre: "Clientes", href: "/clientes", color: "#015197",
+      svg: '<path d="M16 20v-1.5a3.5 3.5 0 0 0-3.5-3.5h-5A3.5 3.5 0 0 0 4 18.5V20"/><circle cx="10" cy="8" r="3.5"/><path d="M20 20v-1.5a3.5 3.5 0 0 0-2.5-3.35M15 4.6a3.5 3.5 0 0 1 0 6.8"/>' },
+  ];
+  const SECCIONES = [
+    { id: "crm", nombre: "CRM", href: "/crm", color: "#015197",
+      svg: '<rect x="3" y="4" width="5" height="16" rx="1.5"/><rect x="10" y="4" width="5" height="11" rx="1.5"/><rect x="17" y="4" width="4" height="7" rx="1.5"/>' },
+    { id: "boletines", nombre: "Boletines", href: "/boletines", color: "#475569",
+      svg: '<path d="M4 4h13a2 2 0 0 1 2 2v14H6a2 2 0 0 1-2-2z"/><path d="M19 8h1a1 1 0 0 1 1 1v9a2 2 0 0 1-2 2"/><path d="M8 8h7M8 12h7M8 16h4"/>' },
+    { id: "crons", nombre: "Crons", href: "/crons", color: "#475569",
+      svg: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>' },
+    { id: "consultas-web", nombre: "Consultas web", href: "/consultas-web", color: "#475569",
+      svg: '<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/>' },
+    { id: "mails", nombre: "Mails", href: "/mails", color: "#475569",
+      svg: '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/>' },
+    { id: "chat", nombre: "Chat", color: "#1a8754", accion: "chat",
+      svg: '<path d="M21 15a2 2 0 0 1-2 2H8l-5 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>' },
+    { id: "ayuda", nombre: "Ayuda", href: "/ayuda", color: "#e8f1fa", outline: true,
+      svg: '<circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.6v.6"/><path d="M12 17h.01"/>' },
+  ];
+  const ID_FIJAS = FIJAS.map((s) => s.id);
+
+  // Qué sección es la pantalla actual, para marcar «activo» en la barra y
+  // en la hoja. La ficha de un lead (/titular/...) cuenta como Leads: se
+  // llega siempre desde ahí.
+  function seccionActual() {
+    const p = location.pathname;
+    if (p === "/" || p.startsWith("/titular/")) return "leads";
+    const mapa = {
+      "/calendario": "calendario", "/clientes": "clientes", "/crm": "crm",
+      "/boletines": "boletines", "/crons": "crons", "/consultas-web": "consultas-web",
+      "/mails": "mails", "/ayuda": "ayuda",
+      "/agendar-llamada": "llamada", "/disponibilidad": "llamada",
+    };
+    return mapa[p] || null;
+  }
+  function masActivo() {
+    const s = seccionActual();
+    return s !== null && !ID_FIJAS.includes(s);
+  }
+
+  function cuadradoHtml(s) {
+    const activa = s.id === seccionActual();
+    const borde = s.outline ? "1.5px solid #015197" : "1px solid var(--borde)";
+    const fondoCaja = activa ? "var(--azul-claro)" : "#fff";
+    const fondoIcono = s.outline ? "#e8f1fa" : s.color;
+    const colorIcono = s.outline ? "#015197" : "#fff";
+    return `
+      <button type="button" class="seccion-tile${activa ? " activa" : ""}" data-seccion="${s.id}" data-accion="${s.accion || ""}" data-href="${s.href || ""}" style="border:${borde};background:${fondoCaja};">
+        <span class="seccion-tile-ico" style="width:44px;height:44px;background:${fondoIcono};">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="${colorIcono}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${s.svg}</svg>
+        </span>
+        <span class="seccion-tile-badge" hidden></span>
+        <span class="seccion-tile-txt">${s.nombre}</span>
+      </button>`;
+  }
+
+  let sheetEl = null;
+
+  function sheetAbierto() { return !!(sheetEl && sheetEl.classList.contains("abierto")); }
+
+  function crearSheet() {
+    sheetEl = document.createElement("div");
+    sheetEl.className = "sheet-secciones";
+    sheetEl.innerHTML = `
+      <div class="sheet-secciones-scrim"></div>
+      <div class="sheet-secciones-hoja" role="dialog" aria-modal="true" aria-label="Elegir sección">
+        <div class="sheet-secciones-agarre" aria-hidden="true"></div>
+        <div class="sheet-secciones-titulo">Secciones</div>
+        <div class="sheet-secciones-grid">
+          ${FIJAS.map(cuadradoHtml).join("")}
+          ${SECCIONES.map(cuadradoHtml).join("")}
+        </div>
+      </div>`;
+    document.body.appendChild(sheetEl);
+    sheetEl.querySelector(".sheet-secciones-scrim").addEventListener("click", () => abrirSheet(false));
+    sheetEl.addEventListener("click", (e) => {
+      const btn = e.target.closest(".seccion-tile");
+      if (!btn) return;
+      const accion = btn.dataset.accion;
+      if (accion === "chat") { abrirSheet(false); abrirChat(true); return; }
+      if (accion === "llamada") { abrirSheet(false); abrirAgenda(true); return; }
+      const href = btn.dataset.href;
+      abrirSheet(false);
+      if (href && href !== location.pathname) location.href = href;
+    });
+  }
+
+  function abrirSheet(abrir) {
+    if (!sheetEl) {
+      if (!abrir) return;
+      crearSheet();
+    }
+    if (abrir) {
+      if (panelAbierto()) abrirChat(false);         // comparten el mismo lugar
+      if (agendaAbierta()) abrirAgenda(false);
+    }
+    void sheetEl.offsetWidth;   // reflow para que la animación arranque aunque se haya recién creado
+    sheetEl.classList.toggle("abierto", !!abrir);
+    const tabMas = document.querySelector(".tab-bar-mobil .tab-mas");
+    if (tabMas) tabMas.setAttribute("aria-expanded", abrir ? "true" : "false");
+  }
+
+  function crearBarraMobil() {
+    const barra = document.createElement("nav");
+    barra.className = "tab-bar-mobil";
+    barra.setAttribute("aria-label", "Secciones (celular)");
+    barra.innerHTML = FIJAS.map((s) => {
+      const activa = s.id === seccionActual();
+      return `<button type="button" class="tab${activa ? " activa" : ""}" data-seccion="${s.id}" data-accion="${s.accion || ""}" data-href="${s.href || ""}">
+        <svg class="tab-ico" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${s.svg}</svg>
+        <span class="tab-badge" hidden></span>
+        <span class="tab-txt">${s.nombre}</span>
+      </button>`;
+    }).join("") + `
+      <button type="button" class="tab tab-mas${masActivo() ? " activa" : ""}" aria-haspopup="true" aria-expanded="false">
+        <svg class="tab-ico" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="8" height="8" rx="1.5"/><rect x="13" y="3" width="8" height="8" rx="1.5"/><rect x="3" y="13" width="8" height="8" rx="1.5"/><rect x="13" y="13" width="8" height="8" rx="1.5"/></svg>
+        <span class="tab-badge" hidden></span>
+        <span class="tab-txt">Más</span>
+      </button>`;
+    document.body.appendChild(barra);
+    barra.addEventListener("click", (e) => {
+      const btn = e.target.closest(".tab");
+      if (!btn) return;
+      if (btn.classList.contains("tab-mas")) { abrirSheet(!sheetAbierto()); return; }
+      const accion = btn.dataset.accion;
+      if (accion === "llamada") { abrirAgenda(!agendaAbierta()); return; }
+      const href = btn.dataset.href;
+      if (href && href !== location.pathname) location.href = href;
+    });
+    document.addEventListener("keydown", (e) => { if (e.key === "Escape" && sheetAbierto()) abrirSheet(false); });
+  }
+
+  function iniciarSecciones() {
+    if (!document.querySelector(".app-header")) return;
+    if (document.querySelector(".tab-bar-mobil")) return;
+    crearBarraMobil();
+    // Home de la versión celular: al entrar en «/» la hoja se abre sola.
+    if (location.pathname === "/" && window.matchMedia("(max-width: 640px)").matches) abrirSheet(true);
+  }
+
+  function iniciar() { iniciarSecciones(); iniciarAccesos(); iniciarBusqueda(); iniciarAtajos(); iniciarGrupos(); iniciarChat(); }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", iniciar);
   else iniciar();
 })();

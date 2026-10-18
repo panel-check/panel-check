@@ -954,6 +954,96 @@ button.flecha-grupo {
   #tabla-marca-titular td.celda-acciones .btn-coment { flex: 0 0 auto; min-height: 34px; min-width: 34px; }
 }
 
+/* ── Secciones (celular): barra fija abajo + hoja «Más» ───────────────────
+   A partir de 640px (mismo corte que las tarjetas de arriba) el menú de
+   arriba (los links de página, el submenú «Más», teléfono y chat) se
+   esconde: lo reemplaza menu.js con una barra fija abajo (Leads,
+   Calendario, Llamada, Clientes + «Más») y una hoja que sube desde ahí con
+   esas 4 más el resto de las secciones. La lupa y el rayo de accesos
+   rápidos NO se esconden: siguen arriba, ahora con más lugar. En «/» la
+   hoja se abre sola — es el «home» de la versión celular.
+   Boceto aprobado 18/10/2026 (variante B). */
+@media (max-width: 640px) {
+  .app-header .nav > a,
+  .app-header .nav-grupo:not(.nav-rayo),
+  .app-header .nav-coment {
+    display: none;
+  }
+  body { padding-bottom: 60px; }
+}
+
+.tab-bar-mobil { display: none; }
+@media (max-width: 640px) {
+  .tab-bar-mobil {
+    display: flex;
+    position: fixed;
+    left: 0; right: 0; bottom: 0;
+    height: 60px;
+    padding-bottom: env(safe-area-inset-bottom, 0);
+    background: #fff;
+    border-top: 1px solid var(--borde);
+    z-index: 35;
+  }
+}
+.tab-bar-mobil .tab {
+  flex: 1 1 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  border: 0;
+  background: none;
+  color: #9aa1ab;
+  font-family: inherit;
+  cursor: pointer;
+  position: relative;
+  padding: 6px 2px 0;
+}
+.tab-bar-mobil .tab-ico { flex-shrink: 0; }
+.tab-bar-mobil .tab.activa { color: var(--azul); }
+.tab-bar-mobil .tab-txt { font-size: 10px; font-weight: 600; }
+.tab-bar-mobil .tab.activa .tab-txt { font-weight: 700; }
+.tab-bar-mobil .tab-badge {
+  position: absolute; top: 3px; right: calc(50% - 15px);
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--rojo); border: 1.5px solid #fff;
+}
+
+.sheet-secciones { display: none; }
+.sheet-secciones.abierto { display: block; }
+.sheet-secciones-scrim {
+  position: fixed; inset: 0; background: rgba(31, 36, 48, .45); z-index: 55; border: 0; padding: 0;
+}
+.sheet-secciones-hoja {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 56;
+  background: #fff; border-radius: 18px 18px 0 0;
+  box-shadow: 0 -12px 30px rgba(31, 36, 48, .22);
+  padding: 10px 16px calc(16px + env(safe-area-inset-bottom, 0));
+  max-height: 80vh; overflow: auto;
+}
+.sheet-secciones-agarre { width: 36px; height: 4px; border-radius: 2px; background: var(--borde-control); margin: 0 auto 10px; }
+.sheet-secciones-titulo { font-size: 13px; font-weight: 700; color: var(--texto); margin-bottom: 10px; }
+.sheet-secciones-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 11px; }
+.seccion-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 7px;
+  padding: 13px 4px 11px;
+  border-radius: 16px;
+  position: relative;
+  font-family: inherit;
+  cursor: pointer;
+}
+.seccion-tile-ico { border-radius: 12px; display: flex; align-items: center; justify-content: center; }
+.seccion-tile-txt { font-size: 11.5px; font-weight: 600; color: var(--texto); text-align: center; line-height: 1.25; }
+.seccion-tile.activa .seccion-tile-txt { color: var(--azul-oscuro); }
+.seccion-tile-badge {
+  position: absolute; top: 9px; right: 9px; width: 9px; height: 9px; border-radius: 50%;
+  background: var(--rojo); border: 2px solid #fff;
+}
+
 .vacio {
   padding: 40px;
   text-align: center;
