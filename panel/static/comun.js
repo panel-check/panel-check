@@ -160,7 +160,10 @@ const ESTADOS_VISTA_PRE = {
 };
 
 // Tipo de vista según el PDF: de fondo (observa el signo, 30 días corridos) o formal (pide logotipos, 10 días hábiles).
-const TIPOS_VISTA_PRE = { fondo: "de fondo", formal: "formal (logos)", fondo_y_formal: "de fondo y formal" };
+const TIPOS_VISTA_PRE = {
+  fondo: "de fondo", formal: "formal (logos)", fondo_y_formal: "de fondo y formal",
+  convenio_paris: "Convenio de París", clasificacion: "formal (productos/servicios)",
+};
 
 // Cache de filas con vista antes de publicar, clave = acta: el popup (abrirModalVistaPre) lee de acá.
 window._filasVistaPre = window._filasVistaPre || {};
@@ -196,6 +199,7 @@ const ARTICULOS_VISTA = {
   "Art. 2 inc. a)": "El signo sería la designación necesaria o habitual del producto o servicio, o descriptivo de sus características (no distingue).",
   "Art. 2 inc. b)": "El signo habría pasado al uso general antes de la solicitud (no distingue).",
   "Art. 3 inc. a)": "El signo sería idéntico o parecido a una marca ya registrada o solicitada antes para productos o servicios iguales o parecidos.",
+  "Art. 3 inc. f)": "No se pueden registrar letras, palabras, nombres, distintivos ni símbolos que usen o deban usar la Nación, las provincias, las municipalidades, las organizaciones religiosas y sanitarias.",
 };
 
 function abrirModalVistaPre(acta) {
@@ -206,7 +210,10 @@ function abrirModalVistaPre(acta) {
   const e = ESTADOS_VISTA_PRE[row.vista_estado];
   const tipo = row.vista_tipo;
   const esFondo = tipo === "fondo" || tipo === "fondo_y_formal";
+  const esParis = tipo === "convenio_paris";
+  const esClasif = tipo === "clasificacion";
   const esFormal = tipo === "formal" || tipo === "fondo_y_formal";
+  const motivo = row.vista_motivo ? _escapeHtml(row.vista_motivo) : "";
   const venc = _vencimientoVistaPre(row);
 
   const fechas = [
@@ -221,16 +228,27 @@ function abrirModalVistaPre(acta) {
       `${fechas ? `<br><span class="mo-doc">${fechas}</span>` : ""}</p>`
     : "";
 
-  const articulos = (row.vista_articulos || "").split(",").map(a => a.trim()).filter(Boolean);
+  // Los artículos se guardan separados por «, » pero «Convenio de París, art. 6 bis» lleva una coma adentro.
+  const articulos = (row.vista_articulos || "").split(/,\s*(?=Art\.|Convenio)/).map(a => a.trim()).filter(Boolean);
   const bloqueFondo = esFondo ? `
-    <p class="mo-oponente"><strong>Vista de fondo</strong> — INPI observa el signo${articulos.length ? "" : ""}:</p>
+    <p class="mo-oponente"><strong>Vista de fondo</strong> — INPI observa el signo:</p>
     ${articulos.map(a => `<p class="mo-fundamento"><strong>${_escapeHtml(a)} de la Ley 22.362.</strong> ${_escapeHtml(ARTICULOS_VISTA[a] || "")}</p>`).join("")}
     <p class="mo-doc">Plazo: 30 días corridos (Res. INPI P 123/2019), ampliable con las extensiones automáticas pagando el arancel (cód. 770.001). Es la que se puede defender: el servicio es contestar la vista con argumentos.</p>` : "";
+  const bloqueParis = esParis ? `
+    <p class="mo-oponente"><strong>Vista por el Convenio de París</strong> — INPI observa el signo por un tema de marcas notorias o emblemas oficiales:</p>
+    ${articulos.map(a => `<p class="mo-fundamento"><strong>${_escapeHtml(a)}.</strong> ${a.includes("6 bis")
+      ? `INPI considera que el signo podría reproducir, imitar o traducir una marca notoriamente conocida${motivo ? ` (<strong>${motivo}</strong>)` : ""} y crear confusión.`
+      : `El término${motivo ? ` <strong>${motivo}</strong>` : ""} está reconocido como símbolo o emblema de Estado, por lo que INPI considera vedado su registro para otro titular.`}</p>`).join("")}
+    <p class="mo-doc">Plazo: 30 días corridos, ampliable con las extensiones automáticas pagando el arancel. El titular tiene que expresar las razones que hacen a su derecho. Es una vista de fondo: se puede defender.</p>` : "";
+  const bloqueClasif = esClasif ? `
+    <p class="mo-oponente"><strong>Vista formal de clasificación</strong> — INPI pide precisar la lista de productos o servicios${motivo ? ` (la expresión <strong>${motivo}</strong> es imprecisa)` : ""} y eliminar los que no corresponden a la clase solicitada:</p>
+    <p class="mo-fundamento">Se contesta con un escrito que limite correctamente los productos y servicios a distinguir.</p>
+    <p class="mo-doc">Plazo: 10 días hábiles (art. 12 del decreto 242/19) bajo apercibimiento de resolución denegatoria. Es un trámite simple.</p>` : "";
   const bloqueFormal = esFormal ? `
     <p class="mo-oponente"><strong>Vista formal</strong> — INPI pide subir los logotipos de nuevo:</p>
     <p class="mo-fundamento">Archivo JPG o BMP de 200 a 300 DPI y hasta 2 MB; trazos de al menos 0,3 mm y tipografías de al menos 2 mm; si se reivindican colores, el logo en esos colores, y si no, en negro o escala de grises. Se contesta pagando el arancel de contestación de vista formal (cód. 750001): sin pagarlo la contestación es nula.</p>
     <p class="mo-doc">Plazo: 10 días hábiles (art. 12 del decreto 242/19) bajo apercibimiento de resolución denegatoria. Es un trámite más simple y barato; muchos titulares lo resuelven solos.</p>` : "";
-  const bloqueTipo = (esFondo || esFormal) ? "" : `<p class="mo-fundamento">No se pudo leer el tipo de esta vista. ${row.vista_detalle ? _escapeHtml(row.vista_detalle) : ""}</p>`;
+  const bloqueTipo = (esFondo || esParis || esClasif || esFormal) ? "" : `<p class="mo-fundamento">No se pudo leer el tipo de esta vista. ${row.vista_detalle ? _escapeHtml(row.vista_detalle) : ""}</p>`;
 
   const antecedentes = (row.vista_antecedente || "").split(";").map(a => a.trim()).filter(Boolean);
   const bloqueAntecedente = antecedentes.length ? `
@@ -240,7 +258,7 @@ function abrirModalVistaPre(acta) {
 
   document.getElementById("modal-oposicion-contenido").innerHTML = `
     <h3>👁 Vista antes de publicar — acta ${_escapeHtml(row.acta)}</h3>
-    ${estadoHtml}${bloqueFondo}${bloqueFormal}${bloqueTipo}${bloqueAntecedente}
+    ${estadoHtml}${bloqueFondo}${bloqueParis}${bloqueClasif}${bloqueFormal}${bloqueTipo}${bloqueAntecedente}
     <p><a class="link-acta" href="javascript:void(0)" onclick="abrirActa('${_idSeguro(row.acta)}')">Ver expediente completo en INPI ↗</a></p>`;
   document.getElementById("modal-oposicion").classList.add("abierto");
 }

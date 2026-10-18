@@ -13,6 +13,14 @@ distintos (confirmado con los textos reales del 17/10/2026):
   formal  "Se hace saber al interesado que deberá acompañar nuevos logotipos ...
           Notifíquese: por el plazo de 10 (diez) días hábiles bajo apercibimiento de
           dictar resolución denegatoria, conforme al artículo 12 del decreto 242/19".
+  convenio_paris  (visto el 17/10/2026, 30 días corridos) "El signo bajo análisis podría constituir
+          la reproducción, imitación o traducción de una marca notoriamente conocida, a saber
+          "NIKE" ... Convenio de París, artículo 6bis" (marca notoria), o "El término "PATAGONIA"
+          ha obtenido el reconocimiento ... como Símbolo/Emblema de Estado Nacional ... art. 6 Ter
+          Convenio Unión de París" (emblema oficial).
+  clasificacion  (formal, 10 días hábiles) "deberá presentar escrito limitando correctamente los
+          productos/servicios a distinguir, toda vez que la expresión "STOCK" resulta imprecisa ...
+          deberá eliminar los siguientes productos/servicios por no corresponder a la clase".
 
 El texto que sale del PDF viene con palabras pegadas ("seencuentraalcanzado",
 "30 díascorridos") y con el orden de los bloques mezclado, así que todo se busca
@@ -39,6 +47,14 @@ RE_PLAZO = re.compile(
 RE_ARTICULO = re.compile(
     r"\bART\.?\s*(\d+)\s*(?:INC\.?\s*)?\(?\s*((?-i:[A-Z]))?\s*\)?\s*(?:d\s*e\s*)?(?:l\s*a\s*|l\s*)?Ley",
     re.I)
+# Convenio de París: 6 bis (marca notoriamente conocida) o 6 ter (emblemas oficiales)
+RE_PARIS = re.compile(r"\b6\s*(bis|ter)\b", re.I)
+RE_CONVENIO = re.compile(r"Convenio\s+(?:de\s+|Uni[oó]n\s+de\s+)?(?:la\s+Uni[oó]n\s+de\s+)?Par[ií]s", re.I)
+RE_MOTIVO_NOTORIA = re.compile(r"a\s*saber\s*[\"“«]([^\"”»]{1,80})[\"”»]", re.I)
+RE_MOTIVO_TERMINO = re.compile(r"t[eé]rmino\s*[\"“«]([^\"”»]{1,80})[\"”»]", re.I)
+RE_MOTIVO_EXPRESION = re.compile(r"expresi[oó]n\s*[\"“«]([^\"”»]{1,80})[\"”»]", re.I)
+RE_CLASIFICACION = re.compile(
+    r"limitando\s*correctamente\s*los\s*productos|no\s*corresponder\s*a\s*la\s*clase|clasificaci[oó]n\s*de\s*(?:los\s*)?productos", re.I)
 RE_ANTECEDENTE = re.compile(r"acta_antecedente:\s*(\d+)\s*;?\s*(?:denom:\s*(.*?))?\s*(?=El\s*signo|acta_antecedente|$)", re.I)
 
 
@@ -53,8 +69,9 @@ def _norm(s: str) -> str:
 
 def parsear_vista(texto: str) -> dict:
     """Interpreta el texto de una vista. Devuelve:
-        tipo: 'fondo' | 'formal' | 'fondo_y_formal' | 'desconocido'
-        articulos: ['Art. 3 inc. a)', ...] (de fondo)
+        tipo: 'fondo' | 'convenio_paris' | 'clasificacion' | 'formal' | 'fondo_y_formal' | 'desconocido'
+        articulos: ['Art. 3 inc. a)', ...] de la Ley 22.362, o ['Convenio de París, art. 6 bis']
+        motivo: lo que INPI cita como causa ("NIKE", "PATAGONIA", "STOCK") o ''
         antecedentes: ['4011896 (FELICIANO)', ...]
         plazos: [(30, 'corridos'), (10, 'habiles')] en el orden en que aparecen
         extensiones_automaticas: True si menciona las extensiones automáticas pagas
@@ -67,6 +84,7 @@ def parsear_vista(texto: str) -> dict:
             art += f" inc. {m.group(2).lower()})"
         if art not in articulos:
             articulos.append(art)
+    es_ley = bool(articulos)
     antecedentes = []
     for m in RE_ANTECEDENTE.finditer(p):
         denom = (m.group(2) or "").strip(" ;")
@@ -78,13 +96,42 @@ def parsear_vista(texto: str) -> dict:
             plazos.append(par)
     # Un número de días suelto que no es plazo de la vista no se cuenta (ej. "200 y 300 DPI" no matchea).
     compacto = re.sub(r"\s+", "", p).lower()
-    es_fondo = bool(articulos) or "ley22.362" in compacto and "elsignopretendido" in compacto
-    es_formal = "logotipo" in compacto or "vistaformal" in compacto or "decreto242/19" in compacto
-    tipo = ("fondo_y_formal" if es_fondo and es_formal else "fondo" if es_fondo
-            else "formal" if es_formal else "desconocido")
+
+    # Convenio de París (marca notoria 6 bis / emblema oficial 6 ter)
+    es_paris = bool(RE_PARIS.search(p)) and bool(RE_CONVENIO.search(p) or "notoriamente" in compacto or "emblema" in compacto)
+    motivo = ""
+    if es_paris:
+        for m in RE_PARIS.finditer(p):
+            art = f"Convenio de París, art. 6 {m.group(1).lower()}"
+            if art not in articulos:
+                articulos.append(art)
+        m = RE_MOTIVO_NOTORIA.search(p) or RE_MOTIVO_TERMINO.search(p)
+        motivo = m.group(1).strip() if m else ""
+
+    es_clasificacion = bool(RE_CLASIFICACION.search(p))
+    if es_clasificacion and not motivo:
+        m = RE_MOTIVO_EXPRESION.search(p)
+        motivo = m.group(1).strip() if m else ""
+
+    es_fondo = es_ley or ("ley22.362" in compacto and "elsignopretendido" in compacto)
+    es_logos = "logotipo" in compacto
+    es_formal = es_logos or es_clasificacion or "vistaformal" in compacto or "decreto242/19" in compacto
+    if es_fondo and es_logos:
+        tipo = "fondo_y_formal"
+    elif es_fondo:
+        tipo = "fondo"
+    elif es_paris:
+        tipo = "convenio_paris"
+    elif es_clasificacion and not es_logos:
+        tipo = "clasificacion"
+    elif es_formal:
+        tipo = "formal"
+    else:
+        tipo = "desconocido"
     return {
         "tipo": tipo,
         "articulos": articulos,
+        "motivo": motivo,
         "antecedentes": antecedentes,
         "plazos": plazos,
         "extensiones_automaticas": "extensionesautom" in compacto,
