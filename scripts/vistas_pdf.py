@@ -47,10 +47,15 @@ RE_PLAZO = re.compile(
 RE_ARTICULO = re.compile(
     r"\bART\.?\s*(\d+)\s*(?:INC\.?\s*)?\(?\s*((?-i:[A-Z]))?\s*\)?\s*(?:d\s*e\s*)?(?:l\s*a\s*|l\s*)?Ley",
     re.I)
-# Variante «Dese vista al interesado de lo establecido en el artículo 3, inciso a), de la Ley 22.362»
+# Variante «Dese vista al interesado de lo establecido en el artículo 3°, inciso a), de la Ley 22.362»,
+# «incisos a) y b)», «los artículos 3º inc. e) y 4º» o «el art. 3 inc. a) de la Ley 22.362»: se buscan
+# en el tramo de texto justo antes de cada «Ley 22.362».
+RE_LEY_22362 = re.compile(r"Ley\s*(?:N[°º.]?\s*)?22\.?362", re.I)
 RE_ARTICULO_LARGO = re.compile(
-    r"\bart[ií]culos?\s*(\d+)\s*,?\s*inc(?:iso|\.)?\s*\(?\s*([a-z])\s*\)?\s*,?\s*(?:d\s*e\s*)?(?:l\s*a\s*|l\s*)?Ley\s*(?:N[°º.]?\s*)?22\.?362",
-    re.I)
+    r"(?:art[ií]culos?|arts?\.)\s*(\d+)\s*[°ºo]?\s*,?\s*"
+    r"(?:inc(?:isos?|\.)?\s*(\(?[a-z]\)(?:\s*(?:y|,|e)\s*\(?[a-z]\))*)\s*)?"
+    r"(?:,?\s*y\s*(?:el\s*)?(\d+)\s*[°º]?)?", re.I)
+VENTANA_ARTICULO = 110  # caracteres antes de «Ley 22.362» donde se busca el artículo
 # Convenio de París: 6 bis (marca notoriamente conocida) o 6 ter (emblemas oficiales)
 RE_PARIS = re.compile(r"\b6\s*(bis|ter)\b", re.I)
 RE_CONVENIO = re.compile(r"Convenio\s+(?:de\s+|Uni[oó]n\s+de\s+)?(?:la\s+Uni[oó]n\s+de\s+)?Par[ií]s", re.I)
@@ -62,8 +67,8 @@ RE_CLASIFICACION = re.compile(
 # La denominación del antecedente termina donde empieza lo siguiente: «El signo…», otro antecedente,
 # «Dese vista…», «Notifíquese» o «Visto…» (si no, se llevaba pegado el resto del texto).
 RE_ANTECEDENTE = re.compile(
-    r"acta_antecedente:\s*(\d+)\s*;?\s*(?:denom:\s*(.*?))?\s*"
-    r"(?=El\s*signo|acta_antecedente|D[eé]se\s*vista|Not[ií]f[ií]quese|Visto\s*el|$)", re.I)
+    r"acta_antecedente:\s*(\d+)\s*[;,–—-]?\s*(?:denom:\s*(.*?))?\s*"
+    r"(?=El\s*signo|acta_antecedente|D[eé]se\s*vista|C[uú]rsese|En\s*virtud|Not[ií]f[ií]quese|Visto\s*el|$)", re.I)
 
 
 def _plano(texto: str) -> str:
@@ -86,12 +91,21 @@ def parsear_vista(texto: str) -> dict:
     """
     p = _plano(texto)
     articulos = []
-    for m in sorted(list(RE_ARTICULO.finditer(p)) + list(RE_ARTICULO_LARGO.finditer(p)), key=lambda x: x.start()):
-        art = f"Art. {m.group(1)}"
-        if m.group(2):
-            art += f" inc. {m.group(2).lower()})"
+    hallados = []  # (posición, texto)
+    for m in RE_ARTICULO.finditer(p):
+        hallados.append((m.start(), f"Art. {m.group(1)}" + (f" inc. {m.group(2).lower()})" if m.group(2) else "")))
+    for ley in RE_LEY_22362.finditer(p):
+        desde = max(0, ley.start() - VENTANA_ARTICULO)
+        for m in RE_ARTICULO_LARGO.finditer(p[desde:ley.start()]):
+            letras = re.findall(r"([a-z])\)", m.group(2) or "", re.I)
+            hallados += [(desde + m.start(), f"Art. {m.group(1)} inc. {l.lower()})") for l in letras] or [(desde + m.start(), f"Art. {m.group(1)}")]
+            if m.group(3):
+                hallados.append((desde + m.start(), f"Art. {m.group(3)}"))
+    for _, art in sorted(hallados):
         if art not in articulos:
             articulos.append(art)
+    # «Art. 3» a secas sobra si ya está «Art. 3 inc. a)»
+    articulos = [a for a in articulos if not any(o != a and o.startswith(a + " ") for o in articulos)]
     es_ley = bool(articulos)
     antecedentes = []
     for m in RE_ANTECEDENTE.finditer(p):
@@ -114,12 +128,12 @@ def parsear_vista(texto: str) -> dict:
             if art not in articulos:
                 articulos.append(art)
         m = RE_MOTIVO_NOTORIA.search(p) or RE_MOTIVO_TERMINO.search(p)
-        motivo = m.group(1).strip() if m else ""
+        motivo = m.group(1).strip(" .-_") if m else ""
 
     es_clasificacion = bool(RE_CLASIFICACION.search(p))
     if es_clasificacion and not motivo:
         m = RE_MOTIVO_EXPRESION.search(p)
-        motivo = m.group(1).strip() if m else ""
+        motivo = m.group(1).strip(" .-_") if m else ""
 
     es_fondo = es_ley or ("ley22.362" in compacto and "elsignopretendido" in compacto)
     es_logos = "logotipo" in compacto
