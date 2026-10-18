@@ -201,6 +201,7 @@ const ARTICULOS_VISTA = {
   "Art. 2 inc. a)": "El signo sería la designación necesaria o habitual del producto o servicio, o descriptivo de sus características (no distingue).",
   "Art. 2 inc. b)": "El signo habría pasado al uso general antes de la solicitud (no distingue).",
   "Art. 3 inc. a)": "El signo sería idéntico o parecido a una marca ya registrada o solicitada antes para productos o servicios iguales o parecidos.",
+  "Art. 3 inc. e)": "No se pueden registrar palabras, dibujos ni signos contrarios a la moral y a las buenas costumbres (INPI los evalúa con criterio amplio: ofensivos, vulgares o contrarios al orden público).",
   "Art. 3 inc. f)": "No se pueden registrar letras, palabras, nombres, distintivos ni símbolos que usen o deban usar la Nación, las provincias, las municipalidades, las organizaciones religiosas y sanitarias.",
 };
 
