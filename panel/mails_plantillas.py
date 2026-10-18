@@ -160,6 +160,36 @@ def armar_mail_bloqueo(proceso, motivo, ok, bloqueadas, link=""):
     return f"⚠️ INPI está bloqueando consultas ({proceso})", cuerpo
 
 
+def armar_mail_vistas_sin_entender(items, link=""):
+    """Aviso de vistas que el lector de PDF no supo interpretar -> (asunto, html).
+    items: [{acta, marca, tipo, problemas: [str], texto: str}]"""
+    filas = ""
+    for it in items:
+        problemas = "; ".join(it.get("problemas") or [])
+        texto = (it.get("texto") or "").strip()
+        filas += (
+            f"<tr><td style=\"padding:8px;border-top:1px solid #eaecf0;vertical-align:top\">"
+            f"<b>{html.escape(str(it.get('marca') or '—'))}</b><br>acta {html.escape(str(it['acta']))}</td>"
+            f"<td style=\"padding:8px;border-top:1px solid #eaecf0;vertical-align:top\">{html.escape(problemas)}"
+            f"<br><span style=\"color:#667085\">tipo leído: {html.escape(str(it.get('tipo') or '—'))}</span>"
+            + (f"<div style=\"margin-top:6px;padding:6px;background:#f9fafb;color:#475467;font-size:12px\">"
+               f"{html.escape(texto[:700])}{'…' if len(texto) > 700 else ''}</div>" if texto else "")
+            + "</td></tr>"
+        )
+    n = len(items)
+    cuerpo = (
+        f"<p><b>{n} vista{'s' if n != 1 else ''} que el sistema no supo interpretar del todo.</b></p>"
+        f"<p>El lector de PDF no encontró el tipo, el artículo o el plazo. La vista quedó guardada con lo que "
+        f"se pudo leer (y el texto completo, para poder corregir el lector); conviene mirarla a mano en la Grilla "
+        f"y avisar para ajustar la lectura.</p>"
+        f"<table cellpadding=\"0\" cellspacing=\"0\" style=\"width:100%;border-collapse:collapse;font-size:14px\">"
+        f"<tr><th align=\"left\" style=\"padding:8px\">Marca</th><th align=\"left\" style=\"padding:8px\">Qué no se entendió</th></tr>"
+        f"{filas}</table>"
+        + (f'<p><a href="{html.escape(link)}">Ver la corrida en GitHub</a></p>' if link else "")
+    )
+    return f"🔎 {n} vista{'s' if n != 1 else ''} que el sistema no supo leer", cuerpo
+
+
 # ── Ejemplos para la vista previa de la pestaña "Mails" ───────────────────
 def ejemplo(clave, panel_url):
     """(asunto, html) con datos inventados, para mostrar en el panel cómo se ve
@@ -203,6 +233,12 @@ def ejemplo(clave, panel_url):
     if clave == "bloqueo":
         return armar_mail_bloqueo("Escanear actas nuevas", "7 consultas seguidas bloqueadas", 0, 7,
                                   "https://github.com/panel-check/panel-check/actions")
+    if clave == "vista_sin_entender":
+        return armar_mail_vistas_sin_entender([
+            {"acta": "4800811", "marca": "ANIMA", "tipo": "desconocido",
+             "problemas": ["no se reconoce el tipo de vista", "no se encontró el plazo para contestar"],
+             "texto": "Dese vista al interesado de lo establecido en el artículo 3, inciso a), de la Ley 22.362 …"},
+        ], "https://github.com/panel-check/panel-check/actions")
     if clave == "agenda":
         import calendario_core
         return calendario_core.ejemplo_agenda(panel_url)

@@ -94,5 +94,26 @@ class MailsDeVista(unittest.TestCase):
         self.assertEqual(mc.tipo_por_asunto("Tu marca X recibió una oposición: qué significa y cómo seguir", "prospectos"), "prospecto_oposicion")
 
 
+class AvisoVistaSinEntender(unittest.TestCase):
+    def test_esta_en_el_catalogo_como_aviso_interno(self):
+        cat = mc.CATALOGO["vista_sin_entender"]
+        self.assertEqual((cat["grupo"], cat["cuenta"]), ("interno", "interna"))
+
+    def test_se_reconoce_por_el_asunto(self):
+        import mails_plantillas as mp
+        asunto, html_ = mp.armar_mail_vistas_sin_entender(
+            [{"acta": "4800811", "marca": "ANIMA <b>", "tipo": "desconocido", "problemas": ["no se encontró el plazo"], "texto": "Dese vista…"}],
+            "https://ejemplo/run")
+        self.assertEqual(mc.tipo_por_asunto(asunto, "interna"), "vista_sin_entender")
+        self.assertIn("4800811", html_)
+        self.assertIn("ANIMA &lt;b&gt;", html_)  # el texto de INPI se escapa
+        self.assertIn("https://ejemplo/run", html_)
+
+    def test_la_vista_previa_del_panel_anda(self):
+        import mails_plantillas as mp
+        asunto, html_ = mp.ejemplo("vista_sin_entender", "https://panel")
+        self.assertIn("no supo leer", asunto)
+
+
 if __name__ == "__main__":
     unittest.main()
