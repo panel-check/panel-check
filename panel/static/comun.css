@@ -857,6 +857,103 @@ button.flecha-grupo {
   #tabla-marcas td.celda-acciones .btn-coment { flex: 0 0 auto; min-height: 34px; min-width: 34px; }
 }
 
+/* ── Ficha de titular, pestaña «Marca» en celular: misma idea que la lista
+   de Leads, tabla a tarjetas. Esta tabla (#tabla-marca-titular) no tiene
+   clases por columna (filaHtml() en titular.html, línea ~285), así que casi
+   todo se referencia por nth-child según el orden fijo: 1 Score, 2 Boletín,
+   3 Acta, 4 Clase, 5 Tipo, 6 Marca (.denominacion), 7 badges de Lead,
+   8 Email, 9 Fecha Boletín, 10 Fecha Concedida, 11 Estado,
+   12 acciones (.celda-acciones). Si ese orden cambia en el JS, hay que
+   ajustar los nth-child de acá. */
+@media (max-width: 640px) {
+  .contenedor-tabla:has(#tabla-marca-titular) {
+    overflow: visible;
+    max-height: none;
+    padding: 10px;
+  }
+  #tabla-marca-titular, #tabla-marca-titular tbody { display: block; width: 100%; }
+  #tabla-marca-titular thead { display: none; }
+  #tabla-marca-titular tr {
+    display: flex;
+    flex-wrap: wrap;
+    column-gap: 10px;
+    row-gap: 4px;
+    align-items: baseline;
+    background: #fff;
+    border: 1px solid var(--borde);
+    border-radius: 12px;
+    padding: 12px 14px;
+    margin: 0 0 10px;
+  }
+  #tabla-marca-titular tr:has(td.vacio) { display: block; border: 0; background: none; padding: 0; margin: 0; }
+  #tabla-marca-titular td {
+    display: block;
+    border: 0;
+    padding: 0;
+    white-space: normal;
+  }
+  #tabla-marca-titular tbody tr td.vacio { padding: 30px 10px; text-align: center; }
+
+  #tabla-marca-titular td.score {
+    order: 1; flex: 0 0 auto; font-size: 13px;
+    background: #eef0f2; color: #1f2430; padding: 2px 8px; border-radius: 10px;
+  }
+  #tabla-marca-titular td.score:empty { display: none; }
+  #tabla-marca-titular td.denominacion {
+    order: 2; flex: 1 1 100%; min-width: 0; max-width: none;
+    font-weight: 700; font-size: 15px;
+  }
+  #tabla-marca-titular td:nth-child(3) { order: 3; flex: 0 0 auto; font-size: 12.5px; }
+  #tabla-marca-titular td:nth-child(2) {
+    order: 4; flex: 0 0 auto;
+    background: #eef0f2; color: #4b5563; font-size: 11px; font-weight: 600;
+    padding: 2px 7px; border-radius: 8px;
+  }
+  #tabla-marca-titular td:nth-child(2)::before { content: "Boletín "; font-weight: 600; }
+  #tabla-marca-titular td:nth-child(4) {
+    order: 5; flex: 0 0 auto;
+    background: #eef0f2; color: #4b5563; font-size: 11px; font-weight: 600;
+    padding: 2px 7px; border-radius: 8px;
+  }
+  #tabla-marca-titular td:nth-child(4)::before { content: "Clase "; }
+  #tabla-marca-titular td:nth-child(5) { order: 6; flex: 0 0 auto; font-size: 12px; color: #6b7280; }
+  #tabla-marca-titular td:nth-child(7) {
+    order: 7; flex: 1 1 100%;
+    display: flex; flex-wrap: wrap; gap: 4px; align-items: center;
+  }
+  #tabla-marca-titular td:nth-child(7):empty { display: none; }
+  #tabla-marca-titular td:nth-child(8) {
+    order: 8; flex: 1 1 100%; font-size: 13px;
+    border-top: 1px solid #eef0f2; padding-top: 8px; margin-top: 4px;
+  }
+  #tabla-marca-titular td:nth-child(11) {
+    order: 9; flex: 1 1 100%;
+    border-top: 1px solid #eef0f2; padding-top: 8px; margin-top: 4px;
+  }
+  #tabla-marca-titular td:nth-child(9), #tabla-marca-titular td:nth-child(10) {
+    order: 10; flex: 1 1 45%; font-size: 12px;
+    border-top: 1px solid #eef0f2; padding-top: 8px; margin-top: 4px;
+  }
+  #tabla-marca-titular td:nth-child(9)::before,
+  #tabla-marca-titular td:nth-child(10)::before {
+    display: block; font-size: 9.5px; font-weight: 700; letter-spacing: .03em;
+    color: #9aa1ab; text-transform: uppercase;
+  }
+  #tabla-marca-titular td:nth-child(9)::before { content: "F. Boletín"; }
+  #tabla-marca-titular td:nth-child(10)::before { content: "F. Concedida"; }
+  #tabla-marca-titular td.celda-acciones {
+    order: 11; flex: 1 1 100%;
+    border-top: 1px solid #eef0f2; padding-top: 8px; margin-top: 4px;
+    display: flex; flex-wrap: wrap; gap: 8px; white-space: normal;
+  }
+  #tabla-marca-titular td.celda-acciones .abrir,
+  #tabla-marca-titular td.celda-acciones button.contactar {
+    flex: 1 1 auto; min-height: 34px;
+    display: inline-flex; align-items: center; justify-content: center;
+  }
+  #tabla-marca-titular td.celda-acciones .btn-coment { flex: 0 0 auto; min-height: 34px; min-width: 34px; }
+}
+
 .vacio {
   padding: 40px;
   text-align: center;
