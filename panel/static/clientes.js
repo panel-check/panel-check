@@ -350,7 +350,7 @@ function marcasAgrupadasHtml(marcas) {
   }).join("");
   return `<div class="mk-barra"><span class="cl-pie" style="margin:0">${grupos.size} marca(s) · ${marcas.length} expediente(s)</span>
       <span><button type="button" class="cl-btn sec mini" id="mk-expandir">Expandir todo</button> <button type="button" class="cl-btn sec mini" id="mk-contraer">Contraer todo</button></span></div>
-    <div style="overflow-x:auto"><table class="mk-tabla"><colgroup><col style="width:28px"><col><col style="width:112px"><col style="width:92px"><col style="width:17%"><col style="width:17%"></colgroup><thead><tr><th></th><th>Marca</th><th>Expedientes</th><th>Clases</th><th>Cliente</th><th>Último movimiento INPI</th></tr></thead>
+    <div class="mk-tabla-wrap"><table class="mk-tabla"><colgroup><col style="width:28px"><col><col style="width:112px"><col style="width:92px"><col style="width:17%"><col style="width:17%"></colgroup><thead><tr><th></th><th>Marca</th><th>Expedientes</th><th>Clases</th><th>Cliente</th><th>Último movimiento INPI</th></tr></thead>
     <tbody>${filas}</tbody></table></div>
     <p class="cl-pie">Un click en una marca muestra sus actas. El número de acta abre el expediente en INPI y «Ver cliente» abre la ficha del cliente.</p>`;
 }
@@ -878,10 +878,10 @@ async function probarNombre() {
   res.innerHTML = '<p class="crm-cargando">Buscando…</p>';
   try {
     const r = await apiJson("/api/cartera/probar", "POST", { nombre, clase: $("pr-clase").value ? +$("pr-clase").value : null });
-    res.innerHTML = r.resultados.length ? `<table class="cl-tabla" style="margin-top:8px"><thead><tr><th>Parecido</th><th>Marca</th><th>Clase</th><th>Acta</th><th>Titular</th><th>Dónde está</th></tr></thead><tbody>
+    res.innerHTML = r.resultados.length ? `<div style="overflow-x:auto"><table class="cl-tabla" style="margin-top:8px"><thead><tr><th>Parecido</th><th>Marca</th><th>Clase</th><th>Acta</th><th>Titular</th><th>Dónde está</th></tr></thead><tbody>
       ${r.resultados.map(x => `<tr><td>${tagNivel(x.nivel)} ${x.puntaje}%<br><small class="crm-gris">${esc(x.motivos || "")}</small></td><td><strong>${esc(x.nombre)}</strong></td><td>${esc(x.clase ?? "")}</td>
         <td><a class="link-acta" href="javascript:void(0)" data-abrir="${esc(x.acta)}">${esc(x.acta)} ↗</a></td><td>${esc(x.titular || "")}</td>
-        <td>${x.boletin ? "boletín " + esc(x.boletin) : "pre-boletín"}${x.fecha_publicacion ? " · publicada " + crmFecha(x.fecha_publicacion) : ""}</td></tr>`).join("")}</tbody></table>
+        <td>${x.boletin ? "boletín " + esc(x.boletin) : "pre-boletín"}${x.fecha_publicacion ? " · publicada " + crmFecha(x.fecha_publicacion) : ""}</td></tr>`).join("")}</tbody></table></div>
       <p class="crm-nota">Solo ve lo que pasó por los boletines procesados y el escaneo de actas: no es una búsqueda de anterioridades en toda la base de INPI.</p>`
       : '<p class="crm-gris" style="margin-top:8px">No hay nada parecido entre las solicitudes que conocemos.</p>';
     res.querySelectorAll("[data-abrir]").forEach(a => a.addEventListener("click", () => abrirActa(a.dataset.abrir)));
@@ -938,9 +938,9 @@ async function pintarMatricula() {
       ${r.grupos.map((g, i) => `<div class="cl-grupo" data-g="${i}">
         <h4>${esc(g.titular || "(sin titular)")} <span class="crm-gris" style="font-weight:400">${g.cuit ? "CUIT " + esc(g.cuit) : "sin CUIT"}</span>
           ${g.clientes_posibles.length ? g.clientes_posibles.map(c => `<span class="cl-tag ok">cliente: ${esc(c.nombre)}</span>`).join(" ") : ""}</h4>
-        <table class="cl-tabla"><tbody>${g.marcas.map(m => `<tr><td style="width:24px"><input type="checkbox" checked data-acta="${esc(m.acta)}"></td>
+        <div style="overflow-x:auto"><table class="cl-tabla"><tbody>${g.marcas.map(m => `<tr><td style="width:24px"><input type="checkbox" checked data-acta="${esc(m.acta)}"></td>
           <td>${esc(m.acta)}</td><td><strong>${esc(m.denominacion_inpi || "(sin nombre)")}</strong></td><td>clase ${esc(m.clase ?? "?")}</td>
-          <td>mat. ${esc(m.matricula_agente)}</td><td>${m.fecha_presentacion ? crmFecha(m.fecha_presentacion) : ""}</td><td>${m.boletin ? "boletín " + esc(m.boletin) : "pre-boletín"}</td></tr>`).join("")}</tbody></table>
+          <td>mat. ${esc(m.matricula_agente)}</td><td>${m.fecha_presentacion ? crmFecha(m.fecha_presentacion) : ""}</td><td>${m.boletin ? "boletín " + esc(m.boletin) : "pre-boletín"}</td></tr>`).join("")}</tbody></table></div>
         <div class="cl-acciones"><select data-cliente-sel><option value="">Sumar a un cliente existente…</option>${opcionesClientes}</select>
           <button type="button" class="cl-btn sec" data-ir-existente>Sumar</button>
           <button type="button" class="cl-btn" data-ir-nuevo>Crear cliente nuevo con estos datos</button>
@@ -1251,7 +1251,7 @@ async function pintarFormularios() {
       lista.innerHTML = `<p class="vacio">${verArch ? "No hay formularios archivados." : $("fm-estado").value === "nueva" ? "No hay formularios nuevos sin revisar." : "Todavía no llegó ningún formulario."}</p>`;
       return;
     }
-    lista.innerHTML = `<table class="cl-tabla"><thead><tr><th>Recibido</th><th>Tipo</th><th>Titular</th><th>CUIT</th><th>Marca</th><th>Archivos</th><th>Estado</th><th></th></tr></thead><tbody>
+    lista.innerHTML = `<div style="overflow-x:auto"><table class="cl-tabla"><thead><tr><th>Recibido</th><th>Tipo</th><th>Titular</th><th>CUIT</th><th>Marca</th><th>Archivos</th><th>Estado</th><th></th></tr></thead><tbody>
       ${r.respuestas.map(f => `<tr data-resp="${f.id}">
         <td>${fmtFechaHora(f.recibido_en)}</td>
         <td>${esc(est.tiposPersona[f.tipo_persona] || f.tipo_persona)}</td>
@@ -1265,7 +1265,7 @@ async function pintarFormularios() {
           <button type="button" class="cl-btn sec mini" data-ver-resp="${f.id}">Respuestas</button>
           <button type="button" class="cl-btn sec mini" data-fm-fila="${f.estado === "archivada" ? "revisada" : "archivada"}">${f.estado === "archivada" ? "Desarchivar" : "Archivar"}</button>
           <button type="button" class="cl-btn peligro mini" data-fm-fila="borrar" title="Borra la respuesta y sus archivos. El cliente queda.">Borrar</button></td></tr>`).join("")}
-      </tbody></table><p class="cl-pie">${r.respuestas.length} formulario(s).</p>`;
+      </tbody></table></div><p class="cl-pie">${r.respuestas.length} formulario(s).</p>`;
     lista.querySelectorAll("[data-ver-cliente]").forEach(b => b.addEventListener("click", () => abrirCliente(+b.dataset.verCliente)));
     lista.querySelectorAll("[data-ver-resp]").forEach(b => b.addEventListener("click", () => abrirRespuesta(+b.dataset.verResp)));
     lista.querySelectorAll("[data-fm-fila]").forEach(b => b.addEventListener("click", async () => {

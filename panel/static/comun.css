@@ -1399,6 +1399,7 @@ tr.crm-fila:hover { background: var(--azul-claro); }
 a.cl-logo-link { display: inline-block; line-height: 0; }
 /* Marcas agrupadas por nombre (Clientes → Marcas) */
 .mk-barra { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin: 6px 0 8px; flex-wrap: wrap; }
+.mk-tabla-wrap { overflow-x: auto; }
 .mk-tabla { width: 100%; table-layout: fixed; border-collapse: separate; border-spacing: 0; background: white; border: 1px solid var(--borde); border-radius: 10px; font-size: 14px; }
 .mk-tabla > thead > tr > th { text-align: left; font-size: 12px; font-weight: 600; color: var(--gris); padding: 10px 12px; background: #fafbfc; border-bottom: 1px solid var(--borde); }
 .mk-tabla > tbody > tr > td { padding: 12px 8px; overflow-wrap: anywhere; border-bottom: 1px solid #f0f1f4; vertical-align: middle; }
@@ -1549,6 +1550,118 @@ a.mk-acta { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-si
 .cl-mas { border: 1px solid var(--borde); border-radius: 8px; padding: 8px 10px; background: #fafbfc; }
 .cl-mas summary { cursor: pointer; font-size: 13px; color: var(--azul); font-weight: 500; }
 .cl-mas .cl-form { margin-top: 8px; }
+
+/* ── Sección Clientes en celular ───────────────────────────────────────
+   Mismo criterio que Leads y la ficha de titular: la tabla más usada de
+   cada pestaña (la lista de Clientes, y Marcas en su vista agrupada, que
+   es la que abre por defecto) pasa a tarjetas. El resto —detalle de
+   expedientes dentro de una marca agrupada, marcas dentro de la ficha de
+   un cliente, «qué se vigila», formularios, por matrícula, probar un
+   nombre— sigue con scroll horizontal, igual que las demás tablas
+   secundarias del panel (CRM lista, boletines, mails). Boceto 19/10/2026. */
+@media (max-width: 640px) {
+  .cl-vista { padding: 0 12px 30px; }
+  .crm-pestanas { margin: 0; padding: 10px 10px 0; overflow-x: auto; flex-wrap: nowrap; -webkit-overflow-scrolling: touch; }
+  .crm-pestanas button { padding: 8px 12px; font-size: 12.5px; white-space: nowrap; flex: 0 0 auto; }
+  .cl-barra { padding: 10px 0; gap: 10px 8px; }
+  .cl-barra > label { flex: 1 1 calc(50% - 4px); min-width: 0; }
+  .cl-barra > label input, .cl-barra > label select { width: 100%; min-width: 0; }
+  .cl-barra > label:has(input[type="search"]) { flex-basis: 100%; }
+  .cl-barra > label.check { flex-basis: 100%; }
+  .cl-barra > button.cl-btn { flex: 1 1 100%; }
+  .cl-caja { padding: 10px; }
+  .mk-barra { padding: 0 2px; }
+}
+
+/* «Clientes»: la lista principal pasa a tarjetas (misma técnica que
+   #tabla-marcas / #tabla-marca-titular). Orden fijo de columnas
+   (pintarClientes() en clientes.js, filas sin clases propias por <td>):
+   1 Cliente, 2 CUIT, 3 Marcas, 4 Vigilancia, 5 Alertas, 6 Próx.
+   vencimiento, 7 Origen. Si ese orden cambia en el JS, hay que ajustar
+   los nth-child de acá. */
+@media (max-width: 640px) {
+  #cl-tabla table.cl-tabla, #cl-tabla table.cl-tabla tbody { display: block; width: 100%; }
+  #cl-tabla table.cl-tabla thead { display: none; }
+  #cl-tabla table.cl-tabla tr {
+    display: flex; flex-wrap: wrap; column-gap: 10px; row-gap: 4px; align-items: baseline;
+    background: #fff; border: 1px solid var(--borde); border-radius: 12px; padding: 12px 14px; margin: 0 0 10px;
+  }
+  #cl-tabla table.cl-tabla td { display: block; border: 0; padding: 0; white-space: normal; }
+  #cl-tabla table.cl-tabla td:nth-child(1) { order: 1; flex: 1 1 100%; font-weight: 700; font-size: 14.5px; }
+  #cl-tabla table.cl-tabla td:nth-child(2) { order: 2; flex: 0 0 auto; font-size: 12px; color: var(--gris); }
+  #cl-tabla table.cl-tabla td:nth-child(2)::before { content: "CUIT "; }
+  #cl-tabla table.cl-tabla td:nth-child(3) { order: 3; flex: 1 1 100%; font-size: 13px; }
+  #cl-tabla table.cl-tabla td:nth-child(4) { order: 4; flex: 0 0 auto; }
+  #cl-tabla table.cl-tabla td:nth-child(5) { order: 5; flex: 0 0 auto; }
+  #cl-tabla table.cl-tabla td:nth-child(6) {
+    order: 6; flex: 1 1 45%; font-size: 12px;
+    border-top: 1px solid #eef0f2; padding-top: 8px; margin-top: 4px;
+  }
+  #cl-tabla table.cl-tabla td:nth-child(6)::before {
+    display: block; font-size: 9.5px; font-weight: 700; letter-spacing: .03em; color: #9aa1ab; text-transform: uppercase;
+    content: "Vence";
+  }
+  #cl-tabla table.cl-tabla td:nth-child(7) {
+    order: 7; flex: 1 1 45%; font-size: 12px;
+    border-top: 1px solid #eef0f2; padding-top: 8px; margin-top: 4px;
+  }
+  #cl-tabla table.cl-tabla td:nth-child(7)::before {
+    display: block; font-size: 9.5px; font-weight: 700; letter-spacing: .03em; color: #9aa1ab; text-transform: uppercase;
+    content: "Origen";
+  }
+}
+
+/* «Marcas» (la pestaña que abre por defecto), vista agrupada (también la
+   que abre por defecto: checkbox «Agrupar por marca» tildado): la fila de
+   cada marca pasa a tarjeta. El detalle de expedientes que se despliega
+   abajo al tocarla (.mk-sub, 10 columnas) sigue con scroll horizontal
+   (ya tiene su propio .mk-sub-wrap), igual que la vista «plana» alternativa
+   (marcasPlanasHtml(), misma clase .cl-tabla que Formularios/por matrícula:
+   no se toca acá). Orden fijo (marcasAgrupadasHtml() en clientes.js):
+   1 chevron (.mk-chev-td), 2 Marca (sin clase propia), 3 Expedientes
+   (.mk-exp), 4 Clases, 5 Cliente, 6 Último movimiento. */
+@media (max-width: 640px) {
+  .mk-tabla-wrap { overflow-x: visible; }
+  .mk-tabla, .mk-tabla > tbody { display: block; width: 100%; }
+  .mk-tabla thead { display: none; }
+  .mk-tabla tr.mk-grupo {
+    display: flex; flex-wrap: wrap; column-gap: 10px; row-gap: 4px; align-items: baseline;
+    background: #fff; border: 1px solid var(--borde); border-radius: 12px; padding: 12px 14px; margin: 0 0 4px;
+  }
+  .mk-tabla tr.mk-grupo td { display: block; border: 0; padding: 0; white-space: normal; }
+  .mk-tabla tr.mk-grupo td.mk-chev-td { order: 1; flex: 0 0 auto; align-self: center; }
+  .mk-tabla tr.mk-grupo td:nth-child(2) { order: 2; flex: 1 1 140px; min-width: 0; }
+  .mk-tabla tr.mk-grupo td.mk-exp { order: 3; flex: 1 1 100%; font-size: 12.5px; }
+  .mk-tabla tr.mk-grupo td:nth-child(4) {
+    order: 4; flex: 1 1 45%; font-size: 12px;
+    border-top: 1px solid #eef0f2; padding-top: 8px; margin-top: 4px;
+  }
+  .mk-tabla tr.mk-grupo td:nth-child(4)::before {
+    display: block; font-size: 9.5px; font-weight: 700; letter-spacing: .03em; color: #9aa1ab; text-transform: uppercase;
+    content: "Clases";
+  }
+  .mk-tabla tr.mk-grupo td:nth-child(5) {
+    order: 5; flex: 1 1 45%; font-size: 12.5px;
+    border-top: 1px solid #eef0f2; padding-top: 8px; margin-top: 4px;
+  }
+  .mk-tabla tr.mk-grupo td:nth-child(5)::before {
+    display: block; font-size: 9.5px; font-weight: 700; letter-spacing: .03em; color: #9aa1ab; text-transform: uppercase;
+    content: "Cliente";
+  }
+  .mk-tabla tr.mk-grupo td:nth-child(6) {
+    order: 6; flex: 1 1 100%; font-size: 12px;
+    border-top: 1px solid #eef0f2; padding-top: 8px; margin-top: 4px;
+  }
+  .mk-tabla tr.mk-grupo td:nth-child(6)::before {
+    display: block; font-size: 9.5px; font-weight: 700; letter-spacing: .03em; color: #9aa1ab; text-transform: uppercase;
+    content: "Último movimiento INPI";
+  }
+  /* :not([hidden]): si no, esta regla le gana al display:none por defecto del
+     atributo hidden (una regla propia siempre le gana a la hoja de estilos
+     del navegador) y el detalle quedaría visible aunque esté cerrado. */
+  .mk-tabla tr.mk-detalle:not([hidden]) { display: block; }
+  .mk-tabla tr.mk-detalle:not([hidden]) > td { display: block; }
+}
 
 /* ── Menú de usuario (sesion.js) ── */
 .menu-usuario { position: relative; flex-shrink: 0; }
