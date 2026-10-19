@@ -1022,8 +1022,20 @@ button.flecha-grupo {
   padding: 10px 16px calc(16px + env(safe-area-inset-bottom, 0));
   max-height: 80vh; overflow: auto;
 }
-.sheet-secciones-agarre { width: 36px; height: 4px; border-radius: 2px; background: var(--borde-control); margin: 0 auto 10px; }
-.sheet-secciones-titulo { font-size: 13px; font-weight: 700; color: var(--texto); margin-bottom: 10px; }
+/* El agarre también cierra al tocarlo (antes era puramente decorativo): el botón tiene un
+   área de toque generosa aunque la barrita que se ve siga siendo chica. */
+.sheet-secciones-agarre {
+  display: block; width: 100%; padding: 10px 0 6px; margin: -10px 0 0; border: 0; background: none; cursor: pointer;
+}
+.sheet-secciones-agarre::before { content: ""; display: block; width: 36px; height: 4px; border-radius: 2px; background: var(--borde-control); margin: 0 auto; }
+.sheet-secciones-cab { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
+.sheet-secciones-titulo { font-size: 13px; font-weight: 700; color: var(--texto); }
+.sheet-secciones-cerrar {
+  width: 32px; height: 32px; border: 0; border-radius: 8px; background: none; cursor: pointer;
+  color: var(--gris); font-size: 18px; line-height: 1; flex-shrink: 0;
+}
+.sheet-secciones-cerrar:hover { background: #f1f3f6; color: var(--texto); }
+.sheet-secciones-cerrar:focus-visible { outline: none; box-shadow: var(--foco); }
 .sheet-secciones-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 11px; }
 .seccion-tile {
   display: flex;
@@ -1623,6 +1635,14 @@ a.mk-acta { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-si
 .app-header .nav .nav-rayo.abierto > .nav-boton { background: #fff4d6; color: #92620f; }
 .app-header .nav-grupo.sin-hover > .nav-sub { display: none !important; }
 .app-header .accesos-menu { min-width: 330px; max-width: 420px; padding: 8px; }
+/* En celular el ⚡ queda cerca del centro del header: con el ancho fijo de arriba
+   el menú se salía de la pantalla (provocaba scroll horizontal y rompía el resto
+   del responsive). Se fija relativo a la ventana, no al botón. */
+@media (max-width: 640px) {
+  .app-header .accesos-menu {
+    position: fixed; top: 60px; left: 12px; right: 12px; width: auto; min-width: 0; max-width: none;
+  }
+}
 .accesos-menu .acceso-titulo {
   margin: 6px 8px 4px; font-size: 11px; font-weight: 600; letter-spacing: .04em;
   text-transform: uppercase; color: var(--gris);
