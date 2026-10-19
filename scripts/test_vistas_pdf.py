@@ -128,6 +128,25 @@ class FormatosReales(unittest.TestCase):
         for t in (DOS_INCISOS, GRADO_Y_DASH, OFENSIVOS):
             self.assertFalse([a for a in parsear_vista(t)["articulos"] if a in ("Art. 5", "Art. 6")])
 
+    def test_letra_en_minuscula_sin_parentesis(self):
+        # acta 4805739: «porel/ los ART. 3 j dela Ley 22.362»
+        t = FONDO_2B.replace("ART. 2 Bdela", "ART. 3 j dela")
+        self.assertIn("ART. 3 j dela Ley", t)
+        r = parsear_vista(t)
+        self.assertEqual((r["tipo"], r["articulos"], r["plazos"]), ("fondo", ["Art. 3 inc. j)"], [(30, "corridos")]))
+
+    def test_articulo_sin_letra_sigue_sin_inventarla(self):
+        r = parsear_vista(FONDO_2B.replace("ART. 2 Bdela", "ART. 3 dela"))
+        self.assertEqual(r["articulos"], ["Art. 3"])
+        r = parsear_vista(FONDO_2B.replace("ART. 2 Bdela", "ART. 3 de la"))
+        self.assertEqual(r["articulos"], ["Art. 3"])
+
+    def test_cursese_vista_sin_plazo_no_es_un_problema(self):
+        r = parsear_vista(ART_MINUSCULA)
+        self.assertTrue(r["sin_plazo_escrito"])
+        self.assertEqual(problemas_de_lectura(r), [])
+        self.assertFalse(parsear_vista(FONDO_2B)["sin_plazo_escrito"])
+
     def test_motivo_sin_puntos(self):
         r = parsear_vista('Convenio de París artículo 6bis marca notoriamente conocida, a saber "...........RAPSODIA............" otro')
         self.assertEqual(r["motivo"], "RAPSODIA")
@@ -146,7 +165,7 @@ class ProblemasDeLectura(unittest.TestCase):
         p = problemas_de_lectura(parsear_vista("texto raro que no dice nada"))
         self.assertEqual(len(p), 2)  # no se reconoce el tipo + no hay plazo
 
-    def test_fondo_sin_plazo_se_avisa(self):
+    def test_fondo_sin_plazo_y_sin_cursese_se_avisa(self):
         r = parsear_vista("Dese vista al interesado de lo establecido en el artículo 3, inciso a), de la Ley 22.362.")
         self.assertEqual(r["tipo"], "fondo")
         self.assertEqual(problemas_de_lectura(r), ["no se encontró el plazo para contestar"])

@@ -4,11 +4,14 @@ Pruebas de probar_vistas_preboletin.py (sin red ni base). Correr con:
 """
 
 import os
+import sys
 import unittest
 from unittest import mock
 
-import probar_vistas_preboletin as pv
-from probar_vistas_preboletin import _estado_vista, clasificar
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "panel"))
+
+import probar_vistas_preboletin as pv  # noqa: E402
+from probar_vistas_preboletin import _estado_vista, clasificar  # noqa: E402
 
 
 def fila(indice, fecha, referencia="-"):

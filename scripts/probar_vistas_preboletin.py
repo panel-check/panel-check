@@ -146,6 +146,8 @@ def _detalle_vista(est, pdf):
     if pdf.get("vencimiento_texto"):
         marca = " (estimado, todavía sin notificación)" if pdf.get("vencimiento_estimado") else ""
         partes.append(f"plazo según el texto: {plazo_legible(pdf)}, hasta el {_fmt(pdf['vencimiento_texto'])}{marca}")
+    elif pdf.get("sin_plazo_escrito"):
+        partes.append("la vista no escribe el plazo")
     if est.get("vencimiento"):
         partes.append(f"INPI marca el {_fmt(est['vencimiento'])}")
     return " · ".join(partes)
