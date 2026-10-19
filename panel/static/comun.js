@@ -198,11 +198,22 @@ function badgeVistaPre(row) {
 
 // Qué significa cada artículo de la Ley 22.362 que cita una vista de fondo (resumen orientativo).
 const ARTICULOS_VISTA = {
-  "Art. 2 inc. a)": "El signo sería la designación necesaria o habitual del producto o servicio, o descriptivo de sus características (no distingue).",
-  "Art. 2 inc. b)": "El signo habría pasado al uso general antes de la solicitud (no distingue).",
-  "Art. 3 inc. a)": "El signo sería idéntico o parecido a una marca ya registrada o solicitada antes para productos o servicios iguales o parecidos.",
-  "Art. 3 inc. e)": "No se pueden registrar palabras, dibujos ni signos contrarios a la moral y a las buenas costumbres (INPI los evalúa con criterio amplio: ofensivos, vulgares o contrarios al orden público).",
-  "Art. 3 inc. f)": "No se pueden registrar letras, palabras, nombres, distintivos ni símbolos que usen o deban usar la Nación, las provincias, las municipalidades, las organizaciones religiosas y sanitarias.",
+  // Ley 22.362 (texto de Infoleg). Art. 2: no se consideran marcas. Art. 3: no pueden registrarse.
+  "Art. 2 inc. a)": "Nombres, palabras y signos que son la designación necesaria o habitual del producto o servicio, o que describen su naturaleza, función, cualidades u otras características (no se consideran marcas).",
+  "Art. 2 inc. b)": "Nombres, palabras, signos y frases publicitarias que pasaron al uso general antes de la solicitud (no se consideran marcas).",
+  "Art. 2 inc. c)": "La forma que se da a los productos (no se considera marca).",
+  "Art. 2 inc. d)": "El color natural o intrínseco de los productos, o un solo color aplicado sobre ellos (no se considera marca).",
+  "Art. 3 inc. a)": "Marca idéntica a una registrada o solicitada con anterioridad para distinguir los mismos productos o servicios.",
+  "Art. 3 inc. b)": "Marca similar a otras ya registradas o solicitadas para distinguir los mismos productos o servicios.",
+  "Art. 3 inc. c)": "Denominaciones de origen, nacionales o extranjeras.",
+  "Art. 3 inc. d)": "Marcas que puedan inducir a error sobre la naturaleza, propiedades, calidad, origen, precio u otras características de los productos o servicios.",
+  "Art. 3 inc. e)": "Palabras, dibujos y demás signos contrarios a la moral y a las buenas costumbres (INPI los evalúa con criterio amplio: ofensivos, vulgares o contrarios al orden público).",
+  "Art. 3 inc. f)": "Letras, palabras, nombres, distintivos o símbolos que usen o deban usar la Nación, las provincias, las municipalidades y las organizaciones religiosas y sanitarias.",
+  "Art. 3 inc. g)": "Letras, palabras, nombres o distintivos que usen las naciones extranjeras y los organismos internacionales reconocidos por el gobierno argentino.",
+  "Art. 3 inc. h)": "El nombre, seudónimo o retrato de una persona, sin su consentimiento o el de sus herederos hasta el cuarto grado.",
+  "Art. 3 inc. i)": "Designaciones de actividades (incluidos nombres y razones sociales) descriptivas de una actividad, para distinguir productos. Las siglas o palabras con capacidad distintiva que formen parte de ellas sí pueden registrarse.",
+  "Art. 3 inc. j)": "Frases publicitarias que carezcan de originalidad.",
+  "Art. 4": "La propiedad de la marca y la exclusividad de uso se obtienen con el registro; para ser titular se requiere un interés legítimo.",
 };
 
 function abrirModalVistaPre(acta) {
