@@ -364,3 +364,10 @@ html.embebido .cal-nota-disp { font-size: 12px; margin: 0 0 8px; }
 html.embebido .cal-disp-cab { flex-direction: column; align-items: flex-start; gap: 6px; }
 html.embebido .cal-disp-dia { padding: 10px 12px; }
 html.embebido .cal-disp-dia h3 { font-size: 14px; }
+
+/* ── Celular (≤640px): menos ruido arriba para llegar rápido a la agenda ──
+   Se esconden el estado de sincronización con Google y los botones de
+   sincronizar / agenda de mañana (quedan disponibles en desktop). */
+@media (max-width: 640px) {
+  #cal-estado, #cal-sync, #cal-agenda-mail { display: none; }
+}

@@ -305,6 +305,21 @@ function abrirRecordatorio() {
   calAbrirModal({ recordatorio: true, fecha: calSumarDias(calHoy(), 1), alGuardar: () => cargar() });
 }
 
+// Para la etiqueta corta del resumen (colapsado): prioriza lo más urgente en vez
+// de mostrar solo un número pelado, así se entiende de un vistazo sin desplegar.
+function etiquetaSeguimientos(pendientes, hoy) {
+  if (!pendientes.length) return "";
+  const n = (c) => `${c} recordatorio${c === 1 ? "" : "s"}`;
+  const atrasados = pendientes.filter(e => e.fecha < hoy).length;
+  if (atrasados) return `${atrasados} atrasado${atrasados === 1 ? "" : "s"}`;
+  const paraHoy = pendientes.filter(e => e.fecha === hoy).length;
+  if (paraHoy) return `${n(paraHoy)} para hoy`;
+  const manana = calSumarDias(hoy, 1);
+  const paraManana = pendientes.filter(e => e.fecha === manana).length;
+  if (paraManana) return `${n(paraManana)} para mañana`;
+  return `${n(pendientes.length)} pendiente${pendientes.length === 1 ? "" : "s"}`;
+}
+
 function htmlSeguimientos() {
   const hoy = calHoy();
   const pendientes = est.seguimientos.filter(e => !e.hecho);
@@ -319,8 +334,13 @@ function htmlSeguimientos() {
   const cuerpo = grupos.length
     ? grupos.map(([clase, titulo, lista]) => `<h4 class="cal-seg-grupo ${clase}">${titulo} (${lista.length})</h4>${lista.map(e => calTarjetaHtml(e, { fechaCorta: true })).join("")}`).join("")
     : '<p class="cal-vacio">No hay recordatorios pendientes. Se crean con «🔔 Recordatorio», o desde una reunión, o desde la ficha de cada lead.</p>';
-  return `<details class="cal-seg-panel" open>
-    <summary><span>🔔 Recordatorios <span class="cal-seg-cant ${grupos.length && grupos[0][0] === "atrasados" ? "alerta" : ""}">${pendientes.length}</span></span></summary>
+  // En celular arranca cerrado para llegar rápido a la agenda de reuniones al hacer scroll;
+  // el resumen ya dice lo que hace falta (p. ej. «2 recordatorios para hoy»).
+  const movil = window.matchMedia("(max-width: 640px)").matches;
+  const etiqueta = movil ? etiquetaSeguimientos(pendientes, hoy) : `${pendientes.length}`;
+  const alerta = grupos.length && grupos[0][0] === "atrasados";
+  return `<details class="cal-seg-panel"${movil ? "" : " open"}>
+    <summary><span>🔔 Recordatorios${etiqueta ? ` <span class="cal-seg-cant ${alerta ? "alerta" : ""}">${esc(etiqueta)}</span>` : ""}</span></summary>
     ${cuerpo}
     <div class="cal-seg-pie"><button type="button" class="cal-btn chico principal" id="cal-seg-nuevo">＋ Recordatorio</button></div>
     ${hechos.length ? `<details class="cal-seg-hechos"><summary>Hechos hace poco (${hechos.length})</summary>${hechos.map(e => calTarjetaHtml(e, { fechaCorta: true })).join("")}</details>` : ""}
