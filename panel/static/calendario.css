@@ -122,7 +122,7 @@ a.cal-vinculo:hover { border-color: var(--azul); }
 .cal-agenda-dia.pasado { opacity: .65; }
 
 /* ── Modal de evento ──────────────────────────────────────────────── */
-.modal-caja.modal-cal { max-width: 560px; width: 100%; }
+.modal-caja.modal-cal { max-width: 560px; }
 .modal-cal h3 { color: var(--azul); }
 .modal-cal label.campo { display: flex; flex-direction: column; gap: 5px; margin: 12px 0 0; font-size: 12px; font-weight: 500; color: var(--gris); flex: 1; min-width: 0; }
 .modal-cal input[type="text"], .modal-cal input[type="date"], .modal-cal input[type="time"], .modal-cal select {
