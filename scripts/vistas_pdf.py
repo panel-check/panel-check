@@ -45,7 +45,7 @@ MAX_TEXTO_GUARDADO = 6000  # caracteres del texto de la vista que se guardan (pa
 RE_PLAZO = re.compile(
     r"(\d{1,3})\s*(?:\(\s*[a-záéíóúñ ]+\s*\))?\s*d[ií]as\s*(h[aá]biles|corridos)", re.I)
 RE_ARTICULO = re.compile(
-    r"\bART\.?\s*(\d+)\s*(?:INC\.?\s*)?\(?\s*((?-i:[A-Z]))?\s*\)?\s*(?:d\s*e\s*)?(?:l\s*a\s*|l\s*)?Ley",
+    r"\bART\.?\s*(\d+)\s*(?:INC\.?\s*)?\(?\s*([A-Z])?\s*\)?\s*(?:d\s*e\s*)?(?:l\s*a\s*|l\s*)?Ley",
     re.I)
 # Variante «Dese vista al interesado de lo establecido en el artículo 3°, inciso a), de la Ley 22.362»,
 # «incisos a) y b)», «los artículos 3º inc. e) y 4º» o «el art. 3 inc. a) de la Ley 22.362»: se buscan
@@ -55,6 +55,8 @@ RE_ARTICULO_LARGO = re.compile(
     r"(?:art[ií]culos?|arts?\.)\s*(\d+)\s*[°ºo]?\s*,?\s*"
     r"(?:inc(?:isos?|\.)?\s*(\(?[a-z]\)(?:\s*(?:y|,|e)\s*\(?[a-z]\))*)\s*)?"
     r"(?:,?\s*y\s*(?:el\s*)?(\d+)\s*[°º]?)?", re.I)
+# «cúrsese vista … bajo apercibimiento de denegatoria»: INPI a veces no escribe el plazo en la vista
+RE_CURSESE_VISTA = re.compile(r"c[uú]rsese\s*vista", re.I)
 VENTANA_ARTICULO = 110  # caracteres antes de «Ley 22.362» donde se busca el artículo
 # Convenio de París: 6 bis (marca notoriamente conocida) o 6 ter (emblemas oficiales)
 RE_PARIS = re.compile(r"\b6\s*(bis|ter)\b", re.I)
@@ -86,6 +88,7 @@ def parsear_vista(texto: str) -> dict:
         articulos: ['Art. 3 inc. a)', ...] de la Ley 22.362, o ['Convenio de París, art. 6 bis']
         motivo: lo que INPI cita como causa ("NIKE", "PATAGONIA", "STOCK") o ''
         antecedentes: ['4011896 (FELICIANO)', ...]
+        sin_plazo_escrito: True si dice «cúrsese vista» y no trae plazo (ej. acta 4801968)
         plazos: [(30, 'corridos'), (10, 'habiles')] en el orden en que aparecen
         extensiones_automaticas: True si menciona las extensiones automáticas pagas
     """
@@ -157,6 +160,8 @@ def parsear_vista(texto: str) -> dict:
         "antecedentes": antecedentes,
         "plazos": plazos,
         "extensiones_automaticas": "extensionesautom" in compacto,
+        # la vista no trae plazo escrito (vale el que marca INPI en el expediente)
+        "sin_plazo_escrito": not plazos and bool(RE_CURSESE_VISTA.search(p)),
     }
 
 
@@ -173,7 +178,7 @@ def problemas_de_lectura(parsed: dict | None) -> list[str]:
         problemas.append("no se reconoce el tipo de vista")
     elif parsed["tipo"] in ("fondo", "fondo_y_formal") and not parsed["articulos"]:
         problemas.append("es de fondo pero no se encontró el artículo")
-    if not parsed["plazos"]:
+    if not parsed["plazos"] and not parsed.get("sin_plazo_escrito"):
         problemas.append("no se encontró el plazo para contestar")
     if any(len(a) > MAX_LARGO_ANTECEDENTE for a in parsed["antecedentes"]):
         problemas.append("la marca anterior parece traer texto de más")
