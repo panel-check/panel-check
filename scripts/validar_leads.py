@@ -4,10 +4,9 @@ completo en el portal de trámites de INPI, lee CARACTER (GESTION DEL TRAMITE) y
 si está vacío (lead real), abre GRILLA DIGITAL y descarga el Formulario para
 sacarle el email.
 
-Reescrito para usar `requests` puro (sin navegador). El WAF de INPI bloquea
-las visitas hechas con Chromium/Playwright headless (respuesta "Web Page
-Blocked! Attack ID: 20000051"), pero no bloquea peticiones HTTP simples con
-`requests` — probablemente por fingerprinting del navegador headless. Además,
+Reescrito para usar `requests` puro (sin navegador): las visitas hechas con
+Chromium/Playwright headless no funcionan contra el portal de INPI, pero las
+peticiones HTTP simples con `requests` sí. Además,
 el dato de CARACTER no está en la página `Resultado?acta=X` (GET, la que
 aparece en el CSV) ni en `Grilla?acta=X`: hay que hacer un POST a
 `/MarcasConsultas/Resultado` con `acta` en el body (replicando el form
@@ -59,14 +58,14 @@ RE_GESTION = re.compile(r"GESTION DEL TRAMITE.*?</h4>\s*</div>\s*<div[^>]*>(.*?)
 RE_CARACTER = re.compile(r"CARACTER\s*:?\s*</label>|CARACTER\s*:", re.S)
 RE_CARACTER_SPAN = re.compile(r"CARACTER\s*:?\s*<span[^>]*>(.*?)</span>", re.S)
 
-# Dentro de TITULARIDAD aparece igual que CARACTER: "CUIT:<span>30715260898</span>".
+# Dentro de TITULARIDAD aparece igual que CARACTER: "CUIT:<span>20123456789</span>".
 # Se agregó cuando notamos que también viene para Denominativas (antes solo se
 # guardaba para Mixtas/Figurativas, vía el webservice de completar_mixtas.py).
 # Sirve como clave real para unificar leads del mismo titular en el panel
 # (mejor que comparar texto de titular, que puede variar de tipeo).
 # El <span> es opcional: personas jurídicas lo traen envuelto en <span>,
 # personas físicas a veces lo traen como texto plano en el mismo <label>
-# ("CUIT: 20302361291" sin span) — sin esto se perdía casi la mitad.
+# ("CUIT: 20123456789" sin span) — sin esto se perdía casi la mitad.
 RE_CUIT_SPAN = re.compile(r"CUIT\s*:?\s*(?:<span[^>]*>)?\s*([\d.\-]{6,})", re.S)
 
 # Igual patrón que CUIT -- confirmado por el usuario el 30/09/2026 con una
@@ -92,7 +91,7 @@ def clase_de_pagina(pagina: str) -> int | None:
     return int(m.group(1)) if m else None
 
 # Nombre del titular en la misma página de /MarcasConsultas/Resultado:
-# "NOMBRE: <span class="text-danger"> BOTTERO TOMAS 100.00%</span>" (el % es
+# "NOMBRE: <span class="text-danger"> PEREZ JUAN 100.00%</span>" (el % es
 # el porcentaje de titularidad). Mismo patrón que ya usa
 # agregar_marca_manual.py. Exigir el % evita confundirlo con el NOMBRE del
 # agente u otras secciones. Puede haber más de un titular (cotitularidad).

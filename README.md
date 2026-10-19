@@ -137,14 +137,12 @@ data/                salidas locales (ignorado por git)
 ## Pendientes conocidos (ver docs/proceso-original.md)
 
 - Revisar a mano las marcas Mixtas/Figurativas sin nombre recuperado.
-- Reportar a `soportews@inpi.gob.ar` el bug de inyección SQL encontrado en
-  `ConsultaCuitOTitular` con titulares que tienen apóstrofe.
 - Definir la vía legal para el envío de emails de prospección antes de conectar
   Resend/Mailrelay.
-- `validar_leads.py` usa `requests` puro (sin navegador) porque el WAF de INPI
-  bloquea las visitas hechas con Chromium/Playwright headless ("Web Page
-  Blocked! Attack ID: 20000051"), pero no bloquea peticiones HTTP simples. El
-  dato de CARACTER se obtiene con un POST a `/MarcasConsultas/Resultado`
-  (no con el GET `?acta=` que aparece en el link del CSV, que no devuelve la
-  sección "GESTION DEL TRAMITE"). Si INPI cambia el HTML o esos endpoints,
-  revisar las constantes/regex al principio del script.
+- `validar_leads.py` usa `requests` puro (sin navegador) porque las visitas
+  hechas con Chromium/Playwright headless no funcionan contra el portal de
+  INPI, pero las peticiones HTTP simples sí. El dato de CARACTER se obtiene
+  con un POST a `/MarcasConsultas/Resultado` (no con el GET `?acta=` que
+  aparece en el link del CSV, que no devuelve la sección "GESTION DEL
+  TRAMITE"). Si INPI cambia el HTML o esos endpoints, revisar las
+  constantes/regex al principio del script.

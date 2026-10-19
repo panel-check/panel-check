@@ -39,10 +39,10 @@ def consultar_titular(titular: str, timeout: int = 60, reintentos: int = 2, cuit
     El servicio de INPI tiene latencia variable (1s a 60s+), así que reintenta
     antes de darse por vencido.
 
-    Advertencia de seguridad conocida: un titular con apóstrofe (ej. O'Brien) puede
-    hacer que el webservice devuelva un error SQL crudo (indicio de inyección SQL
-    del lado de INPI). No explotar esto; si aparece, reportarlo a
-    soportews@inpi.gob.ar y seguir de largo con el resto de los titulares."""
+    El titular siempre se manda escapado (xml_escape): nombres con caracteres
+    especiales (ej. apóstrofe, O'Brien) pueden producir respuestas de error
+    inesperadas del servidor — si aparece, seguir de largo con el resto de los
+    titulares."""
     titular_safe = xml_escape(titular)
     body = f"""<?xml version="1.0" encoding="utf-8"?>
 <soap:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">

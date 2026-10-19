@@ -87,9 +87,8 @@ completa del expediente ("Resultado" al buscar por acta desde Consultas
 de Marcas) hay un botón "GRILLA DIGITAL" que lista todos los archivos
 adjuntos del trámite, incluyendo el "Formulario" original que completó
 el solicitante. Ese PDF trae, entre otros datos, el campo EMAIL del
-titular --- lo confirmamos con un caso real (acta 4698827, ROMEU
-DAIANA): el formulario trajo "EMAIL:
-[[xoanavgarcia@gmail.com]{.underline}](mailto:xoanavgarcia@gmail.com)",
+titular --- lo confirmamos con un caso real: el formulario trajo "EMAIL:
+[[nombre@ejemplo.com]{.underline}](mailto:nombre@ejemplo.com)",
 además de DNI, domicilio real, y en la sección REPRESENTACION el nombre
 y correo del apoderado especial autorizado, si lo hay. El link de
 descarga del PDF se puede pedir directo por curl (sin login) una vez
@@ -284,30 +283,13 @@ Railway primer mes gratis
                                                          gratis)
   -----------------------------------------------------------------------
 
-#### **8.2 La Estrategia Comercial (Los 2 Frentes de ataque)**
+#### **8.2 Alcance del procesamiento**
 
-Tener este sistema nos permite atacar por dos lados distintos para
-conseguir clientes:
-
-**Frente A: El día a día (Marcas Nuevas)**
-
-El INPI tiene una página web donde avisan qué boletines salen. Nuestro
-sistema entrará ahí automáticamente, revisará si salió algo etiquetado
-como \"MARCAS NUEVAS\", y si es así, arrancará el proceso.
-
--   *Objetivo:* Ofrecer a estos prospectos ayuda para contestar vistas,
-    > oposiciones o terminar su trámite recién iniciado.
-
-**Frente B: La Máquina del Tiempo (Historial)**
-
-Como Apify nos permite procesar 800 boletines, vamos a programar el
-sistema para que trabaje de noche, procesando boletines de los años
-2024, 2025 y hacia atrás. Extraeremos a todas las personas que
-registraron su marca hace años y lo hicieron sin abogado.
-
--   *Objetivo:* Ofrecerles el servicio de DDJJ (si esta cerca de los 5
-    > años), **Renovación de Marca** (si está cerca de los 10 años) o
-    > **Vigilancia** (para que nadie registre algo parecido).
+El sistema procesa tanto los boletines nuevos (automático, varias veces por
+semana) como el historial de boletines anteriores (de fondo, sin apuro, para
+completar la base). El detalle de a quién se le ofrece qué servicio según la
+antigüedad de su marca vive en la configuración del panel, no en este
+documento.
 
 #### **8.3 ¿Es legal y seguro extraer tanta información antigua?**
 

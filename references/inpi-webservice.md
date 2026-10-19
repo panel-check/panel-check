@@ -13,10 +13,9 @@ Devuelve `GrillaMarcas[]`: `Acta`, `Titulares` (incluye CUIT), `Fecha_Ingreso`, 
 Mixtas/Figurativas (que en el boletín no traen texto), cruzando por titular y filtrando
 por número de Acta en la respuesta.
 
-⚠️ Sanitizar bien el string de `titular` en el XML. Un apóstrofe en el nombre (ej. "O'Brien",
-"CAFFE' PASCUCCI") puede devolver un error de sintaxis SQL crudo desde el servidor — señal
-de una inyección SQL del lado de INPI. No intentar explotarlo. Reportar a soportews@inpi.gob.ar
-si se encuentra en producción.
+⚠️ Sanitizar bien el string de `titular` en el XML (escapar siempre con `xml_escape`,
+como ya hace `completar_mixtas.py`): nombres con caracteres especiales (ej. apóstrofe,
+"O'Brien") pueden producir respuestas de error inesperadas del servidor.
 
 ### ConsultaDenominacion
 Input: `Denominacion` (string, nombre de marca a buscar).

@@ -4,8 +4,8 @@ Corrige el titular de las marcas cargadas por escanear_actas_nuevas.py
 
 El bug: la regex del Formulario (TITULARIDAD.*?NOMBRE:(.+) con re.S) se
 comía todo el resto del PDF, así que el titular quedaba como
-"SERRATTI GERONIMO DOMICILIO LEGAL: ... 4124382 3 de 3", o directamente
-como el CUIT ("27288993780 DOMICILIO LEGAL: ...") cuando NOMBRE venía vacío.
+"PEREZ JUAN DOMICILIO LEGAL: ... 4124382 3 de 3", o directamente
+como el CUIT ("20123456789 DOMICILIO LEGAL: ...") cuando NOMBRE venía vacío.
 
 Para cada fila afectada:
   1. Vuelve a pedir /MarcasConsultas/Resultado y toma el NOMBRE del titular

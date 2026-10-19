@@ -94,7 +94,7 @@ def main():
     m_clase = re.search(r"CLASE:\s*(\d+)", titularidad)
 
     # El nombre real del titular está en un <label class="input"> aparte,
-    # como "NOMBRE: <span class="text-danger"> BOTTERO TOMAS 100.00%</span>"
+    # como "NOMBRE: <span class="text-danger"> PEREZ JUAN 100.00%</span>"
     # (el % es el porcentaje de titularidad, no parte del nombre). Confirmado
     # a mano contra esta misma acta — no tan probado como CARACTER/CUIT.
     m_nombre = re.search(
