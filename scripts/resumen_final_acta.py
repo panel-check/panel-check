@@ -7,7 +7,7 @@ Ronda 3: ya tenemos estado_tramite/fecha_concesion/numero_disposicion/
 fecha_vencimiento_marca/cuit. Falta el nombre real del titular — la tabla
 "TIPO Y NOMBRE DEL TITULAR" que encontramos antes era de historial de
 cambios de rubro, no la ficha principal. Volcamos HTML crudo alrededor del
-CUIT (20408863210 en la corrida anterior) y de "RAZON SOCIAL"/"APELLIDO"/
+CUIT (un número de 11 dígitos en la corrida anterior) y de "RAZON SOCIAL"/"APELLIDO"/
 "NOMBRE", que suelen estar en la misma fila/label que el CUIT real.
 
 Uso:

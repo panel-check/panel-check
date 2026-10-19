@@ -43,7 +43,7 @@ RE_GESTION = re.compile(r"GESTION DEL TRAMITE.*?</h4>\s*</div>\s*<div[^>]*>(.*?)
 RE_CARACTER_SPAN = re.compile(r"CARACTER\s*:?\s*<span[^>]*>(.*?)</span>", re.S)
 # El CUIT viene envuelto en <span> en algunas fichas (personas jurídicas) y
 # como texto plano dentro del mismo <label> en otras (personas físicas) —
-# "CUIT: 20302361291" sin span. El <span> es opcional para cubrir ambos casos.
+# "CUIT: 20123456789" sin span. El <span> es opcional para cubrir ambos casos.
 RE_CUIT_SPAN = re.compile(r"CUIT\s*:?\s*(?:<span[^>]*>)?\s*([\d.\-]{6,})", re.S)
 # Solo el label real <label ...>CLASE: <span ...>30</span>. Suelto en toda la
 # página se llevaba frases de las oposiciones ("...REGISTRADA EN LA CLASE 43")
