@@ -575,6 +575,10 @@
       // La disponibilidad se vuelve a pedir cada vez que se mira (puede haberse agendado algo en la otra pestaña).
       if (!f.getAttribute("src")) f.setAttribute("src", URL_PESTANA[nombre]);
       else if (nombre === "disponibilidad" && (cambia || alAbrir)) { try { f.contentWindow.location.reload(); } catch (_) { f.setAttribute("src", URL_PESTANA[nombre]); } }
+      // «Agendar» no se recarga (se perdería lo que se estaba escribiendo), pero como el iframe
+      // queda vivo entre aperturas, puede haber quedado scrolleado de la vez anterior: se vuelve
+      // a arriba del todo (donde está «Completar con IA») cada vez que se abre o se vuelve a esta pestaña.
+      else if (cambia || alAbrir) { try { f.contentWindow.scrollTo(0, 0); } catch (_) {} }
     });
   }
 
@@ -747,8 +751,11 @@
     sheetEl.innerHTML = `
       <div class="sheet-secciones-scrim"></div>
       <div class="sheet-secciones-hoja" role="dialog" aria-modal="true" aria-label="Elegir sección">
-        <div class="sheet-secciones-agarre" aria-hidden="true"></div>
-        <div class="sheet-secciones-titulo">Secciones</div>
+        <button type="button" class="sheet-secciones-agarre" aria-label="Cerrar"></button>
+        <div class="sheet-secciones-cab">
+          <div class="sheet-secciones-titulo">Secciones</div>
+          <button type="button" class="sheet-secciones-cerrar" aria-label="Cerrar">✕</button>
+        </div>
         <div class="sheet-secciones-grid">
           ${FIJAS.map(cuadradoHtml).join("")}
           ${SECCIONES.map(cuadradoHtml).join("")}
@@ -756,6 +763,8 @@
       </div>`;
     document.body.appendChild(sheetEl);
     sheetEl.querySelector(".sheet-secciones-scrim").addEventListener("click", () => abrirSheet(false));
+    sheetEl.querySelector(".sheet-secciones-agarre").addEventListener("click", () => abrirSheet(false));
+    sheetEl.querySelector(".sheet-secciones-cerrar").addEventListener("click", () => abrirSheet(false));
     sheetEl.addEventListener("click", (e) => {
       const btn = e.target.closest(".seccion-tile");
       if (!btn) return;
@@ -817,8 +826,12 @@
     if (!document.querySelector(".app-header")) return;
     if (document.querySelector(".tab-bar-mobil")) return;
     crearBarraMobil();
-    // Home de la versión celular: al entrar en «/» la hoja se abre sola.
-    if (location.pathname === "/" && window.matchMedia("(max-width: 640px)").matches) abrirSheet(true);
+    // Home de la versión celular: al entrar en «/» la hoja se abre sola — pero una sola vez
+    // por sesión del navegador, no cada vez que se vuelve a Leads desde otra sección (era molesto).
+    if (location.pathname === "/" && window.matchMedia("(max-width: 640px)").matches && !guardado("kom-sheet-mostrada")) {
+      abrirSheet(true);
+      guardado("kom-sheet-mostrada", "1");
+    }
   }
 
   function iniciar() { iniciarSecciones(); iniciarAccesos(); iniciarBusqueda(); iniciarAtajos(); iniciarGrupos(); iniciarChat(); }
