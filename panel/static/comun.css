@@ -1092,7 +1092,7 @@ button.btn-coment {
 button.btn-coment:hover { opacity: 1; background: var(--azul-claro); }
 button.btn-coment.con-comentarios { opacity: 1; }
 button.btn-coment.con-abiertos { border-color: #f5b400; background: #fff6d6; font-weight: 600; }
-.modal-caja.modal-coment { max-width: 620px; width: 100%; }
+.modal-caja.modal-coment { max-width: 620px; }
 .modal-caja h3.titulo-coment { color: var(--azul); }
 .form-coment { display: flex; flex-direction: column; gap: 8px; margin-bottom: 14px; }
 .form-coment textarea {
@@ -1236,7 +1236,7 @@ tr.crm-fila:hover { background: var(--azul-claro); }
 .crm-urg-proximo { border-left-color: var(--azul) !important; }
 
 /* Ficha del lead (popup en /crm y bloque en /titular) */
-.modal-caja.modal-crm { max-width: 820px; width: 100%; }
+.modal-caja.modal-crm { max-width: 820px; }
 .crm-ficha h3 { margin: 0 0 4px; font-size: 17px; color: #1f2430; }
 .crm-ficha h4 { margin: 18px 0 8px; font-size: 13px; color: #374151; text-transform: uppercase; letter-spacing: 0.03em; }
 .crm-ficha-cab { margin-bottom: 10px; padding-right: 20px; }
@@ -1414,7 +1414,7 @@ a.cl-logo-link { display: inline-block; line-height: 0; }
 a.mk-acta { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; white-space: nowrap; }
 .cl-tag.ref { background: #f1e8fb; color: #6b3fa0; }
 .cl-referido.destacado input { border-color: #6b3fa0; box-shadow: 0 0 0 2px #f1e8fb; }
-.modal-caja.modal-cliente { max-width: 980px; width: 100%; }
+.modal-caja.modal-cliente { max-width: 980px; }
 .cl-ficha h3 { margin: 0 0 4px; font-size: 18px; }
 .cl-ficha h4 { margin: 20px 0 8px; font-size: 13px; color: #374151; text-transform: uppercase; letter-spacing: .04em; }
 .cl-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 10px 14px; margin-top: 10px; }
@@ -1484,7 +1484,7 @@ a.mk-acta { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-si
 .vg-plazo.vg-temprana { background: #eef4ff; color: #1f3a6b; }
 .vg-orden { cursor: pointer; user-select: none; }
 .vg-orden:hover { color: var(--azul); }
-.modal-caja.modal-marca { max-width: 1040px; width: 100%; }
+.modal-caja.modal-marca { max-width: 1040px; }
 .fm-ficha { min-height: 70vh; }
 .fm-cab h3 { margin: 0 0 4px; font-size: 20px; color: var(--texto); display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .fm-tabs { display: flex; flex-wrap: wrap; gap: 2px; margin: 14px 0 0; border-bottom: 1px solid var(--borde); }
