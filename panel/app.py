@@ -724,8 +724,8 @@ GRUPOS_AUTOMATIZACIONES = [
             },
             {
                 "nombre": "Avisos por mail de la mañana",
-                "descripcion": "Manda a las 7:30, en un solo horario, los mails de oposiciones nuevas, de "
-                               "alertas/plazos/novedades de la cartera y de formularios de clientes pendientes.",
+                "descripcion": "Manda a las 7:30, en un solo horario, los mails de alertas/plazos/novedades "
+                               "de la cartera y de formularios de clientes pendientes.",
                 "horario": "Todos los días, 7:30 hs",
                 "metricas": [],
                 "procesos": [
