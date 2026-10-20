@@ -1176,6 +1176,9 @@ td.celda-acciones { white-space: nowrap; }
   background: #1f2430; color: white; font-size: 10px; font-weight: 700; text-align: center;
   vertical-align: middle;
 }
+/* En la tarjeta del tablero, el título largo no tiene que aplastar las
+   iniciales del asignado (en celular «KO» quedaba en dos renglones). */
+.crm-card-tit .crm-asignado { flex-shrink: 0; align-self: flex-start; }
 .crm-gris { color: var(--gris); font-size: 12px; }
 .crm-nota { color: var(--gris); font-size: 11px; margin: 4px 0 0; }
 .crm-cargando, .crm-error { padding: 20px; color: var(--gris); }
@@ -1342,6 +1345,43 @@ tr.crm-fila:hover { background: var(--azul-claro); }
 @media (max-width: 640px) {
   .pestanas { margin: 10px 10px 0; }
   .pestanas button { padding: 9px 12px; font-size: 13px; }
+}
+
+/* ── Ficha del titular en celular (20/10/2026) ─────────────────────────
+   - Cabecera del lead más corta: las acciones van en grilla de a dos, y la
+     principal (azul: «Enviar mail de oposición» o «Convertir en cliente»)
+     sube primera, a todo el ancho. Antes eran 5 botones apilados y ocupaban
+     una pantalla entera antes de llegar a las pestañas.
+   - Las pestañas quedan pegadas abajo del encabezado al hacer scroll
+     (sticky), para cambiar de pestaña sin volver arriba; scrollean de
+     costado y la elegida se centra sola (abrirPestana en titular.html). */
+@media (max-width: 640px) {
+  .crm-cabecera { padding: 10px 12px; }
+  .crm-cabecera .crm-cab-resumen { gap: 6px 8px; font-size: 12.5px; }
+  .crm-cabecera .crm-alerta { font-size: 12px; line-height: 1.4; padding: 6px 9px; }
+  .crm-cabecera .crm-acciones-resultado { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .crm-cabecera .crm-acciones-resultado > button {
+    width: 100%; min-height: 40px; padding: 7px 8px; font-size: 12.5px; line-height: 1.25;
+    white-space: normal; text-align: center;
+  }
+  .crm-cabecera .crm-acciones-resultado > .crm-btn-primario { grid-column: 1 / -1; order: -1; font-weight: 600; }
+  .crm-cabecera .crm-acciones-resultado > span { grid-column: 1 / -1; }
+  .crm-cabecera .crm-acciones-resultado > span:empty { display: none; }
+
+  #pestanas.pestanas {
+    position: sticky; top: 56px; z-index: 30; background: var(--fondo);
+    margin: 10px 0 0; padding: 0 10px; scrollbar-width: none;
+  }
+  #pestanas.pestanas::-webkit-scrollbar { display: none; }
+}
+
+/* Globos de ayuda (.tooltip .globo): escondidos con visibility igual
+   ocupan lugar, y como miden 220px empujaban el ancho de la página en
+   celular (la ficha de titular y la Ayuda se corrían de costado). En
+   pantallas chicas, mientras no se ven, no ocupan lugar. */
+@media (max-width: 640px) {
+  .tooltip:not(:hover):not(:focus-within) .globo { display: none; }
+  .tooltip .globo { max-width: calc(100vw - 40px); }
 }
 
 /* Ajustes de la barra de filtros: el campo de fecha alinea su texto a la
@@ -1920,3 +1960,62 @@ tr.seleccionada, tr.seleccionada.lead { background: var(--azul-claro); }
 /* Lista de marcas: "Fecha present." solo con el filtro Pre-boletín; "Fecha Boletín" en el resto. */
 #tabla-marcas:not(.solo-pre) .col-present,
 #tabla-marcas.solo-pre .col-boletin { display: none; }
+
+/* ── CRM en celular (20/10/2026) ───────────────────────────────────────
+   Mismo criterio que Leads y Clientes. Filtros: los tres tildes van uno
+   por renglón, sin el renglón vacío de arriba que los alinea en desktop, y
+   «Filtrar» a todo el ancho. Lista: cada lead pasa a tarjeta. Orden fijo de
+   columnas (cargarLista() en crm.html): 1 Titular, 2 Etapa, 3 Asignado,
+   4 Marcas, 5 Contacto, 6 Próx. seguimiento, 7 Última gestión, 8 Detectado.
+   Si ese orden cambia, hay que ajustar los nth-child de acá. */
+@media (max-width: 640px) {
+  .crm-pestanas { padding: 10px 10px 0; }
+  .filtros > label.crm-check { flex: 1 1 100%; }
+  .filtros > label.crm-check > span:first-child { display: none; }
+  .filtros > label.crm-check > span:last-child { height: auto; min-height: 28px; font-size: 13px; }
+  .filtros > #btn-filtrar { flex: 1 1 100%; }
+  .crm-resumen { padding: 10px 12px; }
+
+  #vista-lista .contenedor-tabla { overflow-x: visible; padding: 0 10px; background: none; border: 0; }
+  #vista-lista table, #vista-lista tbody { display: block; width: 100%; }
+  #vista-lista thead { display: none; }
+  #vista-lista tr.crm-fila {
+    display: flex; flex-wrap: wrap; column-gap: 10px; row-gap: 4px; align-items: baseline;
+    background: #fff; border: 1px solid var(--borde); border-radius: 12px; padding: 12px 14px; margin: 0 0 10px;
+  }
+  #vista-lista tr.crm-fila td { display: block; border: 0; padding: 0; white-space: normal; max-width: none; overflow: visible; }
+  #vista-lista tr.crm-fila td:nth-child(1) { order: 1; flex: 1 1 100%; font-size: 14px; }
+  #vista-lista tr.crm-fila td:nth-child(1) .crm-celda-marcas { white-space: normal; max-width: none; }
+  #vista-lista tr.crm-fila td:nth-child(2) { order: 2; flex: 0 0 auto; }
+  #vista-lista tr.crm-fila td:nth-child(3) { order: 3; flex: 0 0 auto; font-size: 12px; color: var(--gris); }
+  #vista-lista tr.crm-fila td:nth-child(3)::before { content: "· "; }
+  #vista-lista tr.crm-fila td:nth-child(4) { order: 4; flex: 0 0 auto; font-size: 12px; color: var(--gris); }
+  #vista-lista tr.crm-fila td:nth-child(4)::before { content: "· marcas: "; }
+  #vista-lista tr.crm-fila td:nth-child(5) { order: 5; flex: 1 1 auto; font-size: 12px; text-align: right; }
+  #vista-lista tr.crm-fila td:nth-child(6),
+  #vista-lista tr.crm-fila td:nth-child(7),
+  #vista-lista tr.crm-fila td:nth-child(8) {
+    flex: 1 1 30%; font-size: 12px; border-top: 1px solid #eef0f2; padding-top: 8px; margin-top: 4px;
+  }
+  #vista-lista tr.crm-fila td:nth-child(6) { order: 6; }
+  #vista-lista tr.crm-fila td:nth-child(7) { order: 7; }
+  #vista-lista tr.crm-fila td:nth-child(8) { order: 8; }
+  #vista-lista tr.crm-fila td:nth-child(6)::before,
+  #vista-lista tr.crm-fila td:nth-child(7)::before,
+  #vista-lista tr.crm-fila td:nth-child(8)::before {
+    display: block; font-size: 9.5px; font-weight: 700; letter-spacing: .03em; color: #9aa1ab; text-transform: uppercase;
+  }
+  #vista-lista tr.crm-fila td:nth-child(6)::before { content: "Seguimiento"; }
+  #vista-lista tr.crm-fila td:nth-child(7)::before { content: "Últ. gestión"; }
+  #vista-lista tr.crm-fila td:nth-child(8)::before { content: "Detectado"; }
+  #vista-lista .paginado { padding: 0 10px 20px; }
+}
+
+/* Chips de etapa del tablero: botón que lleva a la columna. En celular las
+   columnas encajan al deslizar (scroll-snap), de a una. */
+button.crm-chip.crm-chip-ir { font: inherit; font-size: 12px; cursor: pointer; color: inherit; }
+button.crm-chip.crm-chip-ir:hover { border-color: var(--azul); }
+@media (max-width: 640px) {
+  .crm-tablero { padding: 0 10px 20px; scroll-snap-type: x mandatory; scroll-padding: 0 10px; gap: 10px; }
+  .crm-columna { scroll-snap-align: start; max-height: calc(100vh - 150px); }
+}
