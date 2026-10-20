@@ -6,7 +6,7 @@
 <title>CRM de leads — Kom Marcas Inpi</title>
 <link rel="icon" type="image/png" href="/static/favicon.png" />
 <link rel="apple-touch-icon" href="/static/apple-touch-icon.png" />
-<link rel="stylesheet" href="/static/comun.css?v=vp3" />
+<link rel="stylesheet" href="/static/comun.css?v=mv1" />
 <script src="/static/sesion.js" defer></script>
 <script src="/static/menu.js?v=tel3" defer></script>
 </head>
@@ -165,12 +165,24 @@ function abrirFicha(clave) {
 
 // ── Resumen (conteo por etapa + honorarios de clientes) ──
 function pintarResumen(etapas, honorarios) {
-  const chips = etapas.map(e => `<span class="crm-chip">${crmBadgeEtapa(e.id)} <strong>${e.total}</strong></span>`).join("");
+  // En el tablero, tocar un chip lleva a esa columna (en celular las columnas se ven de a una).
+  const enTablero = estado.vista === "tablero";
+  const chips = etapas.map(e => enTablero
+    ? `<button type="button" class="crm-chip crm-chip-ir" data-ir-etapa="${crmEsc(e.id)}" title="Ir a la columna">${crmBadgeEtapa(e.id)} <strong>${e.total}</strong></button>`
+    : `<span class="crm-chip">${crmBadgeEtapa(e.id)} <strong>${e.total}</strong></span>`).join("");
   const plata = Object.entries(honorarios || {})
     .map(([m, v]) => `${m} ${Number(v).toLocaleString("es-AR", { maximumFractionDigits: 2 })}`).join(" · ");
   document.getElementById("resumen").innerHTML = chips
     + (plata ? `<span class="crm-chip crm-chip-plata" title="Suma de honorarios cargados en los leads en etapa Cliente (con los filtros actuales)">💰 Honorarios de clientes: <strong>${crmEsc(plata)}</strong></span>` : "");
 }
+
+document.getElementById("resumen").addEventListener("click", (ev) => {
+  const b = ev.target.closest("[data-ir-etapa]");
+  if (!b) return;
+  const col = document.querySelector(`.crm-columna[data-etapa="${CSS.escape(b.dataset.irEtapa)}"]`);
+  const tablero = document.getElementById("tablero");
+  if (col) tablero.scrollTo({ left: col.offsetLeft - tablero.offsetLeft - 10, behavior: "smooth" });
+});
 
 // ── Tablero (kanban) ──
 function tarjetaHtml(l) {

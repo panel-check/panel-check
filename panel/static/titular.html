@@ -6,7 +6,7 @@
 <title>Detalle de titular — Kom Marcas Inpi</title>
 <link rel="icon" type="image/png" href="/static/favicon.png" />
 <link rel="apple-touch-icon" href="/static/apple-touch-icon.png" />
-<link rel="stylesheet" href="/static/comun.css?v=vp3" />
+<link rel="stylesheet" href="/static/comun.css?v=mv1" />
 <link rel="stylesheet" href="/static/calendario.css?v=6" />
 <script src="/static/sesion.js" defer></script>
 <script src="/static/menu.js?v=tel3" defer></script>
@@ -407,8 +407,25 @@ function abrirPestana(id) {
 
 document.getElementById("pestanas").addEventListener("click", (ev) => {
   const b = ev.target.closest("[data-tab]");
-  if (b) abrirPestana(b.dataset.tab);
+  if (!b) return;
+  abrirPestana(b.dataset.tab);
+  acomodarPestanaMovil(b.dataset.tab);
 });
+
+// En celular las pestañas quedan pegadas arriba (sticky) y scrollean de
+// costado: la elegida se centra en la barra y, si ya se había bajado por la
+// página, se vuelve al principio de la pestaña nueva (si no, se abriría a la
+// mitad del contenido).
+function acomodarPestanaMovil(id) {
+  if (!window.matchMedia("(max-width: 640px)").matches) return;
+  const barra = document.getElementById("pestanas");
+  const b = document.getElementById("pest-" + id);
+  barra.scrollTo({ left: b.offsetLeft - (barra.clientWidth - b.offsetWidth) / 2, behavior: "smooth" });
+  const alto = (document.querySelector("header.app-header")?.offsetHeight || 0) + barra.offsetHeight;
+  const panel = document.getElementById("tab-" + id);
+  const top = panel.getBoundingClientRect().top;
+  if (top < alto) window.scrollTo({ top: window.scrollY + top - alto - 6 });
+}
 document.getElementById("pestanas").addEventListener("keydown", (ev) => {
   if (ev.key !== "ArrowRight" && ev.key !== "ArrowLeft") return;
   const visibles = PESTANAS.filter(t => !document.getElementById("pest-" + t).hidden);
