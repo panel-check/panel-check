@@ -6,7 +6,7 @@
 <title>Ayuda — Kom Marcas Inpi</title>
 <link rel="icon" type="image/png" href="/static/favicon.png" />
 <link rel="apple-touch-icon" href="/static/apple-touch-icon.png" />
-<link rel="stylesheet" href="/static/comun.css?v=vp3" />
+<link rel="stylesheet" href="/static/comun.css?v=mv1" />
 <style>
   .contenido {
     max-width: 780px;
@@ -164,6 +164,21 @@
     cursor: pointer;
   }
   .imprimir:hover { text-decoration: underline; }
+  /* Celular: menos margen alrededor del texto, nombres largos de archivos o
+     links (<code>) que cortan en vez de salirse de la tarjeta, y las tablas
+     (procesos con horarios, glosario, score) con scroll propio. */
+  @media (max-width: 640px) {
+    .contenido { padding: 0 10px; }
+    .caja { padding: 16px 14px; }
+    .resumen { padding: 12px 14px; font-size: 13.5px; line-height: 1.6; }
+    .paso { gap: 12px; }
+    .paso .cuerpo { min-width: 0; }
+    code, .caja li strong, .caja p strong { overflow-wrap: anywhere; }
+    .caja table { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    .tabla-glosario th { width: auto; min-width: 110px; }
+    .tabs { overflow-x: auto; }
+    .tab-btn { white-space: nowrap; }
+  }
   @media print {
     header, .tabs, .imprimir { display: none !important; }
     #tab-manual { display: block !important; }
@@ -285,7 +300,7 @@
     <h2>Agrupado por titular</h2>
     <p>Cuando un mismo titular tiene varias marcas, se muestra una sola fila con una flecha (<strong>▸ +N</strong>) para desplegar el resto sin saturar la tabla. El click en el nombre del titular abre su ficha completa (<code>/titular/...</code>), con <strong>todas</strong> sus marcas de cualquier boletín, no solo el que se está mirando.</p>
     <h3 id="mandar-mail">✉️ Mandar un mail a un lead</h3>
-    <p>La ficha del titular tiene, arriba, una <strong>cabecera siempre visible</strong> (etapa, asignado, próximo seguimiento, avisos y los botones <em>Convertir en cliente</em> y <em>Tiene gestor/apoderado</em>) y abajo cinco <strong>pestañas</strong>, en este orden: <strong>Marca</strong> (la tabla con todas las marcas del titular; es la que abre primero), <strong>Análisis de marca</strong> (ver <a href="#analisis-de-marca">más abajo</a>), <strong>Mail</strong>, <strong>Plazos y fechas</strong> y <strong>CRM</strong>. Cada pestaña puede mostrar una marquita: la cantidad de mails enviados (Mail), un <strong>!</strong> rojo si hay algo urgente o un seguimiento vencido (Plazos y fechas) y la fecha del próximo seguimiento (CRM). Con las flechas ← → del teclado se pasa de una a otra. En la pestaña <strong>Mail</strong> está el bloque <strong>Mandar mail</strong>:</p>
+    <p>La ficha del titular tiene, arriba, una <strong>cabecera siempre visible</strong> (etapa, asignado, próximo seguimiento, avisos y los botones <em>Convertir en cliente</em> y <em>Tiene gestor/apoderado</em>) y abajo cinco <strong>pestañas</strong>, en este orden: <strong>Marca</strong> (la tabla con todas las marcas del titular; es la que abre primero), <strong>Análisis de marca</strong> (ver <a href="#analisis-de-marca">más abajo</a>), <strong>Mail</strong>, <strong>Plazos y fechas</strong> y <strong>CRM</strong>. Cada pestaña puede mostrar una marquita: la cantidad de mails enviados (Mail), un <strong>!</strong> rojo si hay algo urgente o un seguimiento vencido (Plazos y fechas) y la fecha del próximo seguimiento (CRM). Con las flechas ← → del teclado se pasa de una a otra. <strong>En el celular</strong> la cabecera es más corta (el botón principal arriba a todo el ancho y el resto de a dos) y las pestañas quedan fijas debajo de la barra de arriba al bajar por la página: se deslizan de costado y, al tocar una, se abre desde su principio. En la pestaña <strong>Mail</strong> está el bloque <strong>Mandar mail</strong>:</p>
     <ul>
       <li><strong>Plantilla:</strong> una de las plantillas de prospectos de <a href="/mails">Mails</a> (primer contacto, marca publicada, recibió una oposición y presupuesto de registro de marca). Si el titular tiene una marca con oposición o vista, aparece elegida la de oposición.</li>
       <li><strong>Marca:</strong> de cuál de sus marcas salen los datos del mail (marca, acta, clase, fecha). Se marca cuál tiene oposición/vista y cuál no tiene mail.</li>
@@ -423,7 +438,7 @@
     </ul>
     <p><strong>Tres vistas</strong> (pestañas arriba):</p>
     <ul>
-      <li><strong>🗂 Tablero:</strong> una columna por etapa. Para mover un lead, <strong>arrastrá la tarjeta</strong> a otra columna (en el celular, abrí la tarjeta y cambiá la etapa en la ficha). Al soltarla en <em>Descartado</em> pide el motivo (opcional). Las columnas <em>Nuevo</em> y <em>Descartado</em> pueden tener miles de leads: muestran los primeros 60 y el botón <em>ver más</em>. En <em>Nuevo</em> salen primero los que tienen una oposición sin apoderado, después los que tienen email y después los más recientes. Cada tarjeta muestra marcas y clases, ⚠ si tiene oposición, 🆕 si es pre-boletín, si tiene email (✉) y teléfono (☎), la fecha del próximo seguimiento (en rojo si ya pasó) y las iniciales de quién lo tiene asignado.</li>
+      <li><strong>🗂 Tablero:</strong> una columna por etapa. Para mover un lead, <strong>arrastrá la tarjeta</strong> a otra columna (en el celular, abrí la tarjeta y cambiá la etapa en la ficha). Los chips de arriba con el total de cada etapa llevan a su columna con un toque, y en el celular las columnas se ven de a una y encajan al deslizar. Al soltarla en <em>Descartado</em> pide el motivo (opcional). Las columnas <em>Nuevo</em> y <em>Descartado</em> pueden tener miles de leads: muestran los primeros 60 y el botón <em>ver más</em>. En <em>Nuevo</em> salen primero los que tienen una oposición sin apoderado, después los que tienen email y después los más recientes. Cada tarjeta muestra marcas y clases, ⚠ si tiene oposición, 🆕 si es pre-boletín, si tiene email (✉) y teléfono (☎), la fecha del próximo seguimiento (en rojo si ya pasó) y las iniciales de quién lo tiene asignado.</li>
       <li><strong>☰ Lista:</strong> los mismos leads en tabla, con filtro por etapa y orden por columna (titular, etapa, asignado, cantidad de marcas, próximo seguimiento, última gestión, fecha en que se detectó).</li>
       <li><strong>📅 Agenda:</strong> lo que hay que hacer. <em>Seguimientos agendados</em> (vencidos en rojo, hoy/próximos), <em>leads nuevos con oposición todavía sin gestionar</em> (los más urgentes para contactar) y <em>plazos de los próximos 60 días</em> de los leads en Contactado, Respondió, Reunión o Cliente.</li>
     </ul>
@@ -1045,6 +1060,10 @@ le asigna un puntaje de prioridad. Después sigue a cada marca a lo largo del ti
       <div class="seccion-manual">
         <h2>Cómo se usa el panel día a día</h2>
         <div class="tarjetas-panel">
+          <div class="tarjeta-mini">
+            <h4>En el celular</h4>
+            <p>Todo el panel se adapta a la pantalla del celular (no hay una app aparte): el menú pasa a una barra abajo, las tablas principales de cada pantalla (Leads, marcas del titular, CRM Lista, Clientes, Boletines, Consultas web, Mails enviados, sesiones y usuarios de Mi cuenta) se ven como tarjetas, y las tablas secundarias se deslizan de costado dentro de su caja. En la ficha del titular las pestañas quedan fijas arriba; en el tablero del CRM los chips de etapa llevan a su columna; en Mails, al elegir una plantilla se baja solo al editor.</p>
+          </div>
           <div class="tarjeta-mini">
             <h4>Panel principal</h4>
             <p>Lista de marcas con filtros (lead, contactado, oposición —con oposición o vista, solo oposición, solo vista o sin oposición—, boletín, clase, fechas con atajos de «últimos N días», búsqueda libre —que ignora los filtros lead y contactado para encontrar la marca siempre—) y orden

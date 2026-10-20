@@ -1382,6 +1382,15 @@ tr.crm-fila:hover { background: var(--azul-claro); }
 @media (max-width: 640px) {
   .tooltip:not(:hover):not(:focus-within) .globo { display: none; }
   .tooltip .globo { max-width: calc(100vw - 40px); }
+  /* Mails largos en las tarjetas de marcas (ficha de titular, Leads): que
+     corten en vez de empujar la tarjeta en celulares angostos (360px). */
+  #tabla-marca-titular td a, #tabla-marcas td a { overflow-wrap: anywhere; }
+}
+/* Tablet (641–900px): Consultas web y los subprocesos de Automatizaciones
+   tienen tablas anchas; en vez de correr toda la página de costado,
+   scrollean dentro de su caja. */
+@media (min-width: 641px) and (max-width: 1100px) {
+  #cw-lista { overflow-x: auto; }
 }
 
 /* Ajustes de la barra de filtros: el campo de fecha alinea su texto a la
@@ -2018,4 +2027,69 @@ button.crm-chip.crm-chip-ir:hover { border-color: var(--azul); }
 @media (max-width: 640px) {
   .crm-tablero { padding: 0 10px 20px; scroll-snap-type: x mandatory; scroll-padding: 0 10px; gap: 10px; }
   .crm-columna { scroll-snap-align: start; max-height: calc(100vh - 150px); }
+}
+
+/* ── Consultas web en celular (20/10/2026) ─────────────────────────────
+   La lista pasa a tarjetas. Orden fijo de columnas (consultas_web.js):
+   1 Recibida, 2 Marca, 3 Resultado, 4 Coincidencias, 5 Contacto,
+   6 Estado, 7 botones (Ver / Marcar revisada). */
+@media (max-width: 640px) {
+  #cw-lista > table.cl-tabla, #cw-lista > table.cl-tabla > tbody { display: block; width: 100%; background: none; border: 0; }
+  #cw-lista > table.cl-tabla > thead { display: none; }
+  #cw-lista > table.cl-tabla > tbody > tr {
+    display: flex; flex-wrap: wrap; column-gap: 10px; row-gap: 6px; align-items: baseline;
+    background: #fff; border: 1px solid var(--borde); border-radius: 12px; padding: 12px 14px; margin: 0 0 10px;
+  }
+  #cw-lista > table.cl-tabla > tbody > tr > td { display: block; border: 0; padding: 0; white-space: normal !important; overflow-wrap: anywhere; }
+  #cw-lista > table.cl-tabla > tbody > tr > td:nth-child(2) { order: 1; flex: 1 1 60%; min-width: 0; font-size: 14px; }
+  #cw-lista > table.cl-tabla > tbody > tr > td:nth-child(6) { order: 2; flex: 0 0 auto; margin-left: auto; }
+  #cw-lista > table.cl-tabla > tbody > tr > td:nth-child(1) { order: 3; flex: 1 1 100%; font-size: 12px; color: var(--gris); }
+  #cw-lista > table.cl-tabla > tbody > tr > td:nth-child(3) { order: 4; flex: 1 1 45%; font-size: 12.5px; border-top: 1px solid #eef0f2; padding-top: 8px; }
+  #cw-lista > table.cl-tabla > tbody > tr > td:nth-child(4) { order: 5; flex: 1 1 45%; font-size: 12.5px; border-top: 1px solid #eef0f2; padding-top: 8px; }
+  #cw-lista > table.cl-tabla > tbody > tr > td:nth-child(3)::before,
+  #cw-lista > table.cl-tabla > tbody > tr > td:nth-child(4)::before,
+  #cw-lista > table.cl-tabla > tbody > tr > td:nth-child(5)::before {
+    display: block; font-size: 9.5px; font-weight: 700; letter-spacing: .03em; color: #9aa1ab; text-transform: uppercase; margin-bottom: 2px;
+  }
+  #cw-lista > table.cl-tabla > tbody > tr > td:nth-child(3)::before { content: "Resultado"; }
+  #cw-lista > table.cl-tabla > tbody > tr > td:nth-child(4)::before { content: "Coincidencias"; }
+  #cw-lista > table.cl-tabla > tbody > tr > td:nth-child(5) { order: 6; flex: 1 1 100%; font-size: 13px; border-top: 1px solid #eef0f2; padding-top: 8px; }
+  #cw-lista > table.cl-tabla > tbody > tr > td:nth-child(5)::before { content: "Contacto"; }
+  #cw-lista > table.cl-tabla > tbody > tr > td:nth-child(7) { order: 7; flex: 1 1 100%; display: flex; gap: 8px; padding-top: 4px; }
+  #cw-lista > table.cl-tabla > tbody > tr > td:nth-child(7) > button { flex: 1 1 0; min-height: 36px; }
+  /* Ventana de detalle: los datos (filas con th) se apilan etiqueta arriba /
+     valor abajo, y la tabla de marcas que coinciden (con thead) pasa a
+     renglones: 1 Denominación, 2 Clase, 3 Estado, 4 Parecido, 5 Ver acta. */
+  #modal-consulta-contenido :is(table.cl-tabla, table.fm-tabla), #modal-consulta-contenido :is(table.cl-tabla, table.fm-tabla) tbody { display: block; width: 100%; }
+  #modal-consulta-contenido :is(table.cl-tabla, table.fm-tabla) thead { display: none; }
+  #modal-consulta-contenido :is(table.cl-tabla, table.fm-tabla) tr { display: flex; flex-wrap: wrap; gap: 2px 8px; align-items: baseline; padding: 7px 0; border-bottom: 1px solid #eef0f2; }
+  #modal-consulta-contenido :is(table.cl-tabla, table.fm-tabla) th, #modal-consulta-contenido :is(table.cl-tabla, table.fm-tabla) td {
+    display: block; padding: 0 !important; border: 0 !important; background: none; white-space: normal !important; overflow-wrap: anywhere;
+  }
+  #modal-consulta-contenido :is(table.cl-tabla, table.fm-tabla) tr > th { flex: 1 1 100%; font-size: 11px; text-transform: uppercase; letter-spacing: .03em; color: var(--gris); }
+  #modal-consulta-contenido :is(table.cl-tabla, table.fm-tabla) tr > th + td { flex: 1 1 100%; }
+  #modal-consulta-contenido :is(table.cl-tabla, table.fm-tabla) tr > td:first-child { flex: 1 1 100%; font-weight: 600; }
+}
+
+/* Ficha del lead en ventana (desde el CRM o el panel) en celular: las
+   acciones van en grilla de a dos como en la ficha de titular, y la tabla
+   de marcas pasa a renglones apilados (acta · clase · tipo, nombre, badges)
+   en vez de cortarse contra el borde. Columnas (_crmHtmlMarcasModal en
+   crm.js): 1 Acta, 2 Marca, 3 Clase, 4 Tipo, 5 badges. */
+@media (max-width: 640px) {
+  .modal-crm .crm-acciones-resultado { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  .modal-crm .crm-acciones-resultado > button {
+    width: 100%; min-height: 40px; padding: 7px 8px; font-size: 12.5px; line-height: 1.25; white-space: normal; text-align: center;
+  }
+  .modal-crm .crm-acciones-resultado > .crm-btn-primario { grid-column: 1 / -1; order: -1; font-weight: 600; }
+  .modal-crm .crm-acciones-resultado > span { grid-column: 1 / -1; }
+  .modal-crm .crm-acciones-resultado > span:empty { display: none; }
+  table.crm-tabla-marcas, table.crm-tabla-marcas tbody { display: block; width: 100%; }
+  table.crm-tabla-marcas tr { display: flex; flex-wrap: wrap; gap: 2px 8px; align-items: baseline; padding: 8px 0; border-bottom: 1px solid var(--borde); }
+  table.crm-tabla-marcas td { display: block; padding: 0 !important; border: 0; white-space: normal; }
+  table.crm-tabla-marcas td:nth-child(1) { order: 1; }
+  table.crm-tabla-marcas td:nth-child(3) { order: 2; color: var(--gris); }
+  table.crm-tabla-marcas td:nth-child(4) { order: 3; color: var(--gris); }
+  table.crm-tabla-marcas td:nth-child(2) { order: 4; flex: 1 1 100%; font-weight: 600; font-size: 13px; }
+  table.crm-tabla-marcas td:nth-child(5) { order: 5; flex: 1 1 100%; }
 }

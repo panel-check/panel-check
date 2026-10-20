@@ -7,7 +7,7 @@
 <title>Mi cuenta — Panel de leads</title>
 <link rel="icon" type="image/png" href="/static/favicon.png" />
 <link rel="apple-touch-icon" href="/static/apple-touch-icon.png" />
-<link rel="stylesheet" href="/static/comun.css?v=vp3" />
+<link rel="stylesheet" href="/static/comun.css?v=mv1" />
 <script src="/static/sesion.js" defer></script>
 <script src="/static/menu.js?v=tel3" defer></script>
 <style>
@@ -58,6 +58,36 @@
   .reset-caja.abierta { display: block; }
   .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
   @media (max-width: 700px) { .form-fila { grid-template-columns: 1fr; } .contenido { padding: 0 12px; } .bloque { padding: 16px 14px; } }
+  /* Celular: sesiones y usuarios pasan a tarjetas (el registro de ingresos,
+     de 4 columnas cortas, sigue como tabla con scroll). Orden fijo de
+     columnas: sesiones 1 Dispositivo, 2 IP, 3 Última actividad, 4 Inicio,
+     5 Vence, 6 Cerrar; usuarios 1 Usuario, 2 Rol, 3 Estado, 4 Último
+     ingreso, 5 Clave cambiada, 6 acciones. */
+  @media (max-width: 640px) {
+    #tabla-sesiones, #tabla-sesiones tbody, #tabla-usuarios, #tabla-usuarios tbody { display: block; width: 100%; }
+    #tabla-sesiones thead, #tabla-usuarios thead { display: none; }
+    #tabla-sesiones tr, #tabla-usuarios tr {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 6px 12px;
+      border: 1px solid var(--borde); border-radius: 10px; padding: 10px 12px; margin: 0 0 8px;
+    }
+    #tabla-sesiones td, #tabla-usuarios td { display: block; padding: 0; border: 0 !important; }
+    #tabla-sesiones td:nth-child(1), #tabla-usuarios td:nth-child(1) { grid-column: 1 / -1; }
+    #tabla-sesiones td:nth-child(n+2):nth-child(-n+5)::before,
+    #tabla-usuarios td:nth-child(n+3):nth-child(-n+5)::before {
+      display: block; font-size: 9.5px; font-weight: 700; letter-spacing: .03em; color: #9aa1ab; text-transform: uppercase; font-family: inherit;
+    }
+    #tabla-sesiones td:nth-child(2)::before { content: "IP"; }
+    #tabla-sesiones td:nth-child(3)::before { content: "Última actividad"; }
+    #tabla-sesiones td:nth-child(4)::before { content: "Inicio"; }
+    #tabla-sesiones td:nth-child(5)::before { content: "Vence"; }
+    #tabla-usuarios td:nth-child(3)::before { content: "Estado"; }
+    #tabla-usuarios td:nth-child(4)::before { content: "Último ingreso"; }
+    #tabla-usuarios td:nth-child(5)::before { content: "Clave cambiada"; }
+    #tabla-sesiones td:nth-child(6), #tabla-usuarios td:nth-child(6) { grid-column: 1 / -1; }
+    #tabla-sesiones td:nth-child(6):not(:has(button)) { display: none; }
+    #tabla-usuarios .celda-acc { flex-wrap: wrap; }
+    #tabla-sesiones td[colspan], #tabla-usuarios td[colspan] { grid-column: 1 / -1; }
+  }
 </style>
 </head>
 <body>

@@ -6,7 +6,7 @@
 <title>Automatizaciones — Kom Marcas Inpi</title>
 <link rel="icon" type="image/png" href="/static/favicon.png" />
 <link rel="apple-touch-icon" href="/static/apple-touch-icon.png" />
-<link rel="stylesheet" href="/static/comun.css?v=vp3" />
+<link rel="stylesheet" href="/static/comun.css?v=mv1" />
 <style>
   .contenido { max-width: 900px; margin: 24px auto 60px; padding: 0 20px; }
 
@@ -127,6 +127,14 @@
   table.reporte tr.total td { font-weight: 700; border-top: 2px solid var(--borde); border-bottom: none; color: #1f2430; }
   .nota-estimado { font-size: 11px; color: var(--gris); margin-top: 6px; }
 
+  /* Tablet: las tarjetas van de a dos y quedan angostas como en el celular,
+     así que la tabla de subprocesos usa la misma versión compacta. */
+  @media (min-width: 601px) and (max-width: 1000px) {
+    .subprocesos td.horario { display: none; }
+    .subprocesos td.acciones .ver-run { display: none; }
+    .subprocesos .txt-correr { display: none; }
+    .subprocesos button.correr-ahora { padding: 4px 7px; }
+  }
   @media (max-width: 600px) {
     .pie-tarjeta .acciones { margin-left: 0; }
     .subprocesos td.horario { display: none; }
