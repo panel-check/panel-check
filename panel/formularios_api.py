@@ -321,7 +321,7 @@ def crear_router(verificar_login, conexion) -> APIRouter:
                     SELECT r.id, r.formulario, r.tipo_persona, r.estado, r.recibido_en, r.cliente_id, r.cliente_nuevo,
                            r.aviso_enviado_en, r.aviso_error, r.revisado_por, r.revisado_en,
                            r.datos->>'nombre' AS nombre, r.datos->>'cuit' AS cuit, r.datos->>'email' AS email,
-                           r.datos->>'marca_nombre' AS marca, c.nombre AS cliente_nombre,
+                           COALESCE(NULLIF(r.datos->>'marca_nombre', ''), r.datos->>'empresa_nombre') AS marca, c.nombre AS cliente_nombre,
                            (SELECT COUNT(*) FROM formularios_archivos a WHERE a.respuesta_id = r.id) AS archivos
                     FROM formularios_respuestas r LEFT JOIN clientes c ON c.id = r.cliente_id
                     {donde} ORDER BY r.recibido_en DESC LIMIT 500

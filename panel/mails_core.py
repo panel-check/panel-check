@@ -1349,7 +1349,10 @@ def vista_previa(clave: str, cfg: dict, panel_url: str = DEFAULT_PANEL, datos: d
             else:
                 datos[c["id"]] = "Texto de ejemplo"
         datos["nombre"] = "María Gómez"
-        datos["marca_nombre"] = "Luna Nueva"
+        datos["empresa_nombre"] = "Luna Nueva"
+        # solo las respuestas que se verían con la primera opción de «servicio»
+        datos = {c["id"]: datos[c["id"]] for c in fc.FORMULARIOS[slug]["campos"]
+                 if c["id"] in datos and fc.campo_visible(c, datos)}
         resp = {"formulario": slug, "tipo_persona": "fisica", "datos": datos, "cliente_id": None, "cliente_nuevo": True}
         asunto, cuerpo, _ = fc.armar_mail(resp, {}, [], panel_url)
         return {"asunto": asunto, "html": cuerpo}
