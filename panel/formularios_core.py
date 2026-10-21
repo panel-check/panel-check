@@ -30,7 +30,8 @@ import archivos_seguros
 # tipos de campo: texto, email, parrafo, opcion (botones), lista (desplegable),
 #                 archivo, nota (texto fijo sin respuesta)
 # "si": {"campo": x, "valor": y} → el campo solo se muestra (y solo es
-#        obligatorio) cuando el campo x tiene el valor y.
+#        obligatorio) cuando el campo x tiene el valor y. También puede ser una
+#        lista de condiciones: el campo se muestra solo si se cumplen todas.
 # "cliente": a qué columna de la tabla clientes va la respuesta.
 
 PROVINCIAS = [
@@ -50,6 +51,12 @@ EXT_POR_MIME = {
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document": ".docx",
 }
 MAX_ARCHIVO = 10 * 1024 * 1024  # 10 MB, igual que en Google Forms
+
+# Persona física: qué servicio pide (decide qué preguntas de la marca se muestran).
+SERVICIO_NUEVA = "Registro de una nueva marca"
+SERVICIO_OPOSICION = "Responder a las oposiciones recibidas"
+SI_NUEVA = {"campo": "servicio", "valor": SERVICIO_NUEVA}
+SI_OPOSICION = {"campo": "servicio", "valor": SERVICIO_OPOSICION}
 
 FORMULARIOS = {
     "persona-fisica": {
@@ -80,13 +87,30 @@ FORMULARIOS = {
              "cliente": "conyuge_nombre", "si": {"campo": "estado_civil", "valor": "Casado/a"}},
             {"id": "conyuge_dni", "tipo": "texto", "etiqueta": "DNI del cónyuge", "obligatorio": False,
              "cliente": "conyuge_dni", "formato": "dni", "si": {"campo": "estado_civil", "valor": "Casado/a"}},
-            {"id": "marca_nombre", "tipo": "texto", "etiqueta": "Nombre de la marca a registrar", "obligatorio": True},
-            {"id": "marca_descripcion", "tipo": "parrafo", "etiqueta": "Describa de manera sencilla los servicios y/o productos que brinda su marca",
-             "obligatorio": False},
-            {"id": "tiene_logo", "tipo": "opcion", "etiqueta": "¿Tiene logo?", "obligatorio": True, "opciones": ["SI", "NO"]},
+            {"id": "servicio", "tipo": "opcion", "etiqueta": "¿Qué servicio solicitás?", "obligatorio": True,
+             "opciones": [SERVICIO_NUEVA, SERVICIO_OPOSICION]},
+            # ── Opción 1: registro de una nueva marca ──
+            {"id": "empresa_nombre", "tipo": "texto", "etiqueta": "Nombre de la empresa", "obligatorio": True, "si": SI_NUEVA},
+            {"id": "rubro", "tipo": "texto", "etiqueta": "Rubro", "obligatorio": True, "si": SI_NUEVA},
+            {"id": "actividad_descripcion", "tipo": "parrafo", "etiqueta": "Descripción de la actividad", "obligatorio": True,
+             "ayuda": "Es importante poder dar una descripción lo más cercana a la realidad para poder definir en qué clase debería ser registrada la marca.",
+             "si": SI_NUEVA},
+            {"id": "web_redes", "tipo": "texto", "etiqueta": "Web o Redes", "obligatorio": True, "si": SI_NUEVA},
+            {"id": "nueva_tiene_logo", "tipo": "opcion", "etiqueta": "¿Tiene logo?", "obligatorio": True, "opciones": ["SI", "NO"],
+             "si": SI_NUEVA},
+            {"id": "nueva_logo", "tipo": "archivo", "etiqueta": "Adjunte su logo", "obligatorio": True,
+             "ayuda": "Imagen (JPG, PNG, WEBP, GIF) o PDF. Máximo 10 MB.", "mimes": MIME_LOGO,
+             "si": [SI_NUEVA, {"campo": "nueva_tiene_logo", "valor": "SI"}]},
+            # ── Opción 2: responder a las oposiciones recibidas ──
+            {"id": "marca_nombre", "tipo": "texto", "etiqueta": "Nombre de la marca", "obligatorio": True, "si": SI_OPOSICION},
+            {"id": "marca_descripcion", "tipo": "parrafo",
+             "etiqueta": "Describa de manera sencilla pero a la vez completa los servicios y/o productos que brinda su marca",
+             "obligatorio": False, "si": SI_OPOSICION},
+            {"id": "tiene_logo", "tipo": "opcion", "etiqueta": "¿Tiene logo?", "obligatorio": True, "opciones": ["SI", "NO"],
+             "si": SI_OPOSICION},
             {"id": "logo", "tipo": "archivo", "etiqueta": "Adjunte su logo en el tamaño 4x4", "obligatorio": True,
              "ayuda": "Imagen (JPG, PNG, WEBP, GIF) o PDF. Máximo 10 MB.", "mimes": MIME_LOGO,
-             "si": {"campo": "tiene_logo", "valor": "SI"}},
+             "si": [SI_OPOSICION, {"campo": "tiene_logo", "valor": "SI"}]},
         ],
     },
     "persona-juridica": {
@@ -191,7 +215,16 @@ def solo_digitos(v) -> str:
 
 def campo_visible(campo: dict, valores: dict) -> bool:
     cond = campo.get("si")
-    return not cond or (valores.get(cond["campo"]) or "") == cond["valor"]
+    if not cond:
+        return True
+    conds = cond if isinstance(cond, list) else [cond]
+    return all((valores.get(c["campo"]) or "") == c["valor"] for c in conds)
+
+
+def nombre_marca(datos: dict) -> str:
+    """Nombre de la marca de una respuesta: según el servicio es «marca_nombre»
+    (responder oposiciones) o «empresa_nombre» (registro de una nueva marca)."""
+    return datos.get("marca_nombre") or datos.get("empresa_nombre") or ""
 
 
 def detectar_mime(contenido: bytes, declarado: str) -> str:
@@ -358,7 +391,7 @@ def armar_mail(resp: dict, cliente: dict, archivos: list, panel_url: str) -> tup
     tipo = TIPO_LEGIBLE.get(resp["tipo_persona"], resp["tipo_persona"])
     datos = resp["datos"] if isinstance(resp["datos"], dict) else json.loads(resp["datos"] or "{}")
     nombre = datos.get("nombre") or (cliente or {}).get("nombre") or "(sin nombre)"
-    marca = datos.get("marca_nombre")
+    marca = nombre_marca(datos)
     asunto = f"📝 Formulario recibido: {nombre}" + (f" — marca «{marca}»" if marca else "") + f" ({tipo})"
     link = f"{panel_url}/clientes?cliente={resp['cliente_id']}" if resp.get("cliente_id") else f"{panel_url}/clientes?vista=formularios"
     estado_cli = ("Se creó como <strong>cliente nuevo</strong>." if resp.get("cliente_nuevo")

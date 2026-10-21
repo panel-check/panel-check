@@ -137,7 +137,8 @@ function valores() {
   return v;
 }
 
-const visible = (c, v) => !c.si || v[c.si.campo] === c.si.valor;
+// "si" puede ser una condición o una lista de condiciones (se tienen que cumplir todas).
+const visible = (c, v) => !c.si || [].concat(c.si).every(k => v[k.campo] === k.valor);
 
 function actualizarVisibles() {
   const v = valores();
