@@ -1591,7 +1591,8 @@ a.mk-acta { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-si
 .fm-resp details { margin-top: 8px; }
 .fm-resp summary { cursor: pointer; font-size: 13px; color: var(--azul); font-weight: 500; }
 .fm-tabla { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 13px; }
-.fm-tabla td { padding: 5px 8px; border-bottom: 1px solid var(--borde); vertical-align: top; }
+.fm-tabla { table-layout: fixed; }
+.fm-tabla td { padding: 5px 8px; border-bottom: 1px solid var(--borde); vertical-align: top; white-space: normal; overflow-wrap: anywhere; line-height: 1.45; }
 .fm-tabla td:first-child { color: var(--gris); width: 40%; }
 .fm-archivos { display: flex; flex-direction: column; gap: 4px; margin-top: 8px; font-size: 13px; }
 .fm-archivo a { color: var(--azul); }
