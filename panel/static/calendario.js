@@ -117,7 +117,9 @@ function pintarEstado() {
     <a href="#" id="cal-resync" title="Vuelve a leer todo el calendario desde cero">Resincronizar todo</a>`;
   let html = mal
     ? `<div class="cal-aviso error"><b>La última sincronización con Google falló:</b> ${esc(e.ultimo_error)}
-        ${e.cuenta_servicio && !e.oauth_conectado ? `<br>Cuenta de servicio: <code>${esc(e.cuenta_servicio)}</code> (el calendario tiene que estar compartido con ese mail).` : ""}</div>`
+        ${e.cuenta_servicio && !e.oauth_conectado ? `<br>Cuenta de servicio: <code>${esc(e.cuenta_servicio)}</code> (el calendario tiene que estar compartido con ese mail).` : ""}
+        ${e.oauth_conectado && /Conectar con Google/.test(e.ultimo_error) ? `<br><a class="cal-btn principal chico" href="/api/calendario/google/conectar">Conectar con Google</a>
+          Entrá con <code>${esc(e.calendario || "la cuenta del estudio")}</code>, aceptá el permiso y copiá el token nuevo a Railway (variable <code>GOOGLE_OAUTH_REFRESH_TOKEN</code>). Lo tiene que hacer un administrador.` : ""}</div>`
     : "";
   if (!e.puede_meet) html += pasosMeet(e);
   aviso.innerHTML = html;
