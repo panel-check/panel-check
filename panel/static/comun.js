@@ -109,17 +109,106 @@ const ESTADOS_OPOSICION = {
   contestada:            { texto: "ya contestada",            clase: "sin-dato", sirve: false },
   levantada:             { texto: "levantada",                clase: "sin-dato", sirve: false },
   con_apoderado:         { texto: "ya tiene apoderado",       clase: "sin-dato", sirve: false },
+  // No viene de la base: lo deduce estadoOposicionEfectivo cuando ya pasó el miércoles de notificación.
+  ya_notificada:         { texto: "ya notificada",            clase: "lead",    sirve: true  },
 };
 
+// ── Fechas de la oposición (se calculan al mostrar, con la fecha de hoy) ──
+// El estado que guarda la base («sin notificar», «recién ingresada») es una foto
+// del momento en que se revisó el expediente: si no se vuelve a revisar, queda
+// viejo. Por eso el panel lo recalcula con fechas:
+//   · Cierre del plazo para oponerse = publicación en el boletín + 30 días corridos.
+//   · INPI notifica a los titulares los miércoles: la notificación es el primer
+//     miércoles desde el cierre (si el cierre cae miércoles, ese día). Es el mismo
+//     cálculo de /boletines (panel/app.py, _fecha_notificacion_boletin).
+//   · «Recién ingresada» solo se muestra los primeros DIAS_RECIEN_INGRESADA días
+//     desde que se presentó la oposición.
+const DIAS_PLAZO_OPOSICION = 30;
+const DIAS_RECIEN_INGRESADA = 3;
+const _MS_DIA = 86400000;
+const _DIAS_SEMANA = ["domingo", "lunes", "martes", "miércoles", "jueves", "viernes", "sábado"];
+
+function _isoAMs(iso) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso || ""));
+  return m ? Date.UTC(+m[1], +m[2] - 1, +m[3]) : null;
+}
+
+function _msAFecha(ms, conDiaSemana) {
+  const d = new Date(ms);
+  const dd = String(d.getUTCDate()).padStart(2, "0");
+  const mm = String(d.getUTCMonth() + 1).padStart(2, "0");
+  const f = `${dd}/${mm}/${d.getUTCFullYear()}`;
+  return conDiaSemana ? `${_DIAS_SEMANA[d.getUTCDay()]} ${f}` : f;
+}
+
+function _hoyArgentinaIso() {
+  return new Date().toLocaleDateString("en-CA", { timeZone: "America/Argentina/Buenos_Aires" });
+}
+
+// {publicacion, cierre, notificacion} en ms UTC (medianoche), o null si no se sabe cuándo se publicó.
+function plazoOposicion(row) {
+  const publicacion = _isoAMs(row.fecha_publicacion);
+  if (publicacion === null) return null;
+  const cierre = publicacion + DIAS_PLAZO_OPOSICION * _MS_DIA;
+  const notificacion = cierre + ((3 - new Date(cierre).getUTCDay() + 7) % 7) * _MS_DIA; // 3 = miércoles
+  return { publicacion, cierre, notificacion };
+}
+
+// Fecha (ISO) en que se presentó la oposición, o "" si no hay manera de saberla.
+function _presentacionOposicionIso(row) {
+  if (row.oposicion_fecha_presentacion) return String(row.oposicion_fecha_presentacion).slice(0, 10);
+  const enAr = (valor) => new Date(valor).toLocaleDateString("en-CA", { timeZone: "America/Argentina/Buenos_Aires" });
+  const detalle = row.detalle_oposicion || "";
+  const crudo = /Date\((-?\d+)/.exec(detalle);   // formato .NET de Grilla Digital
+  if (crudo) return enAr(parseInt(crudo[1], 10));
+  const iso = /^\d{4}-\d{2}-\d{2}/.exec(detalle);  // la que arma «Análisis de marca»
+  if (iso) return iso[0];
+  return row.oposicion_detectada_en ? enAr(row.oposicion_detectada_en) : "";
+}
+
+// El estado que hay que mostrar hoy: {clave, texto, clase, sirve, detalle, plazo} o null si no hay nada que mostrar.
+function estadoOposicionEfectivo(row, hoyIso) {
+  const clave = row.estado_oposicion;
+  const base = ESTADOS_OPOSICION[clave];
+  if (!base) return null;
+  const hoy = _isoAMs(hoyIso || _hoyArgentinaIso());
+  const plazo = plazoOposicion(row);
+  const efectivo = { clave, ...base, detalle: row.estado_oposicion_detalle || "", plazo };
+  if (clave !== "sin_notificar" && clave !== "oposicion_sin_detalle") return efectivo;
+
+  if (clave === "oposicion_sin_detalle") {
+    const presentada = _isoAMs(_presentacionOposicionIso(row));
+    if (presentada !== null && hoy - presentada <= DIAS_RECIEN_INGRESADA * _MS_DIA) return efectivo;
+    // Ya pasaron los días: deja de ser «recién ingresada». Sin saber cuándo se
+    // presentó no se puede afirmar que sea reciente, así que tampoco se muestra.
+    if (presentada === null || !plazo) return null;
+  }
+  if (!plazo) return efectivo;  // sin fecha de publicación no hay cómo calcular: queda lo que dice la base
+
+  const presentacion = row.oposicion_fecha_presentacion
+    ? `Oposición presentada el ${_fmtFechaCorta(row.oposicion_fecha_presentacion)}. ` : "";
+  const cierre = `El plazo para recibir oposiciones cerró el ${_msAFecha(plazo.cierre)}`;
+  if (hoy >= plazo.notificacion) {
+    return { ...efectivo, clave: "ya_notificada", ...ESTADOS_OPOSICION.ya_notificada,
+      detalle: `${presentacion}${cierre} y ya pasó el miércoles en que INPI notifica (${_msAFecha(plazo.notificacion)}): el titular ya debería estar notificado. ` +
+        "El vencimiento de su plazo para contestar se completa cuando se revise de nuevo el expediente." };
+  }
+  const cuandoCierra = hoy > plazo.cierre ? `el plazo para recibir oposiciones cerró el ${_msAFecha(plazo.cierre)}`
+    : `el plazo para recibir oposiciones cierra el ${_msAFecha(plazo.cierre, true)}`;
+  return { ...efectivo, clave: "sin_notificar", ...ESTADOS_OPOSICION.sin_notificar,
+    detalle: `${presentacion}INPI se la notificará al titular el ${_msAFecha(plazo.notificacion, true)} ` +
+      `(${cuandoCierra}, 30 días corridos desde la publicación en el boletín, y INPI notifica los miércoles).` };
+}
+
 function chipEstadoOposicion(row) {
-  const e = ESTADOS_OPOSICION[row.estado_oposicion];
+  const e = estadoOposicionEfectivo(row);
   if (!e) return "";
   let texto = e.texto;
-  if (row.estado_oposicion === "notificada_en_plazo" && row.oposicion_fecha_vencimiento) {
+  if (e.clave === "notificada_en_plazo" && row.oposicion_fecha_vencimiento) {
     const [a, m, d] = String(row.oposicion_fecha_vencimiento).slice(0, 10).split("-");
     texto += ` hasta ${d}/${m}`;
   }
-  const detalle = _escapeHtml(row.estado_oposicion_detalle || "")
+  const detalle = _escapeHtml(e.detalle)
     + (e.sirve ? " · Nadie la está trabajando: sirve para ofrecer ayuda." : " · Ya se está trabajando o no hay nada que hacer: no sirve.");
   return ` <span class="tooltip badge ${e.clase}">${texto}<span class="globo">${detalle}</span></span>`;
 }
@@ -398,17 +487,27 @@ function abrirModalOposicion(acta) {
 
   // Estado leído del expediente: en qué punto está y si todavía sirve para ofrecer ayuda.
   const fmtF = (f) => { if (!f) return ""; const [a, m, d] = String(f).slice(0, 10).split("-"); return `${d}/${m}/${a}`; };
-  const est = ESTADOS_OPOSICION[row.estado_oposicion];
+  const est = estadoOposicionEfectivo(row);
   const fechas = [
     row.oposicion_fecha_presentacion ? `Presentada: ${fmtF(row.oposicion_fecha_presentacion)}` : "",
     row.oposicion_fecha_notificacion ? `Notificada al titular: ${fmtF(row.oposicion_fecha_notificacion)}` : "",
     row.oposicion_fecha_vencimiento ? `Vence el plazo para contestar: ${fmtF(row.oposicion_fecha_vencimiento)}` : "",
     row.oposicion_fecha_levantamiento ? `Levantada: ${fmtF(row.oposicion_fecha_levantamiento)}` : "",
   ].filter(Boolean).join(" · ");
-  const estadoHtml = est
-    ? `<p class="mo-estado"><strong>${est.sirve ? "✔ Sirve" : "✖ No sirve"} — ${_escapeHtml(est.texto)}.</strong> ${_escapeHtml(row.estado_oposicion_detalle || "")}` +
+  // Cierre del plazo para recibir oposiciones (30 días corridos desde la publicación en el boletín).
+  const plazo = plazoOposicion(row);
+  let plazoHtml = "";
+  if (plazo) {
+    const hoy = _isoAMs(_hoyArgentinaIso());
+    const faltan = Math.round((plazo.cierre - hoy) / _MS_DIA);
+    const situacion = faltan > 1 ? `faltan ${faltan} días` : faltan === 1 ? "cierra mañana" : faltan === 0 ? "cierra hoy" : "ya cerró";
+    plazoHtml = `<p class="mo-estado"><strong>📅 Cierre del plazo para recibir oposiciones: ${_escapeHtml(_msAFecha(plazo.cierre, true))}</strong> (${situacion}).` +
+      `<br><span class="mo-doc">Publicada en el boletín el ${_escapeHtml(_msAFecha(plazo.publicacion))} + 30 días corridos · INPI notifica a los titulares los miércoles: ${hoy >= plazo.notificacion ? "le tocó notificar el" : "notificará el"} ${_escapeHtml(_msAFecha(plazo.notificacion, true))}.</span></p>`;
+  }
+  const estadoHtml = (est
+    ? `<p class="mo-estado"><strong>${est.sirve ? "✔ Sirve" : "✖ No sirve"} — ${_escapeHtml(est.texto)}.</strong> ${_escapeHtml(est.detalle)}` +
       `${fechas ? `<br><span class="mo-doc">${_escapeHtml(fechas)}</span>` : ""}</p>`
-    : "";
+    : "") + plazoHtml;
 
   const contenido = document.getElementById("modal-oposicion-contenido");
   let cuerpo;
