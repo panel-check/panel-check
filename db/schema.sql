@@ -481,6 +481,19 @@ CREATE TABLE IF NOT EXISTS poderes_generados (
 );
 CREATE INDEX IF NOT EXISTS idx_poderes_cliente ON poderes_generados(cliente_id, generado_en DESC);
 
+-- Informes preliminares de viabilidad marcaria (panel/informes_viabilidad.py):
+-- el JSON para el cliente (con el que se arma el PDF) y el informe IA interno.
+CREATE TABLE IF NOT EXISTS informes_viabilidad (
+    id            SERIAL PRIMARY KEY,
+    cliente_id    INTEGER REFERENCES clientes(id) ON DELETE CASCADE,
+    tipo          TEXT NOT NULL CHECK (tipo IN ('cliente', 'interno')),
+    marca         TEXT,
+    datos         JSONB NOT NULL,
+    generado_por  TEXT,
+    generado_en   TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_informes_cliente ON informes_viabilidad(cliente_id, generado_en DESC);
+
 -- ── Configuración de mails (pestaña Mails del panel) ────────────────────
 -- Las crea el panel al arrancar (panel/mails_core.py: crear_tablas). Las API
 -- keys NO se guardan acá: viven en variables de entorno.

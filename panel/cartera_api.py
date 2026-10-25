@@ -22,6 +22,7 @@ from pydantic import BaseModel
 import cartera
 import formularios_api
 import formularios_core
+import informes_api
 import inpi_lead
 import presupuestos
 import similitud as sim
@@ -491,6 +492,7 @@ def crear_router(verificar_login, conexion, crm) -> APIRouter:
                 cur.execute("SELECT id, datos, generado_por, generado_en FROM poderes_generados WHERE cliente_id = %s "
                             "ORDER BY generado_en DESC LIMIT 20", (cliente_id,))
                 poderes_cli = cur.fetchall()
+                informes = informes_api.listar_informes(cur, cliente_id)
         plazos = []
         for m in marcas:
             m["cliente_nombre"] = cliente["nombre"]
@@ -499,7 +501,7 @@ def crear_router(verificar_login, conexion, crm) -> APIRouter:
                                if a["estado"] in cartera.ESTADOS_ALERTA_ABIERTOS and a["tipo"] == "similitud") if p]
         plazos.sort(key=lambda p: p["fecha"])
         return {"cliente": cliente, "marcas": marcas, "novedades": novedades, "alertas": alertas,
-                "plazos": plazos, "formularios": formularios, "poderes": poderes_cli, "tipos_persona": formularios_core.TIPO_LEGIBLE,
+                "plazos": plazos, "formularios": formularios, "poderes": poderes_cli, "informes": informes, "tipos_persona": formularios_core.TIPO_LEGIBLE,
                 "origenes": cartera.ORIGENES_CLIENTE, "estados_alerta": cartera.ESTADOS_ALERTA, "referidos": referidos}
 
     @router.post("/api/clientes/{cliente_id}/unir")

@@ -320,6 +320,7 @@ DEPENDIENTES_CLIENTE = (
     ("vigilancia_alertas", "cliente_id"),
     ("formularios_respuestas", "cliente_id"),
     ("poderes_generados", "cliente_id"),
+    ("informes_viabilidad", "cliente_id"),
 )
 COMPLETAR_CLIENTE = ("cuit", "email", "telefono", "contacto")
 
