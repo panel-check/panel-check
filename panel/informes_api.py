@@ -7,7 +7,7 @@ Rutas (todas con sesión):
                                                devuelve el id para bajar el PDF
   POST   /api/clientes/{id}/informes/interno   pegar el JSON INTERNO de la IA: se guarda tal cual
   GET    /api/informes/{iid}                   el JSON guardado
-  GET    /api/informes/{iid}/pdf               el PDF (solo los del cliente)
+  GET    /api/informes/{iid}/pdf               el PDF (solo los del cliente); con ver=1 se abre en el navegador
   GET    /api/informes/{iid}/json              descargar el JSON
   DELETE /api/informes/{iid}                   borrar
 """
@@ -92,18 +92,24 @@ def crear_router(verificar_login, conexion) -> APIRouter:
         with conexion() as conn:
             with rcur(conn) as cur:
                 f = _informe(cur, iid)
-        return {"id": f["id"], "tipo": f["tipo"], "marca": f["marca"], "datos": f["datos"]}
+                cur.execute("SELECT nombre FROM clientes WHERE id = %s", (f["cliente_id"],))
+                c = cur.fetchone()
+        return {"id": f["id"], "tipo": f["tipo"], "marca": f["marca"], "datos": f["datos"],
+                "cliente_id": f["cliente_id"], "cliente_nombre": c["nombre"] if c else "",
+                "generado_por": f["generado_por"], "generado_en": f["generado_en"]}
 
     @router.get("/api/informes/{iid}/pdf")
-    def pdf(iid: int, _: str = Depends(verificar_login)):
+    def pdf(iid: int, ver: bool = False, _: str = Depends(verificar_login)):
         with conexion() as conn:
             with rcur(conn) as cur:
                 f = _informe(cur, iid)
         if f["tipo"] != "cliente":
             raise HTTPException(status_code=400, detail="El informe interno no tiene PDF")
         d = f["datos"]
-        return Response(content=iv.generar_pdf(d), media_type="application/pdf",
-                        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(iv.nombre_archivo(d))}"})
+        headers = {"Content-Disposition": f"{'inline' if ver else 'attachment'}; filename*=UTF-8''{quote(iv.nombre_archivo(d))}"}
+        if ver:  # para verlo dentro de la página /informes/{id} (mismo criterio que los archivos de formularios)
+            headers["Content-Security-Policy"] = "default-src 'none'; img-src 'self'; style-src 'unsafe-inline'; frame-ancestors 'self'"
+        return Response(content=iv.generar_pdf(d), media_type="application/pdf", headers=headers)
 
     @router.get("/api/informes/{iid}/json")
     def bajar_json(iid: int, _: str = Depends(verificar_login)):
