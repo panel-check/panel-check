@@ -28,6 +28,27 @@
       <tbody>${filas.map(f => `<tr>${cols.map(c => `<td>${celda(c, f[c])}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`;
   }
 
+  // Antecedentes como tarjetas (no tabla): los textos largos se leen enteros sin deslizar.
+  function fichas(filas) {
+    if (!Array.isArray(filas) || !filas.length) return "";
+    const cabecera = new Set(["acta", "denominacion", "clase", "estado", "tipo"]);
+    const largos = ["por_que_es_relevante", "productos_servicios", "limitacion"];
+    return `<div class="inf-fichas">${filas.map(f => {
+      if (!f || typeof f !== "object") return `<div class="inf-ficha">${esc(texto(f))}</div>`;
+      const chips = [f.clase != null && f.clase !== "" ? `Clase ${f.clase}` : "", f.estado, f.tipo].filter(Boolean);
+      const cortos = Object.entries(f).filter(([k, v]) => !cabecera.has(k) && !largos.includes(k) && v !== "" && v != null
+        && !(typeof v === "string" && v.length > 90));
+      const extensos = [...largos.filter(k => f[k]).map(k => [k, f[k]]),
+        ...Object.entries(f).filter(([k, v]) => !cabecera.has(k) && !largos.includes(k) && typeof v === "string" && v.length > 90)];
+      return `<div class="inf-ficha">
+        <div class="inf-ficha-cab">${f.acta ? `<a class="link-acta" href="javascript:void(0)" data-acta="${esc(f.acta)}">Acta ${esc(f.acta)} ↗</a>` : ""}
+          <strong>${esc(f.denominacion || "")}</strong>${chips.map(c => `<span class="cl-tag">${esc(c)}</span>`).join("")}</div>
+        ${cortos.length ? `<dl class="inf-grid">${cortos.map(([k, v]) => `<dt>${esc(etiqueta(k))}</dt><dd>${esc(texto(v))}</dd>`).join("")}</dl>` : ""}
+        ${extensos.map(([k, v]) => `<div class="inf-largo${k === "por_que_es_relevante" ? " inf-destacado" : ""}"><span>${esc(k === "por_que_es_relevante" ? "Por qué es relevante" : etiqueta(k))}</span>${esc(texto(v))}</div>`).join("")}
+      </div>`;
+    }).join("")}</div>`;
+  }
+
   function barra(r, extra) {
     const titulo = r.tipo === "cliente" ? "Informe preliminar de viabilidad" : "Informe IA interno";
     document.title = `${titulo} — ${r.marca || ""}`;
@@ -54,8 +75,8 @@
     cont.innerHTML = barra(r, "") + `
       <div class="inf-kpis">${kpis.map(([n, t]) => `<div class="inf-kpi"><b>${esc(n)}</b><span>${esc(t)}</span></div>`).join("")}</div>
       ${caja("Para revisar primero", d.observaciones_para_pame ? `<p class="inf-obs">${esc(d.observaciones_para_pame)}</p>` : "")}
-      ${caja("Antecedentes relevantes", tabla(b.antecedentes_relevantes, { id: "t-rel" }))}
-      ${caja("Marcas idénticas", (b.identicas || []).length ? tabla(b.identicas, { id: "t-ident" }) : '<p class="crm-gris" style="margin:0">No se encontraron marcas idénticas vigentes o en trámite.</p>')}
+      ${caja("Antecedentes relevantes", fichas(b.antecedentes_relevantes))}
+      ${caja("Marcas idénticas", (b.identicas || []).length ? fichas(b.identicas) : '<p class="crm-gris" style="margin:0">No se encontraron marcas idénticas vigentes o en trámite.</p>')}
       ${caja("Caso", dl(d.caso))}
       ${caja("Cliente", dl(Object.fromEntries(Object.entries(cli).filter(([k]) => k !== "datos_de_la_web"))) + (cli.datos_de_la_web ? `<h3 style="margin-top:12px">Datos de la web</h3>${dl(cli.datos_de_la_web)}` : ""))}
       ${caja("Actividad", d.actividad ? `${d.actividad.descripcion_formulario ? `<p style="margin:0 0 8px;font-size:13px">Formulario: «${esc(d.actividad.descripcion_formulario)}»</p>` : ""}
