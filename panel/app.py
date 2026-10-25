@@ -63,6 +63,8 @@ import cartera
 import seguridad
 import cartera_api
 import formularios_api
+import informes_api
+import informes_viabilidad
 import verificador_api
 import verificador_core
 import mails_api
@@ -149,6 +151,7 @@ def migrar_columnas_panel():
                 cur.execute("SET lock_timeout = '3s'")
                 cartera.crear_tablas(cur)
                 formularios_core.crear_tablas(cur)
+                informes_viabilidad.crear_tablas(cur)
             conn.commit()
     except Exception as e:
         print(f"[startup] tablas de clientes/vigilancia salteadas (no bloqueante): {e}")
@@ -3681,6 +3684,8 @@ app.include_router(cartera_api.crear_router(
 # Formularios para clientes (persona física / jurídica): páginas públicas
 # /formulario/... (sin login) + gestión de respuestas en Clientes → Formularios.
 app.include_router(formularios_api.crear_router(verificar_login, conexion))
+# Pestaña «Informes» de la ficha del cliente: informe preliminar de viabilidad (PDF) e informe IA interno.
+app.include_router(informes_api.crear_router(verificar_login, conexion))
 app.include_router(verificador_api.crear_router(verificar_login, conexion))
 app.include_router(accesos_api.crear_router(verificar_login, conexion, CLAVES_ACCESO_RAPIDO, _contar_consulta))
 

@@ -23,7 +23,7 @@ RAIZ = os.path.join(os.path.dirname(__file__), "..", "panel")
 ARCHIVOS_CON_RUTAS = [
     "app.py", "auth_api.py", "calendario_api.py", "cartera_api.py",
     "formularios_api.py", "mails_api.py", "verificador_api.py",
-    "accesos_api.py", "analisis_api.py",
+    "accesos_api.py", "analisis_api.py", "informes_api.py",
 ]
 
 # Rutas /api/... a propósito sin sesión. Cada una tiene que tener su propia

@@ -516,7 +516,7 @@ async function abrirCliente(id) {
       <li><span class="crm-gris">${fmtFechaHora(n.detectado_en)}</span> · acta ${esc(n.acta)} · ${esc(n.texto)}</li>`).join("")}</ul>` : '<p class="crm-gris">Sin novedades detectadas todavía.</p>';
 
   const alertasAbiertas = d.alertas.filter(a => ["nueva", "monitorear", "oponer"].includes(a.estado)).length;
-  const tabsCli = [["datos", "Datos"], ["poderes", "Poderes", (d.poderes || []).length], ["formularios", "Formularios", (d.formularios || []).length],
+  const tabsCli = [["datos", "Datos"], ["poderes", "Poderes", (d.poderes || []).length], ["informes", "Informes", (d.informes || []).length], ["formularios", "Formularios", (d.formularios || []).length],
     ["marcas", "Marcas", d.marcas.length], ["plazos", "Plazos", d.plazos.length], ["alertas", "Alertas", alertasAbiertas],
     ["novedades", "Novedades", d.novedades.length]];
 
@@ -544,6 +544,14 @@ async function abrirCliente(id) {
         <div class="cl-caja" id="cli-poder" hidden style="margin-top:10px"></div>
         <div class="cl-caja" id="cli-toma" hidden style="margin-top:10px"></div>
         <div id="cli-poderes-lista">${d.poderes && d.poderes.length ? "<h4>Poderes generados</h4>" + htmlPoderes(d.poderes) : '<p class="crm-gris">Todavía no se generó ningún poder.</p>'}</div>
+      </div>
+
+      <div data-cpanel="informes" ${est.clienteTab === "informes" ? "" : "hidden"}>
+        <div class="cl-acciones" style="margin-top:12px"><button type="button" class="cl-btn" id="cli-inf-btn">📄 Generar informe viabilidad marcaria</button>
+          <button type="button" class="cl-btn sec" id="cli-iai-btn">🧠 Adjuntar informe IA interno</button></div>
+        <div class="cl-caja" id="cli-inf" hidden style="margin-top:10px"></div>
+        <div class="cl-caja" id="cli-iai" hidden style="margin-top:10px"></div>
+        <div id="cli-informes-lista">${htmlInformes(d.informes)}</div>
       </div>
 
       <div data-cpanel="formularios" ${est.clienteTab === "formularios" ? "" : "hidden"}>
@@ -588,7 +596,10 @@ async function abrirCliente(id) {
   $("cli-poder-btn").addEventListener("click", abrirPoder);
   $("cli-poder-btn2").addEventListener("click", abrirPoder);
   $("cli-toma-btn").addEventListener("click", () => abrirGeneradorToma(id));
+  $("cli-inf-btn").addEventListener("click", () => abrirCajaInforme(id, "cliente"));
+  $("cli-iai-btn").addEventListener("click", () => abrirCajaInforme(id, "interno"));
   conectarPoderes(id);
+  conectarInformes(id);
   conectarFichaCliente(cont, d);
 }
 
@@ -1167,6 +1178,120 @@ function conectarPoderes(clienteId) {
     await pedir(() => apiJson(`/api/poderes/${b.closest("[data-poder]").dataset.poder}`, "DELETE"));
     b.closest("li").remove();
   }));
+}
+
+/* ── Informes (viabilidad marcaria para el cliente + informe IA interno) ── */
+function htmlInformes(lista) {
+  if (!lista || !lista.length) return '<p class="crm-gris" style="margin-top:12px">Todavía no hay informes. Pegá el JSON que generó la IA con alguno de los dos botones.</p>';
+  const cli = lista.filter(i => i.tipo === "cliente"), inte = lista.filter(i => i.tipo === "interno");
+  const quien = i => `<span class="crm-gris">${fmtFechaHora(i.generado_en)}${i.generado_por ? " · " + esc(i.generado_por) : ""}</span>`;
+  let h = "";
+  if (cli.length) h += `<h4>Informes de viabilidad (para el cliente)</h4><ul class="cl-lista-simple">${cli.map(i => `<li data-informe="${i.id}">
+      ${quien(i)} · <strong>${esc(i.marca || "")}</strong>${i.fecha_informe ? " · fecha del informe " + esc(i.fecha_informe) : ""}
+      <button type="button" class="cl-btn sec mini" data-inf-pdf>PDF</button>
+      <button type="button" class="cl-btn sec mini" data-inf-json title="Bajar el JSON con el que se armó">JSON</button>
+      <button type="button" class="cl-btn peligro mini" data-inf-borrar title="Borrar este informe">×</button></li>`).join("")}</ul>`;
+  if (inte.length) h += `<h4>Informes IA internos</h4><ul class="cl-lista-simple">${inte.map(i => {
+    const r = i.resumen || {};
+    return `<li data-informe="${i.id}">
+      ${quien(i)} · <strong>${esc(i.marca || "")}</strong> · ${r.identicas ? `<span class="cl-tag mal">${r.identicas} idéntica(s)</span>` : '<span class="cl-tag ok">sin idénticas</span>'}
+      · ${(r.relevantes || []).length} antecedente(s) relevante(s)${r.antecedentes_listados ? ` · ${r.antecedentes_listados} listados` : ""}
+      <button type="button" class="cl-btn sec mini" data-inf-ver>Ver resumen</button>
+      <button type="button" class="cl-btn sec mini" data-inf-json title="Bajar el JSON completo">JSON</button>
+      <button type="button" class="cl-btn peligro mini" data-inf-borrar title="Borrar este informe">×</button>
+      <div class="cl-caja" data-inf-detalle hidden style="margin-top:8px">
+        ${r.fecha_consulta ? `<p class="crm-gris" style="margin:0 0 6px">Consulta a INPI: ${esc(r.fecha_consulta)}</p>` : ""}
+        ${r.observaciones ? `<p style="margin:0 0 8px"><strong>Para revisar:</strong> ${esc(r.observaciones)}</p>` : ""}
+        ${(r.relevantes || []).length ? `<div style="overflow-x:auto"><table class="cl-tabla"><thead><tr><th>Acta</th><th>Marca</th><th>Clase</th><th>Titular</th><th>Vigencia</th><th>Por qué importa</th></tr></thead><tbody>
+          ${r.relevantes.map(a => `<tr><td>${a.acta ? `<a class="link-acta" href="javascript:void(0)" data-inf-acta="${esc(a.acta)}" data-nombre="${esc(a.denominacion)}">${esc(a.acta)} ↗</a>` : ""}</td><td>${esc(a.denominacion)}</td><td>${esc(a.clase)}</td><td>${esc(a.titular)}</td><td>${esc(a.vigencia)}</td><td><small>${esc(a.por_que_es_relevante)}</small></td></tr>`).join("")}
+          </tbody></table></div>` : ""}
+        ${(r.limitaciones || []).length ? `<p class="crm-nota" style="margin-top:8px">Limitaciones: ${r.limitaciones.map(esc).join(" · ")}</p>` : ""}
+      </div></li>`; }).join("")}</ul>`;
+  return h;
+}
+
+function conectarInformes(clienteId) {
+  const cont = $("cli-informes-lista");
+  if (!cont) return;
+  const iid = b => b.closest("[data-informe]").dataset.informe;
+  cont.querySelectorAll("[data-inf-pdf]").forEach(b => b.addEventListener("click", () =>
+    pedir(() => bajarArchivo(`/api/informes/${iid(b)}/pdf`, {}, "Informe_Preliminar.pdf"))));
+  cont.querySelectorAll("[data-inf-json]").forEach(b => b.addEventListener("click", () =>
+    pedir(() => bajarArchivo(`/api/informes/${iid(b)}/json`, {}, "Informe.json"))));
+  cont.querySelectorAll("[data-inf-ver]").forEach(b => b.addEventListener("click", () => {
+    const det = b.closest("li").querySelector("[data-inf-detalle]");
+    det.hidden = !det.hidden; b.textContent = det.hidden ? "Ver resumen" : "Ocultar";
+  }));
+  cont.querySelectorAll("[data-inf-borrar]").forEach(b => b.addEventListener("click", async () => {
+    if (!confirm("¿Borrar este informe? No se puede deshacer.")) return;
+    await pedir(() => apiJson(`/api/informes/${iid(b)}`, "DELETE"));
+    recargarInformes(clienteId);
+  }));
+  cont.querySelectorAll("[data-inf-acta]").forEach(a => a.addEventListener("click", () => {
+    abrirActa(a.dataset.infActa);
+  }));
+}
+
+async function recargarInformes(clienteId) {
+  const r = await api(`/api/clientes/${clienteId}/informes`);
+  $("cli-informes-lista").innerHTML = htmlInformes(r.informes);
+  const n = document.querySelector('[data-ctab="informes"]');
+  if (n) n.innerHTML = `Informes${r.informes.length ? ` <span class="fm-n">${r.informes.length}</span>` : ""}`;
+  conectarInformes(clienteId);
+}
+
+// Vista previa local del JSON pegado (el panel lo vuelve a validar al guardar).
+function previaInforme(texto, tipo) {
+  const t = texto.trim().replace(/^```[a-zA-Z]*\s*|\s*```$/g, "");
+  if (!t) return { ok: false, html: "" };
+  let d;
+  try { d = JSON.parse(t); } catch (e) { return { ok: false, html: `<span class="crm-error" style="padding:0">No es un JSON válido: ${esc(e.message)}</span>` }; }
+  if (tipo === "cliente") {
+    if (d.tipo === "informe_viabilidad_interno") return { ok: false, html: '<span class="crm-error" style="padding:0">Ese es el JSON interno: va en «Adjuntar informe IA interno».</span>' };
+    const e = d.encabezado || {}, sec = Array.isArray(d.secciones) ? d.secciones : [];
+    const textos = JSON.stringify([e.actividad, e.antecedentes, e.logo, d.introduccion, sec]);
+    const clase = textos.match(/\bclases?\s*(n[°ºo.]*\s*)?\d+/i);
+    return { ok: !!e.marca_pretendida && sec.length > 0 && !clase, html:
+      `Marca: <strong>${esc(e.marca_pretendida || "— falta —")}</strong> · fecha ${esc(e.fecha_informe || "—")} · ${sec.length} sección(es)` +
+      (clase ? `<br><span class="crm-error" style="padding:0">Menciona «${esc(clase[0])}»: el informe al cliente no puede mostrar números de clase.</span>` : "") };
+  }
+  if (d.tipo === "informe_viabilidad_cliente" || (d.secciones && d.encabezado)) return { ok: false, html: '<span class="crm-error" style="padding:0">Ese es el JSON para el cliente: va en «Generar informe viabilidad marcaria».</span>' };
+  const marca = (d.caso || {}).marca_pretendida || d.marca_pretendida || "";
+  const b = d.busqueda_inpi || {};
+  return { ok: !!marca, html: `Marca: <strong>${esc(marca || "— falta caso.marca_pretendida —")}</strong> · ${(b.identicas || []).length} idéntica(s) · ${(b.antecedentes_relevantes || []).length} antecedente(s) relevante(s)` };
+}
+
+function abrirCajaInforme(clienteId, tipo) {
+  const caja = $(tipo === "cliente" ? "cli-inf" : "cli-iai");
+  const otra = $(tipo === "cliente" ? "cli-iai" : "cli-inf");
+  otra.hidden = true;
+  if (!caja.hidden) { caja.hidden = true; return; }
+  caja.hidden = false;
+  caja.innerHTML = tipo === "cliente" ? `
+    <p class="crm-gris" style="margin:0 0 8px">Pegá el JSON <strong>para el cliente</strong> que generó la IA (skill «informe-viabilidad-marcaria», archivo <em>…_cliente.json</em>). El panel arma el PDF con el formato del estudio y lo guarda acá. Si el texto menciona un número de clase, no deja generarlo.</p>
+    <textarea id="inf-texto" rows="8" spellcheck="false" placeholder='{ "tipo": "informe_viabilidad_cliente", "encabezado": { … }, "secciones": [ … ] }' style="font-family:ui-monospace,monospace;font-size:12px"></textarea>
+    <div class="crm-gris" id="inf-previa" style="margin-top:6px"></div>
+    <div class="cl-acciones"><button type="button" class="cl-btn" id="inf-ir" disabled>Generar PDF</button>
+      <span class="cl-estado" id="inf-estado"></span></div>` : `
+    <p class="crm-gris" style="margin:0 0 8px">Pegá el JSON <strong>interno</strong> que generó la IA (archivo <em>…_interno.json</em>): búsquedas, antecedentes y observaciones. Queda guardado en la ficha para el análisis completo; no se manda al cliente.</p>
+    <textarea id="inf-texto-i" rows="8" spellcheck="false" placeholder='{ "tipo": "informe_viabilidad_interno", "caso": { … }, "busqueda_inpi": { … } }' style="font-family:ui-monospace,monospace;font-size:12px"></textarea>
+    <div class="crm-gris" id="inf-previa-i" style="margin-top:6px"></div>
+    <div class="cl-acciones"><button type="button" class="cl-btn" id="inf-ir-i" disabled>Guardar informe interno</button>
+      <span class="cl-estado" id="inf-estado-i"></span></div>`;
+  const suf = tipo === "cliente" ? "" : "-i";
+  const ta = $("inf-texto" + suf), previa = $("inf-previa" + suf), ir = $("inf-ir" + suf), estado = $("inf-estado" + suf);
+  ta.addEventListener("input", () => { const p = previaInforme(ta.value, tipo); previa.innerHTML = p.html; ir.disabled = !p.ok; });
+  ta.focus();
+  ir.addEventListener("click", async () => {
+    estado.className = "cl-estado"; estado.textContent = tipo === "cliente" ? "Generando…" : "Guardando…"; ir.disabled = true;
+    try {
+      const r = await apiJson(`/api/clientes/${clienteId}/informes/${tipo}`, "POST", { texto: ta.value });
+      if (tipo === "cliente") await bajarArchivo(`/api/informes/${r.id}/pdf`, {}, r.archivo || "Informe_Preliminar.pdf");
+      estado.textContent = tipo === "cliente" ? "Listo: se descargó el PDF y quedó guardado abajo." : "Listo: quedó guardado abajo.";
+      ta.value = ""; previa.innerHTML = "";
+      await recargarInformes(clienteId);
+    } catch (e) { estado.textContent = e.message; estado.className = "cl-estado mal"; ir.disabled = false; }
+  });
 }
 
 function htmlRespuesta(f, { enFicha = false } = {}) {
