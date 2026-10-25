@@ -3623,6 +3623,12 @@ def pagina_comentarios(_: str = Depends(verificar_pagina)):
     return FileResponse(os.path.join(os.path.dirname(__file__), "static", "comentarios.html"))
 
 
+@app.get("/informes/{iid}")
+def pagina_informe(iid: int, _: str = Depends(verificar_pagina)):
+    """Un informe de la solapa Informes de la ficha del cliente, en su propia dirección (botón «Abrir link»)."""
+    return FileResponse(os.path.join(os.path.dirname(__file__), "static", "informe.html"))
+
+
 @app.get("/clientes")
 def pagina_clientes(_: str = Depends(verificar_pagina)):
     return FileResponse(os.path.join(os.path.dirname(__file__), "static", "clientes.html"))

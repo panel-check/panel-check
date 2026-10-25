@@ -1188,6 +1188,7 @@ function htmlInformes(lista) {
   let h = "";
   if (cli.length) h += `<h4>Informes de viabilidad (para el cliente)</h4><ul class="cl-lista-simple">${cli.map(i => `<li data-informe="${i.id}">
       ${quien(i)} · <strong>${esc(i.marca || "")}</strong>${i.fecha_informe ? " · fecha del informe " + esc(i.fecha_informe) : ""}
+      <a class="cl-btn mini" style="text-decoration:none;display:inline-block" href="/informes/${i.id}" target="_blank" rel="noopener" title="Abre el PDF en una pestaña nueva, con su propio link">Abrir link ↗</a>
       <button type="button" class="cl-btn sec mini" data-inf-pdf>PDF</button>
       <button type="button" class="cl-btn sec mini" data-inf-json title="Bajar el JSON con el que se armó">JSON</button>
       <button type="button" class="cl-btn peligro mini" data-inf-borrar title="Borrar este informe">×</button></li>`).join("")}</ul>`;
@@ -1196,6 +1197,7 @@ function htmlInformes(lista) {
     return `<li data-informe="${i.id}">
       ${quien(i)} · <strong>${esc(i.marca || "")}</strong> · ${r.identicas ? `<span class="cl-tag mal">${r.identicas} idéntica(s)</span>` : '<span class="cl-tag ok">sin idénticas</span>'}
       · ${(r.relevantes || []).length} antecedente(s) relevante(s)${r.antecedentes_listados ? ` · ${r.antecedentes_listados} listados` : ""}
+      <a class="cl-btn mini" style="text-decoration:none;display:inline-block" href="/informes/${i.id}" target="_blank" rel="noopener" title="Abre el informe completo en una pestaña nueva, con su propio link">Abrir link ↗</a>
       <button type="button" class="cl-btn sec mini" data-inf-ver>Ver resumen</button>
       <button type="button" class="cl-btn sec mini" data-inf-json title="Bajar el JSON completo">JSON</button>
       <button type="button" class="cl-btn peligro mini" data-inf-borrar title="Borrar este informe">×</button>
