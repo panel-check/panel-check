@@ -25,6 +25,15 @@
   .inf-caja ul { margin: 0; padding-left: 18px; font-size: 13px; }
   .inf-filtro { margin: 0 0 8px; padding: 6px 9px; border: 1px solid var(--borde-control); border-radius: 6px; font: inherit; font-size: 13px; width: 260px; max-width: 100%; }
   a.cl-btn { text-decoration: none; display: inline-block; }
+  .inf-fichas { display: grid; gap: 12px; }
+  .inf-ficha { border: 1px solid var(--borde); border-radius: 8px; padding: 12px 14px; background: #fafbfc; }
+  .inf-ficha-cab { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 8px; font-size: 14px; }
+  .inf-ficha-cab strong { font-size: 15px; color: #1f2430; }
+  .inf-ficha .inf-grid { margin-bottom: 6px; }
+  .inf-largo { font-size: 13px; line-height: 1.5; margin-top: 8px; }
+  .inf-largo span { display: block; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--gris); margin-bottom: 2px; }
+  .inf-destacado { background: #fff8e6; border-left: 3px solid #f0b429; padding: 8px 10px; border-radius: 4px; }
+  .cl-tabla td { white-space: normal; }
   .inf-obs { white-space: pre-wrap; font-size: 13.5px; line-height: 1.5; margin: 0; }
   @media (max-width: 640px) { .inf-grid { grid-template-columns: 1fr; } .inf-grid dt { margin-top: 6px; } .inf-pdf { height: 75vh; } }
 </style>
@@ -64,6 +73,6 @@
 <div class="contenido" id="informe"><p class="crm-cargando">Cargando…</p></div>
 
 <script src="/static/comun.js?v=vp8"></script>
-<script src="/static/informe.js?v=1"></script>
+<script src="/static/informe.js?v=2"></script>
 </body>
 </html>
