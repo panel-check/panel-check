@@ -190,12 +190,15 @@ function estadoOposicionEfectivo(row, hoyIso) {
   const cierre = `El plazo para recibir oposiciones cerró el ${_msAFecha(plazo.cierre)}`;
   if (hoy >= plazo.notificacion) {
     return { ...efectivo, clave: "ya_notificada", ...ESTADOS_OPOSICION.ya_notificada,
+      // El popup ya muestra el cierre del plazo y la fecha de notificación en su propio recuadro: ahí va el resumen sin repetirlas.
+      detalleBreve: `${presentacion}El titular ya debería estar notificado. El vencimiento de su plazo para contestar se completa cuando se revise de nuevo el expediente.`,
       detalle: `${presentacion}${cierre} y ya pasó el miércoles en que INPI notifica (${_msAFecha(plazo.notificacion)}): el titular ya debería estar notificado. ` +
         "El vencimiento de su plazo para contestar se completa cuando se revise de nuevo el expediente." };
   }
   const cuandoCierra = hoy > plazo.cierre ? `el plazo para recibir oposiciones cerró el ${_msAFecha(plazo.cierre)}`
     : `el plazo para recibir oposiciones cierra el ${_msAFecha(plazo.cierre, true)}`;
   return { ...efectivo, clave: "sin_notificar", ...ESTADOS_OPOSICION.sin_notificar,
+    detalleBreve: `${presentacion}INPI todavía no se la notificó al titular.`.trim(),
     detalle: `${presentacion}INPI se la notificará al titular el ${_msAFecha(plazo.notificacion, true)} ` +
       `(${cuandoCierra}).` };
 }
@@ -505,7 +508,7 @@ function abrirModalOposicion(acta) {
       `<br><span class="mo-doc">Publicada en el boletín el ${_escapeHtml(_msAFecha(plazo.publicacion))} + 30 días corridos · INPI notifica a los titulares los miércoles: ${hoy >= plazo.notificacion ? "le tocó notificar el" : "notificará el"} ${_escapeHtml(_msAFecha(plazo.notificacion, true))}.</span></p>`;
   }
   const estadoHtml = (est
-    ? `<p class="mo-estado"><strong>${est.sirve ? "✔ Sirve" : "✖ No sirve"} — ${_escapeHtml(est.texto)}.</strong> ${_escapeHtml(est.detalle)}` +
+    ? `<p class="mo-estado"><strong>${est.sirve ? "✔ Sirve" : "✖ No sirve"} — ${_escapeHtml(est.texto)}.</strong> ${_escapeHtml(plazo && est.detalleBreve ? est.detalleBreve : est.detalle)}` +
       `${fechas ? `<br><span class="mo-doc">${_escapeHtml(fechas)}</span>` : ""}</p>`
     : "") + plazoHtml;
 
