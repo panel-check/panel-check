@@ -26,8 +26,15 @@
   .inf-filtro { margin: 0 0 8px; padding: 6px 9px; border: 1px solid var(--borde-control); border-radius: 6px; font: inherit; font-size: 13px; width: 260px; max-width: 100%; }
   a.cl-btn { text-decoration: none; display: inline-block; }
   .inf-fichas { display: grid; gap: 12px; }
-  .inf-ficha { border: 1px solid var(--borde); border-radius: 8px; padding: 12px 14px; background: #fafbfc; }
-  .inf-ficha-cab { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 8px; font-size: 14px; }
+  .inf-ficha { border: 1px solid var(--borde); border-radius: 8px; padding: 10px 14px; background: #fafbfc; }
+  .inf-ficha:hover { border-color: var(--azul); }
+  .inf-ficha-cab { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 14px; cursor: pointer; list-style: none; }
+  .inf-ficha-cab::-webkit-details-marker { display: none; }
+  .inf-flecha { color: var(--gris); transition: transform .15s; display: inline-block; width: 12px; }
+  details[open] > .inf-ficha-cab .inf-flecha { transform: rotate(90deg); }
+  .inf-titular { font-size: 13px; }
+  .inf-ficha-cuerpo { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--borde); }
+  .inf-plegar { display: flex; gap: 6px; justify-content: flex-end; margin: -4px 0 10px; }
   .inf-ficha-cab strong { font-size: 15px; color: #1f2430; }
   .inf-ficha .inf-grid { margin-bottom: 6px; }
   .inf-largo { font-size: 13px; line-height: 1.5; margin-top: 8px; }
@@ -73,6 +80,6 @@
 <div class="contenido" id="informe"><p class="crm-cargando">Cargando…</p></div>
 
 <script src="/static/comun.js?v=vp8"></script>
-<script src="/static/informe.js?v=2"></script>
+<script src="/static/informe.js?v=3"></script>
 </body>
 </html>
