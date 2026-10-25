@@ -33,19 +33,26 @@
     if (!Array.isArray(filas) || !filas.length) return "";
     const cabecera = new Set(["acta", "denominacion", "clase", "estado", "tipo"]);
     const largos = ["por_que_es_relevante", "productos_servicios", "limitacion"];
-    return `<div class="inf-fichas">${filas.map(f => {
+    const varias = filas.length > 1;
+    return `${varias ? `<div class="inf-plegar"><button type="button" class="cl-btn sec mini" data-plegar="abrir">Abrir todos</button>
+      <button type="button" class="cl-btn sec mini" data-plegar="cerrar">Cerrar todos</button></div>` : ""}
+      <div class="inf-fichas">${filas.map(f => {
       if (!f || typeof f !== "object") return `<div class="inf-ficha">${esc(texto(f))}</div>`;
       const chips = [f.clase != null && f.clase !== "" ? `Clase ${f.clase}` : "", f.estado, f.tipo].filter(Boolean);
       const cortos = Object.entries(f).filter(([k, v]) => !cabecera.has(k) && !largos.includes(k) && v !== "" && v != null
         && !(typeof v === "string" && v.length > 90));
       const extensos = [...largos.filter(k => f[k]).map(k => [k, f[k]]),
         ...Object.entries(f).filter(([k, v]) => !cabecera.has(k) && !largos.includes(k) && typeof v === "string" && v.length > 90)];
-      return `<div class="inf-ficha">
-        <div class="inf-ficha-cab">${f.acta ? `<a class="link-acta" href="javascript:void(0)" data-acta="${esc(f.acta)}">Acta ${esc(f.acta)} ↗</a>` : ""}
-          <strong>${esc(f.denominacion || "")}</strong>${chips.map(c => `<span class="cl-tag">${esc(c)}</span>`).join("")}</div>
+      // Cerrada por defecto: en la línea se ve la marca, la clase, el estado y el titular; al hacer click se abre el detalle.
+      return `<details class="inf-ficha">
+        <summary class="inf-ficha-cab"><span class="inf-flecha">▸</span>${f.acta ? `<a class="link-acta" href="javascript:void(0)" data-acta="${esc(f.acta)}">Acta ${esc(f.acta)} ↗</a>` : ""}
+          <strong>${esc(f.denominacion || "")}</strong>${chips.map(c => `<span class="cl-tag">${esc(c)}</span>`).join("")}
+          ${f.titular ? `<span class="crm-gris inf-titular">${esc(texto(f.titular))}</span>` : ""}</summary>
+        <div class="inf-ficha-cuerpo">
         ${cortos.length ? `<dl class="inf-grid">${cortos.map(([k, v]) => `<dt>${esc(etiqueta(k))}</dt><dd>${esc(texto(v))}</dd>`).join("")}</dl>` : ""}
         ${extensos.map(([k, v]) => `<div class="inf-largo${k === "por_que_es_relevante" ? " inf-destacado" : ""}"><span>${esc(k === "por_que_es_relevante" ? "Por qué es relevante" : etiqueta(k))}</span>${esc(texto(v))}</div>`).join("")}
-      </div>`;
+        </div>
+      </details>`;
     }).join("")}</div>`;
   }
 
@@ -91,7 +98,11 @@
       ${caja("Limitaciones de la búsqueda", (d.limitaciones || []).length ? lista(d.limitaciones) : "")}
       ${caja("Datos faltantes", (d.datos_faltantes || []).length ? lista(d.datos_faltantes) : "")}
       ${otras.map(([k, v]) => caja(etiqueta(k), Array.isArray(v) && v.length && typeof v[0] === "object" ? tabla(v) : typeof v === "object" ? dl(v) : `<p style="margin:0">${esc(texto(v))}</p>`)).join("")}`;
-    cont.querySelectorAll("[data-acta]").forEach(a => a.addEventListener("click", () => abrirActa(a.dataset.acta)));
+    // El link del acta está dentro del renglón que abre/cierra la ficha: que abra INPI sin plegar la ficha.
+    cont.querySelectorAll("[data-acta]").forEach(a => a.addEventListener("click", ev => { ev.preventDefault(); ev.stopPropagation(); abrirActa(a.dataset.acta); }));
+    cont.querySelectorAll("[data-plegar]").forEach(b => b.addEventListener("click", () => {
+      b.closest(".inf-caja").querySelectorAll("details.inf-ficha").forEach(d => { d.open = b.dataset.plegar === "abrir"; });
+    }));
     cont.querySelectorAll("[data-filtrar]").forEach(inp => inp.addEventListener("input", () => {
       const q = inp.value.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
       $(inp.dataset.filtrar).querySelectorAll("tbody tr").forEach(tr => {
