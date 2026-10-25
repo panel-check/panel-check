@@ -197,7 +197,7 @@ function estadoOposicionEfectivo(row, hoyIso) {
     : `el plazo para recibir oposiciones cierra el ${_msAFecha(plazo.cierre, true)}`;
   return { ...efectivo, clave: "sin_notificar", ...ESTADOS_OPOSICION.sin_notificar,
     detalle: `${presentacion}INPI se la notificará al titular el ${_msAFecha(plazo.notificacion, true)} ` +
-      `(${cuandoCierra}, 30 días corridos desde la publicación en el boletín, y INPI notifica los miércoles).` };
+      `(${cuandoCierra}).` };
 }
 
 function chipEstadoOposicion(row) {
@@ -1027,6 +1027,25 @@ async function actualizarContadorComentarios() {
   } catch (_) {}
 }
 document.addEventListener("DOMContentLoaded", actualizarContadorComentarios);
+
+/* Globos de ayuda (.tooltip .globo): se posicionan con position:fixed al pasar el
+ * mouse, así no los corta el scroll de .contenedor-tabla (la primera fila de la
+ * tabla de Leads los dejaba tapados por el encabezado). Van arriba del texto; si
+ * arriba no entran (debajo del encabezado fijo), se abren hacia abajo. */
+document.addEventListener("mouseover", (ev) => {
+  const tip = ev.target.closest && ev.target.closest(".tooltip");
+  const globo = tip && tip.querySelector(":scope > .globo");
+  if (!globo) return;
+  const ENCABEZADO = 64, MARGEN = 8;
+  const r = tip.getBoundingClientRect();
+  Object.assign(globo.style, { position: "fixed", right: "auto", bottom: "auto", zIndex: "90" });
+  const w = globo.offsetWidth, h = globo.offsetHeight;
+  let top = r.top - h - 6;
+  if (top < ENCABEZADO) top = r.bottom + 6;
+  const left = Math.max(MARGEN, Math.min(r.left, window.innerWidth - w - MARGEN));
+  globo.style.top = `${top}px`;
+  globo.style.left = `${left}px`;
+});
 
 /* Al abrir la ficha de un titular desde una lista (panel de leads), se guarda el
  * orden de los titulares que se veían para que la ficha ofrezca «Anterior /
