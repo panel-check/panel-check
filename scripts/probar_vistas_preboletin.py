@@ -193,11 +193,14 @@ def enviar_aviso_vistas(items):
         print(f"::warning::No se pudo mandar el aviso de vistas sin entender: {e}")
 
 
-def reinterpretar(conn, hoy_iso):
+def reinterpretar(conn, hoy_iso, avisar=True):
     """Vuelve a interpretar, SIN consultar a INPI, el texto de las vistas ya guardadas
     (vista_texto) con el lector actual: corrige tipo, artículo, motivo, plazo y vencimiento
-    propio cuando el lector mejora. Las fechas de INPI y la notificación no se tocan."""
+    propio cuando el lector mejora o cambian los feriados. Las fechas de INPI y la notificación no se tocan.
+    Con avisar=False (lo usa feriados.py) no manda el mail de «vistas que no supo leer»."""
+    from feriados import cargar_feriados
     from vistas_pdf import parsear_vista, vencimiento_desde_texto
+    feriados = cargar_feriados(conn)
     iso = lambda d: d.isoformat() if d else None
     cambiadas = 0
     sin_entender = []
@@ -211,7 +214,7 @@ def reinterpretar(conn, hoy_iso):
     print(f"Vistas guardadas con texto: {len(filas)}", flush=True)
     for f in filas:
         pdf = parsear_vista(f["vista_texto"])
-        venc, estimado = vencimiento_desde_texto(pdf, iso(f["vista_fecha_notificacion"]), iso(f["vista_fecha"]))
+        venc, estimado = vencimiento_desde_texto(pdf, iso(f["vista_fecha_notificacion"]), iso(f["vista_fecha"]), feriados)
         pdf.update({"vencimiento_texto": venc, "vencimiento_estimado": estimado})
         est = {"notificacion": iso(f["vista_fecha_notificacion"]), "vencimiento": iso(f["vista_fecha_vencimiento"])}
         estado = f["vista_estado"]
@@ -242,7 +245,8 @@ def reinterpretar(conn, hoy_iso):
               f"{' · motivo ' + pdf['motivo'] if pdf['motivo'] else ''} · {plazo_legible(pdf) or 'sin plazo'} · vence {venc or '—'}"
               f"{'  (antes: ' + str(anterior[0]) + ')' if nuevo != anterior else ''}", flush=True)
     print(f"Reinterpretadas: {len(filas)}; con tipo, artículo o motivo distinto: {cambiadas}; sin entender: {len(sin_entender)}", flush=True)
-    enviar_aviso_vistas(sin_entender)
+    if avisar:
+        enviar_aviso_vistas(sin_entender)
 
 
 def guardar_resultado(conn, acta, categoria, datos_vista):
@@ -321,6 +325,9 @@ def main():
         reinterpretar(conn, datetime.date.today().isoformat())
         conn.close()
         return
+    from feriados import cargar_feriados
+    feriados = cargar_feriados(conn)
+    print(f"Feriados cargados para contar días hábiles: {len(feriados)}", flush=True)
     with conn.cursor() as cur:
         cur.execute("SELECT count(*) FROM information_schema.columns WHERE table_name = 'marcas' AND column_name = 'vista_motivo'")
         if not cur.fetchone()[0]:
@@ -417,7 +424,7 @@ def main():
                     if est["estado"] in ("vista_pendiente", "con_apoderado") or actas_pedidas:
                         t2 = time.time()
                         try:
-                            pdf = leer_vista(s, archivos, ingreso, est["notificacion"])
+                            pdf = leer_vista(s, archivos, ingreso, est["notificacion"], feriados)
                         except Exception as e:  # noqa: BLE001
                             extra += f" | pdf: error {e}"
                         duraciones_pdf.append(time.time() - t2)

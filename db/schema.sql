@@ -137,7 +137,7 @@ ALTER TABLE marcas ADD COLUMN IF NOT EXISTS contactado_prebol_en TIMESTAMPTZ;
 -- Lo que se lee del PDF de la vista (scripts/vistas_pdf.py), agregado el 17/10/2026:
 --   vista_tipo: fondo (observa el signo: 30 días corridos) | formal (logotipos: 10 días hábiles) |
 --     fondo_y_formal | desconocido. vista_vencimiento_calculado sale del plazo que dice el texto
---     (los hábiles no descuentan feriados); vista_fecha_vencimiento es el que marca INPI.
+--     (los hábiles descuentan los feriados de la tabla feriados); vista_fecha_vencimiento es el que marca INPI.
 ALTER TABLE marcas ADD COLUMN IF NOT EXISTS vista_tipo TEXT;
 ALTER TABLE marcas ADD COLUMN IF NOT EXISTS vista_articulos TEXT;
 ALTER TABLE marcas ADD COLUMN IF NOT EXISTS vista_antecedente TEXT;
@@ -148,6 +148,21 @@ ALTER TABLE marcas ADD COLUMN IF NOT EXISTS vista_pdf_leido_en TIMESTAMPTZ;
 -- vista_tipo también puede ser convenio_paris (art. 6 bis / 6 ter) o clasificacion (productos/servicios);
 -- vista_motivo es lo que INPI cita como causa («NIKE», «PATAGONIA», «STOCK»). Agregado el 18/10/2026.
 ALTER TABLE marcas ADD COLUMN IF NOT EXISTS vista_motivo TEXT;
+
+-- Agregado el 27/10/2026: feriados nacionales (scripts/feriados.py, workflow feriados.yml, todos los
+-- días), para contar los días hábiles de las vistas. tipo: inamovible | trasladable | no_laborable |
+-- turistico | especial; solo inamovible, trasladable y especial se descuentan. Lo que desaparece de
+-- la página queda con activo = false (no se borra); cambio_detalle dice qué cambió la última vez.
+CREATE TABLE IF NOT EXISTS feriados (
+    fecha            DATE PRIMARY KEY,
+    motivo           TEXT NOT NULL,
+    tipo             TEXT NOT NULL,
+    activo           BOOLEAN NOT NULL DEFAULT true,
+    visto_primera_en TIMESTAMPTZ NOT NULL DEFAULT now(),
+    visto_en         TIMESTAMPTZ NOT NULL DEFAULT now(),
+    cambio_en        TIMESTAMPTZ,
+    cambio_detalle   TEXT
+);
 
 -- Agregado el 30/09/2026: aviso por mail (Resend) de leads con oposición/vista
 -- nueva -- ver scripts/notificar_oposiciones.py. Cada lead se avisa una sola vez.

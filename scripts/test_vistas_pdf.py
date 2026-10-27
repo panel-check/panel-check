@@ -243,9 +243,24 @@ class ParsearVista(unittest.TestCase):
 
 class Vencimiento(unittest.TestCase):
     def test_dias_habiles_saltea_fines_de_semana(self):
-        # miércoles 07/10/2026 + 10 hábiles = miércoles 21/10 (sin descontar el feriado del 12/10)
+        # miércoles 07/10/2026 + 10 hábiles = miércoles 21/10 (sin pasar feriados no se descuenta ninguno)
         self.assertEqual(sumar_dias_habiles("2026-10-07", 10), "2026-10-21")
         self.assertEqual(sumar_dias_habiles("2026-10-09", 1), "2026-10-12")  # viernes -> lunes
+
+    def test_dias_habiles_descuenta_los_feriados(self):
+        feriados = frozenset({"2026-10-12"})  # lunes
+        self.assertEqual(sumar_dias_habiles("2026-10-07", 10, feriados), "2026-10-22")
+        self.assertEqual(sumar_dias_habiles("2026-10-09", 1, feriados), "2026-10-13")  # viernes -> martes
+        # un feriado que cae en fin de semana, o fuera del rango, no cambia nada
+        self.assertEqual(sumar_dias_habiles("2026-10-07", 10, frozenset({"2026-10-10", "2026-12-08"})), "2026-10-21")
+
+    def test_formal_10_habiles_con_feriado(self):
+        r = parsear_vista(FORMAL)
+        self.assertEqual(vencimiento_desde_texto(r, "2026-10-07", None, frozenset({"2026-10-12"})), ("2026-10-22", False))
+
+    def test_los_dias_corridos_no_dependen_de_los_feriados(self):
+        r = parsear_vista(FONDO_2B)
+        self.assertEqual(vencimiento_desde_texto(r, "2026-10-07", "2026-10-05", frozenset({"2026-10-12"})), ("2026-11-06", False))
 
     def test_fondo_30_corridos_desde_la_notificacion(self):
         r = parsear_vista(FONDO_2B)

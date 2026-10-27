@@ -726,6 +726,26 @@ GRUPOS_AUTOMATIZACIONES = [
                 ],
             },
             {
+                "nombre": "Feriados",
+                "descripcion": "Baja los feriados nacionales de argentina.gob.ar y los guarda para contar los "
+                               "días hábiles de las vistas (10 días hábiles: formales y de productos/servicios). "
+                               "Corre todos los días porque el Gobierno cambia la lista durante el año; si "
+                               "algo cambia, recalcula los vencimientos de las vistas. Descuenta los feriados "
+                               "inamovibles, trasladables y especiales; los días no laborables y turísticos "
+                               "se guardan pero no se descuentan. No consulta INPI ni manda mails.",
+                "horario": "Todos los días, 6:15 hs",
+                "metricas": [
+                    {"sql": "SELECT COUNT(*) FROM feriados WHERE activo AND fecha >= current_date",
+                     "etiqueta": "feriados por venir cargados", "destacada": True},
+                    {"sql": "SELECT COALESCE(to_char(MAX(cambio_en) AT TIME ZONE 'America/Argentina/Buenos_Aires', "
+                            "'DD/MM/YYYY'), 'sin cambios') FROM feriados WHERE cambio_en IS NOT NULL",
+                     "etiqueta": "último cambio en la lista"},
+                ],
+                "procesos": [
+                    {"workflow_file": "feriados.yml", "cron": "15 9 * * *"},
+                ],
+            },
+            {
                 "nombre": "Avisos por mail de la mañana",
                 "descripcion": "Manda a las 7:30, en un solo horario, los mails de alertas/plazos/novedades "
                                "de la cartera y de formularios de clientes pendientes.",
