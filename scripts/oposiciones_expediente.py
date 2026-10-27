@@ -70,6 +70,7 @@ from validar_leads import (
     _get_con_reintentos,
     _parsear_fecha_grilla,
     buscar_fila_oposicion,
+    parsear_resolucion,
 )
 
 ESTADOS_QUE_SIRVEN = (
@@ -158,6 +159,8 @@ def parsear_expediente(html: str) -> dict:
     caracter = re.sub(r"\s+", " ", m_car.group(1)).strip() if m_car else ""
     ag = _agente_de_bloque(bloque)
     return {
+        # «Concedida» / «Denegada» / None: la sección RESOLUCIÓN viene en la misma página del expediente
+        "estado_tramite": parsear_resolucion(html)["estado_tramite"],
         "oposiciones": [_normalizar_oposicion(o) for o in (opos_raw or []) if isinstance(o, dict)],
         "vistas": [_normalizar_vista(v) for v in (vistas_raw or []) if isinstance(v, dict)],
         "titular_caracter": caracter,
@@ -181,7 +184,7 @@ def consultar_expediente(s, acta: str, timeout: int = 30) -> dict:
         )
     )
     if "Web Page Blocked" in r.text or "Attack ID" in r.text:
-        return {"bloqueado": True, "oposiciones": [], "vistas": [], "titular_caracter": "",
+        return {"bloqueado": True, "estado_tramite": None, "oposiciones": [], "vistas": [], "titular_caracter": "",
                 "titular_agente": "", "titular_matricula": "", "error_lectura": False}
     return parsear_expediente(r.text)
 

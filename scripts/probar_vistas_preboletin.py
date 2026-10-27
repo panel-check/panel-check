@@ -25,13 +25,26 @@ tipo (de fondo o formal), artículo de la ley, marca anterior con la que se pare
 que dice el texto (30 días corridos / 10 días hábiles). Con eso calcula un vencimiento
 propio y usa el más cercano entre ese y el que marca INPI en el expediente.
 
-Qué marcas se vuelven a revisar (sin --actas):
-  - nunca las contactadas (contactado): ya se les ofreció ayuda, igual que en el seguimiento de oposiciones;
-  - dejan de revisarse las que llegaron a Orden de Publicación o se publicaron, o cuyo titular ya
-    tiene apoderado, y las que pasó el vencimiento de la vista hace más de --dias-despues-vencimiento días;
-  - una marca sin vista se mira de nuevo a los --dias-entre-revisiones días (7) y una con vista sin
-    contestar a los --dias-entre-revisiones-vista (3). El expediente se vuelve a leer en cada revisión de
-    una vista pendiente porque la contestación no siempre aparece como fila en la Grilla.
+Qué marcas se revisan (sin --actas), en la corrida diaria:
+  - nunca las contactadas (contactado): ya se les ofreció ayuda, igual que en el seguimiento de oposiciones
+    (las contactadas con vista las mira el repaso de los miércoles, --repaso);
+  - presentadas hace --dias-minimos días o más (3);
+  - dejan de revisarse (NUNCA más) las que llegaron a Orden de Publicación o se publicaron, las que tienen
+    la vista contestada (vista_estado = resuelta), las denegadas, las de titular con apoderado, y las que
+    pasó el vencimiento de la vista hace más de --dias-despues-vencimiento días;
+  - una marca NO se revisa dos veces el mismo día (fecha de Argentina): se mira de nuevo recién a los
+    N días de la última revisión, contados por día calendario y no por horas. N es --dias-entre-revisiones-vista (1)
+    si tiene una vista sin contestar, --dias-entre-revisiones-jovenes (3) si se presentó hace menos de
+    --dias-jovenes días (30), y --dias-entre-revisiones (7) si es más vieja;
+  - orden: primero las que tienen una vista sin contestar y después las que hace más tiempo no se miran, así
+    que si la corrida se corta (--max-minutes, --hasta-hora o bloqueo de INPI) la siguiente sigue por las que
+    quedaron sin revisar y no vuelve a empezar por las mismas.
+  El expediente se vuelve a leer en cada revisión de una vista pendiente porque la contestación no siempre
+  aparece como fila en la Grilla; en ese mismo expediente se lee si INPI denegó la solicitud.
+
+Con --repaso (miércoles, repasar_vistas.yml) se revisan SOLO las marcas que alguna vez tuvieron una vista y
+siguen abiertas, contactadas o no, para actualizar si se notificó, si se contestó o si venció el plazo. Las
+denegadas y las contestadas salen del repaso y no se vuelven a mirar. Misma regla de «no dos veces el mismo día».
 
 Con --reinterpretar no consulta a INPI: vuelve a leer el texto ya guardado de cada vista con el
 lector actual (para corregir lo guardado cuando mejora el lector).
@@ -43,8 +56,8 @@ publicar es otra cosa que una oposición de un tercero. Las marcas que ya llegar
 a "Orden de Publicación" o a la publicación no se vuelven a consultar.
 
 Uso:
-    DATABASE_URL=... python3 probar_vistas_preboletin.py [--dias-minimos 7]
-        [--limite 600] [--delay 1.5] [--max-minutes 90] [--guardar]
+    DATABASE_URL=... python3 probar_vistas_preboletin.py [--dias-minimos 3]
+        [--limite 600] [--delay 1.5] [--max-minutes 90] [--hasta-hora 22:40] [--guardar] [--repaso]
         [--actas 4797016,4797046]   # revisa SOLO esas actas (y lee el PDF de la vista aunque ya esté resuelta)
 """
 
@@ -60,6 +73,7 @@ import psycopg2
 import psycopg2.extras
 
 import monitor_bloqueo
+from feriados import ahora_argentina, hoy_argentina
 from oposiciones_expediente import clasificar_estado_oposicion, consultar_expediente
 from validar_leads import _parsear_fecha_grilla, buscar_archivos_grilla, crear_sesion
 from vistas_pdf import leer_vista, plazo_legible, problemas_de_lectura
@@ -103,6 +117,77 @@ def clasificar(archivos):
 
 
 ESTADOS_VISTA_QUE_SIRVEN = ("sin_notificar", "notificada_en_plazo", "plazo_vencido")
+
+# Vistas que no se vuelven a revisar nunca: contestada, denegada o ya con apoderado.
+ESTADOS_VISTA_CERRADOS = ("resuelta", "con_apoderado", "denegada")
+# Lo último que mostró la Grilla y deja la marca fuera de la revisión.
+GRILLA_CERRADA = ("orden_publicacion", "publicada", "vista_con_apoderado", "vista_denegada")
+TZ_AR = "America/Argentina/Buenos_Aires"
+
+# Condiciones comunes a la corrida diaria y al repaso. %(hoy)s es la fecha de Argentina (la misma que usa
+# el script para los vencimientos): comparar contra now() de la base daría otro día pasadas las 21 hs.
+_SQL_ABIERTA = f"""
+      es_lead = true AND boletin IS NULL
+      AND COALESCE(vista_grilla_estado, '') NOT IN {GRILLA_CERRADA}
+      AND COALESCE(vista_estado, '') NOT IN {ESTADOS_VISTA_CERRADOS}
+      AND COALESCE(estado_tramite, '') <> 'Denegada'
+      -- pasó el vencimiento de la vista hace más de N días: ya no hay nada que ofrecer
+      AND NOT COALESCE(tuvo_vista IS TRUE AND vista_sirve IS TRUE
+               AND LEAST(vista_vencimiento_calculado, vista_fecha_vencimiento) < %(hoy)s::date - %(dias_venc)s, false)
+"""
+_SQL_REVISADA_EL = f"(vista_revisada_en AT TIME ZONE '{TZ_AR}')::date"
+_SQL_COLUMNAS = """acta, COALESCE(NULLIF(denominacion, ''), denominacion_inpi) AS denominacion, titular,
+       fecha_presentacion::date AS presentada"""
+
+
+def sql_candidatas(repaso: bool) -> str:
+    """Consulta de las marcas a revisar hoy (parámetros con nombre: hoy, dias_min, dias_venc, cada_vista,
+    cada_joven, dias_jovenes, cada). Una marca revisada hoy nunca vuelve a salir: con N >= 1 solo es
+    elegible si su última revisión fue hace N días calendario (fecha de Argentina) o más."""
+    if repaso:
+        # Todas las que alguna vez tuvieron vista y siguen abiertas, contactadas o no; una vez por día como máximo.
+        return f"""
+            SELECT {_SQL_COLUMNAS}
+            FROM marcas
+            WHERE tuvo_vista IS TRUE AND {_SQL_ABIERTA}
+              AND (vista_revisada_en IS NULL OR {_SQL_REVISADA_EL} < %(hoy)s::date)
+            ORDER BY vista_revisada_en ASC NULLS FIRST, fecha_presentacion ASC
+        """
+    return f"""
+        SELECT {_SQL_COLUMNAS}
+        FROM marcas
+        WHERE {_SQL_ABIERTA}
+          AND contactado IS NOT TRUE
+          AND fecha_presentacion IS NOT NULL
+          AND fecha_presentacion::date <= %(hoy)s::date - %(dias_min)s
+          AND (vista_revisada_en IS NULL
+               OR {_SQL_REVISADA_EL} <= %(hoy)s::date - CASE
+                    WHEN tuvo_vista IS TRUE AND vista_sirve IS TRUE THEN %(cada_vista)s
+                    WHEN %(hoy)s::date - fecha_presentacion::date < %(dias_jovenes)s THEN %(cada_joven)s
+                    ELSE %(cada)s END)
+        ORDER BY (tuvo_vista IS TRUE AND vista_sirve IS TRUE) DESC, vista_revisada_en ASC NULLS FIRST, fecha_presentacion ASC
+    """
+
+
+def cerrar_denegadas_conocidas(conn):
+    """Sin consultar a INPI: una marca con vista que el seguimiento de concesiones (revisar_estado) ya marcó
+    «Denegada» deja de ser una vista abierta. Así no sigue contando como «sin contestar» ni se revisa más."""
+    with conn.cursor() as cur:
+        cur.execute(
+            """UPDATE marcas SET vista_estado = 'denegada', vista_sirve = false,
+                      vista_detalle = 'INPI denegó la solicitud: la vista ya no se revisa.'
+               WHERE tuvo_vista IS TRUE AND boletin IS NULL AND estado_tramite = 'Denegada'
+                 AND vista_estado IS DISTINCT FROM 'denegada'"""
+        )
+        n = cur.rowcount
+    conn.commit()
+    if n:
+        print(f"Vistas cerradas porque la marca ya figuraba denegada: {n}", flush=True)
+    return n
+
+
+def _denegada(exp) -> bool:
+    return (exp.get("estado_tramite") or "").strip().lower().startswith("deneg")
 
 
 def _estado_vista(est, hoy_iso, venc_texto=None):
@@ -253,7 +338,14 @@ def guardar_resultado(conn, acta, categoria, datos_vista):
     """Escribe el resultado de la revisión. Solo columnas de vista: nunca toca
     tuvo_oposicion ni los campos de la oposición de un tercero."""
     with conn.cursor() as cur:
-        if datos_vista:
+        if datos_vista and datos_vista["estado"] == "denegada":
+            cur.execute(
+                """UPDATE marcas SET vista_grilla_estado = %s, vista_revisada_en = now(), tuvo_vista = true,
+                          vista_estado = 'denegada', vista_sirve = false, vista_detalle = %s
+                   WHERE acta = %s""",
+                (categoria, datos_vista["detalle"], acta),
+            )
+        elif datos_vista:
             cur.execute(
                 """
                 UPDATE marcas SET
@@ -301,14 +393,19 @@ def _percentil(valores, p):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--dias-minimos", type=int, default=7, help="solo marcas presentadas hace N días o más")
+    ap.add_argument("--dias-minimos", type=int, default=3, help="solo marcas presentadas hace N días o más")
     ap.add_argument("--limite", type=int, default=600, help="tope de marcas a consultar (las más viejas primero)")
     ap.add_argument("--delay", type=float, default=1.5, help="segundos entre marcas (freno de mano)")
     ap.add_argument("--max-minutes", type=float, default=90, help="corta solo pasados estos minutos")
     ap.add_argument("--guardar", action="store_true", help="escribe el resultado en las columnas de vista de la marca (sin esto, solo lectura)")
-    ap.add_argument("--dias-entre-revisiones", type=int, default=7, help="días hasta volver a mirar una marca sin vista")
-    ap.add_argument("--dias-entre-revisiones-vista", type=int, default=3, help="días hasta volver a mirar una marca con vista sin contestar")
+    ap.add_argument("--dias-entre-revisiones", type=int, default=7, help="días hasta volver a mirar una marca sin vista (presentada hace --dias-jovenes días o más)")
+    ap.add_argument("--dias-entre-revisiones-jovenes", type=int, default=3, help="días hasta volver a mirar una marca sin vista presentada hace menos de --dias-jovenes días")
+    ap.add_argument("--dias-jovenes", type=int, default=30, help="hasta qué antigüedad una marca sin vista se mira más seguido")
+    ap.add_argument("--dias-entre-revisiones-vista", type=int, default=1, help="días hasta volver a mirar una marca con vista sin contestar")
     ap.add_argument("--dias-despues-vencimiento", type=int, default=7, help="días después del vencimiento de la vista en que se deja de revisar")
+    ap.add_argument("--hasta-hora", default="", help="hora de Argentina (HH:MM) a la que se corta la corrida, para no pisar los procesos de la noche")
+    ap.add_argument("--repaso", action="store_true",
+                    help="repaso semanal: solo marcas que alguna vez tuvieron una vista y siguen abiertas (contactadas o no)")
     ap.add_argument("--reinterpretar", action="store_true",
                     help="vuelve a interpretar el texto ya guardado de las vistas con el lector actual y sale (no consulta a INPI)")
     ap.add_argument("--actas", default="", help="revisar SOLO estas actas (separadas por coma), sin los filtros de antigüedad y estado")
@@ -322,9 +419,16 @@ def main():
 
     conn = psycopg2.connect(database_url)
     if args.reinterpretar:
-        reinterpretar(conn, datetime.date.today().isoformat())
+        reinterpretar(conn, hoy_argentina())
         conn.close()
         return
+    hasta = None
+    if args.hasta_hora:
+        hasta = datetime.datetime.strptime(args.hasta_hora, "%H:%M").time()
+        if ahora_argentina().time() >= hasta:
+            print(f"Ya pasó la hora de corte ({args.hasta_hora} de Argentina): no se revisa nada hoy, queda para mañana.", flush=True)
+            conn.close()
+            return
     from feriados import cargar_feriados
     feriados = cargar_feriados(conn)
     print(f"Feriados cargados para contar días hábiles: {len(feriados)}", flush=True)
@@ -332,6 +436,9 @@ def main():
         cur.execute("SELECT count(*) FROM information_schema.columns WHERE table_name = 'marcas' AND column_name = 'vista_motivo'")
         if not cur.fetchone()[0]:
             sys.exit("Faltan las columnas de vista en la tabla marcas: se crean solas cuando el panel arranca con el último deploy. Reintentar en unos minutos.")
+    hoy_iso = hoy_argentina()
+    if args.guardar:
+        cerrar_denegadas_conocidas(conn)
     with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
         if actas_pedidas:
             cur.execute(
@@ -347,33 +454,20 @@ def main():
             if faltan:
                 print(f"AVISO: estas actas no están en la base: {', '.join(sorted(faltan))}", flush=True)
         else:
-            cur.execute(
-                """
-                SELECT acta, COALESCE(NULLIF(denominacion, ''), denominacion_inpi) AS denominacion, titular, fecha_presentacion::date AS presentada
-                FROM marcas
-                WHERE es_lead = true AND boletin IS NULL
-                  AND contactado IS NOT TRUE
-                  AND fecha_presentacion IS NOT NULL
-                  AND fecha_presentacion::date <= CURRENT_DATE - %s
-                  AND COALESCE(vista_grilla_estado, '') NOT IN ('orden_publicacion', 'publicada', 'vista_con_apoderado')
-                  AND COALESCE(vista_estado, '') <> 'con_apoderado'
-                  -- pasó el vencimiento de la vista hace más de N días: ya no hay nada que ofrecer
-                  AND NOT COALESCE(tuvo_vista IS TRUE AND vista_sirve IS TRUE
-                           AND LEAST(vista_vencimiento_calculado, vista_fecha_vencimiento) < CURRENT_DATE - %s, false)
-                  -- no volver a mirar antes de tiempo
-                  AND (vista_revisada_en IS NULL
-                       OR vista_revisada_en < now() - make_interval(days => CASE WHEN tuvo_vista IS TRUE AND vista_sirve IS TRUE THEN %s ELSE %s END))
-                ORDER BY vista_revisada_en ASC NULLS FIRST, fecha_presentacion ASC
-                """,
-                (args.dias_minimos, args.dias_despues_vencimiento, args.dias_entre_revisiones_vista, args.dias_entre_revisiones),
-            )
+            cur.execute(sql_candidatas(args.repaso), {
+                "hoy": hoy_iso, "dias_min": args.dias_minimos, "dias_venc": args.dias_despues_vencimiento,
+                "cada_vista": args.dias_entre_revisiones_vista, "cada_joven": args.dias_entre_revisiones_jovenes,
+                "dias_jovenes": args.dias_jovenes, "cada": args.dias_entre_revisiones,
+            })
             todas = cur.fetchall()
     if not args.guardar:
         conn.close()
     marcas = todas[: args.limite]
-    print(f"Leads pre-boletín con {args.dias_minimos}+ días: {len(todas)}. A consultar en esta prueba: {len(marcas)}.", flush=True)
+    if args.repaso:
+        print(f"Repaso de vistas: {len(todas)} marcas con una vista abierta. A consultar en esta corrida: {len(marcas)}.", flush=True)
+    else:
+        print(f"Leads pre-boletín con {args.dias_minimos}+ días: {len(todas)}. A consultar en esta prueba: {len(marcas)}.", flush=True)
 
-    hoy_iso = datetime.date.today().isoformat()
     s = crear_sesion()
     inicio = time.time()
     duraciones, duraciones_exp, duraciones_pdf = [], [], []
@@ -385,6 +479,9 @@ def main():
     for n, m in enumerate(marcas, 1):
         if (time.time() - inicio) / 60 >= args.max_minutes:
             corte = "se agotó el tiempo de la prueba"
+            break
+        if hasta and ahora_argentina().time() >= hasta:
+            corte = f"se llegó a la hora de corte ({args.hasta_hora})"
             break
         if monitor_bloqueo.debe_cortar():
             corte = "INPI bloqueó consultas seguidas"
@@ -415,6 +512,12 @@ def main():
                 if exp.get("bloqueado"):
                     categoria, guardable = "vista_sin_expediente", False
                     extra = " | expediente: bloqueado por el WAF, se reintenta"
+                elif _denegada(exp):
+                    # INPI denegó la solicitud: la vista deja de revisarse (no se lee el PDF)
+                    categoria = "vista_denegada"
+                    datos_vista = {"estado": "denegada", "fecha": vista, "notificacion": None, "vencimiento": None,
+                                   "detalle": "INPI denegó la solicitud: la vista ya no se revisa."}
+                    extra = " | expediente: DENEGADA"
                 else:
                     est = clasificar_estado_oposicion(exp, archivos, None)
                     duraciones_exp.append(time.time() - t1)
@@ -485,13 +588,14 @@ def main():
                 extra += f" | NO se pudo guardar: {e}"
 
         conteo[categoria] = conteo.get(categoria, 0) + 1
-        dias = (datetime.date.today() - m["presentada"]).days
+        dias = (datetime.date.fromisoformat(hoy_iso) - m["presentada"]).days
         print(f"  [{n}/{len(marcas)}] acta {m['acta']} ({dias} d): {categoria} [{dt_grilla:.1f} s]{extra}", flush=True)
         time.sleep(args.delay)
 
     total_s = time.time() - inicio
     lineas = [
-        f"Leads pre-boletín con {args.dias_minimos}+ días: {len(todas)} (consultadas: {consultadas})",
+        (f"Repaso de vistas: {len(todas)} marcas con una vista abierta (consultadas: {consultadas})" if args.repaso
+         else f"Leads pre-boletín con {args.dias_minimos}+ días: {len(todas)} (consultadas: {consultadas})"),
         f"Tiempo total de la prueba: {total_s / 60:.1f} min ({total_s / max(consultadas, 1):.1f} s por marca, incluida la espera de {args.delay} s)",
     ]
     if duraciones:

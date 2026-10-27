@@ -1,0 +1,56 @@
+name: "Repaso de vistas (miércoles)"
+
+on:
+  schedule:
+    # Los miércoles a las 17:00 UTC (14:00 ART; GitHub arranca los crons unos minutos tarde). Vuelve a mirar
+    # TODAS las marcas que alguna vez tuvieron una vista y siguen abiertas, contactadas por mail o no, y
+    # actualiza si ya se notificó, si se contestó o si venció el plazo. Las marcas con la vista contestada
+    # o denegadas salen del repaso y no se vuelven a mirar. Son pocas decenas de marcas (~10 min).
+    # Decidido el 27/10/2026. Usa el carril de INPI: si hay otro proceso de INPI corriendo (por ejemplo la
+    # importación de un boletín a mano), espera su turno.
+    - cron: "0 17 * * 3"
+  workflow_dispatch:
+    inputs:
+      limite:
+        description: "Tope de marcas a revisar en esta corrida"
+        required: false
+        default: "2000"
+      max_minutes:
+        description: "Minutos máximos de la corrida"
+        required: false
+        default: "80"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: inpi-lane
+  cancel-in-progress: false
+
+jobs:
+  repasar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      # Alarma de bloqueo masivo de INPI (scripts/monitor_bloqueo.py) y aviso de vistas que el lector no entiende
+      RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+      RESEND_FROM: ${{ secrets.RESEND_FROM }}
+      NOTIFICAR_A: ${{ secrets.NOTIFICAR_A }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.11"
+
+      - name: Instalar dependencias
+        run: pip install -r requirements.txt
+
+      # Una vista vencida se sigue mirando 45 días (la diaria, 7): una denegatoria puede llegar semanas después.
+      - name: Repasar el estado de las marcas con vista
+        run: |
+          cd scripts
+          python3 probar_vistas_preboletin.py --repaso --guardar --dias-despues-vencimiento 45 --limite "${{ inputs.limite || '2000' }}" --max-minutes "${{ inputs.max_minutes || '80' }}"
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL || secrets.DATABASE_PUBLIC_URL }}
+          PYTHONUNBUFFERED: "1"

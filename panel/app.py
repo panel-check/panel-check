@@ -601,19 +601,36 @@ _SQL_OPOSICIONES_PENDIENTES = """
     )
 """
 
-# Marcas que la revisión de vistas miraría hoy (misma regla que la consulta de
-# scripts/probar_vistas_preboletin.py -- si se cambia una, cambiar la otra).
-_SQL_VISTAS_PENDIENTES = """
-    SELECT COUNT(*) FROM marcas
-    WHERE es_lead = true AND boletin IS NULL AND contactado IS NOT TRUE
-      AND fecha_presentacion IS NOT NULL
-      AND fecha_presentacion::date <= current_date - 7
-      AND COALESCE(vista_grilla_estado, '') NOT IN ('orden_publicacion', 'publicada', 'vista_con_apoderado')
-      AND COALESCE(vista_estado, '') <> 'con_apoderado'
+# Marcas que la revisión de vistas miraría hoy (misma regla que sql_candidatas() de
+# scripts/probar_vistas_preboletin.py -- si se cambia una, cambiar la otra). El día es el de
+# Argentina, y una marca revisada hoy no vuelve a salir hoy.
+_SQL_HOY_AR = "(now() AT TIME ZONE 'America/Argentina/Buenos_Aires')::date"
+_SQL_VISTAS_ABIERTA = f"""
+      es_lead = true AND boletin IS NULL
+      AND COALESCE(vista_grilla_estado, '') NOT IN ('orden_publicacion', 'publicada', 'vista_con_apoderado', 'vista_denegada')
+      AND COALESCE(vista_estado, '') NOT IN ('resuelta', 'con_apoderado', 'denegada')
+      AND COALESCE(estado_tramite, '') <> 'Denegada'
       AND NOT COALESCE(tuvo_vista IS TRUE AND vista_sirve IS TRUE
-               AND LEAST(vista_vencimiento_calculado, vista_fecha_vencimiento) < current_date - 7, false)
+               AND LEAST(vista_vencimiento_calculado, vista_fecha_vencimiento) < {_SQL_HOY_AR} - %(venc)s, false)
+"""
+_SQL_VISTAS_REVISADA_EL = "(vista_revisada_en AT TIME ZONE 'America/Argentina/Buenos_Aires')::date"
+_SQL_VISTAS_PENDIENTES = f"""
+    SELECT COUNT(*) FROM marcas
+    WHERE {_SQL_VISTAS_ABIERTA.replace('%(venc)s', '7')}
+      AND contactado IS NOT TRUE
+      AND fecha_presentacion IS NOT NULL
+      AND fecha_presentacion::date <= {_SQL_HOY_AR} - 3
       AND (vista_revisada_en IS NULL
-           OR vista_revisada_en < now() - make_interval(days => CASE WHEN tuvo_vista IS TRUE AND vista_sirve IS TRUE THEN 3 ELSE 7 END))
+           OR {_SQL_VISTAS_REVISADA_EL} <= {_SQL_HOY_AR} - CASE
+                WHEN tuvo_vista IS TRUE AND vista_sirve IS TRUE THEN 1
+                WHEN {_SQL_HOY_AR} - fecha_presentacion::date < 30 THEN 3
+                ELSE 7 END)
+"""
+# Repaso de los miércoles: marcas con una vista abierta, contactadas o no (misma regla que --repaso).
+_SQL_VISTAS_REPASO_PENDIENTES = f"""
+    SELECT COUNT(*) FROM marcas
+    WHERE tuvo_vista IS TRUE AND {_SQL_VISTAS_ABIERTA.replace('%(venc)s', '45')}
+      AND (vista_revisada_en IS NULL OR {_SQL_VISTAS_REVISADA_EL} < {_SQL_HOY_AR})
 """
 
 GRUPOS_AUTOMATIZACIONES = [
@@ -697,16 +714,19 @@ GRUPOS_AUTOMATIZACIONES = [
             },
             {
                 "nombre": "Vistas antes de publicar",
-                "descripcion": "Revisa las marcas que todavía no salieron en un boletín (pre-boletín, con 7 o más "
+                "descripcion": "Revisa las marcas que todavía no salieron en un boletín (pre-boletín, con 3 o más "
                                "días desde la presentación) y mira en INPI si recibieron una vista antes de "
                                "publicarse: de fondo (INPI observa el signo, 30 días corridos) o formal (pide "
-                               "logotipos, 10 días hábiles). Baja y lee el PDF de la vista y guarda el tipo, el "
-                               "artículo, la marca anterior con la que se parece y el vencimiento. No revisa las "
-                               "marcas contactadas, las que ya llegaron a Orden de Publicación ni las que ya "
-                               "tienen apoderado; una marca sin vista se vuelve a mirar a los 7 días y una con "
-                               "vista sin contestar a los 3. Hasta 600 marcas por corrida (~30 min). Por ahora "
-                               "corre solo a mano.",
-                "horario": "Solo a mano (botón «Correr ahora»)",
+                               "logotipos o precisar productos, 10 días hábiles). Baja y lee el PDF de la vista y "
+                               "guarda el tipo, el artículo, la marca anterior con la que se parece y el "
+                               "vencimiento. Corre todos los días apenas termina el escaneo de actas y se corta "
+                               "sola a las 22:40, antes de los procesos de la noche. Una marca no se revisa dos "
+                               "veces el mismo día; las que tienen una vista sin contestar se miran todos los "
+                               "días y las demás cada 3 o 7 días. Dejan de revisarse las contestadas, las "
+                               "denegadas, las que ya tienen apoderado y las que salieron en un boletín. No revisa "
+                               "las contactadas: esas con vista las repasa los miércoles a las 14:00, junto con "
+                               "las demás, para actualizar si se notificó, se contestó o venció el plazo.",
+                "horario": "Todos los días, después del escaneo de actas (se corta a las 22:40) · repaso: miércoles 14:00 hs",
                 "metricas": [
                     {"sql": "SELECT COUNT(*) FROM marcas WHERE es_lead = true AND boletin IS NULL "
                             "AND tuvo_vista IS TRUE AND vista_sirve IS TRUE",
@@ -720,9 +740,12 @@ GRUPOS_AUTOMATIZACIONES = [
                      "etiqueta": "detectadas en los últimos 7 días"},
                 ],
                 "procesos": [
-                    {"etiqueta": "Revisión de vistas", "workflow_file": "probar_vistas_preboletin.yml", "cron": None,
-                     "horario": "solo a mano",
+                    {"etiqueta": "Revisión diaria", "workflow_file": "probar_vistas_preboletin.yml", "cron": None,
+                     "horario": "todos los días, al terminar el escaneo de actas",
                      "pendientes_sql": _SQL_VISTAS_PENDIENTES},
+                    {"etiqueta": "Repaso de los miércoles", "workflow_file": "repasar_vistas.yml", "cron": "0 17 * * 3",
+                     "horario": "miércoles, 14:00 hs",
+                     "pendientes_sql": _SQL_VISTAS_REPASO_PENDIENTES},
                 ],
             },
             {
@@ -1184,7 +1207,8 @@ SQL_ES_OPOSICION_TERCERO = "(tuvo_oposicion IS TRUE AND COALESCE(detalle_oposici
 SQL_ES_SOLO_VISTA = "(tuvo_oposicion IS TRUE AND COALESCE(detalle_oposicion, '') !~* 'OPO')"
 # Vista de INPI ANTES de publicar que todavía cuenta: una ya resuelta no tiene nada para ofrecer, así que no se
 # muestra ni entra en ningún filtro (pedido del 18/10/2026).
-SQL_VISTA_PRE_ABIERTA = "(tuvo_vista IS TRUE AND COALESCE(vista_estado, '') <> 'resuelta')"
+SQL_VISTA_PRE_ABIERTA = ("(tuvo_vista IS TRUE AND COALESCE(vista_estado, '') NOT IN ('resuelta', 'denegada') "
+                         "AND COALESCE(estado_tramite, '') <> 'Denegada')")
 
 
 def filtros_marcas(
