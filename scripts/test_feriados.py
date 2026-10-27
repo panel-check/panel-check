@@ -60,9 +60,14 @@ class Parseo(unittest.TestCase):
         with self.assertRaises(ValueError):
             fe.parsear_feriados(json_de(inLanguage="en-US"), 2026)
 
-    def test_fecha_de_otro_anio(self):
+    def test_el_archivo_del_anio_trae_el_anio_nuevo_siguiente(self):
+        # caso real (27/10/2026): el JSON de 2026 incluye el 01/01/2027
+        r = fe.parsear_feriados(json_de(FERIADOS_2026 + [("2027-01-01", "Año nuevo", "inamovible")]), 2026)
+        self.assertEqual(r[-1], {"fecha": "2027-01-01", "motivo": "Año nuevo", "tipo": "inamovible"})
+
+    def test_fecha_de_un_anio_lejano(self):
         with self.assertRaises(ValueError):
-            fe.parsear_feriados(json_de(FERIADOS_2026 + [("2027-01-01", "Año Nuevo", "inamovible")]), 2026)
+            fe.parsear_feriados(json_de(FERIADOS_2026 + [("2030-01-01", "Año Nuevo", "inamovible")]), 2026)
 
     def test_fecha_invalida_o_sin_tipo(self):
         with self.assertRaises(ValueError):
@@ -73,6 +78,9 @@ class Parseo(unittest.TestCase):
     def test_muy_pocos_feriados_es_un_error(self):
         with self.assertRaises(ValueError):
             fe.parsear_feriados(json_de(FERIADOS_2026[:3]), 2026)
+        # los de otro año no cuentan para el mínimo
+        with self.assertRaises(ValueError):
+            fe.parsear_feriados(json_de(FERIADOS_2026[:5] + [(f"2027-0{m}-01", "X", "inamovible") for m in range(1, 9)]), 2026)
 
     def test_solo_algunos_tipos_descuentan_dias_habiles(self):
         self.assertEqual(set(fe.TIPOS_INHABILES), {"inamovible", "trasladable", "especial"})
@@ -106,6 +114,17 @@ class Sincronizacion(unittest.TestCase):
         self.assertEqual(fe.sincronizar(cur, 2026, self.pagina), [])
         self.assertEqual(len(cur.de("UPDATE feriados SET visto_en")), 15)
         self.assertEqual(cur.de("INSERT"), [])
+
+    def test_el_anio_nuevo_siguiente_no_se_duplica_ni_se_quita(self):
+        con_2027 = fe.parsear_feriados(json_de(FERIADOS_2026 + [("2027-01-01", "Año nuevo", "inamovible")]), 2026)
+        guardados = self.guardados + [("2027-01-01", "Año nuevo", "inamovible", True)]
+        cur = CursorFalso(guardados)
+        self.assertEqual(fe.sincronizar(cur, 2026, con_2027), [])
+        self.assertEqual(cur.de("INSERT"), [])
+        # y si después el archivo 2026 ya no lo trae, no se da de baja desde acá (lo maneja el archivo 2027)
+        cur = CursorFalso(guardados)
+        self.assertEqual(fe.sincronizar(cur, 2026, self.pagina), [])
+        self.assertFalse(any("activo = false" in s for s, _ in cur.sql))
 
     def test_primera_vez_agrega_todo(self):
         cur = CursorFalso([])
