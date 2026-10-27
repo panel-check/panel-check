@@ -178,18 +178,27 @@ function _crmHtmlCabecera(d, opciones = {}) {
   // expediente en INPI y mandar el mail de oposición: se dejan a mano acá. El mail
   // solo se ofrece donde la página sabe mandarlo (opciones.mailOposicion: ficha del titular).
   const conOpo = m => m.tuvo_oposicion === true && m.es_lead === true && m.oposicion_atendida !== true && m.oposicion_sirve !== false;
-  const marcaOpo = (!d.cliente && l.es_lead && l.oposicion_sin_apoderado)
+  // Vista de INPI antes de publicar sin contestar: mismo atajo, pero con el mail «Recibió una vista».
+  const conVista = m => m.tuvo_vista === true && m.vista_sirve === true && m.es_lead === true;
+  const marcaConOpo = (!d.cliente && l.es_lead && l.oposicion_sin_apoderado)
     ? (d.marcas.find(m => conOpo(m) && m.email) || d.marcas.find(conOpo))
     : null;
+  const marcaConVista = (!marcaConOpo && !d.cliente && l.es_lead && l.vista_sin_apoderado)
+    ? (d.marcas.find(m => conVista(m) && m.email) || d.marcas.find(conVista))
+    : null;
+  const marcaOpo = marcaConOpo || marcaConVista;
   if (marcaOpo) {
+    const esVista = !marcaConOpo;
+    const claveMail = esVista ? "prospecto_vista" : "prospecto_oposicion";
+    const nombreMail = esVista ? "Recibió una vista" : "Recibió una oposición";
     const nombreMarca = marcaOpo.denominacion_inpi || marcaOpo.denominacion || marcaOpo.acta;
     botones.push(`<button type="button" class="crm-btn-gestor" data-accion="ver-acta-opo" data-acta-opo="${crmEsc(marcaOpo.acta)}" title="Abre el expediente en el portal de INPI (ahí está el botón GRILLA DIGITAL con el historial del acta)">🔎 Ver acta ${crmEsc(marcaOpo.acta)} en INPI</button>`);
     botones.push(`<button type="button" class="crm-btn-gestor" data-accion="ver-grilla-opo" data-acta-opo="${crmEsc(marcaOpo.acta)}" title="Abre directo la Grilla Digital del acta (archivos del expediente: formularios, oposiciones, publicación...)">🗂 Ver Grilla Digital</button>`);
     if (typeof opciones.mailOposicion === "function") {
       const ayudaMail = marcaOpo.email
-        ? `Manda el mail «Recibió una oposición» de la marca ${nombreMarca} a ${marcaOpo.email} (pide confirmación antes de enviar)`
+        ? `Manda el mail «${nombreMail}» de la marca ${nombreMarca} a ${marcaOpo.email} (pide confirmación antes de enviar)`
         : "Esta marca no tiene mail: se completa en la pestaña Mail";
-      botones.push(`<button type="button" class="crm-btn-primario" data-accion="mail-oposicion" data-acta-opo="${crmEsc(marcaOpo.acta)}" title="${crmEsc(ayudaMail)}">✉ Enviar mail de oposición</button><span class="crm-gris" id="estado-mail-opo"></span>`);
+      botones.push(`<button type="button" class="crm-btn-primario" data-accion="mail-oposicion" data-acta-opo="${crmEsc(marcaOpo.acta)}" data-clave-mail="${claveMail}" title="${crmEsc(ayudaMail)}">✉ Enviar mail de ${esVista ? "vista" : "oposición"}</button><span class="crm-gris" id="estado-mail-opo"></span>`);
     }
   }
   // Lead con marcas pre-boletín (todavía sin publicar): atajos al expediente y a la Grilla
@@ -350,7 +359,7 @@ function _crmConectarFicha(cont) {
   const btnMailOpo = uno('[data-accion="mail-oposicion"]');
   if (btnMailOpo) btnMailOpo.addEventListener("click", async () => {
     btnMailOpo.disabled = true;
-    try { await opciones.mailOposicion(btnMailOpo.dataset.actaOpo); }
+    try { await opciones.mailOposicion(btnMailOpo.dataset.actaOpo, btnMailOpo.dataset.claveMail); }
     finally { btnMailOpo.disabled = false; }
   });
 

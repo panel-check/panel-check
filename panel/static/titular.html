@@ -570,12 +570,14 @@ async function mlEnviar() {
 // Botón «Enviar mail de oposición» de la cabecera: deja elegidas la plantilla de
 // oposición y la marca con la oposición, y usa el mismo envío (con su confirmación,
 // la lista de bajas y el aviso de «ya se le mandó») que la pestaña Mail.
-async function mandarMailOposicion(acta) {
-  const hay = mlPlantillas.some(p => p.clave === "prospecto_oposicion");
+// Con una vista sin contestar el mismo botón manda «Recibió una vista» (clave = "prospecto_vista").
+async function mandarMailOposicion(acta, clave = "prospecto_oposicion") {
+  const hay = mlPlantillas.some(p => p.clave === clave);
   const r = mlFilas.find(x => x.acta === acta);
-  if (!hay || !r) { alert("No se encontró la plantilla «Recibió una oposición» o la marca. Usá la pestaña Mail."); abrirPestana("mail"); return; }
-  if (!r.email) { alert("Esta marca no tiene mail cargado. Completalo en la pestaña Mail (campo «Para»)."); document.getElementById("ml-marca").value = acta; document.getElementById("ml-plantilla").value = "prospecto_oposicion"; mlAlCambiarMarca(); abrirPestana("mail"); return; }
-  document.getElementById("ml-plantilla").value = "prospecto_oposicion";
+  const nombre = clave === "prospecto_vista" ? "Recibió una vista" : "Recibió una oposición";
+  if (!hay || !r) { alert(`No se encontró la plantilla «${nombre}» o la marca. Usá la pestaña Mail.`); abrirPestana("mail"); return; }
+  if (!r.email) { alert("Esta marca no tiene mail cargado. Completalo en la pestaña Mail (campo «Para»)."); document.getElementById("ml-marca").value = acta; document.getElementById("ml-plantilla").value = clave; mlAlCambiarMarca(); abrirPestana("mail"); return; }
+  document.getElementById("ml-plantilla").value = clave;
   document.getElementById("ml-marca").value = acta;
   mlAlCambiarMarca();  // completa «Para» con el mail de esa marca y actualiza la vista previa
   const res = await mlEnviar();
@@ -586,7 +588,9 @@ async function mandarMailOposicion(acta) {
 function pintarEstadoMailOpo() {
   const el = document.getElementById("estado-mail-opo");
   if (!el) return;
-  const previo = (mlEnvios || []).find(e => e.clave_mail === "prospecto_oposicion");
+  const btn = document.querySelector('[data-accion="mail-oposicion"]');
+  const clave = (btn && btn.dataset.claveMail) || "prospecto_oposicion";
+  const previo = (mlEnvios || []).find(e => e.clave_mail === clave);
   el.textContent = previo ? `✓ Ya se le mandó el ${mlFecha(previo.enviado_en)}${previo.enviado_por ? " (" + previo.enviado_por + ")" : ""}` : "";
 }
 
