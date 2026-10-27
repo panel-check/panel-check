@@ -61,7 +61,7 @@ def _tipo_de(item: dict) -> str:
 
 def parsear_feriados(data: dict, anio: int) -> list[dict]:
     """[{fecha: 'YYYY-MM-DD', motivo, tipo}] ordenado por fecha. ValueError si el JSON no tiene el
-    formato esperado, está en otro idioma, trae fechas de otro año o muy pocos feriados."""
+    formato esperado, está en otro idioma, trae fechas lejanas al año o muy pocos feriados."""
     if not isinstance(data, dict):
         raise ValueError("el JSON no es un objeto")
     idioma = str(data.get("inLanguage") or "")
@@ -80,7 +80,8 @@ def parsear_feriados(data: dict, anio: int) -> list[dict]:
             fecha = dt.date.fromisoformat(crudo)
         except ValueError:
             raise ValueError(f"fecha inválida «{item.get('startDate')}» en «{item.get('name')}»") from None
-        if fecha.year != anio:
+        # El archivo de un año trae también el Año Nuevo del siguiente (visto en la corrida real del 27/10/2026).
+        if fecha.year not in (anio, anio + 1):
             raise ValueError(f"«{item.get('name')}» es del {fecha.year} y el archivo es del {anio}")
         motivo = " ".join(str(item.get("name") or "").split())
         tipo = _tipo_de(item)
@@ -95,8 +96,9 @@ def parsear_feriados(data: dict, anio: int) -> list[dict]:
                 previo["motivo"] += f" / {motivo}"
         else:
             por_fecha[crudo] = {"fecha": crudo, "motivo": motivo, "tipo": tipo}
-    if len(por_fecha) < MIN_FERIADOS:
-        raise ValueError(f"solo {len(por_fecha)} feriados para el {anio} (se esperan {MIN_FERIADOS} o más)")
+    del_anio = sum(1 for f in por_fecha if f.startswith(f"{anio}-"))
+    if del_anio < MIN_FERIADOS:
+        raise ValueError(f"solo {del_anio} feriados del {anio} (se esperan {MIN_FERIADOS} o más)")
     return [por_fecha[k] for k in sorted(por_fecha)]
 
 
@@ -121,7 +123,9 @@ def descargar(anio: int, session=None, reintentos: int = 3):
 
 def sincronizar(cur, anio: int, feriados: list[dict]) -> list[str]:
     """Deja la tabla igual a la página para ese año. Devuelve los cambios, uno por línea de texto."""
-    cur.execute("SELECT fecha::text, motivo, tipo, activo FROM feriados WHERE EXTRACT(year FROM fecha) = %s", (anio,))
+    # Las filas del año, más las fechas de otro año que trae este archivo (el Año Nuevo siguiente).
+    cur.execute("SELECT fecha::text, motivo, tipo, activo FROM feriados WHERE EXTRACT(year FROM fecha) = %s OR fecha::text = ANY(%s)",
+                (anio, [f["fecha"] for f in feriados]))
     guardados = {f: (m, t, a) for f, m, t, a in cur.fetchall()}
     cambios = []
     for f in feriados:
@@ -141,7 +145,8 @@ def sincronizar(cur, anio: int, feriados: list[dict]) -> list[str]:
             cur.execute("UPDATE feriados SET visto_en = now() WHERE fecha = %s", (f["fecha"],))
     en_pagina = {f["fecha"] for f in feriados}
     for fecha, (motivo, tipo, activo) in sorted(guardados.items()):
-        if activo and fecha not in en_pagina:
+        # solo se quitan los del año del archivo: los de otro año los administra el archivo de ese año
+        if activo and fecha.startswith(f"{anio}-") and fecha not in en_pagina:
             cur.execute(
                 "UPDATE feriados SET activo = false, cambio_en = now(), cambio_detalle = %s WHERE fecha = %s",
                 ("ya no figura en la página", fecha))
