@@ -29,8 +29,8 @@ tolerando espacios de más o de menos.
 El plazo que se calcula acá sale de lo que DICE la vista: es una estimación. El campo
 Fecha_Vencimiento del expediente de INPI puede dar otra fecha (en las primeras 4 vistas
 daba notificación + 45 días); se guardan las dos y para decidir se usa la más cercana.
-Los días hábiles se cuentan sin sábados ni domingos pero SIN descontar feriados, así que
-la fecha puede quedar unos días corta o larga.
+Los días hábiles se cuentan sin sábados, domingos ni feriados nacionales (tabla `feriados`,
+scripts/feriados.py). Si no se pasan feriados, solo se saltean los fines de semana.
 """
 
 import datetime as dt
@@ -185,17 +185,18 @@ def problemas_de_lectura(parsed: dict | None) -> list[str]:
     return problemas
 
 
-def sumar_dias_habiles(inicio_iso: str, n: int) -> str:
-    """n días hábiles después de inicio (lunes a viernes; no descuenta feriados)."""
+def sumar_dias_habiles(inicio_iso: str, n: int, feriados=frozenset()) -> str:
+    """n días hábiles después de inicio: lunes a viernes, sin los feriados (fechas ISO; ver
+    scripts/feriados.py). Sin feriados cuenta solo los fines de semana."""
     d = dt.date.fromisoformat(inicio_iso)
     while n > 0:
         d += dt.timedelta(days=1)
-        if d.weekday() < 5:
+        if d.weekday() < 5 and d.isoformat() not in feriados:
             n -= 1
     return d.isoformat()
 
 
-def vencimiento_desde_texto(parsed: dict, notificacion_iso: str | None, fecha_vista_iso: str | None):
+def vencimiento_desde_texto(parsed: dict, notificacion_iso: str | None, fecha_vista_iso: str | None, feriados=frozenset()):
     """(vencimiento_iso | None, estimado: bool). Parte de la fecha de notificación; si
     todavía no hay (INPI no la cargó), de la fecha de la vista, y queda como estimado.
     Con dos plazos (vista de fondo y formal a la vez) se toma el que vence antes."""
@@ -205,7 +206,7 @@ def vencimiento_desde_texto(parsed: dict, notificacion_iso: str | None, fecha_vi
     fechas = []
     for n, tipo in parsed["plazos"]:
         if tipo == "habiles":
-            fechas.append(sumar_dias_habiles(base, n))
+            fechas.append(sumar_dias_habiles(base, n, feriados))
         else:
             fechas.append((dt.date.fromisoformat(base) + dt.timedelta(days=n)).isoformat())
     return min(fechas), not notificacion_iso
@@ -264,7 +265,7 @@ def descargar_texto_pdf(s, fila: dict, timeout: int = 30) -> str:
         return ""
 
 
-def leer_vista(s, archivos: list[dict], desde_iso: str | None, notificacion_iso: str | None = None) -> dict:
+def leer_vista(s, archivos: list[dict], desde_iso: str | None, notificacion_iso: str | None = None, feriados=frozenset()) -> dict:
     """Lee la vista más nueva de la Grilla (si el plazo no aparece, prueba con la Cédula de
     Notificación). {} si no hay PDF legible. Devuelve parsear_vista() más: texto, fecha_vista,
     vencimiento_texto, vencimiento_estimado."""
@@ -284,7 +285,7 @@ def leer_vista(s, archivos: list[dict], desde_iso: str | None, notificacion_iso:
                 parsed = parsear_vista(texto)
     if not texto.strip() or parsed is None:
         return {}
-    venc, estimado = vencimiento_desde_texto(parsed, notificacion_iso, fecha_vista)
+    venc, estimado = vencimiento_desde_texto(parsed, notificacion_iso, fecha_vista, feriados)
     parsed.update({
         "texto": _plano(texto)[:MAX_TEXTO_GUARDADO],
         "fecha_vista": fecha_vista,
