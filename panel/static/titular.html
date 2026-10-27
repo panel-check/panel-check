@@ -464,24 +464,15 @@ let mlEnvios = [];
 const mlEsc = (v) => _escapeHtml(v == null ? "" : String(v));
 function mlNombreMarca(r) { return r.denominacion_inpi || r.denominacion || sinNombre(r.tipo); }
 function mlEsOposicion(r) { return r.tuvo_oposicion === true; }
-// Vista de INPI antes de publicar, sin contestar: el mail depende del tipo (logos = formal; fondo o Convenio de París = estudio de fondo).
-// Las vistas formales de productos/servicios todavía no tienen mail.
+// Vista de INPI antes de publicar, sin contestar: hay un solo mail para todos los tipos de vista.
 function mlEsVista(r) { return r.tuvo_vista === true && r.vista_sirve === true; }
-function mlPlantillaVista(r) {
-  if (r.vista_tipo === "formal") return "prospecto_vista_logo";
-  if (["fondo", "fondo_y_formal", "convenio_paris"].includes(r.vista_tipo)) return "prospecto_vista_fondo";
-  return null;
-}
 
 function mlElegirMarcaPorDefecto() {
   const clave = document.getElementById("ml-plantilla").value;
   const conMail = mlFilas.filter(r => r.email);
   let r = null;
   if (clave === "prospecto_oposicion") r = conMail.find(mlEsOposicion) || mlFilas.find(mlEsOposicion);
-  else if (clave.startsWith("prospecto_vista_")) {
-    const deEsaPlantilla = x => mlEsVista(x) && mlPlantillaVista(x) === clave;
-    r = conMail.find(deEsaPlantilla) || mlFilas.find(deEsaPlantilla);
-  }
+  else if (clave === "prospecto_vista") r = conMail.find(mlEsVista) || mlFilas.find(mlEsVista);
   r = r || conMail[0] || mlFilas[0];
   if (r) document.getElementById("ml-marca").value = r.acta;
   mlAlCambiarMarca();
@@ -650,10 +641,8 @@ async function mlIniciar(filas) {
       sel.innerHTML = mlPlantillas.map(m => `<option value="${mlEsc(m.clave)}">${mlEsc(m.nombre)}</option>`).join("");
       if (mlFilas.some(mlEsOposicion) && mlPlantillas.some(m => m.clave === "prospecto_oposicion")) sel.value = "prospecto_oposicion";
       else {
-        // sin oposición pero con una vista sin contestar: deja elegido el mail de vista que corresponde a su tipo
-        const rv = mlFilas.find(x => mlEsVista(x) && mlPlantillaVista(x));
-        const pv = rv && mlPlantillaVista(rv);
-        if (pv && mlPlantillas.some(m => m.clave === pv)) sel.value = pv;
+        // sin oposición pero con una vista sin contestar: deja elegido el mail de vista
+        if (mlFilas.some(mlEsVista) && mlPlantillas.some(m => m.clave === "prospecto_vista")) sel.value = "prospecto_vista";
       }
       sel.addEventListener("change", () => { mlElegirMarcaPorDefecto(); mlPresuActualizar(); });
       Object.values(ML_P_CAMPOS).forEach(id => document.getElementById(id).addEventListener("input", () => {

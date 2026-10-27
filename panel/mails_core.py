@@ -184,67 +184,45 @@ Registro de Marcas Nacional e Internacional
 [www.smartiesconsultora.com.ar](https://www.smartiesconsultora.com.ar)
 WhatsApp: [+54 9 11 5589-0784](https://wa.me/""" + WHATSAPP_PAMELA + """)"""
 
-ASUNTO_VISTA_LOGO = "Tu solicitud de marca recibió una vista del INPI – cómo avanzar"
-CUERPO_VISTA_LOGO = """## Tu marca fue observada y requiere una corrección formal
+ASUNTO_VISTA = "Tu solicitud de marca recibió una vista del INPI – cómo avanzar"
+CUERPO_VISTA = """## Tu solicitud de registro recibió una observación del INPI que debe ser respondida para continuar con el trámite.
 
 Hola {{nombre}},
 
-Mi nombre es Pamela, soy Agente de la Propiedad Industrial, y vi que en el Boletín de Marcas de hoy el INPI publicó una vista formal sobre tu solicitud {{marca}}.
+Mi nombre es Pamela, soy Agente de Propiedad Industrial y responsable de Smarties Consultora.
 
-Quería explicarte brevemente de qué se trata y cómo podés avanzar.
+Al revisar el estado de los trámites de marcas ante el Instituto Nacional de la Propiedad Industrial (INPI), detecté que tu solicitud de registro {{marca}} presenta una vista administrativa.
 
-En este caso, la observación está vinculada a la presentación del logo digital, según la Resolución P-357/13.
+Quería acercarte una breve explicación sobre qué significa esta observación y cómo podemos ayudarte a continuar con el trámite.
 
-Esto sucede cuando el archivo del logo no cumple con alguno de los requisitos técnicos del INPI (formato, fondo, contraste, dimensiones o calidad de imagen).
+## ¿Qué significa que tu solicitud tenga una vista?
 
-Por este motivo, el INPI solicita corregir y volver a presentar el archivo para que la solicitud pueda seguir su trámite.
+Durante el proceso de registro, el INPI analiza si la solicitud cumple con los requisitos formales y legales establecidos por la normativa vigente.
 
-**Plazo:** la vista debe contestarse dentro de 10 días hábiles administrativos desde la publicación en el Boletín.
+Cuando identifica alguna cuestión que requiere aclaración, corrección o fundamentación, emite una vista para que el solicitante pueda responder.
 
-Desde Smarties Consultora puedo ayudarte con:
+Esto no significa necesariamente que tu marca haya sido rechazada, sino que existe una observación que debe ser analizada para determinar cómo continuar con el trámite.
 
-* Revisión de la Vista y del archivo presentado.
-* Corrección del logo digital para cumplir con los requisitos del INPI.
-* Redacción y presentación de la contestación en tiempo y forma.
-* Acompañarte hasta que la solicitud continúe sin observaciones.
+## ¿Qué plazo tenés para responder?
 
-Si querés avanzar, podés escribirme directamente desde este botón:
+Las vistas tienen plazos específicos de respuesta, que varían según el tipo de observación formulada por el INPI.
 
-[Quiero asesorarme sobre mi vista](https://wa.me/""" + WHATSAPP_PAMELA + """?text=Hola Pamela, recibí tu mail sobre la vista de mi marca {{marca}}, acta {{acta}}, y quiero asesorarme. Mi nombre es )
+Estos plazos se computan a partir de la notificación electrónica correspondiente. Si la vista no se responde dentro del plazo establecido, el INPI puede resolver la solicitud sin que se hayan subsanado las observaciones, lo que podría derivar en el rechazo del registro de tu marca.
 
-Saludos cordiales,
-Pamela Guzzardi
-Agente de Propiedad Industrial – Mat. INPI 2906
-Smarties Consultora
-Registro de Marcas Nacional e Internacional
-[www.smartiesconsultora.com.ar](https://www.smartiesconsultora.com.ar)
-WhatsApp: [+54 9 11 5589-0784](https://wa.me/""" + WHATSAPP_PAMELA + """)"""
+Por eso, es importante revisar el expediente y presentar la contestación correspondiente dentro del plazo.
 
-ASUNTO_VISTA_FONDO = "Tu marca recibió una Vista del INPI (Estudio de Fondo)"
-CUERPO_VISTA_FONDO = """## Tenés 30 días para responder la Vista publicada en el Boletín
+## ¿Cómo podemos ayudarte?
 
-Hola {{nombre}},
+Desde Smarties Consultora podemos:
 
-Mi nombre es Pamela, soy Agente de Propiedad Industrial y vi que en el Boletín de Marcas del día de hoy el INPI publicó una Vista del Departamento de Estudio de Fondo sobre tu solicitud {{marca}}.
+* Revisar tu expediente e identificar los motivos de la observación.
+* Evaluar las alternativas disponibles para continuar con el registro.
+* Preparar y presentar la contestación correspondiente ante el INPI.
+* Realizar el seguimiento del trámite durante las siguientes etapas.
 
-Quería acercarte una explicación sencilla para que sepas exactamente qué significa y cómo avanzar.
+Si todavía no contás con asesoramiento profesional, podemos ayudarte a evaluar la situación de tu marca y definir cómo avanzar.
 
-La Vista de Estudio de Fondo aparece cuando el INPI detecta observaciones técnicas sobre la registrabilidad de la marca, ya sea por cuestiones de distintividad, similitudes con otras marcas, descripciones demasiado genéricas, o prohibiciones previstas en la Ley 22.362.
-
-En otras palabras, el examinador considera que la marca, por la forma en que fue presentada, podría no cumplir con alguno de los requisitos legales para ser registrada tal como está.
-
-Esta vista debe contestarse dentro del plazo de 30 días corridos desde la publicación en el Boletín.
-Si no se responde en término, el INPI puede rechazar la solicitud.
-
-Desde Smarties Consultora puedo:
-
-* Revisar tu expediente y explicarte qué observó el INPI según el código correspondiente.
-* Redactar y presentar la contestación técnica de la Vista.
-* Asistirte durante todas las etapas del trámite hasta su concesión.
-
-Si querés avanzar, podés escribirme directamente desde este botón:
-
-[Quiero asesorarme sobre mi Vista de Fondo](https://wa.me/""" + WHATSAPP_PAMELA + """?text=Hola Pamela, recibí tu mail sobre la Vista de Fondo de mi marca {{marca}}, acta {{acta}}, y quiero asesorarme. Mi nombre es )
+[Escribinos para recibir asesoramiento sobre tu solicitud](https://wa.me/""" + WHATSAPP_PAMELA + """?text=Hola Pamela, recibí tu mail sobre la vista de mi marca {{marca}}, acta {{acta}}, y quiero asesorarme. Mi nombre es )
 
 Saludos cordiales,
 Pamela Guzzardi
@@ -480,30 +458,17 @@ CATALOGO = {
         "cuerpo": CUERPO_OPOSICION,
         "editable": True,
     },
-    "prospecto_vista_logo": {
+    "prospecto_vista": {
         "grupo": "prospectos",
-        "nombre": "Recibió una vista (logo)",
-        "descripcion": "Mail de Pamela a un solicitante sin agente cuya marca recibió una vista formal por el logo digital (Res. P-357/13): explica de qué se trata, el plazo de 10 días hábiles y ofrece corregir y presentar la contestación, con botón a su WhatsApp con el mensaje ya escrito. Se manda a mano desde la ficha de cada lead (no hay envío automático). Sirve para las vistas «formal (logos)»; las formales de productos y servicios todavía no tienen mail.",
+        "nombre": "Recibió una vista",
+        "descripcion": "Mail de Pamela a un solicitante sin agente cuya marca recibió una vista de INPI antes de publicarse. Es el mismo para todos los tipos de vista (de fondo, Convenio de París, logos y productos/servicios): explica qué es una vista, que el plazo depende del tipo de observación y se cuenta desde la notificación electrónica, y ofrece revisar el expediente y presentar la contestación, con botón a su WhatsApp con el mensaje ya escrito. Se manda a mano desde la ficha de cada lead (no hay envío automático).",
         "cuenta": "prospectos",
         "remitente": "Smarties <smarties@registrodemimarca.com.ar>",
         "responder_a": "info@smartiesconsultora.com.ar",
         "destinatarios": "",
-        "encabezado": "VISTA FORMAL DEL INPI",
-        "asunto": ASUNTO_VISTA_LOGO,
-        "cuerpo": CUERPO_VISTA_LOGO,
-        "editable": True,
-    },
-    "prospecto_vista_fondo": {
-        "grupo": "prospectos",
-        "nombre": "Recibió una vista (Estudio de Fondo)",
-        "descripcion": "Mail de Pamela a un solicitante sin agente cuya marca recibió una vista de Estudio de Fondo: explica qué significa, el plazo de 30 días corridos y ofrece revisar el expediente y presentar la contestación técnica, con botón a su WhatsApp con el mensaje ya escrito. Se manda a mano desde la ficha de cada lead (no hay envío automático). Sirve para las vistas de fondo de la Ley 22.362 y las del Convenio de París.",
-        "cuenta": "prospectos",
-        "remitente": "Smarties <smarties@registrodemimarca.com.ar>",
-        "responder_a": "info@smartiesconsultora.com.ar",
-        "destinatarios": "",
-        "encabezado": "VISTA DE ESTUDIO DE FONDO",
-        "asunto": ASUNTO_VISTA_FONDO,
-        "cuerpo": CUERPO_VISTA_FONDO,
+        "encabezado": "VISTA DEL INPI – OBSERVACIÓN EN TU SOLICITUD DE MARCA",
+        "asunto": ASUNTO_VISTA,
+        "cuerpo": CUERPO_VISTA,
         "editable": True,
     },
     "prospecto_presupuesto_registro": {
@@ -1173,6 +1138,9 @@ def tipos_de_mail() -> list:
     """Opciones del filtro por tipo: sale del catálogo, así una plantilla
     nueva aparece sola. Más «Prueba (test)» y «Otro»."""
     out = [{"clave": k, "nombre": c["nombre"], "interno": c["grupo"] == "interno"} for k, c in CATALOGO.items()]
+    # Las dos plantillas de vista que había antes de unificarlas: quedan para leer y filtrar el historial.
+    out.append({"clave": "prospecto_vista_logo", "nombre": "Recibió una vista (logo, anterior)", "interno": False})
+    out.append({"clave": "prospecto_vista_fondo", "nombre": "Recibió una vista (Estudio de Fondo, anterior)", "interno": False})
     out.append({"clave": "test", "nombre": "Prueba (test)", "interno": True})
     out.append({"clave": "otro", "nombre": "Otro", "interno": False})
     return out
@@ -1188,10 +1156,8 @@ def tipo_por_asunto(asunto: str, cuenta: str) -> str:
             return clave
     if cuenta == "prospectos":
         # Mails a leads mandados por fuera del panel: se adivina por el asunto.
-        if re.search(r"Estudio de Fondo", a, re.I):
-            return "prospecto_vista_fondo"
         if re.search(r"recibi[oó] una vista", a, re.I):
-            return "prospecto_vista_logo"
+            return "prospecto_vista"
         if re.search(r"oposici", a, re.I):
             return "prospecto_oposicion"
         if re.search(r"publicad", a, re.I):
