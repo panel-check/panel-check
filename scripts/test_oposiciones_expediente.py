@@ -65,6 +65,12 @@ class Parseo(unittest.TestCase):
         self.assertEqual(exp["oposiciones"], [])
         self.assertFalse(exp["error_lectura"])
 
+    def test_lee_si_inpi_denego_la_solicitud(self):
+        # la sección RESOLUCIÓN viene en la misma página: la revisión de vistas deja de mirar una marca denegada
+        resolucion = '<h4>RESOLUCIÓN</h4><div>TIPO: <span>Denegada</span> MOTIVO: sin contestar la vista</div>'
+        self.assertEqual(parsear_expediente(pagina() + resolucion)["estado_tramite"], "Denegada")
+        self.assertIsNone(parsear_expediente(pagina())["estado_tramite"])
+
 
 def vista(contestacion=VACIA, fecha="2026-04-15", notif="2026-04-20", venc="2026-05-22"):
     """Fila de la tabla VISTAS con los campos reales del expediente."""

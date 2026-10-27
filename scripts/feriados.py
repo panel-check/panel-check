@@ -167,9 +167,14 @@ def cargar_feriados(conn, tipos=TIPOS_INHABILES) -> frozenset:
         return frozenset()
 
 
-def _hoy_argentina() -> str:
+def ahora_argentina() -> dt.datetime:
+    """Fecha y hora de Argentina (UTC-3), sin importar la zona del servidor que corre el script."""
     from zoneinfo import ZoneInfo
-    return dt.datetime.now(ZoneInfo("America/Argentina/Buenos_Aires")).date().isoformat()
+    return dt.datetime.now(ZoneInfo("America/Argentina/Buenos_Aires"))
+
+
+def hoy_argentina() -> str:
+    return ahora_argentina().date().isoformat()
 
 
 def _resumen_github(lineas: list[str]) -> None:
@@ -190,7 +195,7 @@ def main():
     if not dsn:
         print("Falta DATABASE_URL (o DATABASE_PUBLIC_URL)", file=sys.stderr)
         sys.exit(1)
-    hoy = _hoy_argentina()
+    hoy = hoy_argentina()
     actual = int(hoy[:4])
     anios = [int(a) for a in args.anios.split(",") if a.strip()] or [actual, actual + 1]
 

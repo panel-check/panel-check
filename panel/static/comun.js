@@ -268,8 +268,8 @@ function _vencimientoVistaPre(row) {
 
 function badgeVistaPre(row) {
   if (row.tuvo_vista !== true) return "";
-  // Una vista ya resuelta no tiene nada para ofrecer: no se muestra ni el badge ni el estado.
-  if (row.vista_estado === "resuelta") return "";
+  // Una vista ya resuelta o denegada no tiene nada para ofrecer: no se muestra ni el badge ni el estado.
+  if (row.vista_estado === "resuelta" || row.vista_estado === "denegada" || row.estado_tramite === "Denegada") return "";
   const e = ESTADOS_VISTA_PRE[row.vista_estado];
   const tipo = TIPOS_VISTA_PRE[row.vista_tipo] || "";
   const venc = _vencimientoVistaPre(row);
