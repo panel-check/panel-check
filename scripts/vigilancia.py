@@ -9,10 +9,12 @@ los que traen solicitudes nuevas:
      Clientes → Por matrícula).
   2. Compara cada solicitud nueva (boletines + escaneo directo, todavía no
      comparada) con las marcas vigiladas: parecido escrito, sonoro, una
-     contiene a la otra, palabra en común; ajustado por clase. También avisa
+     contiene a la otra, palabra en común y mismo concepto (traducciones y
+     sinónimos de la lista que arma la IA en el panel, ver
+     panel/conceptos_vigilancia.py); ajustado por clase. También avisa
      si un cliente (por CUIT) presentó una marca nueva con otro agente.
   3. Recompara las marcas de la cartera que cambiaron (nombre, términos extra,
-     clase) contra todo lo que sigue dentro del plazo de oposición.
+     conceptos, clase) contra todo lo que sigue dentro del plazo de oposición.
 
 Solo se alertan solicitudes cuyo plazo de oposición sigue abierto (todavía
 sin publicar o publicadas hace menos de ~33 días). Una misma pareja nunca se

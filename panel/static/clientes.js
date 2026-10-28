@@ -859,13 +859,14 @@ async function pintarVigilanciaMarcas() {
       : String(m[o.col] ?? "").toLowerCase();
     const marcas = [...r.marcas].sort((a, b) => (valor(a) > valor(b) ? 1 : valor(a) < valor(b) ? -1 : 0) * o.dir);
     const th = (col, t) => `<th class="vg-orden" data-orden="${col}">${t}${o.col === col ? (o.dir > 0 ? " ▲" : " ▼") : ""}</th>`;
-    cont.innerHTML = `<p class="crm-gris" style="margin:0 0 6px">Umbral general (Ajustes): <strong>${r.umbral_general}%</strong> · Última corrida: <strong>${r.ultima_vigilancia ? fmtFechaHora(r.ultima_vigilancia) : "todavía no corrió"}</strong> (la vigilancia corre todos los días).</p>
-      ${marcas.length ? `<div style="overflow-x:auto"><table class="cl-tabla"><thead><tr>${th("denominacion", "Marca")}${th("clase", "Clase")}${th("cliente_nombre", "Cliente")}${th("umbral", "Umbral")}<th>Otros nombres</th>${th("alertas_abiertas", "Alertas")}</tr></thead><tbody>
+    cont.innerHTML = `<p class="crm-gris" style="margin:0 0 6px">Umbral general (Ajustes): <strong>${r.umbral_general}%</strong> · Última corrida: <strong>${r.ultima_vigilancia ? fmtFechaHora(r.ultima_vigilancia) : "todavía no corrió"}</strong> (la vigilancia corre todos los días).${r.conceptos_pendientes ? ` · <strong>${r.conceptos_pendientes}</strong> marca(s) todavía sin conceptos${r.ia_disponible ? " (la IA los arma sola, de a tandas cada 20 minutos)" : " (la IA no está configurada: falta IA_API_KEY)"}.` : ""}</p>
+      ${marcas.length ? `<div style="overflow-x:auto"><table class="cl-tabla"><thead><tr>${th("denominacion", "Marca")}${th("clase", "Clase")}${th("cliente_nombre", "Cliente")}${th("umbral", "Umbral")}<th>Otros nombres</th><th title="Traducciones y sinónimos: si una solicitud nueva nombra uno, se alerta como «mismo concepto». Se corrigen en la ficha de la marca.">Conceptos</th>${th("alertas_abiertas", "Alertas")}</tr></thead><tbody>
       ${marcas.map(m => `<tr data-acta="${esc(m.acta)}"><td><a href="javascript:void(0)" data-ficha-acta="${esc(m.acta)}" data-nombre="${esc(m.denominacion || m.acta)}"><strong>${esc(m.denominacion || "(sin nombre)")}</strong></a><br><small class="crm-gris">acta ${esc(m.acta)}</small></td>
         <td>${esc(m.clase ?? "")}${m.vigilar_todas_clases ? ' <span class="cl-tag azul" title="Se compara contra todas las clases">todas</span>' : ""}</td>
         <td><a href="javascript:void(0)" data-cliente="${m.cliente_id}">${esc(m.cliente_nombre)}</a></td>
         <td><input type="number" min="40" max="100" data-umbral value="${m.umbral_vigilancia ?? ""}" placeholder="${r.umbral_general}" style="width:72px" title="Vacío = el general (${r.umbral_general}%)"> %${m.umbral_vigilancia ? "" : ' <small class="crm-gris">general</small>'}</td>
         <td><small>${esc(m.terminos_vigilancia || "—")}</small></td>
+        <td><small>${esc(m.conceptos_vigilancia || "—")}</small></td>
         <td>${m.alertas_abiertas ? `<span class="cl-tag mal">${m.alertas_abiertas}</span>` : "—"}</td></tr>`).join("")}</tbody></table></div>
       <p class="cl-pie">${marcas.length} marca(s) vigilada(s). El umbral propio de una marca reemplaza al general; se aplica en la próxima corrida.</p>` : '<p class="vacio">No hay marcas vigiladas.</p>'}`;
     cont.querySelectorAll("[data-orden]").forEach(h => h.addEventListener("click", () => {
