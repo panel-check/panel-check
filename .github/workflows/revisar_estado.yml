@@ -1,10 +1,11 @@
 name: "Concesiones y vencimientos"
 
 on:
-  schedule:
+  # Sin horario de GitHub (27/10/2026): GitHub dispara los `schedule:` con 3 a 6 horas de atraso o los saltea.
+  # Lo lanza el panel a su hora exacta (panel/programador.py, cron UTC «20 7 * * 1») con este mismo workflow_dispatch,
+  # esperando turno si el carril de INPI está ocupado. Se puede lanzar a mano igual.
     # Una vez por semana, lunes 07:20 UTC (04:20 ART, turno B) — la Resolución de
     # un expediente demora meses, no hace falta revisar todos los días.
-    - cron: "20 7 * * 1"
   workflow_dispatch:
     inputs:
       limit:

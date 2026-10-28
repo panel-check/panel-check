@@ -1,14 +1,11 @@
 name: Revisar vistas en pre-boletín
 
 on:
-  # Todos los días, apenas termina "Solicitudes nuevas del día" (escanear_actas.yml, 18:00 ART): arranca
-  # entre las 18:20 y las 20:10 y se corta sola a las 22:40 (o a los 100 minutos) para no pisar a los
-  # procesos de las 23:00 (cartera, sin verificar y oposiciones). Es el hueco libre del carril de INPI.
-  # Decidido el 27/10/2026. Solo lo dispara el escaneo AUTOMÁTICO (no uno corrido a mano). Una marca
-  # revisada hoy no se vuelve a revisar hoy, así que repetir esta corrida el mismo día no repite nada.
-  workflow_run:
-    workflows: ["Solicitudes nuevas del día (escaneo de actas)"]
-    types: [completed]
+  # Todos los días lo lanza el panel (panel/programador.py, 18:05 ART): espera a que el escaneo de actas libere el
+  # carril de INPI (entre las 18:20 y las 20:10) y se corta solo a las 22:40 (o a los 100 minutos) para no pisar a
+  # los procesos de las 23:00. Antes se encadenaba al escaneo con workflow_run; los horarios de GitHub se atrasan
+  # horas, por eso ahora lo dispara el panel. Una marca revisada hoy no se vuelve a revisar hoy, así que repetir la
+  # corrida el mismo día no repite nada.
   workflow_dispatch:
     inputs:
       dias_minimos:
@@ -52,8 +49,6 @@ concurrency:
 
 jobs:
   revisar:
-    # Encadenada: solo cuando el escaneo corrió por su horario (no uno disparado a mano).
-    if: github.event_name != 'workflow_run' || github.event.workflow_run.event == 'schedule'
     runs-on: ubuntu-latest
     # Una tanda de 600 marcas tarda ~30 min; con "limite" alto (una pasada de varios miles) puede llegar
     # a 2-3 h. El corte "prolijo" lo hace max_minutes; este es solo el tope duro del trabajo.
@@ -76,16 +71,11 @@ jobs:
       - name: Mirar la Grilla de los leads pre-boletín y buscar vistas
         run: |
           cd scripts
-          if [ "${{ github.event_name }}" = "workflow_run" ]; then
-            # Corrida diaria: todo lo que entre hasta las 22:40 de Argentina, con un tope de 100 minutos.
-            args="--limite 3000 --max-minutes 100 --hasta-hora 22:40 --guardar"
-          else
-            args="--dias-minimos ${{ inputs.dias_minimos }} --limite ${{ inputs.limite }} --max-minutes ${{ inputs.max_minutes }}"
-            if [ -n "${{ inputs.hasta_hora }}" ]; then args="$args --hasta-hora ${{ inputs.hasta_hora }}"; fi
-            if [ "${{ inputs.guardar }}" = "true" ]; then args="$args --guardar"; fi
-            if [ -n "${{ inputs.actas }}" ]; then args="$args --actas ${{ inputs.actas }}"; fi
-            if [ "${{ inputs.reinterpretar }}" = "true" ]; then args="--reinterpretar"; fi
-          fi
+          args="--dias-minimos ${{ inputs.dias_minimos }} --limite ${{ inputs.limite }} --max-minutes ${{ inputs.max_minutes }}"
+          if [ -n "${{ inputs.hasta_hora }}" ]; then args="$args --hasta-hora ${{ inputs.hasta_hora }}"; fi
+          if [ "${{ inputs.guardar }}" = "true" ]; then args="$args --guardar"; fi
+          if [ -n "${{ inputs.actas }}" ]; then args="$args --actas ${{ inputs.actas }}"; fi
+          if [ "${{ inputs.reinterpretar }}" = "true" ]; then args="--reinterpretar"; fi
           python3 probar_vistas_preboletin.py $args
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL || secrets.DATABASE_PUBLIC_URL }}

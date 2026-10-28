@@ -1,14 +1,15 @@
 name: "Feriados"
 
 on:
-  schedule:
+  # Sin horario de GitHub (27/10/2026): GitHub dispara los `schedule:` con 3 a 6 horas de atraso o los saltea.
+  # Lo lanza el panel a su hora exacta (panel/programador.py, cron UTC «15 9 * * *») con este mismo workflow_dispatch,
+  # esperando turno si el carril de INPI está ocupado. Se puede lanzar a mano igual.
     # Todos los días a las 09:15 UTC (06:15 ART), antes de los avisos de la mañana (07:30 ART).
     # Baja los feriados nacionales de argentina.gob.ar y actualiza la tabla `feriados`: el Gobierno
     # cambia la lista durante el año (feriados trasladados, días no laborables nuevos), y de eso
     # dependen los vencimientos de las vistas de 10 días hábiles. Si cambió algo que afecta los días
     # hábiles, recalcula los vencimientos de las vistas guardadas (sin consultar a INPI).
     # No consulta INPI, por eso no usa el carril de INPI.
-    - cron: "15 9 * * *"
   workflow_dispatch:
     inputs:
       anios:

@@ -164,6 +164,21 @@ CREATE TABLE IF NOT EXISTS feriados (
     cambio_detalle   TEXT
 );
 
+-- Agregado el 27/10/2026: registro del programador de procesos del panel (panel/programador.py), que dispara en
+-- GitHub Actions los workflows programados a su hora exacta. Una fila por proceso y hora programada (UTC).
+-- estado: enviando | ok | omitido (ya había corrido) | error (se reintenta cada 2 minutos, hasta 8 veces).
+CREATE TABLE IF NOT EXISTS programador_disparos (
+    workflow        TEXT NOT NULL,
+    programada      TIMESTAMPTZ NOT NULL,
+    estado          TEXT NOT NULL,
+    intentos        INTEGER NOT NULL DEFAULT 1,
+    detalle         TEXT,
+    ultimo_intento  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    disparado_en    TIMESTAMPTZ,
+    avisado_en      TIMESTAMPTZ,
+    PRIMARY KEY (workflow, programada)
+);
+
 -- Agregado el 30/09/2026: aviso por mail (Resend) de leads con oposición/vista
 -- nueva -- ver scripts/notificar_oposiciones.py. Cada lead se avisa una sola vez.
 ALTER TABLE marcas ADD COLUMN IF NOT EXISTS notificado_oposicion_en TIMESTAMPTZ;
