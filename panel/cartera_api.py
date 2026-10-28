@@ -20,8 +20,10 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
 import cartera
+import conceptos_vigilancia
 import formularios_api
 import formularios_core
+import ia_texto
 import informes_api
 import inpi_lead
 import presupuestos
@@ -98,6 +100,7 @@ class MarcaCambios(BaseModel):
     vigilar_todas_clases: Optional[bool] = None
     terminos_vigilancia: Optional[str] = None
     umbral_vigilancia: Optional[int] = None   # 40-100; null = usar el de Ajustes
+    conceptos_vigilancia: Optional[str] = None  # traducciones/sinónimos (coma); corregidos a mano
     notas: Optional[str] = None
 
 
@@ -644,6 +647,12 @@ def crear_router(verificar_login, conexion, crm) -> APIRouter:
             if u is not None and not 40 <= int(u) <= 100:
                 raise HTTPException(status_code=400, detail="El umbral va de 40 a 100 (vacío = usar el de Ajustes)")
             sets.append("umbral_vigilancia = %s"); val.append(int(u) if u is not None else None)
+        if "conceptos_vigilancia" in enviados:
+            # Corregida a mano: queda marcada como hecha para el nombre actual (la IA no la pisa).
+            lista = conceptos_vigilancia.limpiar(sim.separar_conceptos(body.conceptos_vigilancia))
+            sets.append("conceptos_vigilancia = %s"); val.append(", ".join(lista) or None)
+            sets.append("conceptos_para = upper(regexp_replace(trim(COALESCE(denominacion, '')), '\\s+', ' ', 'g'))")
+            sets.append("conceptos_en = now()")
         if "notas" in enviados:
             sets.append("notas = %s"); val.append(_limpio(body.notas, 2000))
         if "grupo_marca" in enviados:
@@ -658,6 +667,24 @@ def crear_router(verificar_login, conexion, crm) -> APIRouter:
                     raise HTTPException(status_code=404, detail="Esa marca no está en la cartera")
             conn.commit()
         return {"ok": True, "marca": fila}
+
+    @router.post("/api/cartera/marcas/{acta}/conceptos")
+    def rearmar_conceptos(acta: str, _: str = Depends(verificar_login)):
+        """Vuelve a pedirle a la IA la lista de conceptos de esta marca (reemplaza la que tenga)."""
+        with nueva_conexion() as conn:
+            with rcur(conn) as cur:
+                cur.execute("SELECT denominacion FROM cartera_marcas WHERE acta = %s", (acta,))
+                fila = cur.fetchone()
+                if not fila:
+                    raise HTTPException(status_code=404, detail="Esa marca no está en la cartera")
+                if not (fila["denominacion"] or "").strip():
+                    raise HTTPException(status_code=400, detail="La marca todavía no tiene nombre: no hay conceptos que buscar")
+                try:
+                    lista = conceptos_vigilancia.armar(cur, acta, fila["denominacion"], reusar=False)
+                except ia_texto.ErrorIA as e:
+                    raise HTTPException(status_code=424, detail=str(e))
+            conn.commit()
+        return {"ok": True, "conceptos_vigilancia": ", ".join(lista)}
 
     @router.delete("/api/cartera/marcas/{acta}")
     def sacar_marca(acta: str, _: str = Depends(verificar_login)):
@@ -832,7 +859,7 @@ def crear_router(verificar_login, conexion, crm) -> APIRouter:
                 cur.execute(
                     """
                     SELECT cm.acta, cm.cliente_id, c.nombre AS cliente_nombre, cm.denominacion, cm.clase,
-                           cm.vigilar_todas_clases, cm.terminos_vigilancia, cm.umbral_vigilancia,
+                           cm.vigilar_todas_clases, cm.terminos_vigilancia, cm.umbral_vigilancia, cm.conceptos_vigilancia,
                            (SELECT COUNT(*) FROM vigilancia_alertas a WHERE a.acta_cliente = cm.acta
                               AND a.estado IN ('nueva','monitorear','oponer')) AS alertas_abiertas
                     FROM cartera_marcas cm JOIN clientes c ON c.id = cm.cliente_id
@@ -844,7 +871,9 @@ def crear_router(verificar_login, conexion, crm) -> APIRouter:
                 conf = cartera.leer_config(cur)
                 cur.execute("SELECT max(comparada_en) AS ult FROM vigilancia_comparadas")
                 ultima = cur.fetchone()["ult"]
-        return {"marcas": marcas, "umbral_general": conf["umbral"], "ultima_vigilancia": ultima}
+                sin_conceptos = conceptos_vigilancia.contar_pendientes(cur)
+        return {"marcas": marcas, "umbral_general": conf["umbral"], "ultima_vigilancia": ultima,
+                "conceptos_pendientes": sin_conceptos, "ia_disponible": ia_texto.configurada()}
 
     # ── Vencimientos y plazos de toda la cartera ──────────────────────
     @router.get("/api/cartera/agenda")

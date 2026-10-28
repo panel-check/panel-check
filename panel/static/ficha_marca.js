@@ -224,13 +224,15 @@ function fmVigilancia() {
   return `
     <p class="crm-gris" style="margin:0 0 8px">Cada expediente se compara contra las solicitudes nuevas de INPI (boletines y escaneo de actas) mientras corre el plazo de oposición.
       ${ult ? `Última corrida: <strong>${fmtFechaHora(ult)}</strong>.` : ""}</p>
-    <div style="overflow-x:auto"><table class="cl-tabla cl-marcas"><thead><tr><th>Acta</th><th>Clase</th><th>Vigilar</th><th>Umbral de parecido</th><th>Otros nombres a vigilar</th></tr></thead><tbody>
+    <div style="overflow-x:auto"><table class="cl-tabla cl-marcas"><thead><tr><th>Acta</th><th>Clase</th><th>Vigilar</th><th>Umbral de parecido</th><th>Otros nombres a vigilar</th><th title="Traducciones, sinónimos y palabras del mismo campo: si una solicitud nueva nombra uno, se alerta como «mismo concepto»">Conceptos (mismo significado)</th></tr></thead><tbody>
     ${ms.map(m => `<tr data-acta="${esc(m.acta)}"><td>${esc(m.acta)}</td><td>${esc(m.clase ?? "")}</td>
       <td><label><input type="checkbox" data-campo="vigilar" ${m.vigilar ? "checked" : ""}> Vigilar</label><br>
         <label title="Comparar también contra todas las clases, no solo la propia y las relacionadas"><input type="checkbox" data-campo="vigilar_todas_clases" ${m.vigilar_todas_clases ? "checked" : ""}> En todas las clases</label></td>
       <td><input type="number" min="40" max="100" data-campo="umbral_vigilancia" value="${m.umbral_vigilancia ?? ""}" placeholder="${d.umbral_general}" style="width:80px" title="Puntaje mínimo (40-100) para alertar sobre esta marca. Vacío = el general de Ajustes (${d.umbral_general})"> %<br><small class="crm-gris">${m.umbral_vigilancia ? "propio" : "general"}</small></td>
-      <td><input type="text" data-campo="terminos_vigilancia" value="${esc(m.terminos_vigilancia || "")}" placeholder="variantes, abreviaturas… (coma)" style="width:100%;min-width:180px"></td></tr>`).join("")}</tbody></table></div>
-    <p class="crm-nota">Un umbral más bajo avisa más parecidos (más ruido); uno más alto, solo los muy parecidos. El cambio se aplica en la próxima corrida de la vigilancia.</p>
+      <td><input type="text" data-campo="terminos_vigilancia" value="${esc(m.terminos_vigilancia || "")}" placeholder="variantes, abreviaturas… (coma)" style="width:100%;min-width:180px"></td>
+      <td><textarea data-campo="conceptos_vigilancia" rows="2" placeholder="${m.conceptos_en ? "sin conceptos (nombre de fantasía)" : "los arma la IA sola en un rato…"}" style="width:100%;min-width:200px">${esc(m.conceptos_vigilancia || "")}</textarea>
+        <button type="button" class="cl-btn sec mini" data-rearmar title="Volver a pedirle a la IA las traducciones y sinónimos de esta marca (reemplaza la lista)">↻ Rearmar con IA</button></td></tr>`).join("")}</tbody></table></div>
+    <p class="crm-nota">Un umbral más bajo avisa más parecidos (más ruido); uno más alto, solo los muy parecidos. <strong>Conceptos</strong>: traducciones y sinónimos de la marca (SOL → SUN, SOLEIL); si una solicitud nueva nombra uno, sale como «mismo concepto». Los arma la IA y se pueden corregir a mano (separados por coma). Los cambios se aplican en la próxima corrida de la vigilancia.</p>
     <h4>Alertas de esta marca (${d.alertas.filter(a => fmAbierto(a.estado)).length} abiertas)</h4>
     ${d.alertas.length ? d.alertas.map(a => htmlAlerta(a, { sinCliente: true })).join("") : '<p class="crm-gris">Sin alertas.</p>'}`;
 }
@@ -297,6 +299,18 @@ function fmConectar(cont) {
           if (campo === "umbral_vigilancia") { const t = tr.querySelector("small.crm-gris"); if (t) t.textContent = valor ? "propio" : "general"; }
         } catch (e) { alert(e.message); }
       }));
+      const btn = tr.querySelector("[data-rearmar]");
+      if (btn) btn.addEventListener("click", async () => {
+        btn.disabled = true; btn.textContent = "Pidiendo…";
+        try {
+          const r = await apiJson(`/api/cartera/marcas/${encodeURIComponent(acta)}/conceptos`, "POST", {});
+          const ta = tr.querySelector('[data-campo="conceptos_vigilancia"]'); ta.value = r.conceptos_vigilancia;
+          const m = fm.d.marcas.find(x => x.acta === acta); if (m) m.conceptos_vigilancia = r.conceptos_vigilancia;
+          fm.cambios = true;
+          if (!r.conceptos_vigilancia) ta.placeholder = "sin conceptos (nombre de fantasía)";
+        } catch (e) { alert(e.message); }
+        btn.disabled = false; btn.textContent = "↻ Rearmar con IA";
+      });
     });
     conectarAlertas(cont, async () => { fm.cambios = true; await fmCargar(); });
   }

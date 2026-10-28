@@ -9,7 +9,9 @@ INPI.
 
 Qué genera:
   * alerta "similitud": una solicitud nueva se parece a una marca de un
-    cliente (ver similitud.py para el puntaje).
+    cliente (ver similitud.py para el puntaje): por cómo se escribe o suena,
+    o porque nombra el mismo concepto (traducción, sinónimo) según la lista de
+    conceptos de la marca (conceptos_vigilancia.py).
   * alerta "otro_agente": un cliente (por CUIT) presentó una marca nueva que
     NO está a cargo del estudio -- con otro agente o sin agente. Señal de
     retención / oportunidad.
@@ -90,7 +92,7 @@ def _cartera_en_memoria(cur, ajustes):
     a comparar (denominación + términos extra) y un índice de claves."""
     cur.execute(
         """
-        SELECT cm.acta, cm.cliente_id, cm.denominacion, cm.terminos_vigilancia, cm.clase, cm.tipo,
+        SELECT cm.acta, cm.cliente_id, cm.denominacion, cm.terminos_vigilancia, cm.conceptos_vigilancia, cm.clase, cm.tipo,
                cm.vigilar_todas_clases, cm.umbral_vigilancia, cm.vigilancia_firma, cm.cuit, c.nombre AS cliente_nombre, c.cuit AS cliente_cuit
         FROM cartera_marcas cm JOIN clientes c ON c.id = cm.cliente_id
         WHERE cm.vigilar AND c.activo
@@ -102,19 +104,26 @@ def _cartera_en_memoria(cur, ajustes):
     for m in marcas:
         nombres = [n.strip() for n in [m["denominacion"] or ""] + re.split(r"[,;\n]", m["terminos_vigilancia"] or "") if n.strip()]
         m["nombres"] = nombres
+        m["conceptos"] = sim.separar_conceptos(m.get("conceptos_vigilancia"))
         m["firma"] = firma_cartera(m)
-        claves = set()
-        for n in nombres:
-            claves |= sim.claves_indice(n, gen)
-        for k in claves:
+        for k in _claves_marca(m, gen):
             indice.setdefault(k, []).append(m)
     return marcas, indice
+
+
+def _claves_marca(m, gen) -> set:
+    claves = sim.claves_conceptos(m.get("conceptos"), gen)
+    for n in m["nombres"]:
+        claves |= sim.claves_indice(n, gen)
+    return claves
 
 
 def firma_cartera(m) -> str:
     return "|".join([sim.normalizar(m.get("denominacion") or ""), (m.get("terminos_vigilancia") or "").strip().upper(),
                      str(m.get("clase") or ""), "T" if m.get("vigilar_todas_clases") else "C"]) \
-        + (f"|U{m['umbral_vigilancia']}" if m.get("umbral_vigilancia") else "")   # sin umbral propio, la firma no cambia
+        + (f"|U{m['umbral_vigilancia']}" if m.get("umbral_vigilancia") else "") \
+        + (f"|K{(m.get('conceptos_vigilancia') or '').strip().upper()}" if (m.get("conceptos_vigilancia") or "").strip() else "")
+    # sin umbral propio ni conceptos, la firma no cambia (no se recompara toda la cartera de golpe)
 
 
 def _mejor_contra(nombre_nuevo, clase_nueva, m, ajustes):
@@ -124,12 +133,19 @@ def _mejor_contra(nombre_nuevo, clase_nueva, m, ajustes):
                                ajustes["pares"], m.get("vigilar_todas_clases"))
         if r and (mejor is None or r["puntaje"] > mejor["puntaje"]):
             mejor = r
+    # Mismo concepto (traducción, sinónimo): solo si gana a lo escrito.
+    base, motivos = sim.puntaje_conceptos(m.get("conceptos"), m.get("denominacion") or (m["nombres"] or [""])[0],
+                                          nombre_nuevo, ajustes["genericas"])
+    if base and (mejor is None or base > mejor["puntaje"]):
+        r = sim.ajustar_por_clase(base, motivos, m.get("clase"), clase_nueva, ajustes["pares"], m.get("vigilar_todas_clases"))
+        if r and (mejor is None or r["puntaje"] > mejor["puntaje"]):
+            mejor = r
     return mejor
 
 
 def _candidatas(indice, nombre, gen):
     vistos, out = set(), []
-    for k in sim.claves_indice(nombre, gen):
+    for k in sim.claves_indice(nombre, gen) | sim.claves_busqueda_conceptos(nombre, gen):
         for m in indice.get(k, ()):
             if m["acta"] not in vistos:
                 vistos.add(m["acta"])
@@ -291,10 +307,7 @@ def comparar(conn, hoy=None, log=print, limite_filas=None) -> dict:
         if obsoletas:
             indice_b = {}
             for m in obsoletas:
-                ks = set()
-                for nom in m["nombres"]:
-                    ks |= sim.claves_indice(nom, gen)
-                for k in ks:
+                for k in _claves_marca(m, gen):
                     indice_b.setdefault(k, []).append(m)
             for fila in universo:
                 if fila["acta"] in en_cartera or fila.get("estado_tramite") == "Denegada" or not fila.get("nombre"):

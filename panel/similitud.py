@@ -16,8 +16,12 @@ Cómo puntúa dos marcas (0-100):
                     rioplatense (C/S/Z, B/V, LL/Y, H muda, K/QU/C, PH/F...).
       * inclusión   una marca contenida en la otra ("KOMUNIKA" en "KOMUNIKA
                     PLUS") o compartiendo la palabra distintiva.
-      * traducción  (no implementado: el cruce idiomático queda para revisión
-                    humana).
+      * concepto    la solicitud nombra el MISMO CONCEPTO que la marca del
+                    cliente: una traducción (SOL ↔ SUN), un sinónimo (VELOZ ↔
+                    RÁPIDO) o algo del mismo campo (PANTERA ↔ JAGUAR). Sale de
+                    la lista de conceptos de cada marca de la cartera, que arma
+                    la IA una vez por marca (conceptos_vigilancia.py) y el
+                    equipo puede corregir. Ver puntaje_conceptos().
   - Después se ajusta por clase: misma clase = sin cambios; clase vinculada
     (ver tabla editable) = -8; clase sin relación = no se compara (la
     alerta directamente no se crea), salvo que el cliente tenga activado
@@ -237,6 +241,11 @@ def puntaje_marcas(nombre_a, clase_a, nombre_b, clase_b, genericas=frozenset(),
     (b). Devuelve {puntaje, motivos, relacion_clases} o None si no hay nada
     que alertar por clases."""
     base, motivos = puntaje_nombres(nombre_a, nombre_b, genericas)
+    return ajustar_por_clase(base, motivos, clase_a, clase_b, pares_relacionados, todas_las_clases)
+
+
+def ajustar_por_clase(base, motivos, clase_a, clase_b, pares_relacionados=frozenset(), todas_las_clases=False):
+    """Aplica la regla de clases a un puntaje de nombres (escrito o de concepto)."""
     if base == 0:
         return None
     rel = relacion_clases(clase_a, clase_b, pares_relacionados)
@@ -257,6 +266,74 @@ def puntaje_marcas(nombre_a, clase_a, nombre_b, clase_b, genericas=frozenset(),
         else:
             return None
     return {"puntaje": max(0, min(100, puntaje)), "motivos": motivos, "relacion_clases": rel}
+
+
+# ── Concepto (traducciones, sinónimos, mismo campo) ──────────────────────
+# Puntajes pensados para que, en la misma clase, salga como alerta media (82-89
+# con los niveles por defecto) y nunca le gane a un parecido escrito fuerte: el
+# parecido de significado es más discutible que el de forma.
+CONCEPTO_NOMBRE = 86        # la solicitud ES el concepto («SUN» para «SOL»)
+CONCEPTO_PALABRA = 80       # el concepto es una parte de la solicitud («SUN COAST»)
+CONCEPTO_CASI_NOMBRE = 82   # plural, género, errata: «SUNS», «LIONS»
+CONCEPTO_CASI_PALABRA = 76
+
+
+def separar_conceptos(texto: str) -> list:
+    """La lista guardada (separada por coma, punto y coma o renglón) como lista de términos."""
+    return [c.strip() for c in re.split(r"[,;\n]", texto or "") if c.strip()]
+
+
+def _mismo_termino(a: str, b: str) -> bool:
+    return a == b or (len(a) >= 3 and fonetica(a) == fonetica(b))
+
+
+def puntaje_conceptos(conceptos, nombre_marca: str, nombre_nuevo: str, genericas=frozenset()) -> tuple:
+    """(puntaje 0-100, [motivos]) de la solicitud nueva contra los conceptos de
+    una marca de la cartera, sin considerar clases. (0, []) si no nombra
+    ninguno. `nombre_marca` es solo para el texto del motivo."""
+    nb = normalizar(nombre_nuevo, genericas)
+    if not nb:
+        return 0, []
+    palabras = nb.split()
+    mejor = (0, "")
+    for crudo in conceptos or ():
+        c = normalizar(crudo, genericas)
+        # Un concepto que quedó vacío o que es solo una palabra genérica no sirve.
+        if len(c.replace(" ", "")) < 3 or set(c.split()) <= genericas:
+            continue
+        partes = c.split()
+        if _mismo_termino(c, nb) or c.replace(" ", "") == nb.replace(" ", ""):
+            p = CONCEPTO_NOMBRE
+        elif any(_mismo_termino(" ".join(palabras[i:i + len(partes)]), c) for i in range(len(palabras) - len(partes) + 1)):
+            p = CONCEPTO_PALABRA
+        elif len(c) >= 4 and _sim(c, nb) >= 0.88:
+            p = CONCEPTO_CASI_NOMBRE
+        elif len(partes) == 1 and len(c) >= 4 and any(len(w) >= 4 and _sim(c, w) >= 0.88 for w in palabras):
+            p = CONCEPTO_CASI_PALABRA
+        else:
+            continue
+        if p > mejor[0]:
+            mejor = (p, c)
+    if not mejor[0]:
+        return 0, []
+    marca = normalizar(nombre_marca or "") or "la marca"
+    return mejor[0], [f"mismo concepto que «{marca}» («{mejor[1]}»)"]
+
+
+def claves_conceptos(conceptos, genericas=frozenset()) -> set:
+    """Claves del índice para los conceptos de una marca: una por palabra (y su
+    sonido), así la solicitud que nombra el concepto entra como candidata."""
+    claves = set()
+    for crudo in conceptos or ():
+        for t in tokens(crudo, genericas):
+            if len(t) >= 3 and t not in genericas:
+                claves.add(f"c:{fonetica_palabra(t)}")
+    return claves
+
+
+def claves_busqueda_conceptos(nombre: str, genericas=frozenset()) -> set:
+    """Las claves «c:» de una solicitud nueva (para cruzar con claves_conceptos)."""
+    return {f"c:{fonetica_palabra(t)}" for t in tokens(nombre, genericas) if len(t) >= 3}
 
 
 def nivel(puntaje: int, nivel_alta: int = 90, nivel_media: int = 82) -> str:

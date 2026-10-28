@@ -348,6 +348,10 @@ CREATE INDEX IF NOT EXISTS idx_cartera_marcas_cliente ON cartera_marcas(cliente_
 ALTER TABLE cartera_marcas ADD COLUMN IF NOT EXISTS grupo_marca TEXT;
 -- Umbral de similitud propio de la marca (40-100); NULL = usa el de Ajustes
 ALTER TABLE cartera_marcas ADD COLUMN IF NOT EXISTS umbral_vigilancia INTEGER;
+-- Conceptos para la vigilancia (traducciones, sinónimos), los arma la IA; conceptos_para = nombre para el que se armaron
+ALTER TABLE cartera_marcas ADD COLUMN IF NOT EXISTS conceptos_vigilancia TEXT;
+ALTER TABLE cartera_marcas ADD COLUMN IF NOT EXISTS conceptos_para TEXT;
+ALTER TABLE cartera_marcas ADD COLUMN IF NOT EXISTS conceptos_en TIMESTAMPTZ;
 
 CREATE TABLE IF NOT EXISTS cartera_novedades (
     id             BIGSERIAL PRIMARY KEY,

@@ -59,6 +59,7 @@ import auth
 import auth_api
 import calendario_api
 import calendario_core
+import conceptos_vigilancia
 import programador
 import cartera
 import seguridad
@@ -223,6 +224,12 @@ def migrar_columnas_panel():
         programador.iniciar(conexion)
     except Exception as e:
         print(f"[startup] el programador de procesos no arrancó (no bloqueante): {e}")
+    # Vigilancia por concepto: la IA arma la lista de traducciones/sinónimos de las marcas vigiladas que no la
+    # tienen. Ver panel/conceptos_vigilancia.py.
+    try:
+        conceptos_vigilancia.iniciar(conexion)
+    except Exception as e:
+        print(f"[startup] el armado de conceptos de la vigilancia no arrancó (no bloqueante): {e}")
     # Recordatorios sin marcar como hechos: pasan solos al día hábil siguiente (viernes → lunes).
     try:
         calendario_core.iniciar_pase_recordatorios(conexion)

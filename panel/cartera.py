@@ -172,6 +172,12 @@ def crear_tablas(cur):
     cur.execute("ALTER TABLE cartera_marcas ADD COLUMN IF NOT EXISTS grupo_marca TEXT")
     # Umbral de similitud propio de esta marca (40-100). Vacío = usa el de Ajustes.
     cur.execute("ALTER TABLE cartera_marcas ADD COLUMN IF NOT EXISTS umbral_vigilancia INTEGER")
+    # Conceptos de la marca para la vigilancia (traducciones, sinónimos, mismo campo), separados por coma. Los arma
+    # la IA (conceptos_vigilancia.py) y el equipo los puede corregir. `conceptos_para` = el nombre para el que se
+    # armaron: si la marca cambia de nombre, se vuelven a armar.
+    cur.execute("ALTER TABLE cartera_marcas ADD COLUMN IF NOT EXISTS conceptos_vigilancia TEXT")
+    cur.execute("ALTER TABLE cartera_marcas ADD COLUMN IF NOT EXISTS conceptos_para TEXT")
+    cur.execute("ALTER TABLE cartera_marcas ADD COLUMN IF NOT EXISTS conceptos_en TIMESTAMPTZ")
     cur.execute(
         """
         CREATE TABLE IF NOT EXISTS cartera_novedades (
