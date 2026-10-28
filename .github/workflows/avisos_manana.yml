@@ -1,11 +1,12 @@
 name: "Avisos por mail de la mañana"
 
 on:
-  schedule:
+  # Sin horario de GitHub (27/10/2026): GitHub dispara los `schedule:` con 3 a 6 horas de atraso o los saltea.
+  # Lo lanza el panel a su hora exacta (panel/programador.py, cron UTC «30 10 * * *») con este mismo workflow_dispatch,
+  # esperando turno si el carril de INPI está ocupado. Se puede lanzar a mano igual.
     # Todos los días a las 10:30 UTC (07:30 ART), al abrir el día: reúne en un solo
     # horario los avisos de lo que pasó durante la noche. No consulta INPI (solo
     # lee la base y manda mails), por eso no usa el carril de INPI.
-    - cron: "30 10 * * *"
   workflow_dispatch:
 
 permissions:

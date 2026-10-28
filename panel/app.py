@@ -59,6 +59,7 @@ import auth
 import auth_api
 import calendario_api
 import calendario_core
+import programador
 import cartera
 import seguridad
 import cartera_api
@@ -216,6 +217,12 @@ def migrar_columnas_panel():
         calendario_core.iniciar_agenda_diaria(conexion)
     except Exception as e:
         print(f"[startup] la agenda diaria no arrancó (no bloqueante): {e}")
+    # Programador de procesos: dispara en GitHub Actions, a su hora exacta, los workflows programados (el `schedule:` de
+    # GitHub se atrasa horas). Ver panel/programador.py.
+    try:
+        programador.iniciar(conexion)
+    except Exception as e:
+        print(f"[startup] el programador de procesos no arrancó (no bloqueante): {e}")
     # Recordatorios sin marcar como hechos: pasan solos al día hábil siguiente (viernes → lunes).
     try:
         calendario_core.iniciar_pase_recordatorios(conexion)
@@ -660,7 +667,7 @@ GRUPOS_AUTOMATIZACIONES = [
                      "etiqueta": "última acta encontrada en INPI"},
                 ],
                 "procesos": [
-                    {"workflow_file": "escanear_actas.yml", "cron": "0 21 * * *"},
+                    {"workflow_file": "escanear_actas.yml", "cron": programador.cron_de("escanear_actas.yml")},
                 ],
             },
             {
@@ -707,7 +714,7 @@ GRUPOS_AUTOMATIZACIONES = [
                      "etiqueta": "detectadas en los últimos 7 días", "destacada": True},
                 ],
                 "procesos": [
-                    {"etiqueta": "Rotación nocturna", "workflow_file": "revisar_oposiciones.yml", "cron": "10 2 * * *",
+                    {"etiqueta": "Rotación nocturna", "workflow_file": "revisar_oposiciones.yml", "cron": programador.cron_de("revisar_oposiciones.yml"),
                      "horario": "todos los días, 23:10 hs",
                      "pendientes_sql": _SQL_OPOSICIONES_PENDIENTES},
                 ],
@@ -719,14 +726,15 @@ GRUPOS_AUTOMATIZACIONES = [
                                "publicarse: de fondo (INPI observa el signo, 30 días corridos) o formal (pide "
                                "logotipos o precisar productos, 10 días hábiles). Baja y lee el PDF de la vista y "
                                "guarda el tipo, el artículo, la marca anterior con la que se parece y el "
-                               "vencimiento. Corre todos los días apenas termina el escaneo de actas y se corta "
-                               "sola a las 22:40, antes de los procesos de la noche. Una marca no se revisa dos "
+                               "vencimiento. Corre todos los días desde las 18:05, apenas el escaneo de actas deja "
+                               "libre el carril de INPI, y se corta sola a las 22:40, antes de los procesos de la "
+                               "noche. Una marca no se revisa dos "
                                "veces el mismo día; las que tienen una vista sin contestar se miran todos los "
                                "días y las demás cada 3 o 7 días. Dejan de revisarse las contestadas, las "
                                "denegadas, las que ya tienen apoderado y las que salieron en un boletín. No revisa "
                                "las contactadas: esas con vista las repasa los miércoles a las 14:00, junto con "
                                "las demás, para actualizar si se notificó, se contestó o venció el plazo.",
-                "horario": "Todos los días, después del escaneo de actas (se corta a las 22:40) · repaso: miércoles 14:00 hs",
+                "horario": "Todos los días, desde las 18:05 (espera al escaneo; se corta a las 22:40) · repaso: miércoles 14:00 hs",
                 "metricas": [
                     {"sql": "SELECT COUNT(*) FROM marcas WHERE es_lead = true AND boletin IS NULL "
                             "AND tuvo_vista IS TRUE AND vista_sirve IS TRUE",
@@ -740,10 +748,10 @@ GRUPOS_AUTOMATIZACIONES = [
                      "etiqueta": "detectadas en los últimos 7 días"},
                 ],
                 "procesos": [
-                    {"etiqueta": "Revisión diaria", "workflow_file": "probar_vistas_preboletin.yml", "cron": None,
-                     "horario": "todos los días, al terminar el escaneo de actas",
+                    {"etiqueta": "Revisión diaria", "workflow_file": "probar_vistas_preboletin.yml", "cron": programador.cron_de("probar_vistas_preboletin.yml"),
+                     "horario": "todos los días, 18:05 hs (espera a que termine el escaneo; se corta a las 22:40)",
                      "pendientes_sql": _SQL_VISTAS_PENDIENTES},
-                    {"etiqueta": "Repaso de los miércoles", "workflow_file": "repasar_vistas.yml", "cron": "0 17 * * 3",
+                    {"etiqueta": "Repaso de los miércoles", "workflow_file": "repasar_vistas.yml", "cron": programador.cron_de("repasar_vistas.yml"),
                      "horario": "miércoles, 14:00 hs",
                      "pendientes_sql": _SQL_VISTAS_REPASO_PENDIENTES},
                 ],
@@ -765,7 +773,7 @@ GRUPOS_AUTOMATIZACIONES = [
                      "etiqueta": "último cambio en la lista"},
                 ],
                 "procesos": [
-                    {"workflow_file": "feriados.yml", "cron": "15 9 * * *"},
+                    {"workflow_file": "feriados.yml", "cron": programador.cron_de("feriados.yml")},
                 ],
             },
             {
@@ -775,7 +783,7 @@ GRUPOS_AUTOMATIZACIONES = [
                 "horario": "Todos los días, 7:30 hs",
                 "metricas": [],
                 "procesos": [
-                    {"workflow_file": "avisos_manana.yml", "cron": "30 10 * * *"},
+                    {"workflow_file": "avisos_manana.yml", "cron": programador.cron_de("avisos_manana.yml")},
                 ],
             },
             {
@@ -789,7 +797,7 @@ GRUPOS_AUTOMATIZACIONES = [
                      "etiqueta": "leads concedidos en los últimos 30 días", "destacada": True},
                 ],
                 "procesos": [
-                    {"workflow_file": "revisar_estado.yml", "cron": "20 7 * * 1"},
+                    {"workflow_file": "revisar_estado.yml", "cron": programador.cron_de("revisar_estado.yml")},
                 ],
             },
         ],
@@ -831,7 +839,7 @@ GRUPOS_AUTOMATIZACIONES = [
                      "etiqueta": "marcas pendientes de consultar"},
                 ],
                 "procesos": [
-                    {"workflow_file": "revisar_cartera.yml", "cron": "35 1 * * *",
+                    {"workflow_file": "revisar_cartera.yml", "cron": programador.cron_de("revisar_cartera.yml"),
                      "pendientes_sql": "SELECT COUNT(*) FROM cartera_marcas WHERE consultado_en IS NULL"},
                 ],
             },
@@ -851,16 +859,16 @@ GRUPOS_AUTOMATIZACIONES = [
                 "metricas": [],
                 "procesos": [
                     {"etiqueta": "Sin verificar", "workflow_file": "reintentar_sin_verificar.yml",
-                     "cron": "5 2 * * 0,1,2,4,5,6",
+                     "cron": programador.cron_de("reintentar_sin_verificar.yml"),
                      "horario": "todas las noches menos la del martes, 23:05 hs",
                      "pendientes_sql": "SELECT COUNT(*) FROM marcas WHERE es_lead IS NULL AND TRIM(COALESCE(matricula_agente, '')) IN ('', 'Part.')"},
                     {"etiqueta": "Sin email", "workflow_file": "reintentar_sin_email.yml",
-                     "cron": "10 8 * * 0,1,2,4,5,6",
+                     "cron": programador.cron_de("reintentar_sin_email.yml"),
                      "horario": "madrugadas menos la del miércoles, 5:10 hs",
                      "pendientes_sql": "SELECT COUNT(*) FROM marcas WHERE es_lead = true "
                                        "AND (email IS NULL OR email = '')"},
                     {"etiqueta": "Sin nombre", "workflow_file": "backfill_denominacion.yml",
-                     "cron": "50 8 * * 0,1,2,4,5,6",
+                     "cron": programador.cron_de("backfill_denominacion.yml"),
                      "horario": "madrugadas menos la del miércoles, 5:50 hs (y al terminar cada escaneo y boletín)",
                      "pendientes_sql": "SELECT COUNT(*) FROM marcas WHERE es_lead IS NOT FALSE "
                                        "AND COALESCE(NULLIF(TRIM(denominacion), ''), "
@@ -2201,6 +2209,14 @@ def _valor_sql(sql: str):
                 return fila[0] if fila else None
     except Exception as e:
         return {"error": str(e)}
+
+
+@app.get("/api/programador")
+def estado_programador(_: str = Depends(verificar_login)):
+    """Qué disparó el panel en los últimos 3 días (y si algo falló) y cuándo toca el próximo de cada proceso."""
+    with conexion() as conn:
+        with conn.cursor() as cur:
+            return programador.estado_para_panel(cur)
 
 
 @app.get("/api/crons")
