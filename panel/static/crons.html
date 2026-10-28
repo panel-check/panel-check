@@ -42,10 +42,11 @@
   }
   .tarjeta-cron.con-error { border-color: #f1b5b0; }
   .tarjeta-cron.con-atencion { border-color: #f0d98a; }
-  .cabecera-tarjeta { display: flex; align-items: center; gap: 10px; }
+  .cabecera-tarjeta { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
   .cabecera-tarjeta h3 { font-size: 15px; margin: 0; color: #1f2430; }
   .cabecera-tarjeta .estado-badge { margin-left: auto; }
-  .tarjeta-cron .descripcion { font-size: 13px; color: var(--gris); margin: 4px 0 12px; line-height: 1.45; }
+  .modal.modal-info { max-width: 520px; }
+  .modal-info .descripcion-info { font-size: 14px; color: #3b4150; line-height: 1.55; margin: 12px 0 0; }
 
   .metricas { display: flex; flex-wrap: wrap; gap: 28px; margin-bottom: 12px; }
   .metrica .valor { font-size: 22px; font-weight: 700; color: #1f2430; line-height: 1.1; }
@@ -93,6 +94,14 @@
     cursor: pointer; padding: 0; display: inline-flex; align-items: center; justify-content: center;
   }
   button.btn-reporte:hover { background: var(--azul-claro); border-color: var(--azul); }
+  /* Botón "i" con la descripción del proceso */
+  button.btn-info {
+    width: 20px; height: 20px; border-radius: 50%; border: 1px solid var(--borde);
+    background: #f4f6f9; color: var(--gris); font-size: 12px; font-weight: 700; font-style: italic;
+    font-family: Georgia, serif; line-height: 1; cursor: pointer; padding: 0;
+    display: inline-flex; align-items: center; justify-content: center;
+  }
+  button.btn-info:hover { background: var(--azul-claro); border-color: var(--azul); color: var(--azul); }
 
   /* Ventana del reporte */
   .modal-fondo {
@@ -309,10 +318,10 @@ function tarjeta(t, idx) {
   return `
     <div class="tarjeta-cron ${clase}" id="tarjeta-${idx}">
       <div class="cabecera-tarjeta">
-        <h3>${t.nombre}</h3>${botonReporte}
+        <h3>${t.nombre}</h3>
+        <button class="btn-info" data-tarjeta="${idx}" title="Qué hace este proceso" aria-label="Qué hace este proceso">i</button>${botonReporte}
         ${badge(est, pUnico)}
       </div>
-      <p class="descripcion">${t.descripcion}</p>
       ${metricas}
       ${cuerpo}
     </div>`;
@@ -368,6 +377,9 @@ async function cargar() {
 
     ultimasTarjetas = grupos.flatMap((g) => g.tarjetas);
     contenido.innerHTML = franja(problemas, corriendo) + html;
+    contenido.querySelectorAll(".btn-info").forEach((b) => {
+      b.addEventListener("click", () => abrirInfo(ultimasTarjetas[Number(b.dataset.tarjeta)]));
+    });
     contenido.querySelectorAll(".btn-reporte").forEach((b) => {
       b.addEventListener("click", () => abrirReporte(ultimasTarjetas[Number(b.dataset.tarjeta)]));
     });
@@ -517,6 +529,26 @@ async function pintarReporte() {
   } catch (e) {
     cuerpo.innerHTML = `<p style="color:var(--rojo);">No se pudo cargar el reporte (${e.message}).</p>`;
   }
+}
+
+// Ventana con la descripción del proceso (el botón "i" al lado del nombre).
+function abrirInfo(t) {
+  const fondo = document.createElement("div");
+  fondo.className = "modal-fondo";
+  fondo.innerHTML = `
+    <div class="modal modal-info" role="dialog" aria-label="${t.nombre}">
+      <div class="modal-cabecera">
+        <h2>${t.nombre}</h2>
+        <button class="cerrar" title="Cerrar">×</button>
+      </div>
+      <p class="descripcion-info">${t.descripcion}</p>
+    </div>`;
+  document.body.appendChild(fondo);
+  const cerrar = () => { fondo.remove(); document.removeEventListener("keydown", porEsc); };
+  const porEsc = (e) => { if (e.key === "Escape") cerrar(); };
+  document.addEventListener("keydown", porEsc);
+  fondo.addEventListener("click", (e) => { if (e.target === fondo) cerrar(); });
+  fondo.querySelector(".cerrar").addEventListener("click", cerrar);
 }
 
 function abrirReporte(t) {
