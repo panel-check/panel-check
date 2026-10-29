@@ -547,7 +547,7 @@ async function abrirCliente(id) {
       </div>
 
       <div data-cpanel="informes" ${est.clienteTab === "informes" ? "" : "hidden"}>
-        <div class="cl-acciones" style="margin-top:12px"><button type="button" class="cl-btn" id="cli-inf-btn">📄 Generar informe viabilidad marcaria</button>
+        <div class="cl-acciones" style="margin-top:12px"><button type="button" class="cl-btn" id="cli-inf-btn">📄 Generar informe de disponibilidad marcaria</button>
           <button type="button" class="cl-btn sec" id="cli-iai-btn">🧠 Adjuntar informe IA interno</button></div>
         <div class="cl-caja" id="cli-inf" hidden style="margin-top:10px"></div>
         <div class="cl-caja" id="cli-iai" hidden style="margin-top:10px"></div>
@@ -1187,8 +1187,8 @@ function htmlInformes(lista) {
   const cli = lista.filter(i => i.tipo === "cliente"), inte = lista.filter(i => i.tipo === "interno");
   const quien = i => `<span class="crm-gris">${fmtFechaHora(i.generado_en)}${i.generado_por ? " · " + esc(i.generado_por) : ""}</span>`;
   let h = "";
-  if (cli.length) h += `<h4>Informes de viabilidad (para el cliente)</h4><ul class="cl-lista-simple">${cli.map(i => `<li data-informe="${i.id}">
-      ${quien(i)} · <strong>${esc(i.marca || "")}</strong>${i.fecha_informe ? " · fecha del informe " + esc(i.fecha_informe) : ""}
+  if (cli.length) h += `<h4>Informes preliminares (para el cliente)</h4><ul class="cl-lista-simple">${cli.map(i => `<li data-informe="${i.id}">
+      ${quien(i)} · <strong>${esc(i.marca || "")}</strong>${i.referencia ? ` · <span class="cl-tag">${esc(i.referencia)}</span>` : ""}${i.fecha_informe ? " · fecha del informe " + esc(i.fecha_informe) : ""}${i.formato === 1 ? ' <span class="crm-gris">(formato anterior)</span>' : ""}
       <a class="cl-btn mini" style="text-decoration:none;display:inline-block" href="/informes/${i.id}" target="_blank" rel="noopener" title="Abre el PDF en una pestaña nueva, con su propio link">Abrir link ↗</a>
       <button type="button" class="cl-btn sec mini" data-inf-pdf>PDF</button>
       <button type="button" class="cl-btn sec mini" data-inf-json title="Bajar el JSON con el que se armó">JSON</button>
@@ -1196,7 +1196,7 @@ function htmlInformes(lista) {
   if (inte.length) h += `<h4>Informes IA internos</h4><ul class="cl-lista-simple">${inte.map(i => {
     const r = i.resumen || {};
     return `<li data-informe="${i.id}">
-      ${quien(i)} · <strong>${esc(i.marca || "")}</strong> · ${r.identicas ? `<span class="cl-tag mal">${r.identicas} idéntica(s)</span>` : '<span class="cl-tag ok">sin idénticas</span>'}
+      ${quien(i)} · <strong>${esc(i.marca || "")}</strong>${r.referencia ? ` · <span class="cl-tag">${esc(r.referencia)}</span>` : ""} · ${r.identicas ? `<span class="cl-tag mal">${r.identicas} coincidencia(s) exacta(s)</span>` : '<span class="cl-tag ok">sin coincidencias exactas</span>'}
       · ${(r.relevantes || []).length} antecedente(s) relevante(s)${r.antecedentes_listados ? ` · ${r.antecedentes_listados} listados` : ""}
       <a class="cl-btn mini" style="text-decoration:none;display:inline-block" href="/informes/${i.id}" target="_blank" rel="noopener" title="Abre el informe completo en una pestaña nueva, con su propio link">Abrir link ↗</a>
       <button type="button" class="cl-btn sec mini" data-inf-ver>Ver resumen</button>
@@ -1252,16 +1252,25 @@ function previaInforme(texto, tipo) {
   if (tipo === "cliente") {
     if (d.tipo === "informe_viabilidad_interno") return { ok: false, html: '<span class="crm-error" style="padding:0">Ese es el JSON interno: va en «Adjuntar informe IA interno».</span>' };
     const e = d.encabezado || {}, sec = Array.isArray(d.secciones) ? d.secciones : [];
-    const textos = JSON.stringify([e.actividad, e.antecedentes, e.logo, d.introduccion, sec]);
+    // Formato 2 (disponibilidad, desde el 28/10/2026): trae título, referencia INFPR y firma en líneas.
+    const v2 = Number(d.version || 0) >= 2 || "titulo" in d || "referencia" in e || typeof e.web === "object";
+    const textos = JSON.stringify(v2 ? [d.titulo, sec] : [e.actividad, e.antecedentes, e.logo, d.introduccion, sec]);
     const clase = textos.match(/\bclases?\s*(n[°ºo.]*\s*)?\d+/i);
-    return { ok: !!e.marca_pretendida && sec.length > 0 && !clase, html:
-      `Marca: <strong>${esc(e.marca_pretendida || "— falta —")}</strong> · fecha ${esc(e.fecha_informe || "—")} · ${sec.length} sección(es)` +
-      (clase ? `<br><span class="crm-error" style="padding:0">Menciona «${esc(clase[0])}»: el informe al cliente no puede mostrar números de clase.</span>` : "") };
+    const corchete = v2 && textos.match(/\[[A-ZÁÉÍÓÚÑ ]{3,}\]/);
+    const sinTitulo = v2 && sec.some(s => s && typeof s === "object" && !String(s.titulo || "").trim());
+    const ref = e.referencia && !/^INFPR-?$/i.test(String(e.referencia).trim()) ? esc(e.referencia) : "se asigna sola al generar";
+    return { ok: !!e.marca_pretendida && sec.length > 0 && !clase && !corchete && !sinTitulo, html:
+      `Marca: <strong>${esc(e.marca_pretendida || "— falta —")}</strong> · fecha ${esc(e.fecha || e.fecha_informe || (v2 ? "hoy" : "—"))}` +
+      (v2 ? ` · referencia ${ref}` : ' · <span class="crm-gris">formato anterior</span>') + ` · ${sec.length} sección(es)` +
+      (clase ? `<br><span class="crm-error" style="padding:0">Menciona «${esc(clase[0])}»: el informe al cliente no puede mostrar números de clase.</span>` : "") +
+      (corchete ? `<br><span class="crm-error" style="padding:0">Quedó «${esc(corchete[0])}» sin reemplazar.</span>` : "") +
+      (sinTitulo ? '<br><span class="crm-error" style="padding:0">Hay una sección sin título: en este formato todas llevan título.</span>' : "") };
   }
-  if (d.tipo === "informe_viabilidad_cliente" || (d.secciones && d.encabezado)) return { ok: false, html: '<span class="crm-error" style="padding:0">Ese es el JSON para el cliente: va en «Generar informe viabilidad marcaria».</span>' };
+  if (d.tipo === "informe_viabilidad_cliente" || (d.secciones && d.encabezado)) return { ok: false, html: '<span class="crm-error" style="padding:0">Ese es el JSON para el cliente: va en «Generar informe de disponibilidad marcaria».</span>' };
   const marca = (d.caso || {}).marca_pretendida || d.marca_pretendida || "";
   const b = d.busqueda_inpi || {};
-  return { ok: !!marca, html: `Marca: <strong>${esc(marca || "— falta caso.marca_pretendida —")}</strong> · ${(b.identicas || []).length} idéntica(s) · ${(b.antecedentes_relevantes || []).length} antecedente(s) relevante(s)` };
+  const exactas = (b.coincidencias_exactas || b.identicas || []).length;
+  return { ok: !!marca, html: `Marca: <strong>${esc(marca || "— falta caso.marca_pretendida —")}</strong> · ${exactas} coincidencia(s) exacta(s) · ${(b.antecedentes_relevantes || []).length} antecedente(s) relevante(s)` };
 }
 
 function abrirCajaInforme(clienteId, tipo) {
@@ -1271,7 +1280,7 @@ function abrirCajaInforme(clienteId, tipo) {
   if (!caja.hidden) { caja.hidden = true; return; }
   caja.hidden = false;
   caja.innerHTML = tipo === "cliente" ? `
-    <p class="crm-gris" style="margin:0 0 8px">Pegá el JSON <strong>para el cliente</strong> que generó la IA (skill «informe-viabilidad-marcaria», archivo <em>…_cliente.json</em>). El panel arma el PDF con el formato del estudio y lo guarda acá. Si el texto menciona un número de clase, no deja generarlo.</p>
+    <p class="crm-gris" style="margin:0 0 8px">Pegá el JSON <strong>para el cliente</strong> que generó la IA (skill «informe-viabilidad-marcaria», archivo <em>…_cliente.json</em>). El panel arma el PDF «Informe preliminar de disponibilidad marcaria» con el formato aprobado (modelo ATELIER ASTRANITY) y lo guarda acá. Si el JSON no trae la <strong>referencia INFPR</strong>, el panel asigna la siguiente; si es una corrección de la misma marca, conserva la que ya tenía. No deja generarlo si el texto menciona un número de clase o usa expresiones que los criterios no permiten.</p>
     <textarea id="inf-texto" rows="8" spellcheck="false" placeholder='{ "tipo": "informe_viabilidad_cliente", "encabezado": { … }, "secciones": [ … ] }' style="font-family:ui-monospace,monospace;font-size:12px"></textarea>
     <div class="crm-gris" id="inf-previa" style="margin-top:6px"></div>
     <div class="cl-acciones"><button type="button" class="cl-btn" id="inf-ir" disabled>Generar PDF</button>
@@ -1290,7 +1299,7 @@ function abrirCajaInforme(clienteId, tipo) {
     try {
       const r = await apiJson(`/api/clientes/${clienteId}/informes/${tipo}`, "POST", { texto: ta.value });
       if (tipo === "cliente") await bajarArchivo(`/api/informes/${r.id}/pdf`, {}, r.archivo || "Informe_Preliminar.pdf");
-      estado.textContent = tipo === "cliente" ? "Listo: se descargó el PDF y quedó guardado abajo." : "Listo: quedó guardado abajo.";
+      estado.textContent = tipo === "cliente" ? `Listo${r.referencia ? " (" + r.referencia + ")" : ""}: se descargó el PDF y quedó guardado abajo.` : "Listo: quedó guardado abajo.";
       ta.value = ""; previa.innerHTML = "";
       await recargarInformes(clienteId);
     } catch (e) { estado.textContent = e.message; estado.className = "cl-estado mal"; ir.disabled = false; }
