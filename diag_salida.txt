@@ -1,0 +1,8 @@
+PATCH 200 {"object":"domain","id":"220593d0-b0c6-4fb1-a565-51c38b157c52"}
+smartiesconsultora.com.ar: open_tracking=True click_tracking=False
+registrodemimarca.com.ar: open_tracking=True click_tracking=True
+registro: DKIM TXT resend._domainkey -> p=MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQCpjCqEE/rH7MUQZ350a+LikYOGwKuUa6sTfnj2F4GgI/WTv5qC0Pt1w3cUW1DNpWZbJpYnOmSoIBeftj54z6MrM09+30AMksVH1ZxtzfJspY7HU5N7d9oz12PXjvdhveh6jnL3E3LPngBoZteo6y3F54C7McS39GjijruRZ5HsDQIDAQAB status= verified
+registro: SPF CNAME rsend -> rsend-sae1.forge.rmta.net status= verified
+registro: SPF CNAME send -> send.forge.rmta.net status= verified
+registro: Tracking CNAME links -> links2.resend-dns.com status= not_started
+tracking_subdomain: links
