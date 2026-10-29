@@ -58,43 +58,59 @@
   }
 
   function barra(r, extra) {
-    const titulo = r.tipo === "cliente" ? "Informe preliminar de viabilidad" : "Informe IA interno";
+    const fmt2 = r.tipo === "cliente" && r.datos && r.datos.formato === 2;
+    const ref = fmt2 ? (r.datos.encabezado || {}).referencia : ((r.datos || {}).caso || {}).referencia;
+    const titulo = r.tipo === "cliente" ? (fmt2 ? "Informe preliminar de disponibilidad" : "Informe preliminar de viabilidad") : "Informe IA interno";
     document.title = `${titulo} — ${r.marca || ""}`;
     return `<div class="inf-barra">
-      <div><h2>${esc(titulo)} · ${esc(r.marca || "")}</h2>
+      <div><h2>${esc(titulo)} · ${esc(r.marca || "")}${ref && /^INFPR-\d+$/i.test(ref) ? ` · <span class="cl-tag">${esc(ref)}</span>` : ""}</h2>
         <div class="crm-gris">${r.cliente_id ? `Cliente: <a href="/clientes?cliente=${r.cliente_id}">${esc(r.cliente_nombre || "#" + r.cliente_id)}</a> · ` : ""}cargado ${esc(fmtFechaHora(r.generado_en))}${r.generado_por ? " por " + esc(r.generado_por) : ""}</div></div>
       <div class="der">${extra}<a class="cl-btn sec" href="/api/informes/${r.id}/json">Descargar JSON</a></div></div>`;
   }
 
   function interno(r) {
     const d = r.datos || {}, b = d.busqueda_inpi || {};
-    const listas = Object.entries(b).filter(([k, v]) => k.startsWith("antecedentes_") && k !== "antecedentes_relevantes" && Array.isArray(v));
+    // Formato 2: coincidencias exactas aparte, las tres consultas del procedimiento y la búsqueda amplia agrupada.
+    const amplia = b.busqueda_amplia && typeof b.busqueda_amplia === "object" ? b.busqueda_amplia : {};
+    const exactas = b.coincidencias_exactas || b.identicas || [];
+    const listas = [...Object.entries(b), ...Object.entries(amplia)].filter(([k, v]) => k.startsWith("antecedentes_") && k !== "antecedentes_relevantes" && Array.isArray(v));
+    const consultas = (b.consultas_procedimiento || []).map(c => { const { filas, ...resto } = c || {}; return { ...resto, filas: Array.isArray(filas) ? filas.length : filas }; });
+    const legal = d.analisis_legal_ley_22362 || null;
+    const resumenB = amplia.resumen || b.resumen || {};
+    const terminos = amplia.terminos || b.terminos;
     const totalListados = listas.reduce((n, [, v]) => n + v.length, 0);
-    const kpis = [[(b.identicas || []).length, "marcas idénticas"], [(b.antecedentes_relevantes || []).length, "antecedentes relevantes"],
+    const kpis = [[exactas.length, b.coincidencias_exactas ? "coincidencias exactas" : "marcas idénticas"], [(b.antecedentes_relevantes || []).length, "antecedentes relevantes"],
       [totalListados, "antecedentes listados"], [(d.caso || {}).fecha_consulta_inpi || "—", "consulta a INPI"]];
     const conocidas = new Set(["tipo", "version", "estado", "caso", "cliente", "actividad", "clases", "busqueda_inpi", "limitaciones",
-      "datos_faltantes", "observaciones_para_pame"]);
+      "datos_faltantes", "observaciones_para_pame", "analisis_legal_ley_22362"]);
     const otras = Object.entries(d).filter(([k]) => !conocidas.has(k));
     const cli = d.cliente || {};
     const clases = d.clases || {};
     const filasClases = [...(clases.principal || []).map(c => ({ tipo: "principal", ...c })), ...(clases.complementarias || []).map(c => ({ tipo: "complementaria", ...c }))];
-    const porClase = Object.entries((b.resumen || {}).por_clase || {}).map(([clase, v]) => ({ clase, ...v }));
-    const restoResumen = Object.fromEntries(Object.entries(b.resumen || {}).filter(([k]) => k !== "por_clase"));
+    const porClase = Object.entries(resumenB.por_clase || {}).map(([clase, v]) => ({ clase, ...v }));
+    const restoResumen = Object.fromEntries(Object.entries(resumenB).filter(([k]) => k !== "por_clase"));
     cont.innerHTML = barra(r, "") + `
       <div class="inf-kpis">${kpis.map(([n, t]) => `<div class="inf-kpi"><b>${esc(n)}</b><span>${esc(t)}</span></div>`).join("")}</div>
       ${caja("Para revisar primero", d.observaciones_para_pame ? `<p class="inf-obs">${esc(d.observaciones_para_pame)}</p>` : "")}
       ${caja("Antecedentes relevantes", fichas(b.antecedentes_relevantes))}
-      ${caja("Marcas idénticas", (b.identicas || []).length ? fichas(b.identicas) : '<p class="crm-gris" style="margin:0">No se encontraron marcas idénticas vigentes o en trámite.</p>')}
+      ${caja(b.coincidencias_exactas ? "Coincidencias exactas" : "Marcas idénticas", exactas.length ? fichas(exactas) : '<p class="crm-gris" style="margin:0">No se encontraron marcas idénticas vigentes o en trámite.</p>')}
+      ${caja("Consultas del procedimiento (INPI)", consultas.length ? tabla(consultas, { id: "t-consultas" }) + (b.control_solo_vigentes ? `<div style="margin-top:10px"><h3>Control de «Solo vigentes»</h3>${dl(b.control_solo_vigentes)}</div>` : "") : "")}
+      ${caja("Revisión legal (Ley 22.362)", legal ? `${dl(Object.fromEntries(Object.entries(legal).filter(([k]) => !["evaluacion_por_articulo", "recomendaciones_para_evitar_vistas_y_oposiciones"].includes(k))))}
+        ${tabla(legal.evaluacion_por_articulo, { id: "t-legal" })}
+        ${(legal.recomendaciones_para_evitar_vistas_y_oposiciones || []).length ? `<h3 style="margin-top:10px">Recomendaciones</h3>${lista(legal.recomendaciones_para_evitar_vistas_y_oposiciones)}` : ""}` : "")}
       ${caja("Caso", dl(d.caso))}
       ${caja("Cliente", dl(Object.fromEntries(Object.entries(cli).filter(([k]) => k !== "datos_de_la_web"))) + (cli.datos_de_la_web ? `<h3 style="margin-top:12px">Datos de la web</h3>${dl(cli.datos_de_la_web)}` : ""))}
       ${caja("Actividad", d.actividad ? `${d.actividad.descripcion_formulario ? `<p style="margin:0 0 8px;font-size:13px">Formulario: «${esc(d.actividad.descripcion_formulario)}»</p>` : ""}
         <h3>Actuales</h3>${lista(d.actividad.actuales)}<h3 style="margin-top:10px">Proyectadas</h3>${lista(d.actividad.proyectadas)}
         ${(d.actividad.categorias_catalogo || []).length ? `<h3 style="margin-top:10px">Catálogo</h3>${lista(d.actividad.categorias_catalogo)}` : ""}
-        ${(d.actividad.productos_complementarios || []).length ? `<h3 style="margin-top:10px">Productos complementarios</h3>${lista(d.actividad.productos_complementarios)}` : ""}` : "")}
+        ${(d.actividad.productos_complementarios || []).length ? `<h3 style="margin-top:10px">Productos complementarios</h3>${lista(d.actividad.productos_complementarios)}` : ""}
+        ${(d.actividad.productos_de_terceros || []).length ? `<h3 style="margin-top:10px">Productos de terceros</h3>${lista(d.actividad.productos_de_terceros)}` : ""}
+        ${(d.actividad.productos_marca_propia || []).length ? `<h3 style="margin-top:10px">Productos con marca propia</h3>${lista(d.actividad.productos_marca_propia)}` : ""}` : "")}
       ${caja("Clases (uso interno)", tabla(filasClases, { id: "t-clases" }))}
       ${caja("Búsqueda en INPI", `${b.fuente ? `<p class="crm-gris" style="margin:0 0 8px">${esc(b.fuente)}</p>` : ""}${b.criterio_activas ? `<p style="margin:0 0 8px;font-size:13px">${esc(b.criterio_activas)}</p>` : ""}
-        ${tabla(b.terminos, { id: "t-term" })}${dl(restoResumen) ? `<div style="margin-top:10px">${dl(restoResumen)}</div>` : ""}${porClase.length ? `<div style="margin-top:10px">${tabla(porClase, { id: "t-porclase" })}</div>` : ""}`)}
+        ${tabla(terminos, { id: "t-term" })}${dl(restoResumen) ? `<div style="margin-top:10px">${dl(restoResumen)}</div>` : ""}${porClase.length ? `<div style="margin-top:10px">${tabla(porClase, { id: "t-porclase" })}</div>` : ""}`)}
       ${listas.map(([k, v], i) => caja(`${etiqueta(k)} (${v.length})`, tabla(v, { filtro: v.length > 10, id: "t-lista" + i }))).join("")}
+      ${caja(`Coincidencias parciales (${(b.coincidencias_parciales || []).length})`, (b.coincidencias_parciales || []).length ? tabla(b.coincidencias_parciales, { filtro: b.coincidencias_parciales.length > 10, id: "t-parciales" }) : "")}
       ${caja("Descartados (inactivos)", (b.descartados_inactivos || []).length ? lista(b.descartados_inactivos) : "")}
       ${caja("Limitaciones de la búsqueda", (d.limitaciones || []).length ? lista(d.limitaciones) : "")}
       ${caja("Datos faltantes", (d.datos_faltantes || []).length ? lista(d.datos_faltantes) : "")}

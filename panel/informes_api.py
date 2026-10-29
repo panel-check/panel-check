@@ -1,5 +1,6 @@
 """
 API de la pestaña «Informes» de la ficha del cliente (ver informes_viabilidad.py).
+El informe al cliente nuevo (formato 2) recibe acá su referencia INFPR si el JSON no la trae.
 
 Rutas (todas con sesión):
   GET    /api/clientes/{id}/informes           informes guardados del cliente (el interno, con un resumen)
@@ -47,10 +48,13 @@ def crear_router(verificar_login, conexion) -> APIRouter:
             raise HTTPException(status_code=404, detail="No existe ese informe")
         return f
 
-    def _guardar(cliente_id, tipo, marca, datos, usuario) -> int:
+    def _guardar(cliente_id, tipo, marca, datos, usuario, antes=None) -> int:
+        """`antes(cur)` corre en la misma transacción, antes de insertar (ej.: asignar la referencia INFPR)."""
         with conexion() as conn:
             with rcur(conn) as cur:
                 _cliente(cur, cliente_id)
+                if antes:
+                    antes(cur)
                 cur.execute("INSERT INTO informes_viabilidad (cliente_id, tipo, marca, datos, generado_por) "
                             "VALUES (%s, %s, %s, %s, %s) RETURNING id",
                             (cliente_id, tipo, marca, json.dumps(datos, ensure_ascii=False), usuario))
@@ -72,11 +76,16 @@ def crear_router(verificar_login, conexion) -> APIRouter:
                 nombre = _cliente(cur, cliente_id)["nombre"]
         try:
             d = iv.normalizar_cliente(iv.leer_json(body.texto), nombre)
-            iv.generar_pdf(d)  # que no falle recién al bajarlo
+
+            def antes(cur):
+                if d.get("formato") == 2:  # referencia INFPR: controla duplicados o asigna la siguiente
+                    iv.asignar_referencia(cur, cliente_id, d)
+                iv.generar_pdf(d)  # que no falle recién al bajarlo
+
+            iid = _guardar(cliente_id, "cliente", d["encabezado"]["marca_pretendida"], d, usuario, antes)
         except iv.InformeInvalido as e:
             raise HTTPException(status_code=400, detail=str(e))
-        iid = _guardar(cliente_id, "cliente", d["encabezado"]["marca_pretendida"], d, usuario)
-        return {"id": iid, "archivo": iv.nombre_archivo(d)}
+        return {"id": iid, "archivo": iv.nombre_archivo(d), "referencia": d["encabezado"].get("referencia", "")}
 
     @router.post("/api/clientes/{cliente_id}/informes/interno")
     def guardar_interno(cliente_id: int, body: JsonPegado, usuario: str = Depends(verificar_login)):
@@ -84,7 +93,17 @@ def crear_router(verificar_login, conexion) -> APIRouter:
             d = iv.normalizar_interno(iv.leer_json(body.texto))
         except iv.InformeInvalido as e:
             raise HTTPException(status_code=400, detail=str(e))
-        iid = _guardar(cliente_id, "interno", iv.marca_interno(d), d, usuario)
+        marca = iv.marca_interno(d)
+
+        def antes(cur):
+            # Si el interno no trae la referencia INFPR, toma la del informe al cliente de esa marca.
+            caso = d.get("caso") if isinstance(d.get("caso"), dict) else None
+            if caso is not None and not iv.normalizar_referencia_silenciosa(caso.get("referencia")):
+                ref = iv.referencia_de_marca(cur, cliente_id, marca)
+                if ref:
+                    caso["referencia"] = ref
+
+        iid = _guardar(cliente_id, "interno", marca, d, usuario, antes)
         return {"id": iid}
 
     @router.get("/api/informes/{iid}")
@@ -143,6 +162,9 @@ def listar_informes(cur, cliente_id: int) -> list:
         if f["tipo"] == "interno":
             f["resumen"] = iv.resumen_interno(d)
         else:
-            f["fecha_informe"] = (d.get("encabezado") or {}).get("fecha_informe", "")
+            enc = d.get("encabezado") or {}
+            f["fecha_informe"] = enc.get("fecha") or enc.get("fecha_informe", "")
+            f["referencia"] = enc.get("referencia", "")
+            f["formato"] = d.get("formato") or 1
         out.append(f)
     return out
