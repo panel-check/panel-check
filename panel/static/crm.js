@@ -156,9 +156,16 @@ function _crmHtmlCabecera(d, opciones = {}) {
 
   const alertas = [];
   if (l.oposicion_sin_apoderado) alertas.push('<div class="crm-alerta crm-alerta-opo">⚠ Tiene una marca con <strong>oposición o vista</strong> y todavía nadie se presentó como apoderado: es el momento de ofrecer ayuda.</div>');
-  else if (l.oposicion_atendida) alertas.push('<div class="crm-alerta">⚖ Tuvo una oposición, marcada como <strong>atendida</strong>: no hace falta ofrecer ayuda. <button type="button" class="crm-btn-chico" data-accion="opo-reabrir">Deshacer</button></div>');
+  else if (l.oposicion_atendida) {
+    const quienOpo = [l.oposicion_atendida_por ? `por ${crmEsc(l.oposicion_atendida_por)}` : "", l.oposicion_atendida_en ? `el ${crmFecha(l.oposicion_atendida_en)}` : ""].filter(Boolean).join(" ");
+    alertas.push(`<div class="crm-alerta">⚖ Tuvo una oposición, marcada como <strong>ya contestada / atendida</strong>${quienOpo ? ` (${quienOpo})` : ""}: no hace falta ofrecer ayuda. <button type="button" class="crm-btn-chico" data-accion="opo-reabrir">Deshacer</button></div>`);
+  }
   else if (l.apoderado_automatico) alertas.push('<div class="crm-alerta">⚖ Tuvo una oposición, pero ya se sumó un apoderado/gestor. <button type="button" class="crm-btn-chico" data-accion="apoderado-auto-reabrir" title="Por si el sistema se equivocó al leerlo del expediente de INPI (por ejemplo, un dato que en realidad era del oponente): vuelve a ser lead.">Deshacer</button></div>');
   else if (l.con_oposicion && !l.con_gestor_manual) alertas.push('<div class="crm-alerta">⚖ Tuvo una oposición, pero ya se sumó un apoderado/gestor.</div>');
+  if (l.vista_contestada_manual && !l.vista_sin_apoderado) {
+    const quienVista = [l.vista_contestada_manual_por ? `por ${crmEsc(l.vista_contestada_manual_por)}` : "", l.vista_contestada_manual_en ? `el ${crmFecha(l.vista_contestada_manual_en)}` : ""].filter(Boolean).join(" ");
+    alertas.push(`<div class="crm-alerta">👁 Tuvo una vista de INPI, marcada como <strong>ya contestada por el titular</strong>${quienVista ? ` (${quienVista})` : ""}: no hace falta ofrecer ayuda. <button type="button" class="crm-btn-chico" data-accion="vista-reabrir">Deshacer</button></div>`);
+  }
   if (l.vista_sin_apoderado) alertas.push('<div class="crm-alerta crm-alerta-opo">👁 Tiene una marca con una <strong>vista de INPI antes de publicar</strong> que nadie contestó: la publicación está frenada hasta que se conteste. Es el momento de ofrecer ayuda (el detalle está en la solapa Marca, haciendo click en el badge de la vista).</div>');
   if (l.con_gestor_manual) {
     const quien = [l.con_gestor_manual_por ? `por ${crmEsc(l.con_gestor_manual_por)}` : "", l.con_gestor_manual_en ? `el ${crmFecha(l.con_gestor_manual_en)}` : ""].filter(Boolean).join(" ");
@@ -200,6 +207,7 @@ function _crmHtmlCabecera(d, opciones = {}) {
         : "Esta marca no tiene mail: se completa en la pestaña Mail";
       botones.push(`<button type="button" class="crm-btn-primario" data-accion="mail-oposicion" data-acta-opo="${crmEsc(marcaOpo.acta)}" data-clave-mail="${claveMail}" title="${crmEsc(ayudaMail)}">✉ Enviar mail de ${esVista ? "vista" : "oposición"}</button><span class="crm-gris" id="estado-mail-opo"></span>`);
     }
+    botones.push(`<button type="button" class="crm-btn-gestor" data-accion="ya-contestaron" data-acta-opo="${crmEsc(marcaOpo.acta)}" data-tipo="${esVista ? "vista" : "oposicion"}" data-nombre-marca="${crmEsc(nombreMarca)}" title="Si el titular ya contestó ${esVista ? "la vista" : "la oposición"} por su cuenta: deja de figurar como para ofrecer ayuda (sigue siendo lead). Se puede deshacer.">✔ Ya la contestaron</button>`);
   }
   // Lead con marcas pre-boletín (todavía sin publicar): atajos al expediente y a la Grilla
   // Digital de la primera de ellas, para revisarla en INPI sin buscar el acta a mano.
@@ -340,8 +348,7 @@ function _crmConectarFicha(cont) {
     if (typeof opciones.alCambiar === "function") await opciones.alCambiar();
   };
 
-  // Oposición marcada como «atendida» con el botón de versiones anteriores:
-  // el botón ya no se ofrece, pero lo que ya estaba marcado se puede deshacer.
+  // Oposición marcada como «atendida» (botón «Ya la contestaron» o versiones anteriores): se puede deshacer.
   const btnReabrir = uno('[data-accion="opo-reabrir"]');
   if (btnReabrir) btnReabrir.addEventListener("click", async () => {
     btnReabrir.disabled = true;
@@ -349,6 +356,32 @@ function _crmConectarFicha(cont) {
       await apiJson("/api/marcas/oposicion-atendida", "POST", { actas: l.actas || [], atendida: false });
       await recargar();
     } catch (e) { btnReabrir.disabled = false; alert(`No se pudo guardar: ${e.message}`); }
+  });
+
+  // Vista marcada a mano como contestada por el titular: se puede deshacer.
+  const btnVistaReabrir = uno('[data-accion="vista-reabrir"]');
+  if (btnVistaReabrir) btnVistaReabrir.addEventListener("click", async () => {
+    btnVistaReabrir.disabled = true;
+    try {
+      await apiJson("/api/marcas/vista-contestada", "POST", { actas: l.actas || [], contestada: false });
+      await recargar();
+    } catch (e) { btnVistaReabrir.disabled = false; alert(`No se pudo guardar: ${e.message}`); }
+  });
+
+  // «Ya la contestaron»: el titular contestó por su cuenta la oposición o la vista.
+  const btnYaContestaron = uno('[data-accion="ya-contestaron"]');
+  if (btnYaContestaron) btnYaContestaron.addEventListener("click", async () => {
+    const { actaOpo, tipo, nombreMarca } = btnYaContestaron.dataset;
+    const que = tipo === "vista" ? "la vista de INPI" : "la oposición";
+    if (!confirm(`¿Marcar que el titular ya contestó ${que} de ${nombreMarca} (acta ${actaOpo})?\n\n`
+      + "Deja de figurar como para ofrecer ayuda: sale de la alerta, de los filtros y del botón de mail. "
+      + "Sigue siendo lead. Se puede deshacer.")) return;
+    btnYaContestaron.disabled = true;
+    try {
+      if (tipo === "vista") await apiJson("/api/marcas/vista-contestada", "POST", { actas: [actaOpo], contestada: true });
+      else await apiJson("/api/marcas/oposicion-atendida", "POST", { actas: [actaOpo], atendida: true });
+      await recargar();
+    } catch (e) { btnYaContestaron.disabled = false; alert(`No se pudo guardar: ${e.message}`); }
   });
 
   // Atajos del lead con oposición: ver el expediente en INPI y mandar el mail de oposición.
