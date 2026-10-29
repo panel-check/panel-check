@@ -40,6 +40,7 @@ from pydantic import BaseModel
 import auth
 import formularios_api
 import mails_core
+import mails_cola
 import verificador_core as vc
 
 MAX_CUERPO = 16 * 1024        # bytes: un pedido legítimo pesa unos cientos
@@ -267,7 +268,12 @@ def crear_router(verificar_login, conexion) -> APIRouter:
                 asunto, cuerpo_html, texto = mails_core.render_prospecto(
                     cfg["asunto"], cfg["cuerpo"], vc.datos_confirmacion(v), cfg.get("encabezado"),
                     simple=mails_core.es_simple(vc.CLAVE_MAIL_CONFIRMACION))
-                mails_core.enviar(cfg["cuenta"], cfg["remitente"], cfg["responder_a"], [v["email"]], asunto, cuerpo_html, texto)
+                r = mails_cola.enviar_o_encolar(
+                    conexion, cuenta=cfg["cuenta"], remitente=cfg["remitente"], responder_a=cfg["responder_a"],
+                    para=[v["email"]], asunto=asunto, html=cuerpo_html, texto=texto, clave_mail=vc.CLAVE_MAIL_CONFIRMACION,
+                    origen="consulta web", al_enviar={"tabla": "verificaciones_marca", "id": vid})
+                if r["en_cola"]:   # cupo de Resend agotado: sale solo después de las 21:00 (ver mails_cola.py)
+                    error = mails_cola.AVISO_EN_COLA
         except Exception as e:  # noqa: BLE001 — la consulta ya está guardada y respondida
             error = str(e)[:500]
             print(f"[verificador] confirmación de la consulta {vid} no enviada: {e}")

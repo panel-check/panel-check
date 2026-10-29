@@ -12,6 +12,9 @@ cambios y tocar la lista de bajas, además, administrador.
   POST   /api/mails/{clave}/enviar          mandar la plantilla (tal como está guardada) a un lead, a mano
   GET    /api/mails/enviados?internos=      mails de la cuenta de prospectos de Resend (y de la interna, con
                                             internos=true), cruzados con el registro del panel y con su tipo
+  GET    /api/mails/cola                    mails a prospectos que esperan el reinicio del cupo de Resend (y los de las últimas 48 h)
+  POST   /api/mails/cola/{id}/cancelar      sacar un mail de la cola (no sale)
+  POST   /api/mails/cola/{id}/reintentar    probar de mandarlo en la próxima pasada (cada minuto)
   GET    /api/mails/cupo-hoy                mails mandados hoy por cuenta de Resend vs. el límite diario (100)
   GET    /api/mails/envios?actas=a,b       historial de mails mandados a esas actas (con aperturas y clics)
   GET    /api/mails/envios/{id}/adjunto     el PDF del presupuesto que se mandó en ese envío (se arma de nuevo con sus datos)
@@ -37,6 +40,7 @@ from fastapi.responses import JSONResponse, RedirectResponse, Response
 from pydantic import BaseModel
 
 import mails_core as mc
+import mails_cola
 import presupuestos as pres
 
 
@@ -361,6 +365,31 @@ def crear_router(verificar_login, verificar_admin, conexion, registrar_en_crm=No
                 out[cuenta] = {"error": str(e)}
         return out
 
+    # ── Cola (mails a prospectos que chocaron con el cupo diario de Resend) ──
+    @router.get("/api/mails/cola")
+    def ver_cola(_: str = Depends(verificar_login)):
+        with conexion() as conn, rcur(conn) as cur:
+            return mails_cola.listar(cur)
+
+    @router.post("/api/mails/cola/{cola_id}/cancelar")
+    def cancelar_de_cola(cola_id: int, usuario: str = Depends(verificar_login)):
+        with conexion() as conn, rcur(conn) as cur:
+            ok = mails_cola.cancelar(cur, cola_id, usuario)
+            conn.commit()
+        if not ok:
+            raise HTTPException(status_code=404, detail="Ese mail ya no está esperando en la cola")
+        return {"ok": True}
+
+    @router.post("/api/mails/cola/{cola_id}/reintentar")
+    def reintentar_de_cola(cola_id: int, _: str = Depends(verificar_login)):
+        """Lo pone para salir en la próxima pasada (cada minuto). Si sigue sin cupo, vuelve a esperar las 21:00."""
+        with conexion() as conn, rcur(conn) as cur:
+            ok = mails_cola.reintentar(cur, cola_id)
+            conn.commit()
+        if not ok:
+            raise HTTPException(status_code=404, detail="Ese mail ya no está esperando en la cola")
+        return {"ok": True}
+
     def _respaldo_panel(cur):
         """Si no se puede listar Resend: lo que se mandó desde el panel."""
         cur.execute(
@@ -388,13 +417,20 @@ def crear_router(verificar_login, verificar_admin, conexion, registrar_en_crm=No
             return []
         with conexion() as conn, rcur(conn) as cur:
             cur.execute(
-                "SELECT id, clave_mail, acta, para, asunto, resend_id, enviado_por, enviado_en, detalle FROM mails_envios "
-                "WHERE acta = ANY(%s) AND NOT es_prueba ORDER BY enviado_en DESC LIMIT 200", (lista,))
+                "SELECT e.id, e.clave_mail, e.acta, e.para, e.asunto, e.resend_id, e.enviado_por, e.enviado_en, e.detalle, "
+                "       c.estado AS cola_estado, c.intentar_desde AS cola_sale_desde, c.ultimo_error AS cola_error "
+                "FROM mails_envios e LEFT JOIN mails_cola c ON c.id = e.cola_id "
+                "WHERE e.acta = ANY(%s) AND NOT e.es_prueba ORDER BY e.enviado_en DESC LIMIT 200", (lista,))
             filas = cur.fetchall()
             eventos = mc.resumen_eventos(cur, [f["resend_id"] for f in filas])
         for f in filas:
             f["seguimiento"] = eventos.get(f.pop("resend_id"))
             f["enviado_en"] = f["enviado_en"].isoformat()
+            # Esperando en la cola (cupo diario de Resend agotado): {estado, sale_desde, error}; None si ya salió.
+            est = f.pop("cola_estado", None)
+            sale, err = f.pop("cola_sale_desde", None), f.pop("cola_error", None)
+            f["en_cola"] = {"estado": est, "sale_desde": sale.isoformat() if sale else None, "error": err} \
+                if est in ("pendiente", "error") else None
             f["plantilla"] = mc.CATALOGO.get(f["clave_mail"], {}).get("nombre", f["clave_mail"])
             det = f.pop("detalle", None)
             # Mails con presupuesto: qué se cotizó y un link para volver a ver el PDF.
@@ -459,23 +495,36 @@ def crear_router(verificar_login, verificar_admin, conexion, registrar_en_crm=No
             with conexion() as conn, rcur(conn) as cur:
                 cuerpo_html, texto = mc.rastrear_links(cur, cuerpo_html, texto, envio_token, _panel_url())
                 conn.commit()
+        en_cola = None
         try:
             id_resend = mc.enviar(cfg["cuenta"], cfg["remitente"], cfg["responder_a"], [destino], asunto, cuerpo_html, texto, adjuntos)
+        except mc.CupoAgotado as e:
+            id_resend, en_cola = None, e   # se agotó el cupo de Resend: queda en la cola (ver mails_cola.py)
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
+        cola = None
         with conexion() as conn, rcur(conn) as cur:
             cur.execute("INSERT INTO mails_envios (clave_mail, acta, para, asunto, resend_id, enviado_por, token, detalle) "
-                        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
+                        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s) RETURNING id",
                         (clave, body.acta, destino, asunto, id_resend, usuario, envio_token,
                          psycopg2.extras.Json(detalle) if detalle else None))
+            envio_id = cur.fetchone()["id"]
+            if en_cola is not None:
+                cola = mails_cola.encolar(cur, cuenta=cfg["cuenta"], remitente=cfg["remitente"], responder_a=cfg["responder_a"],
+                                          para=[destino], asunto=asunto, html=cuerpo_html, texto=texto, adjuntos=adjuntos,
+                                          clave_mail=clave, acta=body.acta, origen="ficha", encolado_por=usuario,
+                                          al_enviar={"tabla": "mails_envios", "id": envio_id}, motivo=en_cola.motivo)
+                cur.execute("UPDATE mails_envios SET cola_id = %s WHERE id = %s", (cola["cola_id"], envio_id))
             conn.commit()
             if registrar_en_crm:
                 try:
+                    accion = "Mail en cola (cupo diario de Resend agotado, sale después de las 21:00)" if cola else "Mail enviado"
                     if detalle:
-                        texto_crm = (f"Presupuesto enviado desde el panel: «{cat['nombre']}» a {destino} (acta {body.acta}): "
+                        accion = accion.replace("Mail", "Presupuesto", 1)
+                        texto_crm = (f"{accion} desde el panel: «{cat['nombre']}» a {destino} (acta {body.acta}): "
                                      f"{pres.resumen(detalle)}. Asunto: {asunto}")
                     else:
-                        texto_crm = (f"Mail enviado desde el panel: «{cat['nombre']}» a {destino} "
+                        texto_crm = (f"{accion} desde el panel: «{cat['nombre']}» a {destino} "
                                      f"(acta {body.acta}). Asunto: {asunto}")
                     registrar_en_crm(cur, body.acta, usuario, texto_crm)
                     conn.commit()
@@ -485,7 +534,8 @@ def crear_router(verificar_login, verificar_admin, conexion, registrar_en_crm=No
         if clave == "prospecto_oposicion":   # deja lista la marca del oponente (y sus clases) para cuando abran la página de la web
             background.add_task(_precalentar_oponente, body.acta)
         return {"ok": True, "id": id_resend, "para": destino, "asunto": asunto,
-                "adjunto": adjuntos[0]["filename"] if adjuntos else None}
+                "adjunto": adjuntos[0]["filename"] if adjuntos else None,
+                "en_cola": bool(cola), "sale_desde": cola["sale_desde"] if cola else None}
 
     # ── Configuración de cada mail ──────────────────────────────────────
     @router.post("/api/mails/{clave}")

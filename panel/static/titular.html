@@ -33,6 +33,7 @@
   .mail-lead .seg.abierto { background: #eef4ff; color: #1d4ed8; }
   .mail-lead .seg.clic { background: #fef3c7; color: #92400e; }
   .mail-lead .seg.mal { background: #fee4e2; color: #b42318; }
+  .mail-lead .seg.cola { background: #fef0c7; color: #93370d; }
   .mail-lead .presu { border: 1px solid var(--borde); border-radius: 10px; background: #f9fafb; padding: 12px 14px; margin: 0 0 12px; }
   .mail-lead .presu-titulo { font-size: 13px; font-weight: 700; color: #1f2430; margin-bottom: 8px; }
   .mail-lead .presu-grid { display: grid; grid-template-columns: 1fr 1fr 1.6fr 1fr; gap: 10px; }
@@ -558,10 +559,13 @@ async function mlEnviar() {
       if (!confirm(e.message + "\n\n¿Mandarla igual?")) { mlMsg("", true); btn.disabled = false; return { estado: "cancelado", texto: "" }; }
       res = await mandar(true);
     }
-    mlMsg(`Enviado a ${res.para} ✓`, true);
+    const texto = res.en_cola
+      ? `Se agotó el cupo diario de Resend: el mail a ${res.para} quedó en cola y sale solo a las ${mlFecha(res.sale_desde)} ⏳`
+      : `Enviado a ${res.para} ✓`;
+    mlMsg(texto, true);
     mlHistorial();
     cargar({ conCRM: true });
-    resultado = { estado: "ok", texto: `Enviado a ${res.para}` };
+    resultado = { estado: "ok", texto };
   } catch (e) { mlMsg(e.message, false); resultado = { estado: "error", texto: e.message }; }
   btn.disabled = false;
   return resultado;
@@ -591,7 +595,9 @@ function pintarEstadoMailOpo() {
   const btn = document.querySelector('[data-accion="mail-oposicion"]');
   const clave = (btn && btn.dataset.claveMail) || "prospecto_oposicion";
   const previo = (mlEnvios || []).find(e => e.clave_mail === clave);
-  el.textContent = previo ? `✓ Ya se le mandó el ${mlFecha(previo.enviado_en)}${previo.enviado_por ? " (" + previo.enviado_por + ")" : ""}` : "";
+  el.textContent = !previo ? ""
+    : previo.en_cola && previo.en_cola.estado === "pendiente" ? `⏳ En cola: sale ${mlFecha(previo.en_cola.sale_desde)}`
+    : `✓ Ya se le mandó el ${mlFecha(previo.enviado_en)}${previo.enviado_por ? " (" + previo.enviado_por + ")" : ""}`;
 }
 
 function mlFecha(iso) { return iso ? new Date(iso).toLocaleString("es-AR", { dateStyle: "short", timeStyle: "short" }) : ""; }
@@ -616,6 +622,12 @@ function mlSeguimiento(s) {
   return out.join("") || '<span class="seg">Enviado</span>';
 }
 
+// Mail que chocó con el cupo diario de Resend y espera en la cola (sale solo después de las 21:00).
+function mlEnCola(c) {
+  if (c.estado === "error") return `<span class="seg mal" title="${mlEsc(c.error || "")}">No salió de la cola</span>`;
+  return `<span class="seg cola" title="Se agotó el cupo diario de Resend. Se ve y se cancela en Más → Mails → Enviados.">En cola · sale ${mlEsc(mlFecha(c.sale_desde))}</span>`;
+}
+
 async function mlHistorial() {
   const cont = document.getElementById("ml-historial");
   if (!mlFilas.length) { cont.innerHTML = ""; return; }
@@ -629,7 +641,7 @@ async function mlHistorial() {
         return `<tr><td>${mlEsc(new Date(e.enviado_en).toLocaleString("es-AR", { dateStyle: "short", timeStyle: "short" }))}</td>
           <td>${mlEsc(e.plantilla)}${e.presupuesto ? `<div class="nota">${mlEsc(e.presupuesto.resumen)} · <a href="/api/mails/envios/${e.id}/adjunto" target="_blank" rel="noopener">Ver PDF</a></div>` : ""}</td>
           <td>${mlEsc(r ? mlNombreMarca(r) : "")} <span class="nota">acta ${mlEsc(e.acta)}</span></td>
-          <td>${mlEsc(e.para)}</td><td>${mlEsc(e.enviado_por || "")}</td><td>${mlSeguimiento(e.seguimiento)}</td></tr>`; }).join("")
+          <td>${mlEsc(e.para)}</td><td>${mlEsc(e.enviado_por || "")}</td><td>${e.en_cola ? mlEnCola(e.en_cola) : mlSeguimiento(e.seguimiento)}</td></tr>`; }).join("")
     }</tbody></table>` : '<p class="nota" style="margin-top:8px">Todavía no se le mandó ningún mail desde el panel.</p>';
   } catch (e) { cont.innerHTML = ""; }
 }

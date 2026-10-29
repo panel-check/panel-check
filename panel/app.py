@@ -71,6 +71,7 @@ import verificador_api
 import verificador_core
 import mails_api
 import mails_core
+import mails_cola
 import formularios_core
 import inpi_lead
 import listado_inpi
@@ -174,6 +175,7 @@ def migrar_columnas_panel():
             with conn.cursor() as cur:
                 cur.execute("SET lock_timeout = '3s'")
                 mails_core.crear_tablas(cur)
+                mails_cola.crear_tablas(cur)
             conn.commit()
     except Exception as e:
         print(f"[startup] tablas de mails salteadas (no bloqueante): {e}")
@@ -224,6 +226,12 @@ def migrar_columnas_panel():
         programador.iniciar(conexion)
     except Exception as e:
         print(f"[startup] el programador de procesos no arrancó (no bloqueante): {e}")
+    # Cola de mails a prospectos: lo que chocó con el cupo diario de Resend sale solo después de las 21:00
+    # (reinicio del cupo). Ver panel/mails_cola.py.
+    try:
+        mails_cola.iniciar(conexion)
+    except Exception as e:
+        print(f"[startup] la cola de mails no arrancó (no bloqueante): {e}")
     # Vigilancia por concepto: la IA arma la lista de traducciones/sinónimos de las marcas vigiladas que no la
     # tienen. Ver panel/conceptos_vigilancia.py.
     try:

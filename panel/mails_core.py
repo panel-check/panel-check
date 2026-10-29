@@ -990,12 +990,46 @@ def enviar(cuenta: str, remitente: str, responder_a: str, para: list, asunto: st
         import base64
         payload["attachments"] = [{"filename": a["filename"], "content": base64.b64encode(a["content"]).decode("ascii")}
                                   for a in adjuntos]
-    r = requests.post("https://api.resend.com/emails",
-                      headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
-                      json=payload, timeout=30)
+    import time
+    for intento in range(3):
+        r = requests.post("https://api.resend.com/emails",
+                          headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+                          json=payload, timeout=30)
+        if r.status_code != 429:
+            break
+        motivo = _motivo_429(r)
+        if motivo in ("daily_quota_exceeded", "monthly_quota_exceeded"):
+            raise CupoAgotado(cuenta, motivo, r.text[:300])
+        if intento < 2:   # límite de pedidos por segundo: se espera un poco y se reintenta
+            time.sleep(1.5)
     if r.status_code >= 300:
         raise ValueError(f"Resend rechazó el envío ({r.status_code}): {r.text[:300]}")
     return r.json().get("id") or ""
+
+
+class CupoAgotado(ValueError):
+    """Resend no manda más por hoy (daily_quota_exceeded) o por este mes (monthly_quota_exceeded).
+    Es un ValueError para que los que ya atrapan ValueError sigan funcionando igual; los mails a
+    prospectos lo usan para dejar el mail en la cola (ver mails_cola.py)."""
+
+    def __init__(self, cuenta: str, motivo: str, detalle: str = ""):
+        self.cuenta, self.motivo = cuenta, motivo
+        que = "del mes" if motivo == "monthly_quota_exceeded" else "del día"
+        super().__init__(f"Se agotó el cupo {que} de la cuenta «{CUENTAS[cuenta]['nombre']}» de Resend. {detalle}".strip())
+
+
+def _motivo_429(r) -> str:
+    """Nombre del error de un 429 de Resend: daily_quota_exceeded, monthly_quota_exceeded o rate_limit_exceeded."""
+    try:
+        nombre = (r.json() or {}).get("name") or ""
+    except ValueError:
+        nombre = ""
+    texto = (nombre + " " + (r.text or "")).lower()
+    if "monthly" in texto:
+        return "monthly_quota_exceeded"
+    if "daily" in texto or "quota" in texto:
+        return "daily_quota_exceeded"
+    return "rate_limit_exceeded"
 
 
 # ── Avisos de Resend (webhook) ────────────────────────────────────────────
