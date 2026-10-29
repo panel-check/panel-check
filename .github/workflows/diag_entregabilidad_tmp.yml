@@ -2,6 +2,9 @@ name: Diagnóstico entregabilidad (temporal)
 on:
   push:
     branches: [claude/diag-entregabilidad-tmp]
+    paths: [".github/workflows/diag_entregabilidad_tmp.yml", "scripts/diag_entregabilidad_tmp.py"]
+permissions:
+  contents: write
 jobs:
   diag:
     runs-on: ubuntu-latest
@@ -10,4 +13,7 @@ jobs:
       RESEND_API_KEY_PROSPECTOS: ${{ secrets.RESEND_API_KEY_PROSPECTOS }}
     steps:
       - uses: actions/checkout@v4
-      - run: pip install requests && python scripts/diag_entregabilidad_tmp.py
+      - run: pip install requests && python scripts/diag_entregabilidad_tmp.py > diag_salida.txt 2>&1 || true
+      - run: |
+          git config user.name diag; git config user.email diag@example.com
+          git add diag_salida.txt && git commit -m "salida del diagnóstico" && git push
