@@ -1,0 +1,13 @@
+name: Diagnóstico entregabilidad (temporal)
+on:
+  push:
+    branches: [claude/diag-entregabilidad-tmp]
+jobs:
+  diag:
+    runs-on: ubuntu-latest
+    env:
+      RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+      RESEND_API_KEY_PROSPECTOS: ${{ secrets.RESEND_API_KEY_PROSPECTOS }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: pip install requests && python scripts/diag_entregabilidad_tmp.py
