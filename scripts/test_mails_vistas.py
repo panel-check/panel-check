@@ -35,41 +35,35 @@ class MailDeVista(unittest.TestCase):
     def test_esta_en_el_catalogo_como_plantilla_de_prospectos_editable(self):
         cat = mc.CATALOGO[self.K]
         self.assertEqual((cat["grupo"], cat["cuenta"], cat["editable"]), ("prospectos", "prospectos", True))
-        self.assertEqual(cat["encabezado"], "VISTA DEL INPI – OBSERVACIÓN EN TU SOLICITUD DE MARCA")
+        self.assertEqual(cat["encabezado"], "NUEVA VISTA DEL INPI")
         self.assertLessEqual(len(cat["encabezado"]), 60)
         # la configuración por defecto pasa la validación del panel
         mc.validar_config(self.K, {x: cat[x] for x in ("cuenta", "remitente", "responder_a", "destinatarios", "asunto", "cuerpo", "encabezado")})
 
     def test_asunto(self):
-        self.assertEqual(render(self.K)[0], "Tu solicitud de marca recibió una vista del INPI – cómo avanzar")
+        self.assertEqual(render(self.K)[0], "Tu marca HUELLA CORAL recibió una vista del INPI: qué significa y cómo seguir")
 
-    def test_el_subtitulo_va_arriba_con_el_estilo_de_subtitulo(self):
-        sub = "Tu solicitud de registro recibió una observación del INPI que debe ser respondida para continuar con el trámite."
+    def test_es_corto_como_el_de_oposicion(self):
+        # La versión del 29/10/2026 sigue la estructura del mail de oposición (sin subtítulos).
         _, html_, texto = render(self.K)
-        self.assertIn(sub, html_)
-        self.assertIn(f"border-bottom:2px solid {mc.COLOR_DORADO}", html_)
-        self.assertLess(html_.index(sub), html_.index("Hola Tomás"))
-        self.assertTrue(texto.startswith(sub.upper()))
+        self.assertLessEqual(len(mc.CATALOGO[self.K]["cuerpo"].split("Saludos cordiales")[0].split()), 160)
+        self.assertNotIn("¿Qué plazo tenés para responder?", html_)
+        self.assertNotIn("vista administrativa", texto)
 
     def test_saluda_con_el_nombre_y_nombra_la_marca(self):
         _, html_, texto = render(self.K)
-        self.assertIn("Hola Tomás,", texto)
-        self.assertIn("tu solicitud de registro HUELLA CORAL presenta una vista administrativa", texto)
+        self.assertIn("Hola Tomás:", texto)
+        self.assertIn("Vi que tu solicitud de marca HUELLA CORAL recibió una vista del INPI", texto)
 
-    def test_tiene_las_tres_preguntas(self):
-        _, html_, _ = render(self.K)
-        for t in ("¿Qué significa que tu solicitud tenga una vista?", "¿Qué plazo tenés para responder?", "¿Cómo podemos ayudarte?"):
-            self.assertIn(t, html_)
-
-    def test_no_promete_un_plazo_fijo_porque_sirve_para_todos_los_tipos(self):
+    def test_avisa_que_si_no_responde_pueden_rechazarla_sin_plazo_fijo(self):
         _, _, texto = render(self.K)
-        self.assertIn("varían según el tipo de observación", texto)
+        self.assertIn("Si vence sin respuesta, el INPI puede rechazar la solicitud.", texto)
         self.assertNotIn("30 días", texto)
         self.assertNotIn("10 días", texto)
 
     def test_el_boton_de_whatsapp_sale_igual_que_el_de_oposicion(self):
         _, html_, _ = render(self.K)
-        self.assertIn("Escribinos para recibir asesoramiento sobre tu solicitud", html_)
+        self.assertIn("Quiero responder la vista de mi marca", html_)
         self.assertEqual(texto_de_whatsapp(html_), "Hola Pamela, recibí tu mail sobre la vista de mi marca HUELLA CORAL, "
                                                     "acta 4798128, y quiero asesorarme. Mi nombre es ")
         # botón principal: relleno azul, sin el borde de los secundarios
@@ -77,11 +71,11 @@ class MailDeVista(unittest.TestCase):
         self.assertNotIn("border:2px solid #133465", html_)
 
     def test_la_lista_sale_como_lista(self):
-        self.assertEqual(render(self.K)[1].count("<li"), 4)
+        self.assertEqual(render(self.K)[1].count("<li"), 3)
 
     def test_titular_empresa_sin_nombre_de_pila_saluda_sin_coma_suelta(self):
         _, html_, texto = render(self.K, nombre="")
-        self.assertIn("Hola,", texto)
+        self.assertIn("Hola:", texto)
         self.assertNotIn("Hola ,", texto)
         self.assertNotIn("{{", html_)
 

@@ -184,45 +184,25 @@ Registro de Marcas Nacional e Internacional
 [www.smartiesconsultora.com.ar](https://www.smartiesconsultora.com.ar)
 WhatsApp: [+54 9 11 5589-0784](https://wa.me/""" + WHATSAPP_PAMELA + """)"""
 
-ASUNTO_VISTA = "Tu solicitud de marca recibió una vista del INPI – cómo avanzar"
-CUERPO_VISTA = """## Tu solicitud de registro recibió una observación del INPI que debe ser respondida para continuar con el trámite.
+ASUNTO_VISTA = "Tu marca {{marca}} recibió una vista del INPI: qué significa y cómo seguir"
+# Versión corta del 29/10/2026 (aprobada por Pame): misma estructura que el mail de oposición.
+CUERPO_VISTA = """Hola {{nombre}}:
 
-Hola {{nombre}},
+Mi nombre es Pamela, soy Agente de la Propiedad Industrial. Vi que tu solicitud de marca {{marca}} recibió una vista del INPI y quería acercarte una explicación sencilla para que sepas qué significa y cómo avanzar.
 
-Mi nombre es Pamela, soy Agente de Propiedad Industrial y responsable de Smarties Consultora.
+Una vista es una observación que hace el INPI cuando algo de la solicitud necesita una aclaración, una corrección o un fundamento.
 
-Al revisar el estado de los trámites de marcas ante el Instituto Nacional de la Propiedad Industrial (INPI), detecté que tu solicitud de registro {{marca}} presenta una vista administrativa.
+No significa que tu marca haya sido rechazada, pero hay que responderla dentro de un plazo. Si vence sin respuesta, el INPI puede rechazar la solicitud.
 
-Quería acercarte una breve explicación sobre qué significa esta observación y cómo podemos ayudarte a continuar con el trámite.
+Desde Smarties Consultora puedo ayudarte a:
 
-## ¿Qué significa que tu solicitud tenga una vista?
+* Revisar la vista y explicarte qué pide el INPI.
+* Preparar y presentar la respuesta dentro del plazo.
+* Acompañarte en el resto del trámite.
 
-Durante el proceso de registro, el INPI analiza si la solicitud cumple con los requisitos formales y legales establecidos por la normativa vigente.
+Si querés avanzar, podés escribirme directamente desde este botón:
 
-Cuando identifica alguna cuestión que requiere aclaración, corrección o fundamentación, emite una vista para que el solicitante pueda responder.
-
-Esto no significa necesariamente que tu marca haya sido rechazada, sino que existe una observación que debe ser analizada para determinar cómo continuar con el trámite.
-
-## ¿Qué plazo tenés para responder?
-
-Las vistas tienen plazos específicos de respuesta, que varían según el tipo de observación formulada por el INPI.
-
-Estos plazos se computan a partir de la notificación electrónica correspondiente. Si la vista no se responde dentro del plazo establecido, el INPI puede resolver la solicitud sin que se hayan subsanado las observaciones, lo que podría derivar en el rechazo del registro de tu marca.
-
-Por eso, es importante revisar el expediente y presentar la contestación correspondiente dentro del plazo.
-
-## ¿Cómo podemos ayudarte?
-
-Desde Smarties Consultora podemos:
-
-* Revisar tu expediente e identificar los motivos de la observación.
-* Evaluar las alternativas disponibles para continuar con el registro.
-* Preparar y presentar la contestación correspondiente ante el INPI.
-* Realizar el seguimiento del trámite durante las siguientes etapas.
-
-Si todavía no contás con asesoramiento profesional, podemos ayudarte a evaluar la situación de tu marca y definir cómo avanzar.
-
-[Escribinos para recibir asesoramiento sobre tu solicitud](https://wa.me/""" + WHATSAPP_PAMELA + """?text=Hola Pamela, recibí tu mail sobre la vista de mi marca {{marca}}, acta {{acta}}, y quiero asesorarme. Mi nombre es )
+[Quiero responder la vista de mi marca](https://wa.me/""" + WHATSAPP_PAMELA + """?text=Hola Pamela, recibí tu mail sobre la vista de mi marca {{marca}}, acta {{acta}}, y quiero asesorarme. Mi nombre es )
 
 Saludos cordiales,
 Pamela Guzzardi
@@ -461,12 +441,12 @@ CATALOGO = {
     "prospecto_vista": {
         "grupo": "prospectos",
         "nombre": "Recibió una vista",
-        "descripcion": "Mail de Pamela a un solicitante sin agente cuya marca recibió una vista de INPI antes de publicarse. Es el mismo para todos los tipos de vista (de fondo, Convenio de París, logos y productos/servicios): explica qué es una vista, que el plazo depende del tipo de observación y se cuenta desde la notificación electrónica, y ofrece revisar el expediente y presentar la contestación, con botón a su WhatsApp con el mensaje ya escrito. Se manda a mano desde la ficha de cada lead (no hay envío automático).",
+        "descripcion": "Mail de Pamela a un solicitante sin agente cuya marca recibió una vista de INPI antes de publicarse. Es el mismo para todos los tipos de vista (de fondo, Convenio de París, logos y productos/servicios): explica en pocas líneas qué es una vista y que si no se responde a tiempo el INPI puede rechazar la solicitud, y ofrece revisarla y presentar la respuesta, con botón a su WhatsApp con el mensaje ya escrito. Se manda a mano desde la ficha de cada lead (no hay envío automático).",
         "cuenta": "prospectos",
         "remitente": "Smarties <smarties@registrodemimarca.com.ar>",
         "responder_a": "info@smartiesconsultora.com.ar",
         "destinatarios": "",
-        "encabezado": "VISTA DEL INPI – OBSERVACIÓN EN TU SOLICITUD DE MARCA",
+        "encabezado": "NUEVA VISTA DEL INPI",
         "asunto": ASUNTO_VISTA,
         "cuerpo": CUERPO_VISTA,
         "editable": True,
@@ -535,6 +515,16 @@ def crear_tablas(cur):
         """
     )
     cur.execute("ALTER TABLE mails_config ADD COLUMN IF NOT EXISTS encabezado TEXT")
+    # 29/10/2026: el mail de vista pasó a la versión corta. Si en la base quedó
+    # guardado el texto largo anterior, se borra el asunto/cuerpo/encabezado
+    # para que tome la plantilla nueva (cuenta, remitente y reply-to se respetan).
+    cur.execute(
+        """
+        UPDATE mails_config SET asunto = NULL, cuerpo = NULL, encabezado = NULL
+        WHERE clave = 'prospecto_vista' AND cuerpo LIKE %s
+        """,
+        ("%¿Qué plazo tenés para responder?%",),
+    )
     # Mails a prospectos mandados a mano desde la ficha de un lead.
     cur.execute(
         """
