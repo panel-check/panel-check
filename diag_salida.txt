@@ -1,0 +1,3 @@
+PATCH 200 {"object":"domain","id":"220593d0-b0c6-4fb1-a565-51c38b157c52"}
+smartiesconsultora.com.ar: open_tracking=False click_tracking=False
+registrodemimarca.com.ar: open_tracking=True click_tracking=True
