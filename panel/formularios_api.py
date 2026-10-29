@@ -33,6 +33,7 @@ from pydantic import BaseModel
 import auth
 import formularios_core as fc
 import mails_core
+import mails_cola
 import poderes
 import toma_intervencion as ti
 
@@ -222,8 +223,13 @@ def crear_router(verificar_login, conexion) -> APIRouter:
                 asunto, cuerpo_html, texto = mails_core.render_prospecto(
                     cfg["asunto"], cfg["cuerpo"], fc.datos_mail_poder(datos), cfg.get("encabezado"),
                     simple=mails_core.es_simple(fc.CLAVE_MAIL_PODER))
-                mails_core.enviar(cfg["cuenta"], cfg["remitente"], cfg["responder_a"], [email], asunto, cuerpo_html, texto,
-                                  [{"filename": poderes.nombre_archivo(d, "pdf"), "content": pdf}])
+                r = mails_cola.enviar_o_encolar(
+                    conexion, cuenta=cfg["cuenta"], remitente=cfg["remitente"], responder_a=cfg["responder_a"], para=[email],
+                    asunto=asunto, html=cuerpo_html, texto=texto,
+                    adjuntos=[{"filename": poderes.nombre_archivo(d, "pdf"), "content": pdf}],
+                    clave_mail=fc.CLAVE_MAIL_PODER, origen="formulario", al_enviar={"tabla": "formularios_respuestas", "id": respuesta_id})
+                if r["en_cola"]:   # cupo de Resend agotado: sale solo después de las 21:00 (ver mails_cola.py)
+                    error = mails_cola.AVISO_EN_COLA
                 with conexion() as conn:
                     with conn.cursor() as cur:
                         cur.execute("INSERT INTO poderes_generados (cliente_id, datos, apoderado, generado_por) VALUES (%s, %s, %s, %s)",

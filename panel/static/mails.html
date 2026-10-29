@@ -74,6 +74,16 @@
   .estado.abierto { background: #eef4ff; color: #1d4ed8; }
   .estado.clic { background: #fef3c7; color: #92400e; }
   .estado.mal { background: #fee4e2; color: #b42318; }
+  .cola-mails { border: 1px solid #fedf89; background: #fffcf5; border-radius: 10px; padding: 10px 12px; margin: 0 0 14px; font-size: 13px; }
+  .cola-mails h3 { margin: 0 0 6px; font-size: 14px; color: #93370d; }
+  .cola-mails table { width: 100%; border-collapse: collapse; }
+  .cola-mails td, .cola-mails th { text-align: left; padding: 5px 6px; border-top: 1px solid #fef0c7; vertical-align: top; }
+  .cola-mails th { font-weight: 600; color: #475467; border-top: 0; font-size: 12px; }
+  .cola-mails .est { font-size: 11px; font-weight: 600; border-radius: 10px; padding: 2px 8px; white-space: nowrap; background: #fef0c7; color: #93370d; }
+  .cola-mails .est.error, .cola-mails .est.cancelado { background: #fee4e2; color: #b42318; }
+  .cola-mails .est.enviado { background: #e7f6ec; color: #067647; }
+  .cola-mails button { font-size: 12px; padding: 3px 8px; }
+  .cola-mails .sub { font-size: 12px; color: var(--gris); }
   .aviso-env { background: #fffaeb; border: 1px solid #fedf89; color: #93370d; border-radius: 8px; padding: 10px 12px; font-size: 13px; margin-bottom: 12px; }
   .tabs-mails { display: flex; gap: 4px; border-bottom: 1px solid var(--borde); margin-bottom: 18px; }
   .tabs-mails button {
@@ -198,6 +208,7 @@
       <em>Mostrar mails internos</em>.</p>
     <div id="env-aviso"></div>
     <div id="env-cupo" class="cupo-hoy"></div>
+    <div id="env-cola"></div>
     <div class="env-filtros">
       <input type="text" id="env-buscar" placeholder="Buscar por mail, asunto, marca o titular" />
       <select id="env-estado">
@@ -783,7 +794,7 @@ async function cargarEnviados(mas = false) {
   const msg = document.getElementById("env-msg");
   const internos = document.getElementById("env-internos").checked;
   msg.textContent = "Cargando…"; msg.className = "msg ok";
-  if (!mas) cargarCupo();
+  if (!mas) { cargarCupo(); cargarCola(); }
   const params = new URLSearchParams();
   if (internos) params.set("internos", "true");
   if (mas) {
@@ -806,6 +817,39 @@ async function cargarEnviados(mas = false) {
     pintarEnviados();
   } catch (e) { msg.textContent = e.message; msg.className = "msg err"; if (!mas) document.getElementById("env-tabla").innerHTML = ""; }
 }
+// Cola: mails a prospectos que chocaron con el cupo diario de Resend; salen solos después de las 21:00.
+async function cargarCola() {
+  const caja = document.getElementById("env-cola");
+  let filas;
+  try { filas = await api("/api/mails/cola"); } catch (e) { caja.innerHTML = ""; return; }
+  if (!filas.length) { caja.innerHTML = ""; return; }
+  const esperando = filas.filter(f => f.estado === "pendiente").length;
+  const nombreEst = { pendiente: "En cola", error: "No salió", enviado: "Salió", cancelado: "Cancelado" };
+  caja.innerHTML = `<div class="cola-mails"><h3>⏳ Cola de envío${esperando ? ` · ${esperando} esperando` : ""}</h3>
+    <p class="sub" style="margin:0 0 6px">Mails a prospectos que no salieron porque se agotó el cupo diario de Resend. Salen solos, en orden de llegada, desde las 21:02 (hora Argentina). Abajo quedan también los de las últimas 48 horas.</p>
+    <table><thead><tr><th>Encolado</th><th>Para</th><th>Mail</th><th>Estado</th><th></th></tr></thead><tbody>${
+    filas.map(f => {
+      const cuando = f.estado === "pendiente" ? `sale ${fechaCorta(f.intentar_desde)}` : f.estado === "enviado" ? fechaCorta(f.enviado_en) : "";
+      const err = f.ultimo_error ? ` title="${esc(f.ultimo_error)}"` : "";
+      const acciones = ["pendiente", "error"].includes(f.estado)
+        ? `<button type="button" class="secundario" data-cola-reintentar="${f.id}" title="Prueba de mandarlo en el próximo minuto; si sigue sin cupo, vuelve a esperar las 21:00">Probar ahora</button>
+           <button type="button" class="secundario" data-cola-cancelar="${f.id}">Cancelar</button>` : "";
+      return `<tr><td>${esc(fechaCorta(f.encolado_en))}${f.encolado_por ? `<div class="sub">${esc(f.encolado_por)}</div>` : ""}</td>
+        <td>${esc(f.para)}</td>
+        <td>${esc(f.plantilla || f.asunto)}${f.acta ? `<div class="sub">${esc(f.marca || "")} · acta ${esc(f.acta)}</div>` : `<div class="sub">${esc(f.origen || "")}</div>`}</td>
+        <td><span class="est ${esc(f.estado)}"${err}>${esc(nombreEst[f.estado] || f.estado)}</span> <span class="sub">${esc(cuando)}</span></td>
+        <td>${acciones}</td></tr>`;
+    }).join("")}</tbody></table></div>`;
+  caja.querySelectorAll("[data-cola-cancelar]").forEach(b => b.addEventListener("click", async () => {
+    if (!confirm("¿Sacar este mail de la cola? No va a salir.")) return;
+    try { await apiJson(`/api/mails/cola/${b.dataset.colaCancelar}/cancelar`, "POST"); cargarCola(); } catch (e) { alert(e.message); }
+  }));
+  caja.querySelectorAll("[data-cola-reintentar]").forEach(b => b.addEventListener("click", async () => {
+    try { await apiJson(`/api/mails/cola/${b.dataset.colaReintentar}/reintentar`, "POST"); b.textContent = "En el próximo minuto…"; b.disabled = true; setTimeout(cargarCola, 70000); }
+    catch (e) { alert(e.message); }
+  }));
+}
+
 async function cargarCupo() {
   const caja = document.getElementById("env-cupo");
   try {
@@ -816,7 +860,7 @@ async function cargarCupo() {
       const pct = Math.min(100, Math.round(c.enviados * 100 / c.limite));
       const clase = c.enviados >= c.limite ? "lleno" : (pct >= 80 ? "alto" : "");
       return `<span class="${clase}"><strong>${nombre}:</strong> ${c.enviados} de ${c.limite} hoy<span class="barra"><i style="width:${pct}%"></i></span></span>`;
-    }).join("") + '<span class="sub">Límite diario del plan free de Resend; se reinicia a las 21:00 (hora Argentina).</span>';
+    }).join("") + '<span class="sub">Límite diario del plan free de Resend; se reinicia a las 21:00 (hora Argentina). Lo que choca con el límite queda en cola y sale solo después.</span>';
   } catch (e) { caja.innerHTML = ""; }
 }
 ["env-buscar", "env-estado", "env-origen", "env-tipo"].forEach(id => document.getElementById(id).addEventListener("input", pintarEnviados));
