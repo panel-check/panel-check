@@ -507,6 +507,12 @@ def _correr_alters_panel(cur):
                         ("vista_pdf_leido_en", "TIMESTAMPTZ"), ("contactado_prebol_en", "TIMESTAMPTZ"),
                         ("vista_motivo", "TEXT")):
         cur.execute(f"ALTER TABLE marcas ADD COLUMN IF NOT EXISTS {_col} {_tipo}")
+    # Vista marcada a mano como «ya la contestaron» desde la ficha (el titular la
+    # contestó por su cuenta): pasa a resuelta y guarda lo anterior para deshacerlo.
+    for _col, _tipo in (("vista_contestada_manual", "BOOLEAN"), ("vista_contestada_manual_en", "TIMESTAMPTZ"),
+                        ("vista_contestada_manual_por", "TEXT"), ("vista_estado_previo", "TEXT"),
+                        ("vista_sirve_previo", "BOOLEAN")):
+        cur.execute(f"ALTER TABLE marcas ADD COLUMN IF NOT EXISTS {_col} {_tipo}")
     # Lead marcado a mano como "tiene gestor/apoderado" desde la ficha: sale de los
     # leads (es_lead = false) y guarda lo anterior para poder deshacerlo.
     for _col, _tipo in (("con_gestor_manual", "BOOLEAN"), ("con_gestor_manual_en", "TIMESTAMPTZ"),
@@ -1862,6 +1868,50 @@ def marcar_oposicion_atendida(datos: OposicionAtendida, usuario: str = Depends(v
     return {"ok": True, "marcas": cambiadas}
 
 
+class VistaContestada(BaseModel):
+    actas: list[str]
+    contestada: bool = True
+
+
+@app.post("/api/marcas/vista-contestada")
+def marcar_vista_contestada(datos: VistaContestada, usuario: str = Depends(verificar_login)):
+    """Botón «Ya la contestaron» de la ficha del titular para una vista de INPI antes
+    de publicar: el titular la contestó por su cuenta. La vista pasa a «resuelta»
+    (no sirve para ofrecer ayuda, sale de alertas y filtros, y la revisión de vistas
+    no la vuelve a mirar). Guarda el estado anterior para poder deshacerlo."""
+    if not datos.actas:
+        raise HTTPException(status_code=400, detail="Falta indicar las actas")
+    with conexion() as conn:
+        with conn.cursor() as cur:
+            if datos.contestada:
+                cur.execute(
+                    """
+                    UPDATE marcas
+                    SET vista_estado_previo = vista_estado, vista_sirve_previo = vista_sirve,
+                        vista_estado = 'resuelta', vista_sirve = false,
+                        vista_contestada_manual = true, vista_contestada_manual_en = now(),
+                        vista_contestada_manual_por = %s
+                    WHERE acta = ANY(%s) AND tuvo_vista IS TRUE AND vista_contestada_manual IS NOT TRUE
+                    """,
+                    (usuario, datos.actas),
+                )
+            else:
+                cur.execute(
+                    """
+                    UPDATE marcas
+                    SET vista_estado = vista_estado_previo, vista_sirve = vista_sirve_previo,
+                        vista_estado_previo = NULL, vista_sirve_previo = NULL,
+                        vista_contestada_manual = NULL, vista_contestada_manual_en = NULL,
+                        vista_contestada_manual_por = NULL
+                    WHERE acta = ANY(%s) AND vista_contestada_manual IS TRUE
+                    """,
+                    (datos.actas,),
+                )
+            cambiadas = cur.rowcount
+        conn.commit()
+    return {"ok": True, "marcas": cambiadas}
+
+
 @app.post("/api/marcas/{acta}/contactado")
 def marcar_contactado(acta: str, valor: bool = True, usuario: str = Depends(verificar_login)):
     """Marca/desmarca un acta como contactada. Además acompaña al CRM: si el
@@ -2750,7 +2800,9 @@ def _sql_leads(con_filtro_lead: bool = True, filtrar_actas: bool = False) -> str
             SELECT m.acta, m.titular, m.cuit, m.email, m.es_lead, m.actualizado_en, m.clase,
                    m.denominacion_inpi, m.denominacion, m.lead_score, m.tuvo_oposicion,
                    m.representacion_posterior_oposicion, m.revisado_oposicion_en, m.boletin,
-                   m.oposicion_atendida, m.tuvo_vista, m.vista_sirve,
+                   m.oposicion_atendida, m.oposicion_atendida_en, m.oposicion_atendida_por,
+                   m.tuvo_vista, m.vista_sirve,
+                   m.vista_contestada_manual, m.vista_contestada_manual_en, m.vista_contestada_manual_por,
                    m.con_gestor_manual, m.con_gestor_manual_en, m.con_gestor_manual_por, m.gestor_nombre,
                    m.estado_tramite, m.creado_en, m.fecha_publicacion, m.fecha_presentacion,
                    COALESCE(cc.clave, {CLAVE_RESPALDO_SQL}) AS clave
@@ -2793,6 +2845,14 @@ def _sql_leads(con_filtro_lead: bool = True, filtrar_actas: bool = False) -> str
                 bool_or(tuvo_vista IS TRUE AND vista_sirve IS TRUE
                         AND con_gestor_manual IS NOT TRUE) AS vista_sin_apoderado,
                 bool_or(tuvo_oposicion IS TRUE AND oposicion_atendida IS TRUE) AS oposicion_atendida,
+                max(oposicion_atendida_en) FILTER (WHERE tuvo_oposicion IS TRUE AND oposicion_atendida IS TRUE) AS oposicion_atendida_en,
+                (array_agg(oposicion_atendida_por ORDER BY oposicion_atendida_en DESC NULLS LAST)
+                    FILTER (WHERE tuvo_oposicion IS TRUE AND oposicion_atendida IS TRUE))[1] AS oposicion_atendida_por,
+                -- Vista marcada a mano como contestada por el titular (botón «Ya la contestaron»).
+                bool_or(vista_contestada_manual IS TRUE) AS vista_contestada_manual,
+                max(vista_contestada_manual_en) FILTER (WHERE vista_contestada_manual IS TRUE) AS vista_contestada_manual_en,
+                (array_agg(vista_contestada_manual_por ORDER BY vista_contestada_manual_en DESC NULLS LAST)
+                    FILTER (WHERE vista_contestada_manual IS TRUE))[1] AS vista_contestada_manual_por,
                 max(revisado_oposicion_en) FILTER (WHERE tuvo_oposicion IS TRUE) AS oposicion_detectada_en,
                 bool_or(boletin IS NULL) AS pre_boletin,
                 bool_or(estado_tramite = 'Concedida') AS alguna_concedida,
