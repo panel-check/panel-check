@@ -55,8 +55,11 @@ MAX_ARCHIVO = 10 * 1024 * 1024  # 10 MB, igual que en Google Forms
 # Persona física: qué servicio pide (decide qué preguntas de la marca se muestran).
 SERVICIO_NUEVA = "Registro de una nueva marca"
 SERVICIO_OPOSICION = "Responder a las oposiciones recibidas"
+SERVICIO_VISTAS = "Respuesta de Vistas"
 SI_NUEVA = {"campo": "servicio", "valor": SERVICIO_NUEVA}
 SI_OPOSICION = {"campo": "servicio", "valor": SERVICIO_OPOSICION}
+# Oposiciones y vistas son sobre una marca ya presentada: comparten nombre, descripción y web/redes.
+SI_OPOSICION_O_VISTAS = {"campo": "servicio", "valores": [SERVICIO_OPOSICION, SERVICIO_VISTAS]}
 
 FORMULARIOS = {
     "persona-fisica": {
@@ -88,7 +91,7 @@ FORMULARIOS = {
             {"id": "conyuge_dni", "tipo": "texto", "etiqueta": "DNI del cónyuge", "obligatorio": False,
              "cliente": "conyuge_dni", "formato": "dni", "si": {"campo": "estado_civil", "valor": "Casado/a"}},
             {"id": "servicio", "tipo": "opcion", "etiqueta": "¿Qué servicio solicitás?", "obligatorio": True,
-             "opciones": [SERVICIO_NUEVA, SERVICIO_OPOSICION]},
+             "opciones": [SERVICIO_NUEVA, SERVICIO_OPOSICION, SERVICIO_VISTAS]},
             # ── Opción 1: registro de una nueva marca ──
             {"id": "empresa_nombre", "tipo": "texto", "etiqueta": "Nombre de la empresa", "obligatorio": True, "si": SI_NUEVA},
             {"id": "rubro", "tipo": "texto", "etiqueta": "Rubro", "obligatorio": True, "si": SI_NUEVA},
@@ -101,11 +104,15 @@ FORMULARIOS = {
             {"id": "nueva_logo", "tipo": "archivo", "etiqueta": "Adjunte su logo", "obligatorio": True,
              "ayuda": "Imagen (JPG, PNG, WEBP, GIF) o PDF. Máximo 10 MB.", "mimes": MIME_LOGO,
              "si": [SI_NUEVA, {"campo": "nueva_tiene_logo", "valor": "SI"}]},
-            # ── Opción 2: responder a las oposiciones recibidas ──
-            {"id": "marca_nombre", "tipo": "texto", "etiqueta": "Nombre de la marca", "obligatorio": True, "si": SI_OPOSICION},
+            # ── Opción 2: responder a las oposiciones recibidas y Opción 3: respuesta de vistas ──
+            {"id": "marca_nombre", "tipo": "texto", "etiqueta": "Nombre de la marca", "obligatorio": True, "si": SI_OPOSICION_O_VISTAS},
             {"id": "marca_descripcion", "tipo": "parrafo",
              "etiqueta": "Describa de manera sencilla pero a la vez completa los servicios y/o productos que brinda su marca",
-             "obligatorio": False, "si": SI_OPOSICION},
+             "obligatorio": False, "si": SI_OPOSICION_O_VISTAS},
+            {"id": "marca_web_redes", "tipo": "texto", "etiqueta": "Web o Redes", "obligatorio": False,
+             "ayuda": "La página web o las redes de la marca (por ejemplo, @tumarca en Instagram). Si no tiene, dejalo vacío.",
+             "si": SI_OPOSICION_O_VISTAS},
+            # el logo se pide solo para responder oposiciones
             {"id": "tiene_logo", "tipo": "opcion", "etiqueta": "¿Tiene logo?", "obligatorio": True, "opciones": ["SI", "NO"],
              "si": SI_OPOSICION},
             {"id": "logo", "tipo": "archivo", "etiqueta": "Adjunte su logo en el tamaño 4x4", "obligatorio": True,
@@ -218,12 +225,13 @@ def campo_visible(campo: dict, valores: dict) -> bool:
     if not cond:
         return True
     conds = cond if isinstance(cond, list) else [cond]
-    return all((valores.get(c["campo"]) or "") == c["valor"] for c in conds)
+    # cada condición pide un valor («valor») o uno entre varios («valores»)
+    return all((valores.get(c["campo"]) or "") in (c["valores"] if "valores" in c else [c["valor"]]) for c in conds)
 
 
 def nombre_marca(datos: dict) -> str:
     """Nombre de la marca de una respuesta: según el servicio es «marca_nombre»
-    (responder oposiciones) o «empresa_nombre» (registro de una nueva marca)."""
+    (responder oposiciones o vistas) o «empresa_nombre» (registro de una nueva marca)."""
     return datos.get("marca_nombre") or datos.get("empresa_nombre") or ""
 
 
