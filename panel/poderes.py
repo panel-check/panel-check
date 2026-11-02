@@ -131,7 +131,24 @@ def _lugar_fecha(d):
         if "república argentina" not in d["lugar"].lower() else f"{d['lugar'].strip()}, el {fecha_larga(d['fecha'])}."
 
 
-def generar_pdf(d: dict, apoderado: str) -> bytes:
+# Pasos para que el poder entre siempre en UNA hoja A4 (pedido de Pame, 02/11/2026): primero se arma con el
+# diseño normal y, si no entra, se van achicando los espacios en blanco y después la letra, hasta que entre.
+# (tamaño de letra, interlineado, escala de los espacios en blanco, ancho del logo en cm)
+_AJUSTES_UNA_HOJA = [
+    (12, 14.6, 1.0, 3.6),
+    (12, 14.6, 0.6, 3.6),
+    (12, 14.0, 0.4, 3.0),
+    (11.5, 13.4, 0.35, 3.0),
+    (11, 12.8, 0.3, 2.6),
+    (10.5, 12.2, 0.25, 2.4),
+    (10, 11.6, 0.2, 2.2),
+    (9.5, 11.0, 0.2, 2.0),
+    (9, 10.4, 0.15, 1.8),
+]
+
+
+def _armar_pdf(d: dict, apoderado: str, letra, interlineado, esc, logo_cm):
+    """Arma el PDF con un ajuste dado; devuelve (bytes, cantidad de hojas)."""
     from reportlab.lib.enums import TA_CENTER, TA_JUSTIFY
     from reportlab.lib.pagesizes import A4
     from reportlab.lib.styles import ParagraphStyle
@@ -142,28 +159,44 @@ def generar_pdf(d: dict, apoderado: str) -> bytes:
     buf = io.BytesIO()
     doc = SimpleDocTemplate(buf, pagesize=A4, leftMargin=2.6 * cm, rightMargin=2.2 * cm, topMargin=1.4 * cm,
                             bottomMargin=1.6 * cm, title="Poder", author="")
-    cuerpo = ParagraphStyle("c", fontName="Times-Roman", fontSize=12, leading=14.6, alignment=TA_JUSTIFY)
+    cuerpo = ParagraphStyle("c", fontName="Times-Roman", fontSize=letra, leading=interlineado, alignment=TA_JUSTIFY)
     titulo = ParagraphStyle("t", parent=cuerpo, alignment=TA_CENTER)
     normal = ParagraphStyle("n", parent=cuerpo, alignment=0)
+
+    def esp(alto_cm):
+        return Spacer(1, alto_cm * esc * cm)
+
     h = []
     if os.path.exists(LOGO):
-        img = Image(LOGO, width=3.6 * cm, height=3.6 * cm * 176 / 280)
+        img = Image(LOGO, width=logo_cm * cm, height=logo_cm * cm * 176 / 280)
         img.hAlign = "LEFT"
-        h += [img, Spacer(1, 0.5 * cm)]
+        h += [img, esp(0.5)]
     else:
-        h.append(Spacer(1, 2.5 * cm))
-    h += [Paragraph("<u>Poder</u>", titulo), Spacer(1, 0.5 * cm),
+        h.append(esp(2.5))
+    h += [Paragraph("<u>Poder</u>", titulo), esp(0.5),
           Paragraph(escape(_parrafo_inicial(d, apoderado)), cuerpo),
           Paragraph(escape(CONSTANCIA), cuerpo),
-          Spacer(1, 1.9 * cm),
+          esp(1.9),
           Paragraph(escape(_lugar_fecha(d)), normal),
-          Spacer(1, 1.8 * cm),
-          Paragraph("FIRMA", normal), Spacer(1, 1.0 * cm),
+          # el lugar para la firma nunca baja de ~1,2 cm, aunque se achique todo lo demás
+          Spacer(1, max(1.8 * esc, 1.2) * cm),
+          Paragraph("FIRMA", normal), Spacer(1, max(1.0 * esc, 0.6) * cm),
           Paragraph("ACLARACIÓN: " + LINEA_FIRMA, normal)]
     if d.get("tipo_persona") == "juridica":
-        h += [Spacer(1, 0.9 * cm), Paragraph("CARGO: " + LINEA_FIRMA, normal)]
+        h += [Spacer(1, max(0.9 * esc, 0.6) * cm), Paragraph("CARGO: " + LINEA_FIRMA, normal)]
     doc.build(h)
-    return buf.getvalue()
+    return buf.getvalue(), doc.page
+
+
+def generar_pdf(d: dict, apoderado: str) -> bytes:
+    """PDF del poder, siempre en una sola hoja: si con el diseño normal no entra (domicilio o apoderado muy
+    largos), achica primero los espacios y después la letra. Si ni con el ajuste más chico entra, sale igual."""
+    pdf = b""
+    for ajuste in _AJUSTES_UNA_HOJA:
+        pdf, hojas = _armar_pdf(d, apoderado, *ajuste)
+        if hojas <= 1:
+            break
+    return pdf
 
 
 def generar_docx(d: dict, apoderado: str) -> bytes:
