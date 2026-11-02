@@ -64,8 +64,8 @@ SI_OPOSICION_O_VISTAS = {"campo": "servicio", "valores": [SERVICIO_OPOSICION, SE
 FORMULARIOS = {
     "persona-fisica": {
         "tipo_persona": "fisica",
-        "titulo": "Formulario para Registro de Marca – Persona Física",
-        "descripcion": "Completá este formulario si querés registrar la marca a tu nombre (como persona física). "
+        "titulo": "Formulario de Marcas – Persona Física",
+        "descripcion": "Completá este formulario (como persona física). "
                        "Algunos de los datos solicitados al completar el formulario generarán un PDF automático que se te enviará por email.",
         "otro": {"slug": "persona-juridica", "texto": "¿La marca va a nombre de una empresa? Completá el formulario de Persona Jurídica"},
         "campos": [
