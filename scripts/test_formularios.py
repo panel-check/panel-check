@@ -15,6 +15,7 @@ BASE = {
 NUEVA = {"servicio": fc.SERVICIO_NUEVA, "empresa_nombre": "Luna", "rubro": "Gastronomía",
          "actividad_descripcion": "Venta de café", "web_redes": "@luna", "nueva_tiene_logo": "NO"}
 OPOSICION = {"servicio": fc.SERVICIO_OPOSICION, "marca_nombre": "Luna", "tiene_logo": "NO"}
+VISTAS = {"servicio": fc.SERVICIO_VISTAS, "marca_nombre": "Luna"}
 
 
 def _png():
@@ -70,14 +71,38 @@ class ServicioPersonaFisica(unittest.TestCase):
         _, validos = validar(extra, {"logo": ("logo.png", "image/png", PNG)})
         self.assertEqual([v["campo"] for v in validos], ["logo"])
 
+    def test_oposicion_guarda_web_o_redes_opcional(self):
+        datos, _ = validar({**OPOSICION, "marca_web_redes": "@luna"})
+        self.assertEqual(datos["marca_web_redes"], "@luna")
+        self.assertNotIn("marca_web_redes", validar(OPOSICION)[0])
+
+    def test_vistas_es_una_opcion_y_pide_nombre_descripcion_y_web(self):
+        servicio = next(c for c in fc.FORMULARIOS["persona-fisica"]["campos"] if c["id"] == "servicio")
+        self.assertIn("Respuesta de Vistas", servicio["opciones"])
+        datos, _ = validar({**VISTAS, "marca_descripcion": "Venta de café", "marca_web_redes": "www.luna.com"})
+        self.assertEqual((datos["marca_nombre"], datos["marca_descripcion"], datos["marca_web_redes"]),
+                         ("Luna", "Venta de café", "www.luna.com"))
+        self.assertEqual(fc.nombre_marca(datos), "Luna")
+        with self.assertRaises(fc.ErrorFormulario) as e:
+            validar({"servicio": fc.SERVICIO_VISTAS})
+        self.assertIn("Nombre de la marca", str(e.exception))
+
+    def test_vistas_no_pide_logo_ni_campos_de_marca_nueva(self):
+        datos, validos = validar({**VISTAS, "tiene_logo": "SI", "web_redes": "@x", "rubro": "Y"},
+                                 {"logo": ("l.png", "image/png", PNG)})
+        for campo in ("tiene_logo", "web_redes", "rubro"):
+            self.assertNotIn(campo, datos)
+        self.assertEqual(validos, [])
+
     def test_no_se_mezclan_las_respuestas_de_la_otra_opcion(self):
         datos, validos = validar({**OPOSICION, "empresa_nombre": "X", "rubro": "Y", "nueva_tiene_logo": "SI"},
                                  {"nueva_logo": ("l.png", "image/png", PNG)})
         self.assertNotIn("empresa_nombre", datos)
         self.assertNotIn("rubro", datos)
         self.assertEqual(validos, [])
-        datos, _ = validar({**NUEVA, "marca_nombre": "Z", "tiene_logo": "SI"})
+        datos, _ = validar({**NUEVA, "marca_nombre": "Z", "tiene_logo": "SI", "marca_web_redes": "@z"})
         self.assertNotIn("marca_nombre", datos)
+        self.assertNotIn("marca_web_redes", datos)
 
     def test_nombre_de_marca_y_asunto_del_mail(self):
         self.assertEqual(fc.nombre_marca({"empresa_nombre": "Luna"}), "Luna")
