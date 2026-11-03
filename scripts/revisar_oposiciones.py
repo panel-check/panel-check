@@ -89,6 +89,7 @@ import psycopg2
 
 import monitor_bloqueo
 from registro import registrar
+from misma_marca import marcar_por_misma_marca
 import psycopg2.extras
 
 from oposiciones_expediente import (
@@ -541,6 +542,8 @@ def main():
                     cur.execute("UPDATE boletines SET oposiciones_buscadas_en = now() WHERE numero = %s",
                                 (args.boletin,))
                 conn.commit()
+        # Oposición o vista en un acta cuya gemela (mismo titular y mismo nombre) ya se contactó: queda contactada.
+        marcar_por_misma_marca(conn)
         registrar("revisar_oposiciones.yml", {
             "revisadas": revisadas - sin_consulta, "con_oposicion": con_oposicion,
             "sin_oposicion": revisadas - sin_consulta - con_oposicion,

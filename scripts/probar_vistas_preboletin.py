@@ -73,6 +73,7 @@ import psycopg2
 import psycopg2.extras
 
 import monitor_bloqueo
+from misma_marca import marcar_por_misma_marca
 from feriados import ahora_argentina, hoy_argentina
 from oposiciones_expediente import clasificar_estado_oposicion, consultar_expediente
 from validar_leads import _parsear_fecha_grilla, buscar_archivos_grilla, crear_sesion
@@ -439,6 +440,8 @@ def main():
     hoy_iso = hoy_argentina()
     if args.guardar:
         cerrar_denegadas_conocidas(conn)
+        # Antes de elegir: las vistas ya conocidas en un acta cuya gemela (mismo nombre) se contactó no se revisan más.
+        marcar_por_misma_marca(conn)
     with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
         if actas_pedidas:
             cur.execute(
@@ -614,6 +617,8 @@ def main():
 
     if args.guardar:
         enviar_aviso_vistas(sin_entender)
+        # Vista en un acta cuya gemela (mismo titular y mismo nombre) ya se contactó: queda contactada.
+        marcar_por_misma_marca(conn)
         conn.close()
         lineas.append("Resultado guardado en el panel (columnas de vista de cada marca)")
     print("\n=== Resultado de la prueba ===")
