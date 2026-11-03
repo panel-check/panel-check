@@ -3141,12 +3141,22 @@ def _registrar_actividad(cur, clave, autor, tipo, texto):
 
 
 def _sincronizar_contactado(cur, clave: str, etapa: str):
-    """Mantiene la columna `contactado` de las marcas del titular alineada con
-    la etapa del CRM (el filtro "Contactado" del panel principal sigue
-    funcionando igual): "nuevo" = sin contactar; cualquier otra etapa
-    (incluido "descartado") = gestionado. Es de mejor esfuerzo: si la tabla
-    `marcas` está trabada por una corrida larga del pipeline, se saltea sin
-    romper el guardado del CRM."""
+    """Acompaña la columna `contactado` de las marcas del titular cuando cambia
+    la etapa del CRM. `contactado` es POR ACTA (decidido el 03/11/2026): un
+    mail o una gestión sobre una clase no marca las otras actas del titular,
+    para que la revisión diaria de vistas y el rechequeo de oposiciones sigan
+    mirándolas (si a otra clase le llega una vista, tiene que aparecer).
+
+      - "nuevo": ninguna acta del titular queda contactada (igual que antes).
+      - "descartado": se marcan todas (es una decisión sobre el titular).
+      - otra etapa activa: si ya hay alguna acta contactada (el mail o la
+        casilla marcaron la clase concreta), no se toca nada más. Si no hay
+        ninguna (el contacto fue por fuera del panel y no se sabe de qué
+        clase, por ejemplo al arrastrar la tarjeta en el CRM), se marcan
+        todas, como antes, para que no siga apareciendo como sin contactar.
+
+    Es de mejor esfuerzo: si la tabla `marcas` está trabada por una corrida
+    larga del pipeline, se saltea sin romper el guardado del CRM."""
     cur.execute("SAVEPOINT sync_contactado")
     try:
         cur.execute("SET LOCAL lock_timeout = '4s'")
@@ -3159,11 +3169,17 @@ def _sincronizar_contactado(cur, clave: str, etapa: str):
                     (actas,),
                 )
             else:
-                cur.execute(
-                    "UPDATE marcas SET contactado = true, contactado_en = COALESCE(contactado_en, now()) "
-                    "WHERE acta = ANY(%s) AND contactado IS NOT TRUE",
-                    (actas,),
-                )
+                ya_hay = False
+                if etapa != "descartado":
+                    cur.execute("SELECT bool_or(contactado IS TRUE) FROM marcas WHERE acta = ANY(%s)", (actas,))
+                    fila = cur.fetchone()
+                    ya_hay = bool(fila and (list(fila.values())[0] if isinstance(fila, dict) else fila[0]))
+                if not ya_hay:
+                    cur.execute(
+                        "UPDATE marcas SET contactado = true, contactado_en = COALESCE(contactado_en, now()) "
+                        "WHERE acta = ANY(%s) AND contactado IS NOT TRUE",
+                        (actas,),
+                    )
         cur.execute("RELEASE SAVEPOINT sync_contactado")
     except Exception as e:
         cur.execute("ROLLBACK TO SAVEPOINT sync_contactado")
