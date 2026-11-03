@@ -1939,6 +1939,7 @@ def marcar_contactado(acta: str, valor: bool = True, usuario: str = Depends(veri
             )
             if cur.rowcount == 0:
                 raise HTTPException(status_code=404, detail=f"No existe el acta {acta}")
+            _propagar_contactado_misma_marca(cur, [acta], valor)
 
             cur.execute("SAVEPOINT crm_contactado")
             try:
@@ -2048,6 +2049,7 @@ def masivo_contactado(datos: ContactadoMasivo, usuario: str = Depends(verificar_
                 (valor, valor, actas),
             )
             marcas = cur.rowcount
+            _propagar_contactado_misma_marca(cur, actas, valor)
             titulares = 0
             cur.execute("SAVEPOINT claves_masivo")
             try:
@@ -3140,6 +3142,61 @@ def _registrar_actividad(cur, clave, autor, tipo, texto):
     )
 
 
+# Mismo criterio que scripts/misma_marca.py (el panel no puede importar los scripts): denominación (o la de INPI)
+# sin tildes, mayúsculas ni signos/espacios; titular = clave del CRM o, si falta, el CUIT.
+_NOMBRE_NORMALIZADO_SQL = """upper(regexp_replace(translate(COALESCE(NULLIF(m.denominacion, ''), m.denominacion_inpi, ''),
+    'áéíóúüñÁÉÍÓÚÜÑ', 'aeiouunAEIOUUN'), '[^A-Za-z0-9]', '', 'g'))"""
+
+
+def _propagar_contactado_misma_marca(cur, actas: list, valor: bool) -> list:
+    """Pedido del 03/11/2026: si se contacta (o se desmarca) una marca, las otras actas del mismo titular con
+    el MISMO NOMBRE que tienen una oposición o una vista quedan igual, aunque sean de otra clase o de otro
+    tipo (denominativa / mixta): ese contacto ya las cubre. Al desmarcar no se tocan las que tuvieron un
+    mail propio. Las que todavía no tienen oposición ni vista no se tocan: si después les llega una, la
+    revisión de vistas y la de oposiciones las marcan solas (scripts/misma_marca.py). Mejor esfuerzo."""
+    if not actas:
+        return []
+    cur.execute("SAVEPOINT misma_marca")
+    try:
+        cur.execute("SET LOCAL lock_timeout = '4s'")
+        cur.execute(
+            f"""
+            WITH base AS (
+                SELECT m.acta,
+                       COALESCE(cc.clave, NULLIF(trim(m.cuit), '')) AS titular,
+                       {_NOMBRE_NORMALIZADO_SQL} AS nombre,
+                       (m.tuvo_oposicion IS TRUE OR m.tuvo_vista IS TRUE) AS con_alerta,
+                       m.contactado IS TRUE AS contactado
+                FROM marcas m
+                LEFT JOIN crm_claves cc ON cc.acta = m.acta
+            ),
+            semillas AS (
+                SELECT DISTINCT titular, nombre FROM base
+                WHERE acta = ANY(%(actas)s) AND titular IS NOT NULL AND nombre <> ''
+            ),
+            gemelas AS (
+                SELECT b.acta FROM base b JOIN semillas s USING (titular, nombre)
+                WHERE b.con_alerta AND NOT (b.acta = ANY(%(actas)s)) AND b.contactado IS DISTINCT FROM %(v)s
+                  AND (%(v)s OR NOT EXISTS (SELECT 1 FROM mails_envios me WHERE me.acta = b.acta))
+            )
+            UPDATE marcas t
+               SET contactado = %(v)s,
+                   contactado_en = CASE WHEN %(v)s THEN COALESCE(t.contactado_en, now()) ELSE NULL END
+              FROM gemelas g
+             WHERE t.acta = g.acta
+            RETURNING t.acta
+            """,
+            {"actas": list(actas), "v": bool(valor)},
+        )
+        gemelas = [_valor(f) for f in cur.fetchall()]
+        cur.execute("RELEASE SAVEPOINT misma_marca")
+        return gemelas
+    except Exception as e:  # noqa: BLE001
+        cur.execute("ROLLBACK TO SAVEPOINT misma_marca")
+        print(f"[contactado] no se pudo propagar a las marcas del mismo nombre de {actas[:5]}: {e}")
+        return []
+
+
 def _sincronizar_contactado(cur, clave: str, etapa: str):
     """Acompaña la columna `contactado` de las marcas del titular cuando cambia
     la etapa del CRM. `contactado` es POR ACTA (decidido el 03/11/2026): un
@@ -3858,6 +3915,7 @@ def _crm_registrar_mail(cur, acta: str, usuario: str, texto: str):
     el 14/10/2026: si ya le mandamos un mail, no tiene sentido seguir
     mostrándola como «con agente»."""
     cur.execute("UPDATE marcas SET contactado = true, contactado_en = COALESCE(contactado_en, now()) WHERE acta = %s", (acta,))
+    _propagar_contactado_misma_marca(cur, [acta], True)
     revertidas = _revertir_con_gestor_manual(cur, [acta]) + _revertir_apoderado_automatico(cur, [acta])
     _asegurar_claves(cur)
     cur.execute(f"WITH {_cte_marcas_con_clave(filtrar_actas=True)} SELECT clave FROM mk", ([acta],))
