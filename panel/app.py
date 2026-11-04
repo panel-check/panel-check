@@ -1244,6 +1244,39 @@ SQL_VISTA_PRE_ABIERTA = ("(tuvo_vista IS TRUE AND COALESCE(vista_estado, '') NOT
                          "AND COALESCE(estado_tramite, '') <> 'Denegada')")
 
 
+# ── Filtro «Notificación» (sin notificar / ya notificada) ─────────────────────
+# Mismo cálculo que las etiquetas de la tabla (estadoOposicionEfectivo en comun.js):
+# el estado guardado («sin notificar», «recién ingresada») es una foto de la última
+# revisión, así que se recalcula con la fecha de hoy: INPI notifica el primer
+# miércoles desde el cierre del plazo (publicación + 30 días corridos).
+_SQL_HOY_AR = f"((now() AT TIME ZONE '{_TZ}')::date)"
+_SQL_CIERRE_OPO = "(fecha_publicacion + 30)"
+_SQL_MIERCOLES_NOTIF = (f"({_SQL_CIERRE_OPO} + ((3 - EXTRACT(DOW FROM {_SQL_CIERRE_OPO})::int + 7) % 7))")
+_SQL_YA_PASO_MIERCOLES = f"(fecha_publicacion IS NOT NULL AND {_SQL_HOY_AR} >= {_SQL_MIERCOLES_NOTIF})"
+# «Recién ingresada» se muestra así los primeros 3 días desde que se presentó.
+_SQL_RECIEN_INGRESADA = (f"(COALESCE(oposicion_fecha_presentacion, (oposicion_detectada_en AT TIME ZONE '{_TZ}')::date) "
+                         f">= {_SQL_HOY_AR} - 3)")
+# Oposición (o vista posterior a publicar) ya notificada al titular.
+SQL_OPO_NOTIFICADA = (
+    "(tuvo_oposicion IS TRUE AND ("
+    "oposicion_fecha_notificacion IS NOT NULL"
+    " OR estado_oposicion IN ('notificada_en_plazo', 'plazo_vencido', 'vista_pendiente', 'contestada')"
+    f" OR (COALESCE(estado_oposicion, 'sin_notificar') = 'sin_notificar' AND {_SQL_YA_PASO_MIERCOLES})"
+    f" OR (estado_oposicion = 'oposicion_sin_detalle' AND {_SQL_YA_PASO_MIERCOLES}"
+    f" AND NOT COALESCE({_SQL_RECIEN_INGRESADA}, FALSE))))"
+)
+# Oposición todavía sin notificar (incluye «recién ingresada»).
+SQL_OPO_SIN_NOTIFICAR = (
+    "(tuvo_oposicion IS TRUE AND COALESCE(estado_oposicion, 'sin_notificar') IN ('sin_notificar', 'oposicion_sin_detalle')"
+    f" AND NOT {SQL_OPO_NOTIFICADA})"
+)
+# Vista de INPI antes de publicar (pre-boletín).
+SQL_VISTA_PRE_NOTIFICADA = ("(tuvo_vista IS TRUE AND (vista_fecha_notificacion IS NOT NULL"
+                            " OR vista_estado IN ('notificada_en_plazo', 'plazo_vencido')))")
+SQL_VISTA_PRE_SIN_NOTIFICAR = (f"(tuvo_vista IS TRUE AND vista_estado = 'sin_notificar' AND NOT {SQL_VISTA_PRE_NOTIFICADA})")
+NOTIFICACIONES = ("sin", "notificada")
+
+
 def filtros_marcas(
     boletin: Optional[str] = None,
     clase: Optional[int] = None,
@@ -1255,6 +1288,9 @@ def filtros_marcas(
     # "sirve" = vista sin contestar; "fondo" = sin contestar y de fondo (la que se puede
     # defender); "cualquiera" = con vista que todavía cuenta (las ya resueltas no se muestran).
     vista_pre: Optional[str] = None,
+    # Oposiciones y vistas según si INPI ya se las notificó al titular:
+    # "sin" = sin notificar (incluye «recién ingresada»); "notificada" = ya notificadas.
+    notificacion: Optional[str] = None,
     fecha_desde: Optional[str] = None,
     fecha_hasta: Optional[str] = None,
     # Atajo "últimos N días" de Fecha Boletín: se calcula con la fecha de HOY
@@ -1280,6 +1316,8 @@ def filtros_marcas(
         raise HTTPException(status_code=400, detail="tipo_oposicion tiene que ser 'oposicion' o 'vista'")
     if vista_pre and vista_pre not in ("sirve", "fondo", "cualquiera"):
         raise HTTPException(status_code=400, detail="vista_pre tiene que ser 'sirve', 'fondo' o 'cualquiera'")
+    if notificacion and notificacion not in NOTIFICACIONES:
+        raise HTTPException(status_code=400, detail="notificacion tiene que ser 'sin' o 'notificada'")
     return dict(locals())
 
 
@@ -1328,6 +1366,10 @@ def _consulta_marcas(f: dict) -> dict:
         condiciones.append("(tuvo_vista IS TRUE AND vista_sirve IS TRUE AND vista_tipo IN ('fondo', 'fondo_y_formal', 'convenio_paris'))")
     elif f["vista_pre"] == "cualquiera":
         condiciones.append(SQL_VISTA_PRE_ABIERTA)
+    if f.get("notificacion") == "sin":
+        condiciones.append(f"({SQL_OPO_SIN_NOTIFICAR} OR {SQL_VISTA_PRE_SIN_NOTIFICAR})")
+    elif f.get("notificacion") == "notificada":
+        condiciones.append(f"({SQL_OPO_NOTIFICADA} OR {SQL_VISTA_PRE_NOTIFICADA})")
     fecha_desde, fecha_hasta, fecha_dias = f["fecha_desde"], f["fecha_hasta"], f["fecha_dias"]
     if fecha_desde or fecha_hasta or fecha_dias:
         # Mismo criterio que muestra el panel como "Fecha Boletín"
@@ -1484,6 +1526,8 @@ def _filtros_desde_consulta(consulta: str) -> dict:
             f[nombre] = int(valor) if valor.lstrip("-").isdigit() else None
         elif nombre == "tipo_oposicion":
             f[nombre] = valor if valor in TIPOS_OPOSICION else None
+        elif nombre == "notificacion":
+            f[nombre] = valor if valor in NOTIFICACIONES else None
         else:
             f[nombre] = valor
     return f
