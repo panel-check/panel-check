@@ -1065,7 +1065,16 @@ async function cargar(offset) {
   if (soloPre && estado.sort === "fecha_publicacion") { estado.sort = "fecha_presentacion"; params.sort = estado.sort; }
   actualizarURL();
   marcarFiltrosActivos();
-  const data = await api(`/api/marcas?${qs(params)}`);
+  let data;
+  try {
+    data = await api(`/api/marcas?${qs(params)}`);
+  } catch (e) {
+    // Sin esto, un error del servidor dejaba la tabla en «Cargando...» para siempre.
+    document.getElementById("tbody").innerHTML =
+      `<tr><td colspan="11" class="vacio" style="color:var(--rojo);">No se pudo cargar la lista (error ${_escapeHtml(e.message)}). Probá de nuevo o cambiá los filtros.</td></tr>`;
+    document.getElementById("resumen").textContent = "";
+    return;
+  }
   estado.total = data.total;
   // Después de una acción masiva la página puede quedar vacía (p. ej. al marcar
   // como contactadas con el filtro "Sin contactar"): se vuelve a la última que tenga filas.

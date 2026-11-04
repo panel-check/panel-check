@@ -1251,7 +1251,8 @@ SQL_VISTA_PRE_ABIERTA = ("(tuvo_vista IS TRUE AND COALESCE(vista_estado, '') NOT
 # miércoles desde el cierre del plazo (publicación + 30 días corridos).
 _SQL_HOY_AR = f"((now() AT TIME ZONE '{_TZ}')::date)"
 _SQL_CIERRE_OPO = "(fecha_publicacion + 30)"
-_SQL_MIERCOLES_NOTIF = (f"({_SQL_CIERRE_OPO} + ((3 - EXTRACT(DOW FROM {_SQL_CIERRE_OPO})::int + 7) % 7))")
+# MOD() y no «%»: psycopg2 toma cualquier «%» del SQL como marcador de parámetro.
+_SQL_MIERCOLES_NOTIF = (f"({_SQL_CIERRE_OPO} + MOD(3 - EXTRACT(DOW FROM {_SQL_CIERRE_OPO})::int + 7, 7))")
 _SQL_YA_PASO_MIERCOLES = f"(fecha_publicacion IS NOT NULL AND {_SQL_HOY_AR} >= {_SQL_MIERCOLES_NOTIF})"
 # «Recién ingresada» se muestra así los primeros 3 días desde que se presentó.
 _SQL_RECIEN_INGRESADA = (f"(COALESCE(oposicion_fecha_presentacion, (oposicion_detectada_en AT TIME ZONE '{_TZ}')::date) "
