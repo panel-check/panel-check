@@ -1914,6 +1914,31 @@ tr.seleccionada, tr.seleccionada.lead { background: var(--azul-claro); }
 }
 .menu-sel-lista button:hover { background: #f1f3f6; }
 .modal-caja.modal-gestor-masivo { max-width: 460px; }
+/* Mail de oposición/vista masivo y escalonado (barra de selección de Leads) */
+.barra-sel .btn-sel.btn-sel-mail { background: var(--azul); color: #fff; border-color: var(--azul); }
+.barra-sel .btn-sel.btn-sel-mail:hover { background: var(--azul-oscuro); }
+.modal-caja.modal-acceso.modal-mail-masivo { max-width: 620px; }
+.modal-mail-masivo .mm-intro { margin: 0; font-size: 13px; line-height: 1.5; color: #374151; }
+.modal-mail-masivo .mm-grilla { display: grid; grid-template-columns: 1fr 1fr; gap: 0 14px; }
+.modal-mail-masivo select, .modal-mail-masivo input[type="number"], .modal-mail-masivo input[type="datetime-local"] {
+  height: 32px; padding: 0 8px; border: 1px solid var(--borde-control, #d0d5dd); border-radius: 8px; font: inherit; font-size: 13px; color: var(--texto); background: #fff;
+}
+.modal-mail-masivo .mm-con-unidad { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--texto); font-weight: 400; }
+.modal-mail-masivo .mm-con-unidad input { width: 80px; }
+.modal-mail-masivo .mm-resumen { margin-top: 14px; padding: 10px 12px; border-radius: 8px; background: #f5f6f8; font-size: 13px; line-height: 1.45; color: #374151; }
+.modal-mail-masivo .mm-resumen.cargando { opacity: .55; }
+.modal-mail-masivo .mm-resumen p { margin: 4px 0; }
+.modal-mail-masivo .mm-total { font-size: 14px; }
+.modal-mail-masivo .mm-sub { font-weight: 600; margin-top: 8px !important; }
+.modal-mail-masivo .mm-gris { color: var(--gris); font-size: 12px; }
+.modal-mail-masivo .mm-dias { margin: 4px 0 6px; padding-left: 18px; }
+.modal-mail-masivo details { margin: 4px 0; }
+.modal-mail-masivo summary { cursor: pointer; }
+.modal-mail-masivo details ul { margin: 4px 0; padding-left: 18px; max-height: 160px; overflow: auto; }
+.modal-mail-masivo .mm-lista table { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 4px; display: block; max-height: 240px; overflow: auto; }
+.modal-mail-masivo .mm-lista th, .modal-mail-masivo .mm-lista td { text-align: left; padding: 4px 6px; border-top: 1px solid #e5e7eb; vertical-align: top; }
+.badge.mail-programado { background: #eef4ff; color: #3538cd; border: 1px solid #c7d7fe; }
+@media (max-width: 640px) { .modal-mail-masivo .mm-grilla { grid-template-columns: 1fr; } }
 
 /* ── Búsqueda rápida (🔍 de la barra de arriba, ver menu.js) ─────────────
    La lupa va al principio de la barra; al abrirla, el campo se desliza para

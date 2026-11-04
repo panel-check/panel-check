@@ -36,7 +36,9 @@ Correr local:
     DATABASE_URL=... PANEL_RECUPERAR=admin:unaClaveLarga uvicorn app:app --reload
 """
 
+import datetime as _dt
 import inspect
+import random
 import os
 import re
 import secrets
@@ -72,6 +74,7 @@ import verificador_core
 import mails_api
 import mails_core
 import mails_cola
+import envio_masivo
 import formularios_core
 import inpi_lead
 import listado_inpi
@@ -176,6 +179,7 @@ def migrar_columnas_panel():
                 cur.execute("SET lock_timeout = '3s'")
                 mails_core.crear_tablas(cur)
                 mails_cola.crear_tablas(cur)
+                envio_masivo.crear_tablas(cur)
             conn.commit()
     except Exception as e:
         print(f"[startup] tablas de mails salteadas (no bloqueante): {e}")
@@ -1447,6 +1451,15 @@ def _consulta_marcas(f: dict) -> dict:
     }
 
 
+# Mail de oposición/vista que espera en la cola (envío masivo escalonado o cupo de Resend agotado): la tabla
+# muestra «⏳ mail …» para que no se vuelva a mandar a mano mientras tanto.
+SQL_MAIL_PROGRAMADO = (
+    "(SELECT MIN(mc.intentar_desde) FROM mails_cola mc WHERE mc.acta = marcas.acta "
+    "AND mc.estado IN ('pendiente', 'pausado') AND mc.clave_mail IN ('prospecto_oposicion', 'prospecto_vista')) "
+    "AS mail_programado_para"
+)
+
+
 @app.get("/api/marcas")
 def listar_marcas(
     _: str = Depends(verificar_login),
@@ -1462,7 +1475,7 @@ def listar_marcas(
     c = _consulta_marcas(f)
 
     sql = f"""
-        SELECT {COLUMNAS_MARCA}{c['columnas_extra']}
+        SELECT {COLUMNAS_MARCA}{c['columnas_extra']}, {SQL_MAIL_PROGRAMADO}
         FROM marcas
         {c['join_sql']}
         {c['where_sql']}
@@ -2135,6 +2148,220 @@ def masivo_contactado(datos: ContactadoMasivo, usuario: str = Depends(verificar_
                     print(f"[crm] no se pudo reflejar 'contactado' de {clave} en el CRM: {e}")
         conn.commit()
     return {"ok": True, "marcas": marcas, "titulares_crm": titulares}
+
+
+# ── Envío masivo escalonado del mail de oposición / vista (04/11/2026, ver envio_masivo.py) ──────────
+class MailMasivo(SeleccionActas):
+    parametros: Optional[dict] = None
+
+
+_SQL_CON_OPO_MAIL = "(m.tuvo_oposicion IS TRUE AND m.oposicion_atendida IS NOT TRUE AND m.oposicion_sirve IS NOT FALSE)"
+_SQL_CON_VISTA_MAIL = "(m.tuvo_vista IS TRUE AND m.vista_sirve IS TRUE)"
+
+
+def _clasificar_para_mail_masivo(cur, actas: list, incluir_contactadas: bool) -> tuple:
+    """Separa la selección en las marcas a las que corresponde mandarles el mail de oposición/vista (mismo
+    criterio que el botón «✉ Enviar mail de oposición» de la ficha) y las que no, con el motivo.
+    Devuelve (elegibles [{acta, email, clave, marca, titular, clase}], excluidas {motivo: [{acta, marca}]})."""
+    _asegurar_claves(cur)
+    cur.execute(
+        f"""WITH {_cte_marcas_con_clave(filtrar_actas=True)}
+            SELECT m.acta, m.clase, m.email, m.es_lead, m.contactado, m.titular, m.clave,
+                   COALESCE(NULLIF(m.denominacion_inpi, ''), m.denominacion) AS marca,
+                   {_SQL_CON_OPO_MAIL} AS con_opo, {_SQL_CON_VISTA_MAIL} AS con_vista
+              FROM mk m
+             ORDER BY array_position(%s::text[], m.acta)""",
+        (actas, actas),
+    )
+    filas = {f["acta"]: f for f in cur.fetchall()}
+    cur.execute("SELECT DISTINCT acta, clave_mail FROM mails_envios WHERE acta = ANY(%s) AND NOT es_prueba "
+                "AND clave_mail = ANY(%s)", (actas, list(envio_masivo.CLAVES)))
+    ya = {(f["acta"], f["clave_mail"]) for f in cur.fetchall()}
+    clientes = {}
+    elegibles, excluidas = [], {}
+
+    def excluir(motivo, acta, f=None):
+        excluidas.setdefault(motivo, []).append({"acta": acta, "marca": (f or {}).get("marca") or "",
+                                                 "titular": (f or {}).get("titular") or ""})
+
+    for acta in actas:
+        f = filas.get(acta)
+        if not f:
+            excluir("no_existe", acta)
+            continue
+        if not (f["con_opo"] or f["con_vista"]):
+            excluir("sin_pendiente", acta, f)
+            continue
+        if f["es_lead"] is not True:
+            excluir("no_lead", acta, f)
+            continue
+        if f["clave"] not in clientes:
+            try:
+                cur.execute("SAVEPOINT cliente_masivo")
+                clientes[f["clave"]] = bool(f["clave"] and cartera_api.cliente_por_clave(cur, f["clave"]))
+                cur.execute("RELEASE SAVEPOINT cliente_masivo")
+            except psycopg2.Error:
+                cur.execute("ROLLBACK TO SAVEPOINT cliente_masivo")
+                clientes[f["clave"]] = False
+        if clientes[f["clave"]]:
+            excluir("cliente", acta, f)
+            continue
+        mails = mails_core.lista_de_emails(f["email"] or "")
+        if not mails:
+            excluir("sin_mail", acta, f)
+            continue
+        email = mails[0].lower()
+        if not mails_core._RE_EMAIL.match(email):
+            excluir("mail_invalido", acta, f)
+            continue
+        if mails_core.esta_de_baja(cur, email):
+            excluir("baja", acta, f)
+            continue
+        clave = "prospecto_oposicion" if f["con_opo"] else "prospecto_vista"
+        if (acta, clave) in ya:
+            excluir("ya_enviado", acta, f)
+            continue
+        if f["contactado"] is True and not incluir_contactadas:
+            excluir("contactada", acta, f)
+            continue
+        elegibles.append({"acta": acta, "email": email, "clave": clave, "marca": f["marca"] or "",
+                          "titular": f["titular"] or "", "clase": f["clase"]})
+    return envio_masivo.ordenar_espaciando(elegibles), excluidas
+
+
+def _respuesta_excluidas(excluidas: dict) -> list:
+    return [{"motivo": k, "texto": envio_masivo.MOTIVOS.get(k, k), "cantidad": len(v), "marcas": v[:200]}
+            for k, v in excluidas.items()]
+
+
+def _parametros_mail_masivo(datos: MailMasivo) -> dict:
+    try:
+        return envio_masivo.normalizar_parametros(datos.parametros)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.post("/api/masivo/mail-oposicion/previa")
+def masivo_mail_oposicion_previa(datos: MailMasivo, _: str = Depends(verificar_login)):
+    """Qué pasaría: a qué marcas les sale el mail (con la hora aproximada de cada uno), cuáles quedan afuera
+    y por qué, y en cuántos días termina. No manda ni guarda nada."""
+    actas = _actas_masivo(datos.actas)
+    params = _parametros_mail_masivo(datos)
+    ahora = _dt.datetime.now(_dt.timezone.utc)
+    with conexion() as conn:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            elegibles, excluidas = _clasificar_para_mail_masivo(cur, actas, params["incluir_contactadas"])
+            ocupados = envio_masivo.ocupados_por_dia(cur)
+    enviados_hoy = envio_masivo.enviados_hoy_resend()
+    ocupados = envio_masivo.sumar_enviados_hoy(ocupados, ahora, enviados_hoy)
+    horarios = envio_masivo.calcular_horarios(len(elegibles), params, ahora, ocupados, random.Random(len(elegibles)))
+    for e, h in zip(elegibles, horarios):
+        e["hora"] = h.isoformat()
+    return {"elegibles": elegibles, "excluidas": _respuesta_excluidas(excluidas),
+            "resumen": envio_masivo.resumen_horarios(horarios),
+            "parametros": {k: (v.isoformat() if isinstance(v, _dt.datetime) else v) for k, v in params.items()},
+            "enviados_hoy": enviados_hoy, "limite_dia": envio_masivo.LIMITE_GLOBAL_DIA}
+
+
+@app.post("/api/masivo/mail-oposicion")
+def masivo_mail_oposicion(datos: MailMasivo, usuario: str = Depends(verificar_login)):
+    """Programa el mail de oposición/vista de todas las marcas seleccionadas que correspondan, escalonados
+    (no salen todos juntos): quedan en la cola con su hora y los manda el hilo de la cola de a uno."""
+    actas = _actas_masivo(datos.actas)
+    params = _parametros_mail_masivo(datos)
+    enviados_hoy = envio_masivo.enviados_hoy_resend()
+    panel_url = (os.environ.get("PANEL_URL") or mails_core.DEFAULT_PANEL).rstrip("/")
+    with conexion() as conn:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute("SELECT pg_advisory_xact_lock(4711004)")   # dos envíos masivos a la vez no se pisan los horarios
+            elegibles, excluidas = _clasificar_para_mail_masivo(cur, actas, params["incluir_contactadas"])
+            if not elegibles:
+                raise HTTPException(status_code=400, detail="Ninguna de las marcas seleccionadas está para mandarle el mail "
+                                                            "de oposición o vista.")
+            try:
+                r = envio_masivo.programar(cur, items=elegibles, params=params, usuario=usuario, panel_url=panel_url,
+                                           enviados_hoy=enviados_hoy)
+            except ValueError as e:
+                raise HTTPException(status_code=400, detail=str(e))
+        conn.commit()
+    print(f"[masivo] {usuario} programó el envío masivo #{r['lote_id']}: {r['programados']} mails")
+    return {"ok": True, **r, "excluidas": _respuesta_excluidas(excluidas)}
+
+
+def _validar_mail_de_lote(cur, fila) -> Optional[str]:
+    """Justo antes de mandar un mail de un envío masivo: ¿todavía corresponde? None = sí."""
+    acta, clave = fila.get("acta"), fila.get("clave_mail")
+    if not acta:
+        return None
+    cur.execute(
+        f"""WITH {_cte_marcas_con_clave(filtrar_actas=True)}
+            SELECT m.es_lead, m.clave, {_SQL_CON_OPO_MAIL} AS con_opo, {_SQL_CON_VISTA_MAIL} AS con_vista FROM mk m""",
+        ([acta],),
+    )
+    f = cur.fetchone()
+    if not f:
+        return "la marca ya no está en la base."
+    if f["es_lead"] is not True:
+        return "la marca dejó de ser lead (tiene gestor/apoderado)."
+    if clave == "prospecto_oposicion" and not f["con_opo"]:
+        return "la oposición ya no está pendiente (se marcó como contestada/atendida)."
+    if clave == "prospecto_vista" and not f["con_vista"]:
+        return "la vista ya no está pendiente (se contestó o se resolvió)."
+    try:
+        cur.execute("SAVEPOINT cliente_lote")
+        es_cliente = bool(f["clave"] and cartera_api.cliente_por_clave(cur, f["clave"]))
+        cur.execute("RELEASE SAVEPOINT cliente_lote")
+    except psycopg2.Error:
+        cur.execute("ROLLBACK TO SAVEPOINT cliente_lote")
+        es_cliente = False
+    return "el titular ya es cliente." if es_cliente else None
+
+
+def _despues_de_mail_de_lote(cur, fila, resend_id):
+    """Un mail del envío masivo salió de verdad: gestión «Mail» en el CRM y acta contactada (como desde la ficha)."""
+    nombre = mails_core.CATALOGO.get(fila.get("clave_mail") or "", {}).get("nombre", fila.get("clave_mail"))
+    para = ", ".join(fila.get("para") or [])
+    _crm_registrar_mail(cur, fila["acta"], fila.get("encolado_por") or "sistema",
+                        f"Mail enviado desde el panel (envío masivo #{fila.get('lote_id')}): «{nombre}» a {para} "
+                        f"(acta {fila['acta']}). Asunto: {fila.get('asunto')}")
+    if fila.get("clave_mail") == "prospecto_oposicion":
+        import oposicion_web
+        import threading
+        threading.Thread(target=oposicion_web.precalentar,
+                         args=(str(fila["acta"]), conexion, lambda c: c.cursor(cursor_factory=psycopg2.extras.RealDictCursor)),
+                         daemon=True).start()
+
+
+mails_cola.GANCHOS.update(validar=_validar_mail_de_lote, despues=_despues_de_mail_de_lote)
+
+
+@app.get("/api/mails/lotes")
+def ver_lotes(_: str = Depends(verificar_login)):
+    with conexion() as conn:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            return envio_masivo.listar(cur)
+
+
+@app.get("/api/mails/lotes/{lote_id}")
+def ver_lote(lote_id: int, _: str = Depends(verificar_login)):
+    with conexion() as conn:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            return envio_masivo.detalle(cur, lote_id)
+
+
+@app.post("/api/mails/lotes/{lote_id}/{accion}")
+def accion_lote(lote_id: int, accion: str, usuario: str = Depends(verificar_login)):
+    if accion not in ("pausar", "reanudar", "cancelar"):
+        raise HTTPException(status_code=404, detail="Acción desconocida")
+    with conexion() as conn:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute("SELECT pg_advisory_xact_lock(4711004)")
+            cur.execute("SELECT id FROM mails_lotes WHERE id = %s FOR UPDATE", (lote_id,))
+            if not cur.fetchone():
+                raise HTTPException(status_code=404, detail="No existe ese envío masivo")
+            n = getattr(envio_masivo, accion)(cur, lote_id, usuario)
+        conn.commit()
+    return {"ok": True, "mails": n}
 
 
 @app.post("/api/masivo/asignar")

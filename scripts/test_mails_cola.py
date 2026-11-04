@@ -121,12 +121,16 @@ class Cursor:
             pend = [f for f in b.cola if f["estado"] == "pendiente" and f["intentar_desde"] <= hasta
                     and f["cuenta"] not in excluir]
             self._res = [dict(pend[0])] if pend else []
+        elif q.startswith("SELECT DISTINCT lote_id FROM mails_cola"):
+            self._res = [{"lote_id": l} for l in sorted({f.get("lote_id") for f in b.cola
+                                                         if f["estado"] == "pendiente" and f["cuenta"] == params[0]
+                                                         and f.get("lote_id")})]
         elif q.startswith("SELECT 1 FROM mails_bajas"):
             self._res = [(1,)] if params[0] in b.bajas else []
         elif q.startswith("UPDATE mails_cola SET intentar_desde"):
             desde, motivo, cuenta = params
             for f in b.cola:
-                if f["estado"] == "pendiente" and f["cuenta"] == cuenta:
+                if f["estado"] == "pendiente" and f["cuenta"] == cuenta and not f.get("lote_id"):
                     f["intentar_desde"], f["motivo"] = desde, motivo
         elif q.startswith("UPDATE mails_cola SET estado = 'enviado'"):
             rid, i = params
@@ -153,6 +157,9 @@ class Cursor:
     def fetchone(self):
         return self._res[0] if self._res else None
 
+    def fetchall(self):
+        return list(self._res or [])
+
 
 class Conexion:
     def __init__(self, base):
@@ -162,6 +169,9 @@ class Conexion:
         return Cursor(self.b)
 
     def commit(self):
+        pass
+
+    def rollback(self):
         pass
 
 

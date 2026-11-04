@@ -84,6 +84,22 @@
   .cola-mails .est.enviado { background: #e7f6ec; color: #067647; }
   .cola-mails button { font-size: 12px; padding: 3px 8px; }
   .cola-mails .sub { font-size: 12px; color: var(--gris); }
+  .lotes-mails { border: 1px solid #c7d7fe; background: #f5f8ff; border-radius: 10px; padding: 10px 12px; margin: 0 0 14px; font-size: 13px; }
+  .lotes-mails h3 { margin: 0 0 6px; font-size: 14px; color: #3538cd; }
+  .lote { border-top: 1px solid #dfe7fd; padding: 8px 0; }
+  .lote:first-of-type { border-top: 0; }
+  .lote-cab { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; }
+  .lote-cab .acciones { margin-left: auto; display: flex; gap: 6px; }
+  .lote-cab button { font-size: 12px; padding: 3px 8px; }
+  .lote .barra { height: 6px; background: #e0e7ff; border-radius: 4px; overflow: hidden; margin: 6px 0 2px; }
+  .lote .barra span { display: block; height: 100%; background: #4f46e5; }
+  .lote .est { font-size: 11px; font-weight: 600; border-radius: 10px; padding: 2px 8px; background: #e0e7ff; color: #3538cd; }
+  .lote .est.pausado { background: #fef0c7; color: #93370d; }
+  .lote .est.cancelado { background: #fee4e2; color: #b42318; }
+  .lote .est.terminado { background: #e7f6ec; color: #067647; }
+  .lote .sub { font-size: 12px; color: var(--gris); }
+  .lote details table { width: 100%; border-collapse: collapse; margin-top: 4px; font-size: 12px; }
+  .lote details td, .lote details th { text-align: left; padding: 4px 6px; border-top: 1px solid #e0e7ff; vertical-align: top; }
   .aviso-env { background: #fffaeb; border: 1px solid #fedf89; color: #93370d; border-radius: 8px; padding: 10px 12px; font-size: 13px; margin-bottom: 12px; }
   .tabs-mails { display: flex; gap: 4px; border-bottom: 1px solid var(--borde); margin-bottom: 18px; }
   .tabs-mails button {
@@ -208,6 +224,7 @@
       <em>Mostrar mails internos</em>.</p>
     <div id="env-aviso"></div>
     <div id="env-cupo" class="cupo-hoy"></div>
+    <div id="env-lotes"></div>
     <div id="env-cola"></div>
     <div class="env-filtros">
       <input type="text" id="env-buscar" placeholder="Buscar por mail, asunto, marca o titular" />
@@ -794,7 +811,7 @@ async function cargarEnviados(mas = false) {
   const msg = document.getElementById("env-msg");
   const internos = document.getElementById("env-internos").checked;
   msg.textContent = "Cargando…"; msg.className = "msg ok";
-  if (!mas) { cargarCupo(); cargarCola(); }
+  if (!mas) { cargarCupo(); cargarLotes(); cargarCola(); }
   const params = new URLSearchParams();
   if (internos) params.set("internos", "true");
   if (mas) {
@@ -847,6 +864,55 @@ async function cargarCola() {
   caja.querySelectorAll("[data-cola-reintentar]").forEach(b => b.addEventListener("click", async () => {
     try { await apiJson(`/api/mails/cola/${b.dataset.colaReintentar}/reintentar`, "POST"); b.textContent = "En el próximo minuto…"; b.disabled = true; setTimeout(cargarCola, 70000); }
     catch (e) { alert(e.message); }
+  }));
+}
+
+// Envíos masivos escalonados del mail de oposición/vista (desde la barra de selección de Leads, ver envio_masivo.py).
+async function cargarLotes() {
+  const caja = document.getElementById("env-lotes");
+  let lotes;
+  try { lotes = await api("/api/mails/lotes"); } catch (e) { caja.innerHTML = ""; return; }
+  if (!lotes.length) { caja.innerHTML = ""; return; }
+  const nombreEst = { activo: "Enviando", pausado: "Pausado", cancelado: "Cancelado", terminado: "Terminado" };
+  const activos = lotes.filter(l => ["activo", "pausado"].includes(l.estado)).length;
+  caja.innerHTML = `<div class="lotes-mails"><h3>✉ Envíos masivos${activos ? ` · ${activos} en curso` : ""}</h3>
+    <p class="sub" style="margin:0 0 4px">Mails de oposición/vista programados desde la selección de Leads: salen de a uno, repartidos en el tiempo. Se muestran los de los últimos 7 días y los que siguen en curso.</p>
+    ${lotes.map(l => {
+      const p = l.parametros || {};
+      const hechos = l.enviados + l.cancelados + l.errores;
+      const pct = l.total ? Math.round(hechos * 100 / l.total) : 0;
+      const reglas = `uno cada ${p.intervalo_minutos} min${p.variar ? " (±)" : ""}, de ${String(p.hora_desde).padStart(2, "0")}:00 a ${String(p.hora_hasta).padStart(2, "0")}:00${p.solo_habiles ? ", lunes a viernes" : ""}, hasta ${p.max_por_dia} por día`;
+      const proximo = l.estado === "activo" && l.proximo ? ` · próximo ${esc(fechaCorta(l.proximo))} · último ${esc(fechaCorta(l.ultimo))}` : "";
+      const acciones = l.estado === "activo" ? `<button type="button" class="secundario" data-lote="${l.id}" data-acc="pausar">Pausar</button><button type="button" class="secundario" data-lote="${l.id}" data-acc="cancelar">Cancelar el resto</button>`
+        : l.estado === "pausado" ? `<button type="button" class="secundario" data-lote="${l.id}" data-acc="reanudar" title="Vuelve a calcular los horarios desde ahora, con las mismas reglas">Reanudar</button><button type="button" class="secundario" data-lote="${l.id}" data-acc="cancelar">Cancelar el resto</button>` : "";
+      return `<div class="lote">
+        <div class="lote-cab"><strong>#${l.id}</strong> <span class="est ${esc(l.estado)}">${esc(nombreEst[l.estado] || l.estado)}</span>
+          <span>${l.enviados} de ${l.total} enviados${l.descripcion ? ` <span class="sub">(${esc(l.descripcion)})</span>` : ""}</span>
+          <span class="sub">${l.pendientes ? `${l.pendientes} esperando` : ""}${l.pausados ? ` ${l.pausados} pausados` : ""}${l.cancelados ? ` · ${l.cancelados} cancelados` : ""}${l.errores ? ` · ${l.errores} con error` : ""}${proximo}</span>
+          <span class="acciones">${acciones}</span></div>
+        <div class="barra"><span style="width:${pct}%"></span></div>
+        <div class="sub">Programado por ${esc(l.creado_por || "—")} el ${esc(fechaCorta(l.creado_en))} · ${esc(reglas)}</div>
+        <details data-detalle="${l.id}"><summary class="sub">Ver los mails</summary><div>Cargando…</div></details>
+      </div>`;
+    }).join("")}</div>`;
+  const nombreFila = { pendiente: "Programado", pausado: "Pausado", enviado: "Salió", cancelado: "Cancelado", error: "No salió" };
+  caja.querySelectorAll("details[data-detalle]").forEach(d => d.addEventListener("toggle", async () => {
+    if (!d.open || d.dataset.cargado) return;
+    try {
+      const filas = await api(`/api/mails/lotes/${d.dataset.detalle}`);
+      d.dataset.cargado = "1";
+      d.querySelector("div").innerHTML = `<table><thead><tr><th>Hora</th><th>Marca</th><th>Para</th><th>Estado</th></tr></thead><tbody>${
+        filas.map(f => `<tr><td>${esc(fechaCorta(f.estado === "enviado" ? f.enviado_en : f.intentar_desde))}</td>
+          <td>${esc(f.marca || "")}<div class="sub">${esc(f.titular || "")} · acta ${esc(f.acta || "")} · ${f.clave_mail === "prospecto_vista" ? "vista" : "oposición"}</div></td>
+          <td>${esc(f.para)}</td><td title="${esc(f.ultimo_error || "")}">${esc(nombreFila[f.estado] || f.estado)}${f.ultimo_error ? `<div class="sub">${esc(f.ultimo_error)}</div>` : ""}</td></tr>`).join("")}</tbody></table>`;
+    } catch (e) { d.querySelector("div").textContent = e.message; }
+  }));
+  caja.querySelectorAll("button[data-lote]").forEach(b => b.addEventListener("click", async () => {
+    const acc = b.dataset.acc;
+    if (acc === "cancelar" && !confirm(`¿Cancelar lo que falta del envío masivo #${b.dataset.lote}? Esos mails no van a salir (los que ya salieron no cambian).`)) return;
+    b.disabled = true;
+    try { await apiJson(`/api/mails/lotes/${b.dataset.lote}/${acc}`, "POST"); cargarLotes(); }
+    catch (e) { alert(e.message); b.disabled = false; }
   }));
 }
 
