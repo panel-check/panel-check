@@ -53,6 +53,11 @@ _AL_FALLAR = {
 
 AVISO_EN_COLA = "En cola: se agotó el cupo diario de Resend; sale después de las 21:00."
 
+# Ganchos para los mails de un envío masivo (lote_id, ver envio_masivo.py). Los completa app.py al arrancar:
+#   validar(cur, fila) -> None si el mail todavía corresponde, o el motivo por el que ya no (se cancela solo).
+#   despues(cur, fila, resend_id): lo que se hace cuando el mail salió de verdad (CRM, acta contactada).
+GANCHOS = {"validar": None, "despues": None}
+
 
 def crear_tablas(cur):
     """Idempotente. Va después de mails_core.crear_tablas (usa mails_envios)."""
@@ -165,15 +170,26 @@ def procesar(conexion, enviar=None, pausa: float = PAUSA_ENTRE_ENVIOS, ahora=Non
                     conn.commit()
                     res["cancelados"] += 1
                     continue
+                if f.get("lote_id") and GANCHOS.get("validar"):
+                    motivo = GANCHOS["validar"](cur, f)
+                    if motivo:
+                        _cancelar_fila(cur, f, f"Cancelado solo: {motivo}")
+                        conn.commit()
+                        res["cancelados"] += 1
+                        continue
                 adj = [{"filename": a["filename"], "content": base64.b64decode(a["content"])} for a in (f["adjuntos"] or [])]
                 try:
                     rid = enviar(f["cuenta"], f["remitente"], f["responder_a"] or "", para, f["asunto"], f["html"],
                                  f["texto"] or "", adj or None)
                 except mc.CupoAgotado as e:
-                    # Sigue sin cupo: todo lo pendiente de esa cuenta espera al próximo reinicio.
+                    # Sigue sin cupo: lo pendiente de esa cuenta espera al próximo reinicio. Los envíos masivos se
+                    # reprograman desde ahí con sus propias reglas (de a uno, en su franja), no todos a las 21:02.
+                    reinicio = proximo_reinicio(ahora)
+                    import envio_masivo   # acá y no arriba: envio_masivo importa este módulo
+                    envio_masivo.al_chocar_con_cupo(cur, f["cuenta"], reinicio)
                     cur.execute("UPDATE mails_cola SET intentar_desde = %s, motivo = %s "
-                                "WHERE estado = 'pendiente' AND cuenta = %s",
-                                (proximo_reinicio(ahora), e.motivo, f["cuenta"]))
+                                "WHERE estado = 'pendiente' AND cuenta = %s AND lote_id IS NULL",
+                                (reinicio, e.motivo, f["cuenta"]))
                     conn.commit()
                     cuentas_sin_cupo.add(f["cuenta"])
                     res["esperando_cupo"] += 1
@@ -194,6 +210,13 @@ def procesar(conexion, enviar=None, pausa: float = PAUSA_ENTRE_ENVIOS, ahora=Non
                 _correr_al_enviar(cur, f["al_enviar"], rid)
                 conn.commit()
                 res["enviados"] += 1
+                if f.get("lote_id") and GANCHOS.get("despues"):
+                    try:
+                        GANCHOS["despues"](cur, f, rid)
+                        conn.commit()
+                    except Exception as e:  # noqa: BLE001 — el mail ya salió; el CRM no debe frenar la cola
+                        conn.rollback()
+                        print(f"[cola] mail del envío masivo #{f.get('lote_id')} mandado, pero falló lo de después: {e}")
         if pausa:
             time.sleep(pausa)
 
@@ -233,7 +256,8 @@ def listar(cur) -> list:
                   c.ultimo_error, c.motivo, c.intentar_desde, c.encolado_en, c.enviado_en,
                   COALESCE(NULLIF(m.denominacion_inpi, ''), m.denominacion) AS marca
              FROM mails_cola c LEFT JOIN marcas m ON m.acta = c.acta
-            WHERE c.estado IN ('pendiente', 'error') OR c.encolado_en > now() - interval '48 hours'
+            WHERE c.lote_id IS NULL   -- los de un envío masivo se ven en su lote (envio_masivo.listar)
+              AND (c.estado IN ('pendiente', 'error') OR c.encolado_en > now() - interval '48 hours')
             ORDER BY (c.estado IN ('pendiente', 'error')) DESC, c.id DESC LIMIT 300""")
     filas = cur.fetchall()
     for f in filas:

@@ -203,6 +203,7 @@
         <button type="button" onclick="accionAtendida(false)">Quitar «atendida»</button>
       </div>
     </span>
+    <button type="button" class="btn-sel btn-sel-mail" onclick="accionMailMasivo()" title="Manda el mail «Recibió una oposición» (o «Recibió una vista») a las marcas seleccionadas que correspondan, de a uno y repartidos en el tiempo">✉ Mail de oposición/vista</button>
     <button type="button" class="btn-sel" onclick="accionGestor()" title="Los titulares dejan de ser leads">Tiene gestor/apoderado</button>
     <button type="button" class="btn-sel" id="btn-sel-exportar" onclick="accionExportar()">Exportar CSV</button>
     <button type="button" class="btn-sel suave" onclick="limpiarSeleccion()">Quitar selección ✕</button>
@@ -791,7 +792,7 @@ function filaHtml(r, { flecha = false, oculta = false, idGrupo = null, cantidadR
       <td>${_escapeHtml(r.clase ?? "")}${celdaOtrasClases(r)}</td>
       <td class="denominacion" title="${_escapeHtml(r.denominacion_inpi || r.denominacion || "")}">${_escapeHtml(r.denominacion_inpi || r.denominacion || "") || `<em>${sinNombre(r.tipo)}</em>`}</td>
       <td class="titular" title="${_escapeHtml(r.titular || "")}">${celdaTitular}</td>
-      <td>${badgeLead(r)} ${crmSlot(claveTitular(r))} ${badgePreBoletin(r)} ${badgeOposicion(r)} ${badgeVistaPre(r)} ${badgeRevisionOposicion(r)} ${badgeEstadoTramite(r)}</td>
+      <td>${badgeLead(r)} ${crmSlot(claveTitular(r))} ${badgePreBoletin(r)} ${badgeOposicion(r)} ${badgeVistaPre(r)} ${badgeRevisionOposicion(r)} ${badgeEstadoTramite(r)} ${badgeMailProgramado(r)}</td>
       <td class="celda-email">${celdaEmailIcono(r)}</td>
       <td class="col-boletin">${fechaPublicacionOFallback(r)}</td>
       <td class="col-present">${fmtFecha(r.fecha_presentacion) || "—"}</td>
@@ -964,6 +965,153 @@ function accionAtendida(valor) {
     if (!r.marcas) return { texto: "Ninguna de las marcas seleccionadas tiene oposición o vista.", tipo: "aviso" };
     return `${plural(r.marcas, "marca con oposición/vista", "marcas con oposición/vista")} ${valor ? "marcadas como atendidas" : "ya no figuran como atendidas"}`;
   });
+}
+
+// ── Mail de oposición / vista masivo y escalonado (04/11/2026) ─────────────
+// Programa el mail a todas las seleccionadas que correspondan, de a uno y repartidos en el tiempo
+// (los manda la cola de mails, ver envio_masivo.py). Primero muestra qué va a pasar.
+function badgeMailProgramado(r) {
+  if (!r.mail_programado_para) return "";
+  const d = new Date(r.mail_programado_para);
+  const cuando = d.toLocaleString("es-AR", { weekday: "short", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+  return `<span class="badge mail-programado" title="El mail de oposición/vista ya está programado (o esperando en la cola). Se ve, se pausa o se cancela en Más → Mails → Enviados.">⏳ mail ${_escapeHtml(cuando)}</span>`;
+}
+
+const MM_CAMPOS = ["intervalo_minutos", "hora_desde", "hora_hasta", "max_por_dia", "variar", "solo_habiles", "incluir_contactadas", "inicio"];
+let mmTimer = null, mmPedido = 0;
+
+function mmFecha(iso, conDia = true) {
+  if (!iso) return "—";
+  const d = new Date(iso), hoy = new Date();
+  const mismoDia = d.toDateString() === hoy.toDateString();
+  const hora = d.toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" });
+  if (!conDia) return hora;
+  return mismoDia ? `hoy ${hora}` : `${d.toLocaleDateString("es-AR", { weekday: "short", day: "2-digit", month: "2-digit" })} ${hora}`;
+}
+
+function mmParametros(fondo) {
+  const v = id => fondo.querySelector(`#mm-${id}`);
+  return {
+    intervalo_minutos: Number(v("intervalo_minutos").value), hora_desde: Number(v("hora_desde").value),
+    hora_hasta: Number(v("hora_hasta").value), max_por_dia: Number(v("max_por_dia").value),
+    variar: v("variar").checked, solo_habiles: v("solo_habiles").checked, incluir_contactadas: v("incluir_contactadas").checked,
+    inicio: v("cuando").value === "luego" && v("inicio").value ? v("inicio").value : null,
+  };
+}
+
+function accionMailMasivo() {
+  const n = seleccion.actas.size;
+  if (!n) return;
+  let fondo = document.getElementById("modal-mail-masivo");
+  if (!fondo) {
+    fondo = document.createElement("div");
+    fondo.id = "modal-mail-masivo";
+    fondo.className = "modal-fondo";
+    fondo.addEventListener("click", ev => { if (ev.target === fondo) fondo.classList.remove("abierto"); });
+    document.addEventListener("keydown", ev => { if (ev.key === "Escape") fondo.classList.remove("abierto"); });
+    document.body.appendChild(fondo);
+  }
+  const horas = (sel, max) => Array.from({ length: max + 1 }, (_, h) => `<option value="${h}"${h === sel ? " selected" : ""}>${String(h).padStart(2, "0")}:00</option>`).join("");
+  fondo.innerHTML = `
+    <div class="modal-caja modal-acceso modal-mail-masivo" role="dialog" aria-modal="true" aria-label="Mail de oposición o vista a las seleccionadas">
+      <button type="button" class="modal-cerrar" aria-label="Cerrar">&times;</button>
+      <h3 class="titulo-coment">✉ Mail de oposición / vista a ${plural(n, "marca seleccionada", "marcas seleccionadas")}</h3>
+      <p class="mm-intro">A cada marca con una oposición o una vista pendiente le sale su mail («Recibió una oposición» o «Recibió una vista»), con la plantilla guardada y los datos reales, igual que desde la ficha. <strong>No salen todos juntos:</strong> se programan de a uno y la cola los va mandando a su hora.</p>
+      <div class="mm-grilla">
+        <label class="campo">Uno cada
+          <span class="mm-con-unidad"><input type="number" id="mm-intervalo_minutos" min="1" max="240" value="4" /> minutos</span></label>
+        <label class="campo">Máximo por día
+          <span class="mm-con-unidad"><input type="number" id="mm-max_por_dia" min="1" max="95" value="60" /> mails</span></label>
+        <label class="campo">Desde las
+          <select id="mm-hora_desde">${horas(9, 20)}</select></label>
+        <label class="campo">Hasta las
+          <select id="mm-hora_hasta">${horas(19, 21).replace('<option value="0">00:00</option>', "")}</select></label>
+        <label class="campo">Empieza
+          <select id="mm-cuando"><option value="ahora">Ahora (el próximo horario válido)</option><option value="luego">Más adelante…</option></select></label>
+        <label class="campo" id="mm-inicio-caja" hidden>Fecha y hora de inicio
+          <input type="datetime-local" id="mm-inicio" /></label>
+      </div>
+      <label class="check"><input type="checkbox" id="mm-variar" checked /> <span>Variar un poco el intervalo<small>Entre uno y otro pasa el intervalo más hasta un 50 % al azar: se ve más como un envío hecho a mano.</small></span></label>
+      <label class="check"><input type="checkbox" id="mm-solo_habiles" checked /> <span>Solo de lunes a viernes</span></label>
+      <label class="check"><input type="checkbox" id="mm-incluir_contactadas" /> <span>Incluir las que ya están contactadas<small>Por defecto quedan afuera. Las que ya recibieron este mail quedan afuera siempre.</small></span></label>
+      <div class="mm-resumen" id="mm-resumen">Calculando…</div>
+      <div class="acceso-error" id="mm-error" hidden></div>
+      <div class="acciones-modal">
+        <button type="button" id="mm-cancelar">Cancelar</button>
+        <button type="button" class="principal" id="mm-confirmar" disabled>Programar</button>
+      </div>
+    </div>`;
+  fondo.classList.add("abierto");
+  const cerrar = () => fondo.classList.remove("abierto");
+  fondo.querySelector(".modal-cerrar").addEventListener("click", cerrar);
+  fondo.querySelector("#mm-cancelar").addEventListener("click", cerrar);
+  fondo.querySelector("#mm-cuando").addEventListener("change", ev => {
+    fondo.querySelector("#mm-inicio-caja").hidden = ev.target.value !== "luego";
+    if (ev.target.value === "luego" && !fondo.querySelector("#mm-inicio").value) {
+      const m = new Date(); m.setDate(m.getDate() + 1); m.setHours(9, 0, 0, 0);
+      const pad = x => String(x).padStart(2, "0");
+      fondo.querySelector("#mm-inicio").value = `${m.getFullYear()}-${pad(m.getMonth() + 1)}-${pad(m.getDate())}T09:00`;
+    }
+    mmProgramarPrevia(fondo);
+  });
+  fondo.querySelectorAll("input, select").forEach(el => el.addEventListener(el.type === "number" || el.type === "datetime-local" ? "input" : "change", () => mmProgramarPrevia(fondo)));
+  fondo.querySelector("#mm-confirmar").addEventListener("click", () => mmConfirmar(fondo));
+  mmPrevia(fondo);
+}
+
+function mmProgramarPrevia(fondo) { clearTimeout(mmTimer); mmTimer = setTimeout(() => mmPrevia(fondo), 350); }
+
+async function mmPrevia(fondo) {
+  const pedido = ++mmPedido;
+  const caja = fondo.querySelector("#mm-resumen"), err = fondo.querySelector("#mm-error"), btn = fondo.querySelector("#mm-confirmar");
+  btn.disabled = true; err.hidden = true;
+  caja.classList.add("cargando");
+  try {
+    const r = await apiJson("/api/masivo/mail-oposicion/previa", "POST", { actas: [...seleccion.actas], parametros: mmParametros(fondo) });
+    if (pedido !== mmPedido) return;
+    caja.classList.remove("cargando");
+    const n = r.elegibles.length, nOpo = r.elegibles.filter(e => e.clave === "prospecto_oposicion").length;
+    const tipos = [nOpo ? plural(nOpo, "de oposición", "de oposición") : "", n - nOpo ? plural(n - nOpo, "de vista", "de vista") : ""].filter(Boolean).join(" y ");
+    const dias = r.resumen.por_dia.map(d => `<li>${_escapeHtml(mmFecha(d.desde).replace(/ \d\d:\d\d$/, ""))}: <strong>${d.cantidad}</strong> <span class="mm-gris">(${_escapeHtml(mmFecha(d.desde, false))} a ${_escapeHtml(mmFecha(d.hasta, false))})</span></li>`).join("");
+    const afuera = r.excluidas.map(x => `<details class="mm-afuera"><summary>${_escapeHtml(x.texto)}: <strong>${x.cantidad}</strong></summary><ul>${
+      x.marcas.map(m => `<li>${_escapeHtml(m.marca || "(sin nombre)")} <span class="mm-gris">· ${_escapeHtml(m.titular)} · acta ${_escapeHtml(m.acta)}</span></li>`).join("")}</ul></details>`).join("");
+    const lista = n ? `<details class="mm-lista"><summary>Ver los ${fmtMiles(n)} mails en orden, con su hora aproximada</summary><table><thead><tr><th>Hora aprox.</th><th>Marca</th><th>Para</th><th>Mail</th></tr></thead><tbody>${
+      r.elegibles.map(e => `<tr><td>${_escapeHtml(mmFecha(e.hora))}</td><td>${_escapeHtml(e.marca || e.acta)}<div class="mm-gris">${_escapeHtml(e.titular)} · acta ${_escapeHtml(e.acta)}</div></td><td>${_escapeHtml(e.email)}</td><td>${e.clave === "prospecto_vista" ? "Vista" : "Oposición"}</td></tr>`).join("")}</tbody></table></details>` : "";
+    const cupo = r.enviados_hoy != null ? `<p class="mm-gris">Hoy ya salieron ${fmtMiles(r.enviados_hoy)} mails a prospectos (Resend permite 100 por día; el envío deja margen hasta ${r.limite_dia}, contando también lo que ya espera en la cola).</p>` : "";
+    caja.innerHTML = n
+      ? `<p class="mm-total">Se programan <strong>${plural(n, "mail", "mails")}</strong> (${tipos}).</p>
+         <p>Primero: <strong>${_escapeHtml(mmFecha(r.resumen.primero))}</strong> · último: <strong>${_escapeHtml(mmFecha(r.resumen.ultimo))}</strong> · ${plural(r.resumen.dias, "día", "días")} de envío.</p>
+         <ul class="mm-dias">${dias}</ul>${cupo}${lista}
+         ${afuera ? `<p class="mm-sub">Quedan afuera:</p>${afuera}` : ""}
+         <p class="mm-gris">Las horas son aproximadas. Antes de mandar cada uno se vuelve a revisar que siga correspondiendo (sigue siendo lead, la oposición o vista no se marcó como contestada, no es cliente, no se dio de baja); si no, se cancela solo. Se puede pausar o cancelar en Más → Mails → Enviados.</p>`
+      : `<p class="mm-total">A ninguna de las marcas seleccionadas le corresponde el mail.</p>${afuera}`;
+    btn.textContent = n ? `Programar ${plural(n, "mail", "mails")}` : "Programar";
+    btn.disabled = !n;
+  } catch (e) {
+    if (pedido !== mmPedido) return;
+    caja.classList.remove("cargando");
+    caja.innerHTML = "";
+    err.textContent = e.message; err.hidden = false;
+  }
+}
+
+async function mmConfirmar(fondo) {
+  const btn = fondo.querySelector("#mm-confirmar"), err = fondo.querySelector("#mm-error");
+  if (!confirm(`¿Programar el envío? Los mails le llegan a los leads (no es una prueba).`)) return;
+  btn.disabled = true; btn.textContent = "Programando…"; err.hidden = true;
+  barraOcupada(true);
+  try {
+    const r = await apiJson("/api/masivo/mail-oposicion", "POST", { actas: [...seleccion.actas], parametros: mmParametros(fondo) });
+    fondo.classList.remove("abierto");
+    limpiarSeleccion();
+    await cargar(estado.offset);
+    mostrarAviso(`Envío masivo #${r.lote_id}: se programaron ${plural(r.programados, "mail", "mails")}, del ${mmFecha(r.resumen.primero)} al ${mmFecha(r.resumen.ultimo)}. Se sigue (y se pausa o cancela) en Más → Mails → Enviados.`, "ok");
+  } catch (e) {
+    err.textContent = e.message; err.hidden = false;
+    btn.disabled = false; btn.textContent = "Programar";
+  } finally {
+    barraOcupada(false);
+  }
 }
 
 function accionGestor() {

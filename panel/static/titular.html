@@ -601,7 +601,8 @@ function pintarEstadoMailOpo() {
   const actaBtn = btn && btn.dataset.actaOpo;
   const previo = (mlEnvios || []).find(e => e.clave_mail === clave && (!actaBtn || e.acta === actaBtn));
   el.textContent = !previo ? ""
-    : previo.en_cola && previo.en_cola.estado === "pendiente" ? `⏳ En cola: sale ${mlFecha(previo.en_cola.sale_desde)}`
+    : previo.en_cola && previo.en_cola.estado === "pausado" ? "⏳ Programado (envío masivo pausado)"
+    : previo.en_cola && previo.en_cola.estado === "pendiente" ? `⏳ ${previo.en_cola.lote ? "Programado" : "En cola"}: sale ${mlFecha(previo.en_cola.sale_desde)}`
     : `✓ Ya se le mandó el ${mlFecha(previo.enviado_en)}${previo.enviado_por ? " (" + previo.enviado_por + ")" : ""}`;
 }
 
@@ -630,6 +631,8 @@ function mlSeguimiento(s) {
 // Mail que chocó con el cupo diario de Resend y espera en la cola (sale solo después de las 21:00).
 function mlEnCola(c) {
   if (c.estado === "error") return `<span class="seg mal" title="${mlEsc(c.error || "")}">No salió de la cola</span>`;
+  if (c.estado === "pausado") return `<span class="seg cola" title="Es parte del envío masivo #${mlEsc(c.lote || "")}, que está pausado. Se reanuda o se cancela en Más → Mails → Enviados.">Programado · envío masivo pausado</span>`;
+  if (c.lote) return `<span class="seg cola" title="Es parte del envío masivo #${mlEsc(c.lote)} (de a uno, repartidos en el tiempo). Se ve, se pausa o se cancela en Más → Mails → Enviados.">Programado · sale ${mlEsc(mlFecha(c.sale_desde))}</span>`;
   return `<span class="seg cola" title="Se agotó el cupo diario de Resend. Se ve y se cancela en Más → Mails → Enviados.">En cola · sale ${mlEsc(mlFecha(c.sale_desde))}</span>`;
 }
 

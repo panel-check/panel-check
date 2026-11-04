@@ -38,6 +38,7 @@ from urllib.parse import quote
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse, RedirectResponse, Response
 from pydantic import BaseModel
+from zoneinfo import ZoneInfo
 
 import mails_core as mc
 import mails_cola
@@ -418,7 +419,8 @@ def crear_router(verificar_login, verificar_admin, conexion, registrar_en_crm=No
         with conexion() as conn, rcur(conn) as cur:
             cur.execute(
                 "SELECT e.id, e.clave_mail, e.acta, e.para, e.asunto, e.resend_id, e.enviado_por, e.enviado_en, e.detalle, "
-                "       c.estado AS cola_estado, c.intentar_desde AS cola_sale_desde, c.ultimo_error AS cola_error "
+                "       c.estado AS cola_estado, c.intentar_desde AS cola_sale_desde, c.ultimo_error AS cola_error, "
+                "       c.lote_id AS cola_lote "
                 "FROM mails_envios e LEFT JOIN mails_cola c ON c.id = e.cola_id "
                 "WHERE e.acta = ANY(%s) AND NOT e.es_prueba ORDER BY e.enviado_en DESC LIMIT 200", (lista,))
             filas = cur.fetchall()
@@ -429,8 +431,9 @@ def crear_router(verificar_login, verificar_admin, conexion, registrar_en_crm=No
             # Esperando en la cola (cupo diario de Resend agotado): {estado, sale_desde, error}; None si ya salió.
             est = f.pop("cola_estado", None)
             sale, err = f.pop("cola_sale_desde", None), f.pop("cola_error", None)
-            f["en_cola"] = {"estado": est, "sale_desde": sale.isoformat() if sale else None, "error": err} \
-                if est in ("pendiente", "error") else None
+            lote = f.pop("cola_lote", None)
+            f["en_cola"] = {"estado": est, "sale_desde": sale.isoformat() if sale else None, "error": err, "lote": lote} \
+                if est in ("pendiente", "error", "pausado") else None
             f["plantilla"] = mc.CATALOGO.get(f["clave_mail"], {}).get("nombre", f["clave_mail"])
             det = f.pop("detalle", None)
             # Mails con presupuesto: qué se cotizó y un link para volver a ver el PDF.
@@ -473,10 +476,18 @@ def crear_router(verificar_login, verificar_admin, conexion, registrar_en_crm=No
                 raise HTTPException(status_code=404, detail=f"No existe la marca con acta {body.acta}")
             if mc.esta_de_baja(cur, destino):
                 raise HTTPException(status_code=400, detail=f"{destino} está en la lista de bajas: no se le escribe más.")
-            cur.execute("SELECT enviado_en, enviado_por FROM mails_envios WHERE clave_mail = %s AND acta = %s AND NOT es_prueba "
-                        "ORDER BY enviado_en DESC LIMIT 1", (clave, body.acta))
+            cur.execute("SELECT e.enviado_en, e.enviado_por, c.estado AS cola_estado, c.intentar_desde, c.lote_id "
+                        "FROM mails_envios e LEFT JOIN mails_cola c ON c.id = e.cola_id "
+                        "WHERE e.clave_mail = %s AND e.acta = %s AND NOT e.es_prueba "
+                        "ORDER BY e.enviado_en DESC LIMIT 1", (clave, body.acta))
             previo = cur.fetchone()
             cfg = mc.combinar(clave, _guardadas(cur).get(clave))
+        if previo and previo.get("cola_estado") in ("pendiente", "pausado") and previo.get("lote_id"):
+            # Ya está programado en un envío masivo: mandarlo ahora a mano lo duplicaría.
+            sale = previo["intentar_desde"].astimezone(ZoneInfo("America/Argentina/Buenos_Aires")).strftime("%d/%m/%Y %H:%M")
+            raise HTTPException(status_code=400, detail=f"Este mail ya está programado en el envío masivo #{previo['lote_id']} "
+                                                        f"({'pausado' if previo['cola_estado'] == 'pausado' else 'sale el ' + sale}). "
+                                                        "Si querés mandarlo ya, cancelalo primero en Más → Mails → Enviados.")
         if previo and not body.confirmar_repetido:
             cuando = previo["enviado_en"].astimezone().strftime("%d/%m/%Y %H:%M")
             raise HTTPException(status_code=409, detail=f"Esta plantilla ya se le mandó a esta marca el {cuando}"
