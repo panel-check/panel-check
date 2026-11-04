@@ -187,11 +187,23 @@ function _crmHtmlCabecera(d, opciones = {}) {
   const conOpo = m => m.tuvo_oposicion === true && m.es_lead === true && m.oposicion_atendida !== true && m.oposicion_sirve !== false;
   // Vista de INPI antes de publicar sin contestar: mismo atajo, pero con el mail «Recibió una vista».
   const conVista = m => m.tuvo_vista === true && m.vista_sirve === true && m.es_lead === true;
-  const marcaConOpo = (!d.cliente && l.es_lead && l.oposicion_sin_apoderado)
-    ? (d.marcas.find(m => conOpo(m) && m.email) || d.marcas.find(conOpo))
+  // Con varias marcas con oposición o vista, el atajo va a la que falta contactar (03/11/2026): primero
+  // las no contactadas con mail, después las no contactadas sin mail y recién después las ya contactadas.
+  // Así, mandado el mail de una, el botón pasa solo a la siguiente pendiente del mismo titular.
+  const elegirPendiente = (cumple) =>
+    d.marcas.find(m => cumple(m) && m.contactado !== true && m.email)
+    || d.marcas.find(m => cumple(m) && m.contactado !== true)
+    || d.marcas.find(m => cumple(m) && m.email)
+    || d.marcas.find(cumple);
+  const opoPendiente = d.marcas.some(m => conOpo(m) && m.contactado !== true);
+  const vistaPendiente = d.marcas.some(m => conVista(m) && m.contactado !== true);
+  // Si las oposiciones ya están todas contactadas y queda una vista sin contactar, el atajo va a la vista.
+  const priorizarVista = !opoPendiente && vistaPendiente;
+  const marcaConOpo = (!priorizarVista && !d.cliente && l.es_lead && l.oposicion_sin_apoderado)
+    ? elegirPendiente(conOpo)
     : null;
   const marcaConVista = (!marcaConOpo && !d.cliente && l.es_lead && l.vista_sin_apoderado)
-    ? (d.marcas.find(m => conVista(m) && m.email) || d.marcas.find(conVista))
+    ? elegirPendiente(conVista)
     : null;
   const marcaOpo = marcaConOpo || marcaConVista;
   if (marcaOpo) {
