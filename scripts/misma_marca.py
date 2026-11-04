@@ -40,19 +40,44 @@ RETURNING t.acta
 """
 
 
-def marcar_por_misma_marca(conn) -> list:
+def marcar_por_misma_marca(conn, dry_run: bool = False) -> list:
     """Marca contactadas las actas con oposición o vista cuya gemela (mismo titular y mismo nombre) ya está
-    contactada. Hace commit. Devuelve las actas marcadas. De mejor esfuerzo: si falla, no corta el proceso."""
+    contactada. Hace commit (con dry_run, rollback: solo lista). Devuelve las actas. De mejor esfuerzo: si
+    falla, no corta el proceso."""
     try:
         with conn.cursor() as cur:
             cur.execute(SQL_MARCAR)
             actas = sorted(r[0] for r in cur.fetchall())
-        conn.commit()
+        if dry_run:
+            conn.rollback()
+        else:
+            conn.commit()
     except Exception as e:  # noqa: BLE001 — es un agregado; no debe tirar abajo la revisión
         conn.rollback()
         print(f"No se pudieron marcar las contactadas por mismo nombre: {e}", flush=True)
         return []
     if actas:
-        print(f"Marcadas como contactadas por tener el mismo nombre que una marca ya contactada del titular: "
+        print(f"{'(DRY-RUN, no se guardó) ' if dry_run else ''}Marcadas como contactadas por tener el mismo nombre que una marca ya contactada del titular: "
               f"{len(actas)} ({', '.join(actas[:30])}{'…' if len(actas) > 30 else ''})", flush=True)
     return actas
+
+
+if __name__ == "__main__":
+    # Uso a mano (workflow «Contactado por mismo nombre: aplicar ahora»): DATABASE_URL=... python3 misma_marca.py [--dry-run]
+    import argparse
+    import os
+
+    import psycopg2
+
+    ap = argparse.ArgumentParser(description="Marca contactadas las actas con oposición o vista cuya marca del mismo nombre ya se contactó.")
+    ap.add_argument("--dry-run", action="store_true", help="solo listar, sin guardar")
+    args = ap.parse_args()
+    url = os.environ.get("DATABASE_URL")
+    if not url:
+        raise SystemExit("Falta DATABASE_URL")
+    conexion = psycopg2.connect(url, options="-c jit=off")
+    try:
+        marcadas = marcar_por_misma_marca(conexion, dry_run=args.dry_run)
+        print(f"Total: {len(marcadas)} actas{' (dry-run: no se guardó nada)' if args.dry_run else ''}.")
+    finally:
+        conexion.close()
