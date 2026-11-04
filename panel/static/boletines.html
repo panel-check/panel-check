@@ -233,7 +233,9 @@ function render() {
     verTodos = e.target.checked;
     render();
   });
-  contenido.querySelectorAll(".importar-boletin").forEach((b) => {
+  // Solo los «Importar» de cada fila (tienen data-numero): el botón «↻ Actualizar ahora»
+  // comparte la clase por el estilo y antes disparaba también un importar sin número (400).
+  contenido.querySelectorAll("button.importar-boletin[data-numero]").forEach((b) => {
     b.addEventListener("click", () => importar(b));
   });
   contenido.querySelectorAll(".buscar-opo").forEach((b) => {
