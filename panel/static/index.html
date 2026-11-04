@@ -71,6 +71,13 @@
       <option value="sin">Sin oposición (revisadas)</option>
     </select>
   </label>
+  <label>Notificación
+    <select id="f-notificacion" title="Oposiciones y vistas según si INPI ya se las notificó al titular. Se calcula igual que las etiquetas «sin notificar» / «ya notificada» de la tabla: INPI notifica el primer miércoles después de que cierra el plazo de 30 días.">
+      <option value="" selected>Todas</option>
+      <option value="sin">Sin notificar</option>
+      <option value="notificada">Ya notificadas</option>
+    </select>
+  </label>
   <label>Vista antes de publicar
     <select id="f-vista-pre" title="Vista de INPI en una marca que todavía no salió en el boletín (pre-boletín). No es una oposición: es una observación de INPI que frena la publicación hasta que se contesta.">
       <option value="" selected>Todas</option>
@@ -461,6 +468,7 @@ function filtrosActuales() {
     tuvo_oposicion: opcionOposicion() === "sin" ? "false" : (opcionOposicion() ? "true" : ""),
     tipo_oposicion: ["oposicion", "vista"].includes(opcionOposicion()) ? opcionOposicion() : "",
     vista_pre: document.getElementById("f-vista-pre").value,
+    notificacion: document.getElementById("f-notificacion").value,
     fecha_desde: document.getElementById("f-fecha-desde").value,
     fecha_hasta: document.getElementById("f-fecha-hasta").value,
     fecha_dias: document.getElementById("f-fecha-dias").value,
@@ -484,6 +492,7 @@ function limpiarFiltros() {
   document.getElementById("f-contactado").value = "false";
   document.getElementById("f-oposicion").value = "";
   document.getElementById("f-vista-pre").value = "";
+  document.getElementById("f-notificacion").value = "";
   document.getElementById("f-fecha-desde").value = "";
   document.getElementById("f-fecha-hasta").value = "";
   document.getElementById("f-fecha-dias").value = "";
@@ -639,6 +648,7 @@ window.describirFiltrosActuales = function () {
   if (document.getElementById("f-contactado").value) partes.push(texto("f-contactado"));
   if (document.getElementById("f-oposicion").value) partes.push(texto("f-oposicion"));
   if (document.getElementById("f-vista-pre").value) partes.push(`Vista antes de publicar: ${texto("f-vista-pre")}`);
+  if (document.getElementById("f-notificacion").value) partes.push(`Notificación: ${texto("f-notificacion")}`);
   if (!document.getElementById("campo-rango-fecha").classList.contains("vacio")) {
     partes.push(`Fecha boletín: ${document.getElementById("campo-rango-fecha").textContent.trim()}`);
   }
@@ -686,6 +696,7 @@ function filtrosDesdeURL() {
     (tipoOpo === "oposicion" || tipoOpo === "vista") ? tipoOpo
       : tuvoOpo === "true" ? "con" : tuvoOpo === "false" ? "sin" : "";
   document.getElementById("f-vista-pre").value = ["sirve", "fondo", "cualquiera"].includes(p.get("vista_pre")) ? p.get("vista_pre") : "";
+  document.getElementById("f-notificacion").value = ["sin", "notificada"].includes(p.get("notificacion")) ? p.get("notificacion") : "";
   document.getElementById("f-fecha-desde").value = p.get("fecha_desde") ?? "";
   document.getElementById("f-fecha-hasta").value = p.get("fecha_hasta") ?? "";
   document.getElementById("f-fecha-dias").value = /^\d+$/.test(p.get("fecha_dias") ?? "") ? p.get("fecha_dias") : "";
