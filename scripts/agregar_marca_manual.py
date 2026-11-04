@@ -108,9 +108,10 @@ def main():
     fecha_presentacion = _fecha_ddmmyyyy_a_iso(m_pres.group(1)) if m_pres else None
     clase = int(m_clase.group(1)) if m_clase else None
 
-    print(f"::notice::Datos a insertar acta {acta}: denominacion={denominacion!r} tipo={tipo!r} "
-          f"clase={clase} fecha_presentacion={fecha_presentacion} cuit={cuit} "
-          f"titular={titular_nombre!r} resolucion={resolucion}")
+    # Sin titular ni CUIT: el log de Actions es público (repo público).
+    print(f"::notice::Datos a insertar acta {acta}: tipo={tipo!r} clase={clase} fecha_presentacion={fecha_presentacion} "
+          f"con_denominacion={'sí' if denominacion else 'no'} con_cuit={'sí' if cuit else 'no'} "
+          f"con_titular={'sí' if titular_nombre else 'no'} resolucion={resolucion}")
 
     if not denominacion:
         print(f"::error::no se pudo extraer la denominación de DATOS GENERALES, no se inserta nada")

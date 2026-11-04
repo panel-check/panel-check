@@ -1,9 +1,8 @@
 """
 Herramienta de diagnóstico (uso puntual, no forma parte del pipeline): baja
 la página completa de /MarcasConsultas/Resultado para un acta puntual y
-vuelca, como ::notice:: de GitHub Actions (para poder leerlo por la API sin
-depender de blob storage — ver el mismo truco en backfill_fecha_publicacion.py),
-el texto (sin tags HTML) de las secciones DATOS GENERALES y TITULARIDAD.
+dice, como ::notice:: de GitHub Actions, qué secciones encontró y cuánto miden
+(desde el 03/11/2026 ya no vuelca el texto: el log es público y traía datos del titular).
 
 Por qué hace falta: ya tenemos regexes verificados para CARACTER/CUIT
 (GESTION DEL TRAMITE / TITULARIDAD) y para TIPO/DISPOSICION/VENCE
@@ -67,40 +66,17 @@ def main():
                  "PUBLICACION", "OPOSICIONES", "VISTAS Y NOTIFICACIONES",
                  "RESOLUCION", "DICTAMENES DE RECURSOS"]
 
+    # 03/11/2026: el log de Actions es PÚBLICO (repo público), así que esta herramienta ya no vuelca el texto
+    # del expediente (traía titulares, CUIT y domicilios). Solo dice qué secciones encontró y cuánto miden, y
+    # lo que se parsea sin datos personales. Para ver el expediente completo: «Ver acta en INPI» en el panel.
     for nombre in secciones:
-        bloque = _bloque_seccion(r.text, nombre)
-        bloque = re.sub(r"\s+", " ", bloque).strip()[:900]  # límite prudente por annotation
-        print(f"::notice::SECCION {nombre}: {bloque}")
-
-    # Búsqueda amplia (no acotada a ninguna sección): contexto alrededor de
-    # palabras clave que todavía no ubicamos bien (TITULAR, PAIS, CUIT).
-    texto_plano = _texto_sin_tags(r.text)
-    for palabra in ["TITULAR", "PAIS", "PAÍS", "CUIT"]:
-        vistos = 0
-        for m in re.finditer(re.escape(palabra), texto_plano.upper()):
-            if vistos >= 6:
-                break
-            i = m.start()
-            ctx = texto_plano[max(0, i - 20): i + 120]
-            ctx = re.sub(r"\s+", " ", ctx).strip()
-            print(f"::notice::CTX {palabra} @{i}: {ctx}")
-            vistos += 1
-
-    # La tabla de titulares tiene encabezado "TIPO Y NOMBRE DEL TITULAR..." —
-    # el nombre real viene en la fila de datos justo después. Volcamos una
-    # ventana más grande a partir de ahí para verla completa.
-    m_tabla = re.search(r"TIPO Y NOMBRE DEL TITULAR", texto_plano.upper())
-    if m_tabla:
-        i = m_tabla.start()
-        ventana = texto_plano[i: i + 700]
-        ventana = re.sub(r"\s+", " ", ventana).strip()
-        print(f"::notice::TABLA TITULARES: {ventana}")
+        bloque = re.sub(r"\s+", " ", _bloque_seccion(r.text, nombre)).strip()
+        encontrada = not bloque.startswith("(no encontrado")
+        print(f"::notice::SECCION {nombre}: {'encontrada, ' + str(len(bloque)) + ' caracteres' if encontrada else 'no encontrada'}")
 
     resolucion = parsear_resolucion(r.text)
     print(f"::notice::RESOLUCION parseada: {resolucion}")
-
-    m_cuit = RE_CUIT_SPAN.search(r.text)
-    print(f"::notice::CUIT (regex ya usado en validar_leads): {m_cuit.group(1) if m_cuit else '(no encontrado)'}")
+    print(f"::notice::CUIT (regex ya usado en validar_leads): {'encontrado' if RE_CUIT_SPAN.search(r.text) else 'no encontrado'}")
 
     print(f"::notice::acta {acta} inspeccionada OK")
 
