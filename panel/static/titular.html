@@ -472,8 +472,11 @@ function mlElegirMarcaPorDefecto() {
   const clave = document.getElementById("ml-plantilla").value;
   const conMail = mlFilas.filter(r => r.email);
   let r = null;
-  if (clave === "prospecto_oposicion") r = conMail.find(mlEsOposicion) || mlFilas.find(mlEsOposicion);
-  else if (clave === "prospecto_vista") r = conMail.find(mlEsVista) || mlFilas.find(mlEsVista);
+  // Primero la que falta contactar (con varias marcas con oposición o vista del mismo titular).
+  const elegir = (cumple) => conMail.find(x => cumple(x) && x.contactado !== true) || mlFilas.find(x => cumple(x) && x.contactado !== true)
+    || conMail.find(cumple) || mlFilas.find(cumple);
+  if (clave === "prospecto_oposicion") r = elegir(mlEsOposicion);
+  else if (clave === "prospecto_vista") r = elegir(mlEsVista);
   r = r || conMail[0] || mlFilas[0];
   if (r) document.getElementById("ml-marca").value = r.acta;
   mlAlCambiarMarca();
@@ -594,7 +597,9 @@ function pintarEstadoMailOpo() {
   if (!el) return;
   const btn = document.querySelector('[data-accion="mail-oposicion"]');
   const clave = (btn && btn.dataset.claveMail) || "prospecto_oposicion";
-  const previo = (mlEnvios || []).find(e => e.clave_mail === clave);
+  // Solo los envíos de ESA marca: si se le mandó a otra marca del titular, para esta todavía falta.
+  const actaBtn = btn && btn.dataset.actaOpo;
+  const previo = (mlEnvios || []).find(e => e.clave_mail === clave && (!actaBtn || e.acta === actaBtn));
   el.textContent = !previo ? ""
     : previo.en_cola && previo.en_cola.estado === "pendiente" ? `⏳ En cola: sale ${mlFecha(previo.en_cola.sale_desde)}`
     : `✓ Ya se le mandó el ${mlFecha(previo.enviado_en)}${previo.enviado_por ? " (" + previo.enviado_por + ")" : ""}`;
