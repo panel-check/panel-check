@@ -404,6 +404,21 @@ def calcular_lead_score(matricula_agente: str, es_lead, tiene_email: bool) -> in
 LISTADO_URL = f"{BASE}/Boletines?Tipo_Item=3"
 
 
+def _es_boletin_marcas_nuevas(celdas: list, fila_txt: str) -> bool:
+    """¿La fila es un boletín de marcas nuevas? INPI lo marca con «MARCAS NUEVAS» en la
+    columna Comentario, pero a veces publica el boletín con el comentario vacío (pasó con
+    los 11144 a 11147 del 04/11/2026). Se acepta también la fila sin comentario si es del
+    tipo «Boletines» y del sector «Marcas» (los Anexos y los de otros sectores no entran).
+    Columnas: Número | Tipo | Sector | Fecha | Archivo | Comentario."""
+    if "MARCAS NUEVAS" in fila_txt.upper():
+        return True
+    if len(celdas) < 4:
+        return False
+    tipo, sector = celdas[1].strip().lower(), celdas[2].strip().lower()
+    comentario = celdas[5].strip() if len(celdas) > 5 else ""
+    return tipo == "boletines" and sector == "marcas" and comentario == ""
+
+
 def _parse_tabla_boletines(html: str) -> list[dict]:
     soup = BeautifulSoup(html, "html.parser")
     boletines = []
@@ -414,7 +429,7 @@ def _parse_tabla_boletines(html: str) -> list[dict]:
         fila_txt = " | ".join(celdas)
         if "Boletines" not in fila_txt:
             continue
-        if "MARCAS NUEVAS" not in fila_txt.upper():
+        if not _es_boletin_marcas_nuevas(celdas, fila_txt):
             continue
         m = re.search(r"\b(\d{4,6})\b", fila_txt)
         if not m:
