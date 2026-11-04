@@ -1234,6 +1234,10 @@ def _cruce_clases_sql(minimo, clase_a, clase_b, titular):
 TIPOS_OPOSICION = ("oposicion", "vista")
 SQL_ES_OPOSICION_TERCERO = "(tuvo_oposicion IS TRUE AND COALESCE(detalle_oposicion, '') ~* 'OPO')"
 SQL_ES_SOLO_VISTA = "(tuvo_oposicion IS TRUE AND COALESCE(detalle_oposicion, '') !~* 'OPO')"
+# Oposición (o vista posterior a la publicación) marcada como «ya contestada / atendida» (a mano con «Ya la
+# contestaron» o sola cuando el expediente la muestra contestada o levantada): ya no hay nada que ofrecer, así
+# que no entra en los filtros de oposición (pedido del 03/11/2026), igual que una vista pre-boletín resuelta.
+SQL_OPOSICION_NO_ATENDIDA = "(oposicion_atendida IS NOT TRUE)"
 # Vista de INPI ANTES de publicar que todavía cuenta: una ya resuelta no tiene nada para ofrecer, así que no se
 # muestra ni entra en ningún filtro (pedido del 18/10/2026).
 SQL_VISTA_PRE_ABIERTA = ("(tuvo_vista IS TRUE AND COALESCE(vista_estado, '') NOT IN ('resuelta', 'denegada') "
@@ -1309,12 +1313,12 @@ def _consulta_marcas(f: dict) -> dict:
         condiciones.append("contactado = %s")
         valores.append(f["contactado"])
     if f["tipo_oposicion"] == "oposicion":
-        condiciones.append(SQL_ES_OPOSICION_TERCERO)
+        condiciones.append(f"({SQL_ES_OPOSICION_TERCERO} AND {SQL_OPOSICION_NO_ATENDIDA})")
     elif f["tipo_oposicion"] == "vista":
         # Vista de oficio de INPI: después de publicar (tuvo_oposicion) o antes (tuvo_vista).
-        condiciones.append(f"({SQL_ES_SOLO_VISTA} OR {SQL_VISTA_PRE_ABIERTA})")
+        condiciones.append(f"(({SQL_ES_SOLO_VISTA} AND {SQL_OPOSICION_NO_ATENDIDA}) OR {SQL_VISTA_PRE_ABIERTA})")
     elif f["tuvo_oposicion"] is True:
-        condiciones.append(f"(tuvo_oposicion IS TRUE OR {SQL_VISTA_PRE_ABIERTA})")
+        condiciones.append(f"((tuvo_oposicion IS TRUE AND {SQL_OPOSICION_NO_ATENDIDA}) OR {SQL_VISTA_PRE_ABIERTA})")
     elif f["tuvo_oposicion"] is not None:
         condiciones.append(f"(tuvo_oposicion = %s AND NOT {SQL_VISTA_PRE_ABIERTA})")
         valores.append(f["tuvo_oposicion"])
