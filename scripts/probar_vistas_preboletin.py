@@ -322,7 +322,8 @@ def reinterpretar(conn, hoy_iso, avisar=True):
         conn.commit()
         problemas = problemas_de_lectura(pdf) if estado != "resuelta" else []
         if problemas:
-            print(f"    sin entender ({'; '.join(problemas)}): {(f['vista_texto'] or '')[:400]}", flush=True)
+            # El texto de la vista trae datos del titular: no va al log (público); va en el mail de aviso.
+            print(f"    sin entender ({'; '.join(problemas)}): texto de {len(f['vista_texto'] or '')} caracteres (va en el mail de aviso)", flush=True)
             sin_entender.append({"acta": f["acta"], "marca": f["denominacion"], "tipo": pdf["tipo"],
                                  "problemas": problemas, "texto": f["vista_texto"]})
         if nuevo != anterior:
@@ -573,7 +574,8 @@ def main():
                         elif estado_v == "resuelta":
                             categoria = "vista_resuelta"
                         if actas_pedidas and pdf.get("texto"):
-                            print(f"      texto de la vista: {pdf['texto'][:500]}", flush=True)
+                            # El texto trae datos del titular: el log de Actions es público, solo se informa el largo.
+                            print(f"      texto de la vista leído: {len(pdf['texto'])} caracteres", flush=True)
             except Exception as e:  # noqa: BLE001
                 categoria, guardable = "vista_sin_expediente", False
                 extra = f" | expediente: error {e}"
@@ -628,7 +630,8 @@ def main():
         print(f"  {k}: {v}")
     print(f"\nCandidatas con vista pendiente: {len(candidatas)}")
     for m, ingreso, vista, extra in candidatas:
-        print(f"  acta {m['acta']} · {m['denominacion'] or '—'} · {m['titular'] or '—'} · ingreso {ingreso or '—'} · vista {vista or '—'}{extra}")
+        # Sin marca ni titular: el log y el resumen de Actions son públicos (repo público). Los datos están en el panel.
+        print(f"  acta {m['acta']} · ingreso {ingreso or '—'} · vista {vista or '—'}{extra}")
 
     resumen_gh = os.environ.get("GITHUB_STEP_SUMMARY")
     if resumen_gh:
@@ -639,9 +642,9 @@ def main():
             for k, v in sorted(conteo.items(), key=lambda kv: -kv[1]):
                 f.write(f"| {k} | {v} |\n")
             if candidatas:
-                f.write("\n### Candidatas con vista pendiente\n\n| Acta | Marca | Titular | Ingreso | Vista | Expediente |\n|---|---|---|---|---|---|\n")
+                f.write("\n### Candidatas con vista pendiente\n\n| Acta | Ingreso | Vista | Expediente |\n|---|---|---|---|\n")
                 for m, ingreso, vista, extra in candidatas:
-                    f.write(f"| {m['acta']} | {m['denominacion'] or '—'} | {m['titular'] or '—'} | {ingreso or '—'} | {vista or '—'} | {extra.replace(' | expediente: ', '')} |\n")
+                    f.write(f"| {m['acta']} | {ingreso or '—'} | {vista or '—'} | {extra.replace(' | expediente: ', '')} |\n")
 
 
 if __name__ == "__main__":

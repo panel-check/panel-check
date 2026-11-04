@@ -86,7 +86,7 @@ def main():
             sin_cambio += 1
         else:
             corregidas += 1
-            print(f"  acta {acta}: {(titular_actual or '')[:60]!r} -> {nuevo!r}")
+            print(f"  acta {acta}: titular corregido")  # sin nombres: el log de Actions es público
             if not args.dry_run:
                 with conn.cursor() as cur:
                     cur.execute(
