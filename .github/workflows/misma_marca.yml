@@ -1,0 +1,43 @@
+name: "Contactado por mismo nombre: aplicar ahora (manual)"
+
+# Marca como contactadas las actas con oposición o vista cuya marca del mismo nombre (mismo titular, cualquier
+# clase o tipo) ya se contactó. Lo mismo hacen solas la revisión de oposiciones y la de vistas al terminar;
+# esto sirve para aplicarlo en el momento. No consulta a INPI (solo la base): no usa el carril de INPI.
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "true = solo listar qué actas se marcarían, sin guardar. Para aplicar, false"
+        required: false
+        default: "false"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: misma-marca
+  cancel-in-progress: false
+
+jobs:
+  aplicar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.11"
+
+      - name: Instalar dependencias
+        run: pip install -r requirements.txt
+
+      - name: Marcar contactadas por mismo nombre
+        run: |
+          cd scripts
+          args=""
+          if [ "${{ inputs.dry_run }}" = "true" ]; then args="--dry-run"; fi
+          python3 misma_marca.py $args
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL || secrets.DATABASE_PUBLIC_URL }}
+          PYTHONUNBUFFERED: "1"
