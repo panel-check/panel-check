@@ -4,8 +4,6 @@ name: Probar formularios con base
 # Postgres descartable del propio runner: nunca toca la base de Railway. Datos inventados.
 on:
   workflow_dispatch:
-  push:
-    branches: [claude/formulario-link-correccion]
 
 jobs:
   probar:
