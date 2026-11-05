@@ -67,7 +67,7 @@
       <div><h2>${esc(titulo)} · ${esc(r.marca || "")}${ref && /^INFPR-\d+$/i.test(ref) ? ` · <span class="cl-tag">${esc(ref)}</span>` : ""}</h2>
         <div class="crm-gris">${r.cliente_id ? `Cliente: <a href="/clientes?cliente=${r.cliente_id}&ctab=informes">${esc(r.cliente_nombre || "#" + r.cliente_id)}</a> · `
           : r.lead_clave ? `Lead: <a href="/titular/${encodeURIComponent(r.lead_clave)}#informes">${esc(r.lead_nombre || r.lead_clave)}</a> · ` : ""}cargado ${esc(fmtFechaHora(r.generado_en))}${r.generado_por ? " por " + esc(r.generado_por) : ""}</div></div>
-      <div class="der">${extra}<a class="cl-btn sec" href="/api/informes/${r.id}/json">Descargar JSON</a></div></div>`;
+      <div class="der">${r.compartir ? '<button type="button" class="cl-btn sec" id="inf-compartir" title="Copia el link con la vista previa para WhatsApp (marca y de quién es); el informe sigue pidiendo iniciar sesión">🔗 Copiar link para compartir</button>' : ""}${extra}<a class="cl-btn sec" href="/api/informes/${r.id}/json">Descargar JSON</a></div></div>`;
   }
 
   function interno(r) {
@@ -216,6 +216,21 @@
     let r;
     try { r = await api(`/api/informes/${iid}`); }
     catch (e) { cont.innerHTML = `<p class="crm-error">No se pudo abrir el informe (${esc(e.message)}).</p>`; return; }
+    // La dirección queda con el código de compartir (?c=): si se copia de la barra y se manda por
+    // WhatsApp, la tarjeta muestra el tipo, la marca y de quién es en vez de la pantalla de ingreso.
+    const linkCompartir = r.compartir ? `${location.origin}/informes/${r.id}?c=${encodeURIComponent(r.compartir)}` : "";
+    if (linkCompartir && new URLSearchParams(location.search).get("c") !== r.compartir) {
+      try { history.replaceState(null, "", `/informes/${r.id}?c=${encodeURIComponent(r.compartir)}`); } catch (e) { /* sin cambio de dirección */ }
+    }
+    const conectarCompartir = () => {
+      const b = $("inf-compartir");
+      if (!b) return;
+      b.addEventListener("click", async () => {
+        try { await navigator.clipboard.writeText(linkCompartir); b.textContent = "✓ Link copiado"; }
+        catch (e) { prompt("Copiá el link:", linkCompartir); }
+        setTimeout(() => { b.textContent = "🔗 Copiar link para compartir"; }, 2500);
+      });
+    };
     if (r.tipo === "cliente") {
       cont.innerHTML = barra(r, `<a class="cl-btn" href="/api/informes/${r.id}/pdf">Descargar PDF</a>`) +
         `<iframe class="inf-pdf" src="/api/informes/${r.id}/pdf?ver=1" title="Informe en PDF"></iframe>`;
@@ -224,5 +239,6 @@
     } else {
       interno(r);
     }
+    conectarCompartir();
   })();
 })();

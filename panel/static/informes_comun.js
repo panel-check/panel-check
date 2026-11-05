@@ -45,12 +45,14 @@ function ixFechaCorta(iso) {
 }
 
 const ixPlural = (n, uno, varios) => `${n} ${n === 1 ? uno : varios}`;
+// Link de un informe con su código de compartir (?c=): pegado en WhatsApp muestra de qué informe se trata.
+const ixLink = (i) => `/informes/${i.id}${i.c || i.compartir ? `?c=${encodeURIComponent(i.c || i.compartir)}` : ""}`;
 
 function ixVersiones(lista) {
   if (lista.length < 2) return "";
   const resto = lista.slice(1);
   return `<details class="ix-versiones"><summary>+ ${ixPlural(resto.length, "versión anterior", "versiones anteriores")}</summary>
-    ${resto.map((v) => `<a href="/informes/${v.id}" target="_blank" rel="noopener">${ixEsc(ixFechaCorta(v.generado_en))}${v.generado_por ? " · " + ixEsc(v.generado_por) : ""} ↗</a>`).join("")}</details>`;
+    ${resto.map((v) => `<a href="${ixLink(v)}" target="_blank" rel="noopener">${ixEsc(ixFechaCorta(v.generado_en))}${v.generado_por ? " · " + ixEsc(v.generado_por) : ""} ↗</a>`).join("")}</details>`;
 }
 
 function ixDocPdf(lista, g) {
@@ -60,7 +62,7 @@ function ixDocPdf(lista, g) {
   const u = lista[0];
   const fecha = u.fecha_informe || ixFechaCorta(u.generado_en);
   return `<div><div class="ix-doc pdf">
-      <a class="ix-doc-abrir" href="/informes/${u.id}" target="_blank" rel="noopener" title="Abrir el PDF">
+      <a class="ix-doc-abrir" href="${ixLink(u)}" target="_blank" rel="noopener" title="Abrir el PDF">
         <span class="ix-doc-ico">${IX_ICO.pdf}</span>
         <span class="ix-doc-txt"><span class="ix-doc-titulo">Informe al cliente</span>
           <span class="ix-doc-meta">PDF · ${ixEsc(fecha)}${u.formato === 1 ? " · formato anterior" : ""}</span></span></a>
@@ -77,7 +79,7 @@ function ixDocIa(lista, g) {
     ? `<span class="ix-punto mal"></span>${ixPlural(u.identicas, "coincidencia exacta", "coincidencias exactas")}`
     : '<span class="ix-punto ok"></span>Sin coincidencias exactas';
   return `<div><div class="ix-doc ia">
-      <a class="ix-doc-abrir" href="/informes/${u.id}" target="_blank" rel="noopener" title="Abrir el informe interno">
+      <a class="ix-doc-abrir" href="${ixLink(u)}" target="_blank" rel="noopener" title="Abrir el informe interno">
         <span class="ix-doc-ico">${IX_ICO.ia}</span>
         <span class="ix-doc-txt"><span class="ix-doc-titulo">Informe IA interno</span>
           <span class="ix-doc-meta">${exactas}${u.relevantes ? ` · ${ixPlural(u.relevantes, "relevante", "relevantes")}` : ""}</span></span></a>
@@ -98,7 +100,7 @@ function ixDocOposicion(lista) {
   const dias = ixDiasHasta(u.vencimiento);
   const vto = u.vencimiento ? `vence ${ixFechaIso(u.vencimiento)}${dias != null ? (dias < 0 ? " (vencido)" : dias <= 30 ? ` (faltan ${dias} días)` : "") : ""}` : "";
   return `<div class="ix-opo-celda"><div class="ix-doc opo">
-      <a class="ix-doc-abrir" href="/informes/${u.id}" target="_blank" rel="noopener" title="Abrir el informe de oposición">
+      <a class="ix-doc-abrir" href="${ixLink(u)}" target="_blank" rel="noopener" title="Abrir el informe de oposición">
         <span class="ix-doc-ico">${IX_ICO.opo}</span>
         <span class="ix-doc-txt"><span class="ix-doc-titulo">Informe Oposición IA${u.oponentes && u.oponentes.length ? ` · vs. ${ixEsc(u.oponentes.join(", "))}` : ""}</span>
           <span class="ix-doc-meta">${u.chances ? `<span class="ix-punto ${ixColorChances(u.chances)}"></span>Chances ${ixEsc(u.chances)}` : "Sin chances"}${u.oposiciones ? ` · ${ixPlural(u.oposiciones, "oposición", "oposiciones")}` : ""}${vto ? ` · <span class="${dias != null && dias <= 30 ? "ix-urgente" : ""}">${ixEsc(vto)}</span>` : ""}</span>
@@ -348,7 +350,7 @@ function ixNuevoInforme({ destino = null, fijo = false, marca = "", solo = "", e
     caja.classList.add("hecho");
     $m("ix-texto-" + t).disabled = true;
     $m("ix-previa-" + t).innerHTML = `<span class="bien">✓ Guardado${r.referencia ? " · " + ixEsc(r.referencia) : ""}</span>
-      <a class="ix-boton chico" href="/informes/${r.id}" target="_blank" rel="noopener">${t === "cliente" ? "Ver el PDF ↗" : "Ver el informe ↗"}</a>
+      <a class="ix-boton chico" href="${ixLink(r)}" target="_blank" rel="noopener">${t === "cliente" ? "Ver el PDF ↗" : "Ver el informe ↗"}</a>
       ${t === "cliente" ? `<a class="ix-boton sec chico" href="/api/informes/${r.id}/pdf">Descargar PDF</a>` : ""}`;
   }
 

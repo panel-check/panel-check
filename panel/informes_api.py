@@ -111,11 +111,11 @@ def crear_router(verificar_login, conexion, crm=None) -> APIRouter:
             raise HTTPException(status_code=404, detail="No se encontró ese lead")
         return {"cliente_id": None, "lead_clave": clave, "nombre": " ".join(f["titular"].split())}
 
-    def _guardar(cur, dn, tipo, marca, datos, usuario) -> int:
-        cur.execute("INSERT INTO informes_viabilidad (cliente_id, lead_clave, lead_nombre, tipo, marca, datos, generado_por) "
-                    "VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id",
+    def _guardar(cur, dn, tipo, marca, datos, usuario, codigo) -> int:
+        cur.execute("INSERT INTO informes_viabilidad (cliente_id, lead_clave, lead_nombre, tipo, marca, datos, generado_por, compartir) "
+                    "VALUES (%s, %s, %s, %s, %s, %s, %s, %s) RETURNING id",
                     (dn["cliente_id"], dn["lead_clave"], dn["nombre"] if dn["lead_clave"] else None,
-                     tipo, marca, json.dumps(datos, ensure_ascii=False), usuario))
+                     tipo, marca, json.dumps(datos, ensure_ascii=False), usuario, codigo))
         return cur.fetchone()["id"]
 
     def _cargar(tipo, texto, usuario, cliente_id=None, lead_clave=None) -> dict:
@@ -152,11 +152,13 @@ def crear_router(verificar_login, conexion, crm=None) -> APIRouter:
                             ref = iv.referencia_de_marca(cur, quien, marca)
                             if ref:
                                 caso["referencia"] = ref
-                    iid = _guardar(cur, dn, tipo, marca, d, usuario)
+                    codigo = iv.codigo_compartir()
+                    iid = _guardar(cur, dn, tipo, marca, d, usuario, codigo)
                 conn.commit()
         except iv.InformeInvalido as e:
             raise HTTPException(status_code=400, detail=str(e))
-        out = {"id": iid, "tipo": tipo, "marca": marca, "cliente_id": dn["cliente_id"], "lead_clave": dn["lead_clave"]}
+        out = {"id": iid, "tipo": tipo, "marca": marca, "cliente_id": dn["cliente_id"], "lead_clave": dn["lead_clave"],
+               "compartir": codigo}
         if tipo == "oposicion":
             out["resumen"] = io_.resumen(d)
         if tipo == "cliente":
@@ -202,7 +204,7 @@ def crear_router(verificar_login, conexion, crm=None) -> APIRouter:
         with conexion() as conn:
             with rcur(conn) as cur:
                 cur.execute("SELECT i.id, i.tipo, i.marca, i.datos, i.generado_por, i.generado_en, i.cliente_id, "
-                            "i.lead_clave, i.lead_nombre, c.nombre AS cliente_nombre FROM informes_viabilidad i "
+                            "i.lead_clave, i.lead_nombre, i.compartir, c.nombre AS cliente_nombre FROM informes_viabilidad i "
                             "LEFT JOIN clientes c ON c.id = i.cliente_id "
                             + ("WHERE " + " AND ".join(donde) + " " if donde else "")
                             + "ORDER BY i.generado_en DESC LIMIT 3000", params)
@@ -261,6 +263,7 @@ def crear_router(verificar_login, conexion, crm=None) -> APIRouter:
         return {"id": f["id"], "tipo": f["tipo"], "marca": f["marca"], "datos": f["datos"],
                 "cliente_id": f["cliente_id"], "cliente_nombre": c["nombre"] if c else "",
                 "lead_clave": f.get("lead_clave"), "lead_nombre": f.get("lead_nombre") or "",
+                "compartir": f.get("compartir") or "",
                 "generado_por": f["generado_por"], "generado_en": f["generado_en"]}
 
     @router.get("/api/informes/{iid}/pdf")
@@ -311,7 +314,7 @@ def crear_router(verificar_login, conexion, crm=None) -> APIRouter:
 
 def listar_informes(cur, cliente_id: int) -> list:
     """Lista para la ficha (sin el JSON completo; el interno trae su resumen)."""
-    cur.execute("SELECT id, tipo, marca, datos, generado_por, generado_en FROM informes_viabilidad "
+    cur.execute("SELECT id, tipo, marca, datos, generado_por, generado_en, compartir AS c FROM informes_viabilidad "
                 "WHERE cliente_id = %s ORDER BY generado_en DESC LIMIT 50", (cliente_id,))
     out = []
     for f in cur.fetchall():
@@ -353,7 +356,8 @@ def agrupar_informes(filas: list, q: str = "", falta: str = "") -> list:
                                  "lead_nombre": "" if f.get("cliente_id") else (f.get("lead_nombre") or ""),
                                  "marca": f.get("marca") or "", "ultimo": f["generado_en"], "referencia": "",
                                  "familia": familia, "cliente": [], "interno": [], "oposicion": [], "texto": ""}
-        item = {"id": f["id"], "generado_en": f["generado_en"], "generado_por": f.get("generado_por") or ""}
+        item = {"id": f["id"], "generado_en": f["generado_en"], "generado_por": f.get("generado_por") or "",
+                "c": f.get("compartir") or ""}
         if f["tipo"] == "interno":
             r = iv.resumen_interno(d)
             item.update(referencia=r["referencia"] or "", identicas=r["identicas"], relevantes=len(r["relevantes"]))
@@ -378,3 +382,94 @@ def agrupar_informes(filas: list, q: str = "", falta: str = "") -> list:
     elif falta == "leads":  # solo los de leads que todavía no son clientes
         out = [g for g in out if g["lead_clave"]]
     return out
+
+
+# ── Vista previa para WhatsApp (y otros que muestran la tarjeta de un link) ──
+NOMBRE_PAGINA = {"interno": "Informe IA interno", "oposicion": "Informe Oposición IA"}
+
+
+def _fecha_ar(v) -> str:
+    try:
+        import datetime as _dt
+        if isinstance(v, _dt.datetime):
+            v = v.astimezone(_dt.timezone(_dt.timedelta(hours=-3)))
+        return v.strftime("%d/%m/%Y")
+    except Exception:
+        return ""
+
+
+def textos_vista_previa(f: dict, cliente_nombre: str = "") -> tuple:
+    """(título, descripción) de la tarjeta del link de un informe."""
+    d = f.get("datos") or {}
+    marca = f.get("marca") or ""
+    if f["tipo"] == "cliente":
+        nombre = "Informe preliminar de disponibilidad" if d.get("formato") == 2 else "Informe preliminar de viabilidad"
+    else:
+        nombre = NOMBRE_PAGINA.get(f["tipo"], "Informe")
+    partes = []
+    if f.get("cliente_id"):
+        partes.append(f"Cliente: {cliente_nombre}" if cliente_nombre else "Cliente")
+    elif f.get("lead_clave"):
+        partes.append(f"Lead: {f.get('lead_nombre') or f['lead_clave']}")
+    if f["tipo"] == "cliente":
+        ref = (d.get("encabezado") or {}).get("referencia") or ""
+        if ref:
+            partes.append(ref)
+    elif f["tipo"] == "interno":
+        r = iv.resumen_interno(d)
+        if r["referencia"]:
+            partes.append(r["referencia"])
+        partes.append(f"{r['identicas']} coincidencia(s) exacta(s)" if r["identicas"] else "sin coincidencias exactas")
+        if r["relevantes"]:
+            partes.append(f"{len(r['relevantes'])} antecedente(s) relevante(s)")
+    elif f["tipo"] == "oposicion":
+        r = io_.resumen(d)
+        if r["oponentes"]:
+            partes.append("vs. " + ", ".join(r["oponentes"]))
+        if r["chances"]:
+            partes.append(f"chances {r['chances']}")
+        if r["vencimiento"]:
+            a, m, dd = r["vencimiento"].split("-")
+            partes.append(f"vencen los 3 meses el {dd}/{m}/{a}")
+    fecha = _fecha_ar(f.get("generado_en"))
+    if fecha:
+        partes.append(f"cargado el {fecha}" + (f" por {f['generado_por']}" if f.get("generado_por") else ""))
+    return f"{nombre} · {marca}".strip(" ·"), " · ".join(p for p in partes if p)
+
+
+def vista_previa_html(conexion, iid: int, codigo: str, base: str, destino: str):
+    """Página chica con las etiquetas Open Graph (lo que lee WhatsApp para armar la tarjeta) y que manda
+    a la persona al login. Solo si el código coincide con el del informe; si no, None."""
+    import hmac
+    from html import escape
+    with conexion() as conn:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute("SELECT i.*, c.nombre AS cliente_nombre FROM informes_viabilidad i "
+                        "LEFT JOIN clientes c ON c.id = i.cliente_id WHERE i.id = %s", (iid,))
+            f = cur.fetchone()
+    if not f or not f.get("compartir") or not hmac.compare_digest(str(f["compartir"]), str(codigo or "")):
+        return None
+    titulo, desc = textos_vista_previa(f, f.get("cliente_nombre") or "")
+    base = base.rstrip("/")
+    login = f"/login?next={quote(destino, safe='')}"
+    t, ds = escape(titulo), escape(desc + " · Panel de Smarties Consultora (pide iniciar sesión)")
+    return f"""<!DOCTYPE html>
+<html lang="es"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>{t}</title>
+<meta name="description" content="{ds}">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Smarties Consultora · Panel">
+<meta property="og:title" content="{t}">
+<meta property="og:description" content="{ds}">
+<meta property="og:url" content="{escape(base + destino)}">
+<meta property="og:image" content="{escape(base)}/static/apple-touch-icon.png">
+<meta property="og:image:width" content="180"><meta property="og:image:height" content="180">
+<meta name="twitter:card" content="summary">
+<link rel="icon" type="image/png" href="/static/favicon.png">
+<script>location.replace({json.dumps(login)});</script>
+</head><body style="font-family:system-ui,sans-serif;padding:24px">
+<p><strong>{t}</strong><br>{escape(desc)}</p>
+<p><a href="{escape(login)}">Iniciar sesión para ver el informe</a></p>
+</body></html>"""
