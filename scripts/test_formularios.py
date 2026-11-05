@@ -94,6 +94,17 @@ class ServicioPersonaFisica(unittest.TestCase):
             self.assertNotIn(campo, datos)
         self.assertEqual(validos, [])
 
+    def test_avisos_de_datos_iguales_al_inpi(self):
+        campos = {c["id"]: c for c in fc.FORMULARIOS["persona-fisica"]["campos"]}
+        ids = list(campos)
+        self.assertEqual(ids[0], "nota_datos_inpi")  # arriba de los datos personales, siempre visible
+        self.assertIn("coincidir con los ingresados", campos["nota_datos_inpi"]["ayuda"])
+        recordatorio = campos["nota_coinciden_inpi"]
+        for servicio, ve in [(fc.SERVICIO_NUEVA, False), (fc.SERVICIO_OPOSICION, True), (fc.SERVICIO_VISTAS, True)]:
+            self.assertEqual(fc.campo_visible(recordatorio, {"servicio": servicio}), ve)
+        datos, _ = validar(VISTAS)  # las notas no se guardan como respuestas
+        self.assertFalse([k for k in datos if k.startswith("nota_")])
+
     def test_no_se_mezclan_las_respuestas_de_la_otra_opcion(self):
         datos, validos = validar({**OPOSICION, "empresa_nombre": "X", "rubro": "Y", "nueva_tiene_logo": "SI"},
                                  {"nueva_logo": ("l.png", "image/png", PNG)})
