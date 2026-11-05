@@ -9,6 +9,13 @@ usuario ni clave y, al enviarlo:
      había un cliente activo con ese CUIT, se le actualizan los datos,
   3. se avisa por mail al equipo con las respuestas y los archivos adjuntos.
 
+Corrección: desde el panel se pide un link personal para una respuesta
+(/formulario/<tipo>?corregir=<token>). El cliente lo abre con el formulario
+ya cargado con lo que mandó, corrige y guarda: se reemplaza la respuesta, se
+actualiza el cliente, queda el historial de cambios (formularios_ediciones) y
+se vuelve a avisar al equipo. El link sirve una sola vez y vence a los
+EDICION_DIAS días.
+
 Este módulo no depende de FastAPI: lo usan tanto el panel (formularios_api.py)
 como el script de respaldo del aviso por mail (scripts/notificar_formularios.py).
 """
@@ -17,6 +24,7 @@ import base64
 import html
 import json
 import re
+import secrets
 
 import requests
 
@@ -187,6 +195,27 @@ def crear_tablas(cur):
     )
     cur.execute("ALTER TABLE formularios_respuestas ADD COLUMN IF NOT EXISTS poder_enviado_en TIMESTAMPTZ")
     cur.execute("ALTER TABLE formularios_respuestas ADD COLUMN IF NOT EXISTS poder_error TEXT")
+    # Link para corregir (ver aplicar_edicion)
+    for col, tipo_col in [("edicion_token", "TEXT"), ("edicion_creado_en", "TIMESTAMPTZ"), ("edicion_vence_en", "TIMESTAMPTZ"),
+                          ("edicion_creado_por", "TEXT"), ("editado_en", "TIMESTAMPTZ"),
+                          ("ediciones", "INTEGER NOT NULL DEFAULT 0")]:
+        cur.execute(f"ALTER TABLE formularios_respuestas ADD COLUMN IF NOT EXISTS {col} {tipo_col}")
+    cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_form_resp_token ON formularios_respuestas(edicion_token) "
+                "WHERE edicion_token IS NOT NULL")
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS formularios_ediciones (
+            id            SERIAL PRIMARY KEY,
+            respuesta_id  INTEGER NOT NULL REFERENCES formularios_respuestas(id) ON DELETE CASCADE,
+            datos_antes   JSONB NOT NULL,
+            datos_despues JSONB NOT NULL,
+            cambios       JSONB NOT NULL DEFAULT '[]'::jsonb,
+            editado_en    TIMESTAMPTZ NOT NULL DEFAULT now(),
+            ip            TEXT
+        )
+        """
+    )
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_form_ed_resp ON formularios_ediciones(respuesta_id, editado_en DESC)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_form_resp_cliente ON formularios_respuestas(cliente_id)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_form_resp_recibido ON formularios_respuestas(recibido_en DESC)")
     cur.execute(
@@ -273,8 +302,10 @@ def nombre_archivo_seguro(nombre: str, mime: str) -> str:
     return base
 
 
-def validar(slug: str, valores: dict, archivos: dict) -> tuple:
+def validar(slug: str, valores: dict, archivos: dict, existentes=frozenset()) -> tuple:
     """valores: {id: str}; archivos: {id: (nombre, mime_declarado, bytes)}.
+    existentes: campos de archivo que ya tienen un archivo guardado (al corregir:
+    si no suben uno nuevo, queda el anterior y el campo no falta).
     Devuelve (datos_limpios, archivos_validos). Lanza ErrorFormulario."""
     form = FORMULARIOS[slug]
     datos, validos, faltan = {}, [], []
@@ -284,7 +315,7 @@ def validar(slug: str, valores: dict, archivos: dict) -> tuple:
         if c["tipo"] == "archivo":
             a = archivos.get(c["id"])
             if not a or not a[2]:
-                if c.get("obligatorio"):
+                if c.get("obligatorio") and c["id"] not in existentes:
                     faltan.append(c["etiqueta"])
                 continue
             nombre, declarado, contenido = a
@@ -331,11 +362,7 @@ def guardar_respuesta(cur, slug: str, datos: dict, archivos: list, ip: str) -> d
     RealDictCursor. Devuelve {"respuesta_id", "cliente_id", "cliente_nuevo"}."""
     form = FORMULARIOS[slug]
     tipo = form["tipo_persona"]
-    campos_cliente = {c["cliente"]: datos[c["id"]] for c in form["campos"]
-                      if c.get("cliente") and datos.get(c["id"])}
-    campos_cliente["tipo_persona"] = tipo
-    if campos_cliente.get("firmante_nombre"):
-        campos_cliente.setdefault("contacto", campos_cliente["firmante_nombre"])
+    campos_cliente = datos_cliente(slug, datos)
     autor = "formulario web"
 
     cur.execute("SELECT * FROM clientes WHERE cuit = %s AND activo ORDER BY id LIMIT 1", (datos.get("cuit"),))
@@ -365,6 +392,99 @@ def guardar_respuesta(cur, slug: str, datos: dict, archivos: list, ip: str) -> d
             (rid, a["campo"], a["nombre"], a["mime"], len(a["contenido"]), a["contenido"]),
         )
     return {"respuesta_id": rid, "cliente_id": cliente_id, "cliente_nuevo": nuevo}
+
+
+def datos_cliente(slug: str, datos: dict) -> dict:
+    """Columnas de `clientes` que salen de una respuesta."""
+    form = FORMULARIOS[slug]
+    campos = {c["cliente"]: datos[c["id"]] for c in form["campos"] if c.get("cliente") and datos.get(c["id"])}
+    campos["tipo_persona"] = form["tipo_persona"]
+    if campos.get("firmante_nombre"):
+        campos.setdefault("contacto", campos["firmante_nombre"])
+    return campos
+
+
+# ── Corrección de una respuesta (link personal) ───────────────────────────
+EDICION_DIAS = 30
+# Si cambia alguno de estos, el poder que ya se mandó quedó mal: se vuelve a mandar.
+CAMPOS_PODER = ("nombre", "dni", "cuit", "domicilio", "localidad", "provincia", "email")
+
+
+def nuevo_token() -> str:
+    return secrets.token_urlsafe(24)
+
+
+def diferencias(slug: str, antes: dict, despues: dict, archivos_antes: dict = None, archivos_despues: dict = None) -> list:
+    """[{etiqueta, antes, despues}] en el orden del formulario. archivos_*: {campo: nombre}."""
+    archivos_antes, archivos_despues = archivos_antes or {}, archivos_despues or {}
+    cambios = []
+    for c in FORMULARIOS.get(slug, {}).get("campos", []):
+        if c["tipo"] == "nota":
+            continue
+        if c["tipo"] == "archivo":
+            a, d = archivos_antes.get(c["id"], ""), archivos_despues.get(c["id"], "")
+        else:
+            a, d = (antes or {}).get(c["id"], ""), (despues or {}).get(c["id"], "")
+        if a != d:
+            cambios.append({"etiqueta": c["etiqueta"], "antes": a or "—", "despues": d or "—"})
+    return cambios
+
+
+def cambia_poder(antes: dict, despues: dict) -> bool:
+    return any((antes or {}).get(k, "") != (despues or {}).get(k, "") for k in CAMPOS_PODER)
+
+
+def respuesta_por_token(cur, token: str, bloquear: bool = False):
+    """La respuesta con ese link para corregir, si sigue vigente (o None). `cur`: RealDictCursor."""
+    if not token or len(token) > 100:
+        return None
+    cur.execute("SELECT * FROM formularios_respuestas WHERE edicion_token = %s AND edicion_vence_en > now()"
+                + (" FOR UPDATE" if bloquear else ""), (token,))
+    return cur.fetchone()
+
+
+def archivos_por_campo(cur, respuesta_id: int) -> dict:
+    """{campo: nombre} de los archivos guardados de una respuesta (sin el contenido)."""
+    cur.execute("SELECT campo, nombre FROM formularios_archivos WHERE respuesta_id = %s ORDER BY id", (respuesta_id,))
+    return {f["campo"]: f["nombre"] for f in cur.fetchall()}
+
+
+def aplicar_edicion(cur, resp: dict, datos: dict, archivos: list, ip: str) -> dict:
+    """Guarda la corrección de una respuesta (resp: fila bloqueada con respuesta_por_token).
+    Reemplaza las respuestas, los archivos que subieron de nuevo (los demás quedan; los de una opción que
+    ya no corresponde se borran), actualiza el cliente, deja el historial y anula el link (sirve una vez).
+    La respuesta vuelve a «nueva» y queda pendiente de aviso por mail. Devuelve {"cambios", "reenviar_poder"}."""
+    slug, rid = resp["formulario"], resp["id"]
+    antes = resp["datos"] if isinstance(resp["datos"], dict) else json.loads(resp["datos"] or "{}")
+    arch_antes = archivos_por_campo(cur, rid)
+    visibles = {c["id"] for c in FORMULARIOS[slug]["campos"] if c["tipo"] == "archivo" and campo_visible(c, datos)}
+    reemplazados = {a["campo"] for a in archivos}
+    sacar = [c for c in arch_antes if c in reemplazados or c not in visibles]
+    if sacar:
+        cur.execute("DELETE FROM formularios_archivos WHERE respuesta_id = %s AND campo = ANY(%s)", (rid, sacar))
+    for a in archivos:
+        cur.execute(
+            "INSERT INTO formularios_archivos (respuesta_id, campo, nombre, mime, tamano, contenido) VALUES (%s, %s, %s, %s, %s, %s)",
+            (rid, a["campo"], a["nombre"], a["mime"], len(a["contenido"]), a["contenido"]),
+        )
+    arch_despues = {c: n for c, n in arch_antes.items() if c not in sacar}
+    arch_despues.update({a["campo"]: a["nombre"] for a in archivos})
+    cambios = diferencias(slug, antes, datos, arch_antes, arch_despues)
+    cur.execute("INSERT INTO formularios_ediciones (respuesta_id, datos_antes, datos_despues, cambios, ip) VALUES (%s, %s, %s, %s, %s)",
+                (rid, json.dumps(antes, ensure_ascii=False), json.dumps(datos, ensure_ascii=False),
+                 json.dumps(cambios, ensure_ascii=False), ip))
+    cur.execute(
+        "UPDATE formularios_respuestas SET datos = %s, estado = 'nueva', revisado_por = NULL, revisado_en = NULL, "
+        "editado_en = now(), ediciones = ediciones + 1, edicion_token = NULL, aviso_enviado_en = NULL, aviso_error = NULL "
+        "WHERE id = %s", (json.dumps(datos, ensure_ascii=False), rid))
+    if resp.get("cliente_id"):
+        # Es una corrección pedida por nosotros: se pisan todos los datos del cliente, también el nombre.
+        campos = datos_cliente(slug, datos)
+        sets = [f"{k} = %s" for k in campos] + ["modificado_en = now()", "modificado_por = %s"]
+        cur.execute(f"UPDATE clientes SET {', '.join(sets)} WHERE id = %s",
+                    list(campos.values()) + ["formulario web (corrección)", resp["cliente_id"]])
+    return {"cambios": cambios,
+            "reenviar_poder": FORMULARIOS[slug]["tipo_persona"] == "fisica" and cambia_poder(antes, datos)}
 
 
 CLAVE_MAIL_PODER = "poder_persona_fisica"
@@ -400,18 +520,36 @@ DEFAULT_PANEL = "https://panel.registrodemimarca.com.ar"
 MAX_ADJUNTOS_MAIL = 20 * 1024 * 1024  # por encima de esto, los archivos van solo como link al panel
 
 
-def armar_mail(resp: dict, cliente: dict, archivos: list, panel_url: str) -> tuple:
+def armar_mail(resp: dict, cliente: dict, archivos: list, panel_url: str, cambios=None) -> tuple:
     """resp: fila de formularios_respuestas; cliente: fila de clientes (o {});
-    archivos: filas de formularios_archivos (con contenido)."""
+    archivos: filas de formularios_archivos (con contenido).
+    cambios: si la respuesta se corrigió con el link, los cambios de la última corrección."""
     e = html.escape
     tipo = TIPO_LEGIBLE.get(resp["tipo_persona"], resp["tipo_persona"])
     datos = resp["datos"] if isinstance(resp["datos"], dict) else json.loads(resp["datos"] or "{}")
     nombre = datos.get("nombre") or (cliente or {}).get("nombre") or "(sin nombre)"
     marca = nombre_marca(datos)
-    asunto = f"📝 Formulario recibido: {nombre}" + (f" — marca «{marca}»" if marca else "") + f" ({tipo})"
+    corregido = cambios is not None
+    asunto = (f"✏️ Formulario corregido: {nombre}" if corregido else f"📝 Formulario recibido: {nombre}") \
+        + (f" — marca «{marca}»" if marca else "") + f" ({tipo})"
     link = f"{panel_url}/clientes?cliente={resp['cliente_id']}" if resp.get("cliente_id") else f"{panel_url}/clientes?vista=formularios"
-    estado_cli = ("Se creó como <strong>cliente nuevo</strong>." if resp.get("cliente_nuevo")
-                  else "Ya era cliente (mismo CUIT): se <strong>actualizaron sus datos</strong>.")
+    if corregido:
+        estado_cli = ("Corrigió los datos con el link que le mandamos" + (" (se actualizó el cliente)." if resp.get("cliente_id") else ".")
+                      + (" <strong>No cambió nada.</strong>" if not cambios else ""))
+    else:
+        estado_cli = ("Se creó como <strong>cliente nuevo</strong>." if resp.get("cliente_nuevo")
+                      else "Ya era cliente (mismo CUIT): se <strong>actualizaron sus datos</strong>.")
+    bloque_cambios = ""
+    if cambios:
+        filas_c = "".join(
+            f'<tr><td style="padding:6px 10px;color:#6b7280;font-size:13px;vertical-align:top;width:34%">{e(c["etiqueta"])}</td>'
+            f'<td style="padding:6px 10px;font-size:13px;color:#9b1c1c;text-decoration:line-through;vertical-align:top">{e(str(c["antes"]))}</td>'
+            f'<td style="padding:6px 10px;font-size:14px;color:#14532d;font-weight:bold;vertical-align:top">{e(str(c["despues"]))}</td></tr>'
+            for c in cambios)
+        bloque_cambios = (f'<tr><td style="padding:12px 20px 0"><div style="font-size:13px;font-weight:bold;color:#1f2430">Qué cambió</div>'
+                          f'<table width="100%" cellpadding="0" cellspacing="0" style="background:#fffbeb;border:1px solid #fde68a;'
+                          f'border-radius:8px;margin-top:6px">{filas_c}</table>'
+                          f'<div style="font-size:13px;font-weight:bold;color:#1f2430;margin-top:14px">Todas las respuestas, como quedaron</div></td></tr>')
     filas = "".join(
         f'<tr><td style="padding:6px 10px;color:#6b7280;font-size:13px;vertical-align:top;width:40%">{e(k)}</td>'
         f'<td style="padding:6px 10px;font-size:14px;color:#1f2430">{e(str(v)).replace(chr(10), "<br>")}</td></tr>'
@@ -430,6 +568,7 @@ def armar_mail(resp: dict, cliente: dict, archivos: list, panel_url: str) -> tup
     <div style="font-size:20px;font-weight:bold;color:#1f2430;margin-top:4px">{e(nombre)}</div>
     <div style="font-size:14px;color:#374151;margin-top:6px">{estado_cli}</div>
   </td></tr>
+  {bloque_cambios}
   <tr><td style="padding:10px 10px"><table width="100%" cellpadding="0" cellspacing="0">{filas}</table></td></tr>
   <tr><td style="padding:6px 20px 20px">
     <a href="{e(link)}" style="display:inline-block;background:#015197;color:#fff;text-decoration:none;padding:10px 16px;border-radius:8px;font-weight:bold;font-size:14px">Abrir ficha del cliente</a>
@@ -477,7 +616,13 @@ def avisar_respuesta(conn, respuesta_id: int, api_key: str, remitente: str, dest
         cur.execute("SELECT campo, nombre, mime, tamano, contenido FROM formularios_archivos WHERE respuesta_id = %s ORDER BY id",
                     (respuesta_id,))
         archivos = cur.fetchall()
-        asunto, cuerpo, adjuntos = armar_mail(resp, cliente, archivos, panel_url)
+        cambios = None
+        if resp.get("editado_en"):
+            cur.execute("SELECT cambios FROM formularios_ediciones WHERE respuesta_id = %s ORDER BY editado_en DESC, id DESC LIMIT 1",
+                        (respuesta_id,))
+            ult = cur.fetchone()
+            cambios = (ult["cambios"] if ult else None) or []
+        asunto, cuerpo, adjuntos = armar_mail(resp, cliente, archivos, panel_url, cambios)
         datos = resp["datos"] if isinstance(resp["datos"], dict) else {}
         try:
             enviar_resend(api_key, remitente, destinatarios, asunto, cuerpo, adjuntos, datos.get("email"))

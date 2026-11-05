@@ -1587,6 +1587,10 @@ a.mk-acta { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-si
 .fm-link input { width: 100%; font: inherit; font-size: 12.5px; padding: 6px 9px; border: 1px solid var(--borde-control); border-radius: 6px; background: #fff; color: var(--texto); }
 .fm-link a.cl-btn { text-decoration: none; }
 .fm-resp { margin-bottom: 10px; }
+.fm-link-corr { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; padding: 10px 12px; border: 1px solid #f5d48a; background: #fffbeb; border-radius: 8px; font-size: 13px; }
+.fm-link-corr input { width: 100%; font: inherit; font-size: 12.5px; padding: 6px 9px; border: 1px solid var(--borde-control); border-radius: 6px; background: #fff; color: var(--texto); }
+.fm-link-corr a.cl-btn { text-decoration: none; }
+.fm-corr { margin-top: 8px; font-size: 13px; }
 .fm-cab { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: 13px; }
 .fm-resp details { margin-top: 8px; }
 .fm-resp summary { cursor: pointer; font-size: 13px; color: var(--azul); font-weight: 500; }

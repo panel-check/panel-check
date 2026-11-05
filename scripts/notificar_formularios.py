@@ -6,8 +6,8 @@ configurada en Railway). Si no la tiene, o si Resend falló en ese momento,
 la respuesta queda "pendiente de aviso" y este script la manda: corre cada
 2 horas dentro del workflow reintentar_sin_email.yml.
 
-Solo toma respuestas con más de 5 minutos (para no pisarse con el envío
-inmediato del panel). Cada respuesta se bloquea al enviarla (FOR UPDATE SKIP
+Solo toma respuestas con más de 5 minutos desde que llegaron o desde su
+última corrección (para no pisarse con el envío inmediato del panel). Cada respuesta se bloquea al enviarla (FOR UPDATE SKIP
 LOCKED), así que nunca sale el mismo mail dos veces.
 
 Variables de entorno:
@@ -52,7 +52,7 @@ def main():
             cartera.crear_tablas(cur)
             fc.crear_tablas(cur)
             cur.execute("SELECT id FROM formularios_respuestas WHERE aviso_enviado_en IS NULL "
-                        "AND recibido_en < now() - interval '5 minutes' ORDER BY id LIMIT 100")
+                        "AND COALESCE(editado_en, recibido_en) < now() - interval '5 minutes' ORDER BY id LIMIT 100")
             pendientes = [r[0] for r in cur.fetchall()]
         conn.commit()
         print(f"Formularios con aviso pendiente: {len(pendientes)}")

@@ -5,6 +5,8 @@ Públicas (sin login — son las que abre el cliente):
   GET  /formulario/persona-fisica | /formulario/persona-juridica   la página
   GET  /api/publico/formulario/{slug}                              definición de campos
   POST /api/publico/formulario/{slug}                              envío (multipart)
+  GET  /api/publico/formulario-correccion/{token}                  respuesta a corregir (link personal)
+  POST /api/publico/formulario-correccion/{token}                  guarda la corrección (multipart)
 
 Del panel (con login):
   GET    /api/formularios                    links + respuestas recibidas
@@ -12,6 +14,8 @@ Del panel (con login):
   POST   /api/formularios/{id}/estado        marcar revisada / nueva / archivada
   DELETE /api/formularios/{id}               borrar respuesta y archivos (no el cliente)
   GET    /api/formularios/archivos/{id}      descargar / ver un archivo
+  POST   /api/formularios/{id}/link-correccion   crea (o devuelve) el link para que el cliente corrija
+  DELETE /api/formularios/{id}/link-correccion   anula ese link
 """
 
 import os
@@ -47,6 +51,10 @@ MIME_VER_EN_LINEA = {"application/pdf", "image/jpeg", "image/png", "image/webp",
 
 class CambioEstado(BaseModel):
     estado: str
+
+
+class PedidoLink(BaseModel):
+    renovar: bool = False
 
 
 class DatosPoder(BaseModel):
@@ -139,8 +147,19 @@ def respuestas_de(cur, donde: str, val) -> list:
     por_resp = {}
     for a in cur.fetchall():
         por_resp.setdefault(a["respuesta_id"], []).append(a)
+    cur.execute("SELECT respuesta_id, editado_en, cambios FROM formularios_ediciones WHERE respuesta_id = ANY(%s) "
+                "ORDER BY editado_en DESC, id DESC", ([f["id"] for f in filas],))
+    ediciones = {}
+    for e in cur.fetchall():
+        ediciones.setdefault(e["respuesta_id"], []).append({"editado_en": e["editado_en"], "cambios": e["cambios"] or []})
     etiquetas = {s: {c["id"]: c["etiqueta"] for c in f["campos"]} for s, f in fc.FORMULARIOS.items()}
+    ahora = _dt.datetime.now(_dt.timezone.utc)
     for f in filas:
+        f["correcciones"] = ediciones.get(f["id"], [])
+        vigente = f.get("edicion_token") and f.get("edicion_vence_en") and f["edicion_vence_en"] > ahora
+        f["link_correccion"] = ({"ruta": ruta_correccion(f["formulario"], f["edicion_token"]), "vence_en": f["edicion_vence_en"],
+                                 "creado_por": f.get("edicion_creado_por")} if vigente else None)
+        f.pop("edicion_token", None)
         f["archivos"] = por_resp.get(f["id"], [])
         for a in f["archivos"]:
             a["etiqueta"] = etiquetas.get(f["formulario"], {}).get(a["campo"], a["campo"])
@@ -148,6 +167,10 @@ def respuestas_de(cur, donde: str, val) -> list:
                            fc.respuestas_legibles(f["formulario"], f["datos"] or {})]
         f["tipo_legible"] = fc.TIPO_LEGIBLE.get(f["tipo_persona"], f["tipo_persona"])
     return filas
+
+
+def ruta_correccion(slug: str, token: str) -> str:
+    return f"/formulario/{slug}?corregir={quote(token)}"
 
 
 # ── Captcha (Cloudflare Turnstile) ─────────────────────────────────────────
@@ -310,6 +333,64 @@ def crear_router(verificar_login, conexion) -> APIRouter:
             return {"ok": True, "poder_enviado": await run_in_threadpool(_enviar_poder, res["respuesta_id"])}
         return {"ok": True}
 
+    # ── Corrección con link personal (público: el token es la llave) ──
+    @router.get("/api/publico/formulario-correccion/{token}")
+    def ver_correccion(token: str):
+        with conexion() as conn:
+            with rcur(conn) as cur:
+                resp = fc.respuesta_por_token(cur, token)
+                if not resp:
+                    raise HTTPException(status_code=404, detail="Este link para corregir ya no está disponible: ya se usó o venció. "
+                                                                "Pedinos uno nuevo.")
+                archivos = fc.archivos_por_campo(cur, resp["id"])
+        return {"slug": resp["formulario"], "datos": resp["datos"] or {}, "archivos": archivos,
+                "recibido_en": resp["recibido_en"], "vence_en": resp["edicion_vence_en"]}
+
+    @router.post("/api/publico/formulario-correccion/{token}")
+    async def guardar_correccion(token: str, request: Request, background: BackgroundTasks):
+        try:
+            largo = int(request.headers.get("content-length") or 0)
+        except ValueError:
+            largo = 0
+        if largo > MAX_ENVIO:
+            raise HTTPException(status_code=413, detail="Los archivos pesan demasiado (máximo 10 MB cada uno).")
+        ip = _ip(request)
+        _limite_envios(ip)
+        try:
+            form = await _leer_formulario(request)
+        except _CuerpoExcedido:
+            raise HTTPException(status_code=413, detail="Los archivos pesan demasiado (máximo 10 MB cada uno).")
+        if (form.get("sitio_web") or "").strip():  # campo trampa
+            return {"ok": True}
+        valores, archivos = {}, {}
+        for clave, valor in form.multi_items():
+            if hasattr(valor, "read"):
+                contenido = await valor.read(fc.MAX_ARCHIVO + 1)
+                if contenido:
+                    archivos[clave] = (valor.filename or "archivo", valor.content_type or "", contenido)
+            else:
+                valores[clave] = str(valor)
+        no_disponible = JSONResponse(status_code=404, content={"detail": "Este link para corregir ya no está disponible: "
+                                                                         "ya se usó o venció. Pedinos uno nuevo."})
+        with conexion() as conn:
+            with rcur(conn) as cur:
+                resp = fc.respuesta_por_token(cur, token, bloquear=True)
+                if not resp:
+                    return no_disponible
+                slug = resp["formulario"]
+                try:
+                    datos, validos = fc.validar(slug, valores, archivos, existentes=set(fc.archivos_por_campo(cur, resp["id"])))
+                except fc.ErrorFormulario as e:
+                    conn.rollback()
+                    return JSONResponse(status_code=400, content={"detail": str(e)})
+                res = fc.aplicar_edicion(cur, resp, datos, validos, ip)
+            conn.commit()
+        background.add_task(_aviso_en_segundo_plano, resp["id"])
+        poder = None
+        if res["reenviar_poder"]:
+            poder = await run_in_threadpool(_enviar_poder, resp["id"])
+        return {"ok": True, "cambios": len(res["cambios"]), "poder_enviado": poder}
+
     # ── Del panel ─────────────────────────────────────────────────────
     @router.get("/api/formularios")
     def listar(estado: str = "", _: str = Depends(verificar_login)):
@@ -325,7 +406,7 @@ def crear_router(verificar_login, conexion) -> APIRouter:
                 cur.execute(
                     f"""
                     SELECT r.id, r.formulario, r.tipo_persona, r.estado, r.recibido_en, r.cliente_id, r.cliente_nuevo,
-                           r.aviso_enviado_en, r.aviso_error, r.revisado_por, r.revisado_en,
+                           r.aviso_enviado_en, r.aviso_error, r.revisado_por, r.revisado_en, r.editado_en, r.ediciones,
                            r.datos->>'nombre' AS nombre, r.datos->>'cuit' AS cuit, r.datos->>'email' AS email,
                            COALESCE(NULLIF(r.datos->>'marca_nombre', ''), r.datos->>'empresa_nombre') AS marca, c.nombre AS cliente_nombre,
                            (SELECT COUNT(*) FROM formularios_archivos a WHERE a.respuesta_id = r.id) AS archivos
@@ -362,6 +443,39 @@ def crear_router(verificar_login, conexion) -> APIRouter:
                     "UPDATE formularios_respuestas SET estado = %s, revisado_por = %s, revisado_en = now() WHERE id = %s",
                     (body.estado, usuario if body.estado != "nueva" else None, rid),
                 )
+                if not cur.rowcount:
+                    raise HTTPException(status_code=404, detail="No existe esa respuesta")
+            conn.commit()
+        return {"ok": True}
+
+    @router.post("/api/formularios/{rid}/link-correccion")
+    def link_correccion(rid: int, body: PedidoLink = PedidoLink(), usuario: str = Depends(verificar_login)):
+        """Link personal para que el cliente corrija esta respuesta. Si ya hay uno vigente lo devuelve
+        (salvo renovar=True, que lo reemplaza: el anterior deja de andar)."""
+        with conexion() as conn:
+            with rcur(conn) as cur:
+                cur.execute("SELECT id, formulario, edicion_token, edicion_vence_en FROM formularios_respuestas "
+                            "WHERE id = %s FOR UPDATE", (rid,))
+                f = cur.fetchone()
+                if not f:
+                    raise HTTPException(status_code=404, detail="No existe esa respuesta")
+                vigente = f["edicion_token"] and f["edicion_vence_en"] and f["edicion_vence_en"] > _dt.datetime.now(_dt.timezone.utc)
+                if vigente and not body.renovar:
+                    token, vence = f["edicion_token"], f["edicion_vence_en"]
+                else:
+                    token = fc.nuevo_token()
+                    cur.execute("UPDATE formularios_respuestas SET edicion_token = %s, edicion_creado_en = now(), "
+                                "edicion_vence_en = now() + make_interval(days => %s), edicion_creado_por = %s "
+                                "WHERE id = %s RETURNING edicion_vence_en", (token, fc.EDICION_DIAS, usuario, rid))
+                    vence = cur.fetchone()["edicion_vence_en"]
+            conn.commit()
+        return {"ruta": ruta_correccion(f["formulario"], token), "vence_en": vence}
+
+    @router.delete("/api/formularios/{rid}/link-correccion")
+    def anular_link_correccion(rid: int, _: str = Depends(verificar_login)):
+        with conexion() as conn:
+            with conn.cursor() as cur:
+                cur.execute("UPDATE formularios_respuestas SET edicion_token = NULL, edicion_vence_en = NULL WHERE id = %s", (rid,))
                 if not cur.rowcount:
                     raise HTTPException(status_code=404, detail="No existe esa respuesta")
             conn.commit()
