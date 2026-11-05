@@ -422,6 +422,8 @@ def crear_router(verificar_login, conexion, crm) -> APIRouter:
                 cur.execute("SELECT * FROM clientes WHERE clave_crm = %s", (real,))
                 ya = cur.fetchone()
                 if ya:
+                    _pasar_informes_del_lead(cur, real, ya["id"])
+                    conn.commit()
                     return {"ok": True, "cliente": ya, "ya_existia": True, "marcas_sumadas": 0}
                 actas = crm.actas_de_clave(cur, real)
                 cur.execute(
@@ -461,6 +463,7 @@ def crear_router(verificar_login, conexion, crm) -> APIRouter:
                 for m in marcas:
                     if cartera.alta_marca_desde_fila(cur, cliente["id"], m, usuario, "lead"):
                         sumadas += 1
+                _pasar_informes_del_lead(cur, real, cliente["id"])
                 crm.aplicar_cambios_crm(cur, real, {"etapa": "cliente"}, usuario, "se convirtió en cliente")
             conn.commit()
         return {"ok": True, "cliente": cliente, "ya_existia": False, "marcas_sumadas": sumadas}
@@ -1081,6 +1084,12 @@ def crear_router(verificar_login, conexion, crm) -> APIRouter:
                 return {"cliente": cliente_por_clave(cur, clave)}
 
     return router
+
+
+def _pasar_informes_del_lead(cur, clave: str, cliente_id: int):
+    """Los informes preliminares que se le hicieron al lead (sin ser cliente) pasan a su ficha de cliente."""
+    cur.execute("UPDATE informes_viabilidad SET cliente_id = %s WHERE lead_clave = %s AND cliente_id IS NULL",
+                (cliente_id, clave))
 
 
 def cliente_por_clave(cur, clave: str):

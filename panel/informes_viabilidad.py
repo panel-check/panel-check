@@ -103,6 +103,11 @@ def crear_tablas(cur):
         """
     )
     cur.execute("CREATE INDEX IF NOT EXISTS idx_informes_cliente ON informes_viabilidad(cliente_id, generado_en DESC)")
+    # Informes de leads que todavía no son clientes (Más → Informes y ficha del lead): van con la clave
+    # del titular del CRM (CUIT o nombre normalizado) y su nombre. Al convertirse en cliente pasan a cliente_id.
+    cur.execute("ALTER TABLE informes_viabilidad ADD COLUMN IF NOT EXISTS lead_clave TEXT")
+    cur.execute("ALTER TABLE informes_viabilidad ADD COLUMN IF NOT EXISTS lead_nombre TEXT")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_informes_lead ON informes_viabilidad(lead_clave) WHERE lead_clave IS NOT NULL")
 
 
 # ── Lectura y validación del JSON pegado ──────────────────────────────────
@@ -357,11 +362,16 @@ def _normalizar_v2(d: dict, nombre_cliente: str = "", hoy: _dt.date = None) -> d
     return out
 
 
+def dueno(cliente_id=None, lead_clave=None):
+    """De quién es un informe, para el control de la referencia INFPR: el id del cliente o «lead:<clave>»."""
+    return cliente_id if cliente_id is not None else f"lead:{lead_clave or ''}"
+
+
 def referencias_usadas(cur) -> list:
-    """(referencia, cliente_id, marca, tipo) de todos los informes guardados que tienen una."""
+    """(referencia, dueño, marca, tipo) de todos los informes guardados que tienen una (dueño: ver dueno())."""
     cur.execute(
         """
-        SELECT cliente_id, marca, tipo,
+        SELECT cliente_id, lead_clave, marca, tipo,
                COALESCE(NULLIF(datos->'encabezado'->>'referencia', ''), NULLIF(datos->'caso'->>'referencia', '')) AS ref
           FROM informes_viabilidad
         """
@@ -371,7 +381,7 @@ def referencias_usadas(cur) -> list:
         f = dict(f) if not isinstance(f, dict) else f
         ref = normalizar_referencia_silenciosa(f.get("ref"))
         if ref:
-            out.append((ref, f.get("cliente_id"), f.get("marca") or "", f.get("tipo")))
+            out.append((ref, dueno(f.get("cliente_id"), f.get("lead_clave")), f.get("marca") or "", f.get("tipo")))
     return out
 
 
@@ -388,7 +398,7 @@ def _misma_marca(a: str, b: str) -> bool:
     return n(a) == n(b)
 
 
-def asignar_referencia(cur, cliente_id: int, d: dict) -> str:
+def asignar_referencia(cur, cliente_id, d: dict) -> str:
     """Completa d["encabezado"]["referencia"] y la devuelve.
 
     - Si el JSON trae una, se controla que no la tenga otro informe (de otro
@@ -396,6 +406,7 @@ def asignar_referencia(cur, cliente_id: int, d: dict) -> str:
       repetir: es una corrección del mismo informe.
     - Si no trae, se reusa la del último informe de esa marca del cliente
       (corrección) o se asigna la siguiente a la más alta usada.
+    `cliente_id` es el dueño: el id del cliente o dueno(lead_clave=...) para un lead.
     Llamar dentro de la misma transacción que guarda el informe.
     """
     cur.execute("SELECT pg_advisory_xact_lock(184700)")  # dos que generan a la vez no se pisan el número
@@ -418,7 +429,7 @@ def asignar_referencia(cur, cliente_id: int, d: dict) -> str:
     return ref
 
 
-def referencia_de_marca(cur, cliente_id: int, marca: str) -> str:
+def referencia_de_marca(cur, cliente_id, marca: str) -> str:
     """La referencia del informe al cliente de esa marca (para completar el interno)."""
     for r, cid, m, tipo in referencias_usadas(cur):
         if cid == cliente_id and tipo == "cliente" and _misma_marca(m, marca):

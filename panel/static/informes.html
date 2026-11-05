@@ -7,6 +7,7 @@
 <link rel="icon" type="image/png" href="/static/favicon.png" />
 <link rel="apple-touch-icon" href="/static/apple-touch-icon.png" />
 <link rel="stylesheet" href="/static/comun.css?v=mv2" />
+<link rel="stylesheet" href="/static/informes_comun.css?v=1" />
 <script src="/static/sesion.js" defer></script>
 <script src="/static/menu.js?v=inf1" defer></script>
 </head>
@@ -41,16 +42,27 @@
   </nav>
 </header>
 
-<div class="cl-vista" id="informes">
-  <div class="cl-barra">
-    <label>Buscar<input id="inf-q" type="search" placeholder="Marca, cliente o INFPR" /></label>
-    <label>Mostrar<select id="inf-falta">
-      <option value="">Todas las marcas</option><option value="interno">Sin informe IA interno</option><option value="cliente">Sin informe al cliente</option></select></label>
+<main class="ix-pagina" id="informes">
+  <div class="ix-cabeza">
+    <div><h2>Informes preliminares</h2>
+      <p>Los informes al cliente y los IA internos de todas las marcas: de clientes y de leads que todavía no son clientes.</p></div>
+    <button type="button" class="ix-boton" id="inf-nuevo"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>Nuevo informe</button>
+  </div>
+  <div class="ix-filtros">
+    <div class="ix-buscar"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+      <input id="inf-q" type="search" placeholder="Buscar por marca, cliente, lead o INFPR" autocomplete="off" aria-label="Buscar" /></div>
+    <div class="ix-segmentos" id="inf-falta" role="group" aria-label="Mostrar">
+      <button type="button" data-f="" class="activo">Todas<span class="ix-n" data-n=""></span></button>
+      <button type="button" data-f="leads">De leads<span class="ix-n" data-n="leads"></span></button>
+      <button type="button" data-f="interno">Sin interno<span class="ix-n" data-n="interno"></span></button>
+      <button type="button" data-f="cliente">Sin PDF<span class="ix-n" data-n="cliente"></span></button>
+    </div>
   </div>
   <div id="inf-lista"><p class="crm-cargando">Cargando…</p></div>
-</div>
+</main>
 
 <script src="/static/comun.js?v=vp9"></script>
-<script src="/static/informes.js?v=1"></script>
+<script src="/static/informes_comun.js?v=1"></script>
+<script src="/static/informes.js?v=2"></script>
 </body>
 </html>

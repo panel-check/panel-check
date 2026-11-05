@@ -7,6 +7,7 @@
 <link rel="icon" type="image/png" href="/static/favicon.png" />
 <link rel="apple-touch-icon" href="/static/apple-touch-icon.png" />
 <link rel="stylesheet" href="/static/comun.css?v=mv2" />
+<link rel="stylesheet" href="/static/informes_comun.css?v=1" />
 <link rel="stylesheet" href="/static/calendario.css?v=6" />
 <script src="/static/sesion.js" defer></script>
 <script src="/static/menu.js?v=inf1" defer></script>
@@ -141,6 +142,7 @@
     <button type="button" role="tab" id="pest-marca" data-tab="marca" aria-controls="tab-marca" aria-selected="true" class="activa">Marca</button>
     <button type="button" role="tab" id="pest-analisis" data-tab="analisis" aria-controls="tab-analisis" aria-selected="false">Análisis de marca</button>
     <button type="button" role="tab" id="pest-mail" data-tab="mail" aria-controls="tab-mail" aria-selected="false">Mail<span class="pest-badge" id="pb-mail" hidden></span></button>
+    <button type="button" role="tab" id="pest-informes" data-tab="informes" aria-controls="tab-informes" aria-selected="false">Informes<span class="pest-badge" id="pb-informes" hidden></span></button>
     <button type="button" role="tab" id="pest-plazos" data-tab="plazos" aria-controls="tab-plazos" aria-selected="false">Plazos y fechas<span class="pest-badge" id="pb-plazos" hidden></span></button>
     <button type="button" role="tab" id="pest-crm" data-tab="crm" aria-controls="tab-crm" aria-selected="false">CRM<span class="pest-badge" id="pb-crm" hidden></span></button>
   </div>
@@ -259,6 +261,15 @@
     <p class="nota pestana-vacia" id="mail-vacio" hidden>No hay plantillas de prospectos o marcas desde las que mandar un mail.</p>
   </section>
 
+  <section class="pestana-panel" id="tab-informes" role="tabpanel" aria-labelledby="pest-informes" hidden>
+    <div class="ix-cabeza" style="margin-top:4px">
+      <div><h2 style="font-size:16px">Informes preliminares</h2>
+        <p>El informe al cliente (PDF) y el IA interno de las marcas que consulta este lead, sin pasarlo a cliente. Si después se convierte, pasan a su ficha de cliente.</p></div>
+      <button type="button" class="ix-boton" id="lead-inf-nuevo">＋ Nuevo informe</button>
+    </div>
+    <div id="lead-informes"><p class="nota">Cargando…</p></div>
+  </section>
+
   <section class="pestana-panel" id="tab-plazos" role="tabpanel" aria-labelledby="pest-plazos" hidden>
     <div class="crm-box crm-ficha" id="lead-plazos"></div>
     <div class="crm-box crm-ficha" id="lead-agenda"></div>
@@ -272,6 +283,7 @@
 <script src="/static/comun.js?v=vp9"></script>
 <script src="/static/calendario_comun.js?v=9"></script>
 <script src="/static/crm.js"></script>
+<script src="/static/informes_comun.js?v=1"></script>
 <script>
 // "Marcar contactado" también mueve la etapa del CRM: se recargan tabla y ficha.
 window.alRecargar = () => cargar({ conCRM: true });
@@ -337,6 +349,10 @@ async function cargar({ conCRM = true } = {}) {
       const hayCRM = !!data.clave_crm;
       document.getElementById("pest-plazos").hidden = !hayCRM;
       document.getElementById("pest-crm").hidden = !hayCRM;
+      document.getElementById("pest-informes").hidden = !hayCRM;
+      leadClave = data.clave_crm || null;
+      leadNombre = data.titular || "";
+      if (hayCRM) cargarInformesLead();
       cab.hidden = false;
       if (hayCRM) {
         crmRenderFicha(document.getElementById("zona-lead"), data.clave_crm, {
@@ -348,7 +364,7 @@ async function cargar({ conCRM = true } = {}) {
         });
       } else {
         cab.innerHTML = '<p class="crm-gris">Este titular todavía no tiene CUIT ni un nombre identificable, así que no se puede seguir en el CRM desde esta ficha. Cada una de sus marcas aparece por separado en el <a href="/crm">CRM</a>.</p>';
-        if (["plazos", "crm"].includes(pestanaActual)) abrirPestana("marca");
+        if (["plazos", "crm", "informes"].includes(pestanaActual)) abrirPestana("marca");
       }
     }
   } catch (e) {
@@ -389,7 +405,7 @@ function pintarColaNavegacion() {
 
 // ── Pestañas de la ficha ──
 // Siempre abre en «Marca». El hash (#analisis, #mail, #plazos, #crm) permite linkear a una.
-const PESTANAS = ["marca", "analisis", "mail", "plazos", "crm"];
+const PESTANAS = ["marca", "analisis", "mail", "informes", "plazos", "crm"];
 const ACTA_PEDIDA = new URLSearchParams(location.search).get("acta");   // se lee antes de que abrirPestana cambie la URL
 let pestanaActual = "marca";
 
@@ -1253,6 +1269,27 @@ function anIniciar(filas) {
   anActualizarLote();
   if (anActa !== sel.value) anCargar(sel.value);   // si ya está cargada esa marca no se pisa lo que se está escribiendo
 }
+
+// ── Informes preliminares del lead (sin convertirlo en cliente) ──
+// Lista y diálogo compartidos con Más → Informes (informes_comun.js).
+let leadClave = null, leadNombre = "";
+async function cargarInformesLead() {
+  const cont = document.getElementById("lead-informes");
+  try {
+    const r = await api(`/api/informes?lead=${encodeURIComponent(leadClave)}`);
+    const grupos = r.grupos || [];
+    pestBadge("pb-informes", grupos.length ? String(grupos.length) : "", { titulo: "Marcas con informe" });
+    cont.innerHTML = grupos.length ? ixListaHtml(grupos, { mostrarDueno: false })
+      : '<div class="ix-vacio"><strong>Todavía no hay informes</strong>Con «Nuevo informe» pegás el JSON que generó la IA (el del cliente arma el PDF; el interno queda para el estudio).</div>';
+    ixConectarLista(cont, grupos, cargarInformesLead);
+  } catch (e) {
+    cont.innerHTML = `<p class="nota">No se pudieron cargar los informes (${_escapeHtml(e.message)}).</p>`;
+  }
+}
+document.getElementById("lead-inf-nuevo").addEventListener("click", () => {
+  if (!leadClave) return;
+  ixNuevoInforme({ destino: { tipo: "lead", lead_clave: leadClave, nombre: leadNombre }, fijo: true, alTerminar: cargarInformesLead });
+});
 
 cargar();
 abrirPestana((location.hash || "").slice(1));
