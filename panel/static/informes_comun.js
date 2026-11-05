@@ -198,7 +198,33 @@ const IX_CAJAS = {
 };
 const IX_NOMBRE = { cliente: "Informe al cliente (PDF)", interno: "Informe IA interno", oposicion: "Informe Oposición IA" };
 
-function ixNuevoInforme({ destino = null, fijo = false, marca = "", solo = "", esperado = "", modo = "", alTerminar = null } = {}) {
+/* Link «abrir en el panel» que arman las skills de Claude: /informes#cargar=<JSON comprimido>.
+ * Formato: «z.» + base64url(deflate-raw(JSON en UTF-8)), o «j.» + base64url(JSON) sin comprimir.
+ * Va después del «#»: no viaja al servidor, solo lo lee el navegador. Devuelve el texto del JSON. */
+async function ixLeerLinkCarga(hash) {
+  const m = /[#&]cargar=([zj])\.([A-Za-z0-9_-]+)/.exec(hash || "");
+  if (!m) return null;
+  const b64 = m[2].replace(/-/g, "+").replace(/_/g, "/");
+  const bin = atob(b64 + "===".slice((b64.length + 3) % 4));
+  const bytes = Uint8Array.from(bin, (c) => c.charCodeAt(0));
+  if (m[1] === "j") return new TextDecoder().decode(bytes);
+  const flujo = new Blob([bytes]).stream().pipeThrough(new DecompressionStream("deflate-raw"));
+  return await new Response(flujo).text();
+}
+
+/* Lo del link pegado en el diálogo: elige el tipo según el JSON y lo deja listo para elegir el dueño y guardar. */
+async function ixAbrirLinkCarga({ alTerminar = null } = {}) {
+  let texto;
+  try { texto = await ixLeerLinkCarga(location.hash); }
+  catch (e) { alert("No se pudo leer el informe del link (¿se cortó al copiarlo?): " + e.message); }
+  if (location.hash) history.replaceState(null, "", location.pathname + location.search);
+  if (!texto) return false;
+  const p = ixPrevia(texto);
+  ixNuevoInforme({ modo: p.tipo === "oposicion" ? "oposicion" : "preliminar", texto, alTerminar });
+  return true;
+}
+
+function ixNuevoInforme({ destino = null, fijo = false, marca = "", solo = "", esperado = "", modo = "", texto = "", alTerminar = null } = {}) {
   solo = solo || esperado;
   let modal = document.getElementById("ix-modal");
   if (!modal) {
@@ -395,6 +421,12 @@ function ixNuevoInforme({ destino = null, fijo = false, marca = "", solo = "", e
     $m("ix-cancelar").textContent = "Cerrar";
     if (alTerminar) alTerminar();
   };
+  if (texto) {  // vino por link: el JSON va al cuadro que corresponde (el preliminar: cliente o interno)
+    const p = ixPrevia(texto);
+    const caja = $m("ix-texto-" + (tipos.includes(p.tipo) ? p.tipo : tipos[0]));
+    caja.value = texto.trim();
+    caja.dispatchEvent(new Event("input"));
+  }
   actualizarBoton();
   modal.classList.add("abierto");
   if (elegido) setTimeout(() => $m("ix-texto-" + tipos[0]).focus(), 30);

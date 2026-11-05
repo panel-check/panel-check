@@ -60,4 +60,5 @@
   $("inf-q").addEventListener("input", () => { clearTimeout(t); t = setTimeout(cargar, 250); });
   window.alRecargar = cargar;
   cargar();
+  ixAbrirLinkCarga({ alTerminar: cargar });  // link «abrir en el panel» de las skills (/informes#cargar=…)
 })();
