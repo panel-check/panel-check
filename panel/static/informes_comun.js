@@ -263,6 +263,7 @@ function ixNuevoInforme({ destino = null, fijo = false, marca = "", solo = "", e
         }
         est[t].previa = p;
         $m("ix-previa-" + t).innerHTML = p.html;
+        if (p.marca) autocompletarMarca(p.marca);
         estado.textContent = ""; estado.className = "ix-estado";
         actualizarBoton();
       });
@@ -329,9 +330,21 @@ function ixNuevoInforme({ destino = null, fijo = false, marca = "", solo = "", e
         }));
       } catch (e) { if (n === pedido) res.innerHTML = `<div class="ix-nada">No se pudo buscar (${ixEsc(e.message)}).</div>`; }
     };
-    q.addEventListener("input", () => { clearTimeout(t); t = setTimeout(buscar, 300); });
+    qAMano = false;
+    q.addEventListener("input", () => { qAMano = true; clearTimeout(t); t = setTimeout(buscar, 300); });
+    q.addEventListener("ix-auto", () => { clearTimeout(t); buscar(); });
     if (q.value) buscar();
     setTimeout(() => q.focus(), 30);
+  }
+  /* Al pegar el JSON: si todavía no se eligió a quién va y no se escribió nada a mano en la búsqueda,
+   * se busca la marca del informe (varias marcas juntas, «A / B», se buscan cada una). */
+  let qAMano = false;
+  function autocompletarMarca(m) {
+    marca = m;
+    const q = $m("ix-q");
+    if (elegido || !q || (qAMano && q.value.trim()) || q.value === m) return;
+    q.value = m;
+    q.dispatchEvent(new CustomEvent("ix-auto"));
   }
   pintarDestino();
   pintarCajas();
