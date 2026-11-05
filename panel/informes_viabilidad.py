@@ -21,7 +21,8 @@ Formatos del JSON del cliente:
     los informes ya guardados se siguen viendo igual.
 
 Los dos se guardan en la tabla informes_viabilidad (uno por fila, tipo
-'cliente' o 'interno'). Este módulo no abre conexiones: recibe cursores.
+'cliente' o 'interno'). En la misma tabla va el Informe Oposición IA (tipo
+'oposicion', ver informes_oposicion.py). Este módulo no abre conexiones: recibe cursores.
 """
 
 import datetime as _dt
@@ -94,7 +95,7 @@ def crear_tablas(cur):
         CREATE TABLE IF NOT EXISTS informes_viabilidad (
             id            SERIAL PRIMARY KEY,
             cliente_id    INTEGER REFERENCES clientes(id) ON DELETE CASCADE,
-            tipo          TEXT NOT NULL CHECK (tipo IN ('cliente', 'interno')),
+            tipo          TEXT NOT NULL CHECK (tipo IN ('cliente', 'interno', 'oposicion')),
             marca         TEXT,
             datos         JSONB NOT NULL,
             generado_por  TEXT,
@@ -108,6 +109,15 @@ def crear_tablas(cur):
     cur.execute("ALTER TABLE informes_viabilidad ADD COLUMN IF NOT EXISTS lead_clave TEXT")
     cur.execute("ALTER TABLE informes_viabilidad ADD COLUMN IF NOT EXISTS lead_nombre TEXT")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_informes_lead ON informes_viabilidad(lead_clave) WHERE lead_clave IS NOT NULL")
+    # Tercer tipo: 'oposicion' (Informe Oposición IA de la skill revisador-de-oposiciones, informes_oposicion.py).
+    cur.execute("SELECT pg_get_constraintdef(oid) AS d FROM pg_constraint "
+                "WHERE conrelid = 'informes_viabilidad'::regclass AND conname = 'informes_viabilidad_tipo_check'")
+    f = cur.fetchone()
+    definicion = (f["d"] if isinstance(f, dict) else f[0]) if f else ""
+    if "oposicion" not in definicion:
+        cur.execute("ALTER TABLE informes_viabilidad DROP CONSTRAINT IF EXISTS informes_viabilidad_tipo_check")
+        cur.execute("ALTER TABLE informes_viabilidad ADD CONSTRAINT informes_viabilidad_tipo_check "
+                    "CHECK (tipo IN ('cliente', 'interno', 'oposicion'))")
 
 
 # ── Lectura y validación del JSON pegado ──────────────────────────────────
@@ -438,6 +448,8 @@ def referencia_de_marca(cur, cliente_id, marca: str) -> str:
 
 
 def normalizar_interno(d: dict) -> dict:
+    if d.get("tipo") == "informe_oposicion_ia":
+        raise InformeInvalido("Ese es el JSON del informe de oposición: va en «Informe Oposición IA».")
     if d.get("tipo") == "informe_viabilidad_cliente" or ("secciones" in d and "encabezado" in d):
         raise InformeInvalido("Ese es el JSON para el cliente: va en «Generar informe de disponibilidad marcaria».")
     if not marca_interno(d):

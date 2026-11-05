@@ -1,5 +1,5 @@
-/* Página /informes/{id}: abre un informe de la ficha del cliente (solapa Informes)
- * en su propia dirección. El del cliente se ve como PDF; el interno de la IA, como página. */
+/* Página /informes/{id}: abre un informe en su propia dirección. El del cliente se ve como PDF;
+ * el interno de la IA y el Informe Oposición IA (skill revisador-de-oposiciones), como página. */
 
 (function () {
   const $ = id => document.getElementById(id);
@@ -60,7 +60,8 @@
   function barra(r, extra) {
     const fmt2 = r.tipo === "cliente" && r.datos && r.datos.formato === 2;
     const ref = fmt2 ? (r.datos.encabezado || {}).referencia : ((r.datos || {}).caso || {}).referencia;
-    const titulo = r.tipo === "cliente" ? (fmt2 ? "Informe preliminar de disponibilidad" : "Informe preliminar de viabilidad") : "Informe IA interno";
+    const titulo = r.tipo === "cliente" ? (fmt2 ? "Informe preliminar de disponibilidad" : "Informe preliminar de viabilidad")
+      : r.tipo === "oposicion" ? "Informe Oposición IA" : "Informe IA interno";
     document.title = `${titulo} — ${r.marca || ""}`;
     return `<div class="inf-barra">
       <div><h2>${esc(titulo)} · ${esc(r.marca || "")}${ref && /^INFPR-\d+$/i.test(ref) ? ` · <span class="cl-tag">${esc(ref)}</span>` : ""}</h2>
@@ -132,6 +133,84 @@
     }));
   }
 
+  // Informe Oposición IA: ficha ⚡ arriba, después oposiciones, marcas, comparación, palancas y caminos.
+  function oposicion(r) {
+    const d = r.datos || {}, rx = d.resumen_express || {}, mc = d.marca_cliente || {}, cmp = d.comparacion || {};
+    const ops = Array.isArray(d.oposiciones) ? d.oposiciones : [];
+    const ch = typeof d.chances === "string" ? { nivel: d.chances } : (d.chances || {});
+    const colorCh = /^(muy bajas|bajas)$/.test(ch.nivel || "") ? "mal" : /^(bajas a medias|medias)$/.test(ch.nivel || "") ? "aviso" : ch.nivel ? "ok" : "";
+    const vtos = ops.map(o => o.vencimiento_negociacion).filter(Boolean);
+    const oponentes = [...new Set(ops.map(o => o.oponente).filter(Boolean))];
+    const RX = [["cliente_marca", "Cliente / marca"], ["oponente", "Oponente"], ["que_cita", "Qué cita"], ["plazos", "Plazos"],
+      ["chances", "Chances"], ["ojo", "Ojo"], ["camino_sugerido", "Camino sugerido"], ["falta", "Falta"]];
+    const fichaRx = RX.filter(([k]) => rx[k]).map(([k, t]) => `<div class="op-rx-fila${k === "ojo" ? " ojo" : ""}"><dt>${esc(t)}</dt><dd>${esc(texto(rx[k]))}</dd></div>`).join("")
+      + Object.entries(rx).filter(([k, v]) => !RX.some(([c]) => c === k) && v).map(([k, v]) => `<div class="op-rx-fila"><dt>${esc(etiqueta(k))}</dt><dd>${esc(texto(v))}</dd></div>`).join("");
+    const actaLink = a => a ? `<a class="link-acta" href="javascript:void(0)" data-acta="${esc(a)}">${esc(a)} ↗</a>` : "";
+    const sit = v => { const t = String(v || "").toLowerCase(); return t.startsWith("id") ? "mal" : t.startsWith("inc") ? "aviso" : t.startsWith("af") ? "ok" : ""; };
+    const sino = v => v === true ? "sí" : v === false ? "no" : esc(texto(v));
+    const conocidas = new Set(["tipo", "version", "fecha_analisis", "resumen_express", "resumen", "marca_cliente", "oposiciones", "marcas_oponente",
+      "comparacion", "palancas", "chances", "caminos", "preguntas_cliente", "a_confirmar_pame", "limitaciones"]);
+    const otras = Object.entries(d).filter(([k]) => !conocidas.has(k));
+    const signos = cmp.signos && typeof cmp.signos === "object" ? cmp.signos : null;
+    const conv = cmp.convivencia && typeof cmp.convivencia === "object" ? cmp.convivencia : (cmp.convivencia ? { resumen: cmp.convivencia } : null);
+    cont.innerHTML = barra(r, "") + `
+      <div class="inf-kpis">
+        <div class="inf-kpi"><b class="op-ch ${colorCh}">${esc(ch.nivel || "—")}</b><span>chances</span></div>
+        <div class="inf-kpi"><b>${ops.length}</b><span>${ops.length === 1 ? "oposición" : "oposiciones"}</span></div>
+        <div class="inf-kpi"><b>${esc(vtos.length ? vtos.sort((a, b) => (a.split("/").reverse().join("")).localeCompare(b.split("/").reverse().join("")))[0] : "—")}</b><span>vencen los 3 meses para negociar</span></div>
+        <div class="inf-kpi" style="flex:1"><b style="font-size:15px">${esc(oponentes.join(", ") || "—")}</b><span>oponente</span></div>
+      </div>
+      ${caja("⚡ Resumen express", fichaRx ? `<dl class="op-rx">${fichaRx}</dl>` : "")}
+      ${caja("Resumen", d.resumen ? `<p class="inf-obs">${esc(d.resumen)}</p>` : "")}
+      ${caja("Marca del cliente", dl(Object.fromEntries(Object.entries(mc).filter(([k]) => !["actas_opuestas", "otras_actas"].includes(k))))
+        + ((mc.actas_opuestas || []).length ? `<h3 style="margin-top:12px">Actas opuestas</h3>${tabla(mc.actas_opuestas, { id: "t-actas" })}` : "")
+        + ((mc.otras_actas || []).length ? `<h3 style="margin-top:12px">Otras actas del titular</h3>${tabla(mc.otras_actas, { id: "t-otras" })}` : ""))}
+      ${caja(ops.length === 1 ? "La oposición" : "Las oposiciones", ops.length ? `<div class="op-lista">${ops.map(o => `<div class="op-item">
+          <div class="op-item-cab">Acta ${actaLink(o.acta_cliente) || "—"}${o.clase != null && o.clase !== "" ? ` <span class="cl-tag">Clase ${esc(o.clase)}</span>` : ""}
+            · <strong>${esc(o.oponente || "")}</strong>${o.en_termino === false ? ' <span class="cl-tag mal">fuera de término</span>' : ""}</div>
+          <dl class="inf-grid">
+            ${o.fecha_oposicion ? `<dt>Fecha de la oposición</dt><dd>${esc(o.fecha_oposicion)}${o.en_termino === true ? " (en término)" : ""}</dd>` : ""}
+            ${o.agente_oponente ? `<dt>Agente del oponente</dt><dd>${esc(o.agente_oponente)}</dd>` : ""}
+            ${(o.marcas_citadas || []).length ? `<dt>Marcas citadas</dt><dd>${o.marcas_citadas.map(a => /^\d+$/.test(String(a)) ? actaLink(a) : esc(texto(a))).join(", ")}</dd>` : ""}
+            ${(o.articulos || []).length ? `<dt>Artículos</dt><dd>${esc(texto(o.articulos))}</dd>` : ""}
+            ${o.fundamento ? `<dt>Fundamento</dt><dd>${esc(o.fundamento)}</dd>` : ""}
+            ${o.fecha_notificacion || o.notificacion ? `<dt>Notificación</dt><dd>${esc(o.fecha_notificacion || "—")}${o.notificacion ? ` (${esc(o.notificacion)})` : ""}</dd>` : ""}
+            ${o.vencimiento_negociacion ? `<dt>Vencen los 3 meses</dt><dd><strong>${esc(o.vencimiento_negociacion)}</strong></dd>` : ""}
+            ${Object.entries(o).filter(([k, v]) => !["acta_cliente", "clase", "oponente", "en_termino", "fecha_oposicion", "agente_oponente", "marcas_citadas", "articulos", "fundamento", "fecha_notificacion", "notificacion", "vencimiento_negociacion"].includes(k) && v !== "" && v != null).map(([k, v]) => `<dt>${esc(etiqueta(k))}</dt><dd>${esc(texto(v))}</dd>`).join("")}
+          </dl></div>`).join("")}</div>` : "")}
+      ${caja("Marcas del oponente (verificadas en el INPI)", (d.marcas_oponente || []).length ? `<div class="inf-fichas">${d.marcas_oponente.map(m => {
+          const avisos = [m.es_del_oponente === false ? '<span class="cl-tag mal">no es del oponente</span>' : "",
+            m.anterior_al_cliente === false ? '<span class="cl-tag ok">posterior al cliente</span>' : "",
+            /renov/i.test(m.origen || "") ? '<span class="cl-tag aviso">renovación</span>' : "",
+            m.falta_de_uso_posible === true ? '<span class="cl-tag aviso">posible falta de uso</span>' : ""].join("");
+          const resto = Object.fromEntries(Object.entries(m).filter(([k]) => !["acta", "denominacion", "clase", "es_del_oponente", "anterior_al_cliente", "falta_de_uso_posible", "nota"].includes(k)));
+          return `<div class="inf-ficha"><div class="inf-ficha-cab" style="cursor:default">${m.acta ? `<a class="link-acta" href="javascript:void(0)" data-acta="${esc(m.acta)}">Acta ${esc(m.acta)} ↗</a>` : ""}
+            <strong>${esc(m.denominacion || "")}</strong>${m.clase != null && m.clase !== "" ? `<span class="cl-tag">Clase ${esc(m.clase)}</span>` : ""}${avisos}</div>
+            <div class="inf-ficha-cuerpo">${dl(resto)}${m.nota ? `<div class="inf-largo inf-destacado">${esc(m.nota)}</div>` : ""}</div></div>`;
+        }).join("")}</div>` : "")}
+      ${caja("Comparación", (signos ? `<h3>Signos</h3>${dl(signos)}` : "")
+        + ((cmp.productos || []).length ? `<h3 style="margin-top:12px">Productos y servicios</h3><div style="overflow-x:auto"><table class="cl-tabla"><thead><tr><th>Ítem</th><th>Situación</th><th>Detalle</th></tr></thead><tbody>
+            ${cmp.productos.map(p => `<tr><td>${esc(p.item || "")}</td><td>${p.situacion ? `<span class="cl-tag ${sit(p.situacion)}">${esc(p.situacion)}</span>` : ""}</td><td>${esc(p.detalle || "")}</td></tr>`).join("")}</tbody></table></div>` : "")
+        + (conv ? `<h3 style="margin-top:12px">Convivencia</h3>${conv.resumen ? `<p style="margin:0 0 8px;font-size:13px">${esc(conv.resumen)}</p>` : ""}${tabla(conv.marcas, { id: "t-conv", filtro: (conv.marcas || []).length > 10 })}` : "")
+        + Object.entries(cmp).filter(([k]) => !["signos", "productos", "convivencia"].includes(k)).map(([k, v]) => `<h3 style="margin-top:12px">${esc(etiqueta(k))}</h3><p style="margin:0;font-size:13px">${esc(texto(v))}</p>`).join(""))}
+      ${caja("Palancas", (d.palancas || []).length ? `<ul>${d.palancas.map(p => typeof p === "object" ? `<li><strong>${esc(p.palanca || "")}</strong>${p.detalle ? ": " + esc(p.detalle) : ""}</li>` : `<li>${esc(p)}</li>`).join("")}</ul>` : "")}
+      ${caja("Chances y caminos", `${ch.nivel || ch.motivo ? `<p style="margin:0 0 10px;font-size:13.5px"><span class="cl-tag ${colorCh}">Chances ${esc(ch.nivel || "")}</span> ${esc(ch.motivo || "")}</p>` : ""}
+        ${(d.caminos || []).length ? `<div class="op-caminos">${d.caminos.map((c, i) => typeof c === "object" ? `<div class="op-camino${c.recomendado ? " reco" : ""}">
+            <div class="op-camino-cab"><span class="op-num">${i + 1}</span><strong>${esc(c.titulo || "")}</strong>${c.recomendado ? '<span class="cl-tag ok">sugerido</span>' : ""}${c.costo ? `<span class="op-costo">${esc(c.costo)}</span>` : ""}</div>
+            ${c.detalle ? `<p>${esc(c.detalle)}</p>` : ""}</div>` : `<div class="op-camino"><p>${esc(c)}</p></div>`).join("")}</div>` : ""}`)}
+      ${caja("Qué preguntarle al cliente", (d.preguntas_cliente || []).length ? lista(d.preguntas_cliente) : "")}
+      ${caja("A confirmar con Pame", (d.a_confirmar_pame || []).length ? lista(d.a_confirmar_pame) : "")}
+      ${caja("Limitaciones", (d.limitaciones || []).length ? lista(d.limitaciones) : "")}
+      ${otras.map(([k, v]) => caja(etiqueta(k), Array.isArray(v) && v.length && typeof v[0] === "object" ? tabla(v) : typeof v === "object" ? dl(v) : `<p style="margin:0">${esc(texto(v))}</p>`)).join("")}`;
+    cont.querySelectorAll("[data-acta]").forEach(a => a.addEventListener("click", ev => { ev.preventDefault(); ev.stopPropagation(); abrirActa(a.dataset.acta); }));
+    cont.querySelectorAll("[data-filtrar]").forEach(inp => inp.addEventListener("input", () => {
+      const q = inp.value.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+      $(inp.dataset.filtrar).querySelectorAll("tbody tr").forEach(tr => {
+        tr.hidden = q && !tr.textContent.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().includes(q);
+      });
+    }));
+  }
+
   (async function () {
     if (!iid) { cont.innerHTML = '<p class="crm-error">Falta el número de informe.</p>'; return; }
     let r;
@@ -140,6 +219,8 @@
     if (r.tipo === "cliente") {
       cont.innerHTML = barra(r, `<a class="cl-btn" href="/api/informes/${r.id}/pdf">Descargar PDF</a>`) +
         `<iframe class="inf-pdf" src="/api/informes/${r.id}/pdf?ver=1" title="Informe en PDF"></iframe>`;
+    } else if (r.tipo === "oposicion") {
+      oposicion(r);
     } else {
       interno(r);
     }

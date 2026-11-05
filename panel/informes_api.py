@@ -10,10 +10,12 @@ Rutas (todas con sesión):
                                                devuelve el id para bajar el PDF
   POST   /api/clientes/{id}/informes/interno   pegar el JSON INTERNO de la IA: se guarda tal cual
   GET    /api/informes                         todos los informes (Más → Informes), agrupados por dueño y marca;
-                                               filtros q (marca, cliente/lead o INFPR), falta (interno|cliente|leads),
+                                               filtros q (marca, cliente/lead, INFPR, oponente o acta), falta
+                                               (interno|cliente|leads|oposiciones),
                                                cliente_id y lead (clave del CRM: la solapa Informes de la ficha del lead)
   GET    /api/informes/destinos?q=             «Nuevo informe»: clientes y leads de los boletines que coinciden
-  POST   /api/informes/cargar                  pegar un JSON (cliente o interno, se reconoce solo) para un
+  POST   /api/clientes/{id}/informes/oposicion pegar el JSON del Informe Oposición IA (informes_oposicion.py)
+  POST   /api/informes/cargar                  pegar un JSON (cliente, interno u oposición; se reconoce solo) para un
                                                cliente (cliente_id) o un lead que no es cliente (lead_clave)
   GET    /api/informes/{iid}                   el JSON guardado
   GET    /api/informes/{iid}/pdf               el PDF (solo los del cliente); con ver=1 se abre en el navegador
@@ -31,6 +33,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response
 from pydantic import BaseModel
 
+import informes_oposicion as io_
 import informes_viabilidad as iv
 
 
@@ -43,7 +46,18 @@ class JsonCarga(BaseModel):
     texto: str
     cliente_id: Optional[int] = None
     lead_clave: Optional[str] = None
-    tipo: Optional[str] = None  # "cliente" | "interno"; sin tipo se reconoce por el JSON
+    tipo: Optional[str] = None  # "cliente" | "interno" | "oposicion"; sin tipo se reconoce por el JSON
+
+
+TIPOS = ("cliente", "interno", "oposicion")
+NOMBRE_TIPO = {"cliente": "Informe al cliente (PDF)", "interno": "Informe IA interno", "oposicion": "Informe Oposición IA"}
+
+
+def tipo_de_json(d: dict) -> str:
+    """Qué informe es el JSON pegado: el de oposición, el interno o el del cliente."""
+    if io_.es_oposicion(d):
+        return "oposicion"
+    return "interno" if es_json_interno(d) else "cliente"
 
 
 def es_json_interno(d: dict) -> bool:
@@ -108,11 +122,11 @@ def crear_router(verificar_login, conexion, crm=None) -> APIRouter:
         """Valida, asigna la referencia INFPR (cliente) o la hereda (interno) y guarda, todo en una transacción."""
         try:
             crudo = iv.leer_json(texto)
+            es = tipo_de_json(crudo)
             if tipo is None:
-                tipo = "interno" if es_json_interno(crudo) else "cliente"
-            elif (tipo == "interno") != es_json_interno(crudo):
-                raise iv.InformeInvalido("Ese es el JSON interno: va en «Informe IA interno»." if tipo == "cliente"
-                                         else "Ese es el JSON del informe al cliente: va en «Informe al cliente (PDF)».")
+                tipo = es
+            elif tipo != es:
+                raise iv.InformeInvalido(f"Ese es el JSON del «{NOMBRE_TIPO[es]}»: va en ese cuadro, no en «{NOMBRE_TIPO[tipo]}».")
             with conexion() as conn:
                 with rcur(conn) as cur:
                     dn = _dueno(cur, cliente_id, lead_clave)
@@ -123,6 +137,12 @@ def crear_router(verificar_login, conexion, crm=None) -> APIRouter:
                             iv.asignar_referencia(cur, quien, d)
                         iv.generar_pdf(d)  # que no falle recién al bajarlo
                         marca = d["encabezado"]["marca_pretendida"]
+                    elif tipo == "oposicion":
+                        try:
+                            d = io_.normalizar(crudo)
+                        except io_.OposicionInvalida as e:
+                            raise iv.InformeInvalido(str(e))
+                        marca = io_.marca(d)
                     else:
                         d = iv.normalizar_interno(crudo)
                         marca = iv.marca_interno(d)
@@ -137,6 +157,8 @@ def crear_router(verificar_login, conexion, crm=None) -> APIRouter:
         except iv.InformeInvalido as e:
             raise HTTPException(status_code=400, detail=str(e))
         out = {"id": iid, "tipo": tipo, "marca": marca, "cliente_id": dn["cliente_id"], "lead_clave": dn["lead_clave"]}
+        if tipo == "oposicion":
+            out["resumen"] = io_.resumen(d)
         if tipo == "cliente":
             out.update(archivo=iv.nombre_archivo(d), referencia=d["encabezado"].get("referencia", ""))
         return out
@@ -152,6 +174,10 @@ def crear_router(verificar_login, conexion, crm=None) -> APIRouter:
     def guardar_cliente(cliente_id: int, body: JsonPegado, usuario: str = Depends(verificar_login)):
         return _cargar("cliente", body.texto, usuario, cliente_id=cliente_id)
 
+    @router.post("/api/clientes/{cliente_id}/informes/oposicion")
+    def guardar_oposicion(cliente_id: int, body: JsonPegado, usuario: str = Depends(verificar_login)):
+        return _cargar("oposicion", body.texto, usuario, cliente_id=cliente_id)
+
     @router.post("/api/clientes/{cliente_id}/informes/interno")
     def guardar_interno(cliente_id: int, body: JsonPegado, usuario: str = Depends(verificar_login)):
         return _cargar("interno", body.texto, usuario, cliente_id=cliente_id)
@@ -161,7 +187,7 @@ def crear_router(verificar_login, conexion, crm=None) -> APIRouter:
         """Pegar un JSON (el del cliente o el interno; con `tipo` se controla que sea ese) para un cliente o un lead."""
         if not body.cliente_id and not (body.lead_clave or "").strip():
             raise HTTPException(status_code=400, detail="Elegí a quién va el informe")
-        tipo = body.tipo if body.tipo in ("cliente", "interno") else None
+        tipo = body.tipo if body.tipo in TIPOS else None
         return _cargar(tipo, body.texto, usuario, cliente_id=body.cliente_id, lead_clave=body.lead_clave)
 
     @router.get("/api/informes")
@@ -243,7 +269,7 @@ def crear_router(verificar_login, conexion, crm=None) -> APIRouter:
             with rcur(conn) as cur:
                 f = _informe(cur, iid)
         if f["tipo"] != "cliente":
-            raise HTTPException(status_code=400, detail="El informe interno no tiene PDF")
+            raise HTTPException(status_code=400, detail="Solo el informe al cliente tiene PDF")
         d = f["datos"]
         headers = {"Content-Disposition": f"{'inline' if ver else 'attachment'}; filename*=UTF-8''{quote(iv.nombre_archivo(d))}"}
         if ver:  # para verlo dentro de la página /informes/{id} (mismo criterio que los archivos de formularios)
@@ -256,7 +282,7 @@ def crear_router(verificar_login, conexion, crm=None) -> APIRouter:
             with rcur(conn) as cur:
                 f = _informe(cur, iid)
         base = iv.nombre_archivo({"encabezado": {"marca_pretendida": f["marca"] or ""}}, "json")
-        nombre = base.replace("Informe_Preliminar_", "Informe_IA_interno_" if f["tipo"] == "interno" else "Informe_cliente_")
+        nombre = base.replace("Informe_Preliminar_", {"interno": "Informe_IA_interno_", "oposicion": "Informe_Oposicion_IA_"}.get(f["tipo"], "Informe_cliente_"))
         return Response(content=json.dumps(f["datos"], ensure_ascii=False, indent=2).encode("utf-8"),
                         media_type="application/json",
                         headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(nombre)}"})
@@ -292,6 +318,8 @@ def listar_informes(cur, cliente_id: int) -> list:
         d = f.pop("datos") or {}
         if f["tipo"] == "interno":
             f["resumen"] = iv.resumen_interno(d)
+        elif f["tipo"] == "oposicion":
+            f["resumen"] = io_.resumen(d)
         else:
             enc = d.get("encabezado") or {}
             f["fecha_informe"] = enc.get("fecha") or enc.get("fecha_informe", "")
@@ -309,23 +337,29 @@ def _norm(s) -> str:
 
 
 def agrupar_informes(filas: list, q: str = "", falta: str = "") -> list:
-    """Una entrada por cliente + marca, con las versiones del informe al cliente y del interno
-    (la más nueva primero). `falta`: "interno" o "cliente" deja solo las marcas a las que les falta ese."""
+    """Una entrada por dueño + marca + familia, con las versiones (la más nueva primero).
+    Familia «preliminar»: informe al cliente + IA interno. Familia «oposicion»: los Informes Oposición IA,
+    aparte porque son otro trámite. `falta`: "interno" o "cliente" deja los preliminares a los que les
+    falta ese; "leads" los de leads; "oposiciones" solo las oposiciones."""
     grupos = {}
     for f in filas:  # vienen de la más nueva a la más vieja
         d = f.get("datos") or {}
-        clave = (f.get("cliente_id") or "lead:" + (f.get("lead_clave") or ""), _norm(f.get("marca")))
+        familia = "oposicion" if f["tipo"] == "oposicion" else "preliminar"
+        clave = (f.get("cliente_id") or "lead:" + (f.get("lead_clave") or ""), _norm(f.get("marca")), familia)
         g = grupos.get(clave)
         if g is None:
             g = grupos[clave] = {"cliente_id": f.get("cliente_id"), "cliente_nombre": f.get("cliente_nombre") or "",
                                  "lead_clave": None if f.get("cliente_id") else f.get("lead_clave"),
                                  "lead_nombre": "" if f.get("cliente_id") else (f.get("lead_nombre") or ""),
                                  "marca": f.get("marca") or "", "ultimo": f["generado_en"], "referencia": "",
-                                 "cliente": [], "interno": []}
+                                 "familia": familia, "cliente": [], "interno": [], "oposicion": [], "texto": ""}
         item = {"id": f["id"], "generado_en": f["generado_en"], "generado_por": f.get("generado_por") or ""}
         if f["tipo"] == "interno":
             r = iv.resumen_interno(d)
             item.update(referencia=r["referencia"] or "", identicas=r["identicas"], relevantes=len(r["relevantes"]))
+        elif f["tipo"] == "oposicion":
+            item.update(io_.resumen(d))
+            g["texto"] += " " + " ".join(item["oponentes"] + item["actas"])
         else:
             enc = d.get("encabezado") or {}
             item.update(referencia=enc.get("referencia", "") or "", fecha_informe=enc.get("fecha") or enc.get("fecha_informe", ""),
@@ -336,9 +370,11 @@ def agrupar_informes(filas: list, q: str = "", falta: str = "") -> list:
     out = list(grupos.values())
     nq = _norm(q)
     if nq:
-        out = [g for g in out if nq in _norm(f'{g["marca"]} {g["cliente_nombre"]} {g["lead_nombre"]} {g["referencia"]}')]
+        out = [g for g in out if nq in _norm(f'{g["marca"]} {g["cliente_nombre"]} {g["lead_nombre"]} {g["referencia"]} {g["texto"]}')]
     if falta in ("interno", "cliente"):
-        out = [g for g in out if not g[falta]]
+        out = [g for g in out if g["familia"] == "preliminar" and not g[falta]]
+    elif falta == "oposiciones":
+        out = [g for g in out if g["familia"] == "oposicion"]
     elif falta == "leads":  # solo los de leads que todavía no son clientes
         out = [g for g in out if g["lead_clave"]]
     return out

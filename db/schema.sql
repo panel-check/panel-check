@@ -516,11 +516,12 @@ CREATE TABLE IF NOT EXISTS poderes_generados (
 CREATE INDEX IF NOT EXISTS idx_poderes_cliente ON poderes_generados(cliente_id, generado_en DESC);
 
 -- Informes preliminares de viabilidad marcaria (panel/informes_viabilidad.py):
--- el JSON para el cliente (con el que se arma el PDF) y el informe IA interno.
+-- el JSON para el cliente (con el que se arma el PDF) y el informe IA interno;
+-- y el Informe Oposición IA (tipo 'oposicion', panel/informes_oposicion.py).
 CREATE TABLE IF NOT EXISTS informes_viabilidad (
     id            SERIAL PRIMARY KEY,
     cliente_id    INTEGER REFERENCES clientes(id) ON DELETE CASCADE,
-    tipo          TEXT NOT NULL CHECK (tipo IN ('cliente', 'interno')),
+    tipo          TEXT NOT NULL CHECK (tipo IN ('cliente', 'interno', 'oposicion')),
     marca         TEXT,
     datos         JSONB NOT NULL,
     generado_por  TEXT,
