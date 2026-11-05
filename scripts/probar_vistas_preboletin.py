@@ -34,13 +34,23 @@ Qué marcas se revisan (sin --actas), en la corrida diaria:
     pasó el vencimiento de la vista hace más de --dias-despues-vencimiento días;
   - una marca NO se revisa dos veces el mismo día (fecha de Argentina): se mira de nuevo recién a los
     N días de la última revisión, contados por día calendario y no por horas. N es --dias-entre-revisiones-vista (1)
-    si tiene una vista sin contestar, --dias-entre-revisiones-jovenes (3) si se presentó hace menos de
-    --dias-jovenes días (30), y --dias-entre-revisiones (7) si es más vieja;
+    si tiene una vista sin contestar; para las demás depende del día de la semana (cadencias(), 05/11/2026):
+    INPI carga las vistas en la Grilla de miércoles a martes (la mayoría lunes y martes) y las notifica todas
+    juntas el miércoles siguiente, y en cuanto notifica las ven los demás estudios. Por eso los días
+    --dias-previos (domingo, lunes y martes) las presentadas hace menos de --dias-jovenes días (30) se miran
+    todos los días (--dias-entre-revisiones-jovenes-previo, 1) y las más viejas cada
+    --dias-entre-revisiones-previo (3); de miércoles a sábado, cada --dias-entre-revisiones-jovenes (2) y
+    cada --dias-entre-revisiones (7);
   - orden: primero las que tienen una vista sin contestar y después las que hace más tiempo no se miran, así
     que si la corrida se corta (--max-minutes, --hasta-hora o bloqueo de INPI) la siguiente sigue por las que
     quedaron sin revisar y no vuelve a empezar por las mismas.
   El expediente se vuelve a leer en cada revisión de una vista pendiente porque la contestación no siempre
   aparece como fila en la Grilla; en ese mismo expediente se lee si INPI denegó la solicitud.
+
+Pasada de la madrugada del miércoles (--forzar-cada 1 --edad-maxima 25, después de oposiciones): vuelve
+a mirar las presentadas hace 3 a 25 días que no se revisaron hoy, para agarrar las vistas que INPI cargó el martes
+antes de que las notifique a las 06:00. --edad-maxima deja afuera las presentadas hace más de N días y
+--forzar-cada reemplaza la cadencia de las marcas sin vista.
 
 Con --repaso (miércoles, repasar_vistas.yml) se revisan SOLO las marcas que alguna vez tuvieron una vista y
 siguen abiertas, contactadas o no, para actualizar si se notificó, si se contestó o si venció el plazo. Las
@@ -161,6 +171,7 @@ def sql_candidatas(repaso: bool) -> str:
           AND contactado IS NOT TRUE
           AND fecha_presentacion IS NOT NULL
           AND fecha_presentacion::date <= %(hoy)s::date - %(dias_min)s
+          AND (%(edad_max)s::int IS NULL OR fecha_presentacion::date >= %(hoy)s::date - %(edad_max)s::int)
           AND (vista_revisada_en IS NULL
                OR {_SQL_REVISADA_EL} <= %(hoy)s::date - CASE
                     WHEN tuvo_vista IS TRUE AND vista_sirve IS TRUE THEN %(cada_vista)s
@@ -168,6 +179,36 @@ def sql_candidatas(repaso: bool) -> str:
                     ELSE %(cada)s END)
         ORDER BY (tuvo_vista IS TRUE AND vista_sirve IS TRUE) DESC, vista_revisada_en ASC NULLS FIRST, fecha_presentacion ASC
     """
+
+
+# Días de la semana (ISO: lunes = 1 ... domingo = 7) previos a la notificación de los miércoles.
+DIAS_PREVIOS = (7, 1, 2)
+
+
+def cadencias(hoy: datetime.date, previos=DIAS_PREVIOS, joven=2, joven_previo=1, vieja=7, vieja_previo=3,
+              forzar=None) -> dict:
+    """Cada cuántos días se vuelve a mirar una marca sin vista, según el día de la semana de `hoy`
+    (fecha de Argentina). panel/app.py (_SQL_VISTAS_PENDIENTES) repite la regla: si se cambia una, cambiar la otra."""
+    if forzar:
+        return {"cada_joven": forzar, "cada": forzar}
+    if hoy.isoweekday() in previos:
+        return {"cada_joven": joven_previo, "cada": vieja_previo}
+    return {"cada_joven": joven, "cada": vieja}
+
+
+def resumen_notificadas(conn, hoy_iso: str) -> tuple[int, int]:
+    """(encontradas antes de la notificación, total) de las vistas notificadas `hoy_iso`. Cuenta como «antes»
+    la que se detectó antes de las 06:00 de Argentina del día de la notificación (INPI publica a esa hora)."""
+    with conn.cursor() as cur:
+        cur.execute(
+            f"""SELECT COUNT(*) FILTER (WHERE vista_detectada_en
+                         < (vista_fecha_notificacion + time '06:00') AT TIME ZONE '{TZ_AR}'),
+                       COUNT(*)
+                FROM marcas WHERE tuvo_vista IS TRUE AND vista_fecha_notificacion = %s::date""",
+            (hoy_iso,),
+        )
+        antes, total = cur.fetchone()
+    return int(antes or 0), int(total or 0)
 
 
 def cerrar_denegadas_conocidas(conn):
@@ -400,8 +441,13 @@ def main():
     ap.add_argument("--delay", type=float, default=1.5, help="segundos entre marcas (freno de mano)")
     ap.add_argument("--max-minutes", type=float, default=90, help="corta solo pasados estos minutos")
     ap.add_argument("--guardar", action="store_true", help="escribe el resultado en las columnas de vista de la marca (sin esto, solo lectura)")
-    ap.add_argument("--dias-entre-revisiones", type=int, default=7, help="días hasta volver a mirar una marca sin vista (presentada hace --dias-jovenes días o más)")
-    ap.add_argument("--dias-entre-revisiones-jovenes", type=int, default=3, help="días hasta volver a mirar una marca sin vista presentada hace menos de --dias-jovenes días")
+    ap.add_argument("--dias-entre-revisiones", type=int, default=7, help="días hasta volver a mirar una marca sin vista (presentada hace --dias-jovenes días o más), miércoles a sábado")
+    ap.add_argument("--dias-entre-revisiones-jovenes", type=int, default=2, help="días hasta volver a mirar una marca sin vista presentada hace menos de --dias-jovenes días (miércoles a sábado)")
+    ap.add_argument("--dias-entre-revisiones-jovenes-previo", type=int, default=1, help="lo mismo, los días previos a la notificación (--dias-previos)")
+    ap.add_argument("--dias-entre-revisiones-previo", type=int, default=3, help="días hasta volver a mirar una marca sin vista más vieja, los días previos a la notificación")
+    ap.add_argument("--dias-previos", default="7,1,2", help="días de la semana ISO (lunes = 1, domingo = 7) previos a la notificación de los miércoles")
+    ap.add_argument("--forzar-cada", type=int, default=0, help="reemplaza la cadencia de las marcas sin vista (pasada de la madrugada del miércoles: 1)")
+    ap.add_argument("--edad-maxima", type=int, default=0, help="solo marcas presentadas hace N días o menos (0 = sin tope)")
     ap.add_argument("--dias-jovenes", type=int, default=30, help="hasta qué antigüedad una marca sin vista se mira más seguido")
     ap.add_argument("--dias-entre-revisiones-vista", type=int, default=1, help="días hasta volver a mirar una marca con vista sin contestar")
     ap.add_argument("--dias-despues-vencimiento", type=int, default=7, help="días después del vencimiento de la vista en que se deja de revisar")
@@ -458,10 +504,19 @@ def main():
             if faltan:
                 print(f"AVISO: estas actas no están en la base: {', '.join(sorted(faltan))}", flush=True)
         else:
+            cad = cadencias(datetime.date.fromisoformat(hoy_iso),
+                            previos=tuple(int(d) for d in args.dias_previos.split(",") if d.strip()),
+                            joven=args.dias_entre_revisiones_jovenes, joven_previo=args.dias_entre_revisiones_jovenes_previo,
+                            vieja=args.dias_entre_revisiones, vieja_previo=args.dias_entre_revisiones_previo,
+                            forzar=args.forzar_cada or None)
+            if not args.repaso:
+                print(f"Cadencia de hoy (marcas sin vista): jóvenes cada {cad['cada_joven']} día(s), "
+                      f"más viejas cada {cad['cada']}" + (f"; solo presentadas hace {args.edad_maxima} días o menos"
+                                                          if args.edad_maxima else ""), flush=True)
             cur.execute(sql_candidatas(args.repaso), {
                 "hoy": hoy_iso, "dias_min": args.dias_minimos, "dias_venc": args.dias_despues_vencimiento,
-                "cada_vista": args.dias_entre_revisiones_vista, "cada_joven": args.dias_entre_revisiones_jovenes,
-                "dias_jovenes": args.dias_jovenes, "cada": args.dias_entre_revisiones,
+                "cada_vista": args.dias_entre_revisiones_vista, "dias_jovenes": args.dias_jovenes,
+                "edad_max": args.edad_maxima or None, **cad,
             })
             todas = cur.fetchall()
     if not args.guardar:
@@ -617,6 +672,11 @@ def main():
     if corte:
         lineas.append(f"AVISO: la prueba se cortó antes de terminar: {corte}")
 
+    if args.guardar and args.repaso:
+        antes, total = resumen_notificadas(conn, hoy_iso)
+        if total:
+            lineas.append(f"Vistas notificadas hoy: {total}; encontradas antes de la notificación: {antes} "
+                          f"({100 * antes // total} %)")
     if args.guardar:
         enviar_aviso_vistas(sin_entender)
         # Vista en un acta cuya gemela (mismo titular y mismo nombre) ya se contactó: queda contactada.

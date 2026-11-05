@@ -21,6 +21,12 @@ mismo top-5 más urgente ganaba siempre y los boletines menos urgentes
 nunca entraban a la rotación (bug detectado el 19/10/2026: boletines
 11117-11121 elegidos 3 noches seguidas sin que entrara ninguno más).
 
+Prioridad antes de la notificación (05/11/2026): domingo, lunes y martes
+entran primero, sí o sí, los boletines que INPI notifica el miércoles que
+viene (los que ya cerraron o cierran esos días). Es la última oportunidad
+de ver sus oposiciones antes de que INPI las publique y las vean los demás
+estudios; el resto de los lugares los completa la rotación de siempre.
+
 Ese universo y ese cálculo de fecha de notificación son los MISMOS que usa
 /boletines para decidir qué mostrar por defecto (panel/app.py,
 _fecha_notificacion_boletin): si se cambia uno, hay que revisar el otro.
@@ -45,6 +51,10 @@ import sys
 
 import psycopg2
 import psycopg2.extras
+
+
+# Días de la semana (ISO: lunes = 1 ... domingo = 7) previos a la notificación de los miércoles.
+DIAS_PREVIOS = (7, 1, 2)
 
 
 def _fecha_notificacion(fecha: dt.date) -> dt.date:
@@ -77,6 +87,7 @@ def elegir(conn, hoy: dt.date, maximo: int) -> list[str]:
                 "numero": f["numero"],
                 "cierre": cierre,
                 "ultima_revision": f["oposiciones_buscadas_en"],
+                "notificacion": notif,
             })
 
     # Rotación real: primero los nunca revisados o revisados hace más
@@ -86,6 +97,14 @@ def elegir(conn, hoy: dt.date, maximo: int) -> list[str]:
     # gane todas las noches (ver docstring).
     _NUNCA = dt.datetime.min.replace(tzinfo=dt.timezone.utc)
     candidatos.sort(key=lambda c: (c["ultima_revision"] or _NUNCA, c["cierre"]))
+    if hoy.isoweekday() in DIAS_PREVIOS:
+        # Los que se notifican el miércoles que viene van primero, por cercanía de cierre.
+        miercoles = hoy + dt.timedelta(days=(2 - hoy.weekday()) % 7)
+        urgentes = sorted((c for c in candidatos if c["notificacion"] == miercoles), key=lambda c: c["cierre"])
+        if urgentes:
+            print(f"Se notifican el miércoles {miercoles.isoformat()}: {', '.join(c['numero'] for c in urgentes)} "
+                  "(entran primero).", file=sys.stderr)
+        candidatos = urgentes + [c for c in candidatos if c not in urgentes]
     print(f"Boletines en ventana de oposición: {len(candidatos)}. Elegidos esta corrida: "
           f"{min(len(candidatos), maximo)}.", file=sys.stderr)
     return [c["numero"] for c in candidatos[:maximo]]

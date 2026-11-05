@@ -1,6 +1,8 @@
 name: Revisar vistas en pre-boletín
 
 on:
+  # Además, los miércoles a las 03:30 ART el panel lo lanza otra vez con forzar_cada=1 y edad_maxima=25: pasada extra
+  # para agarrar las vistas que INPI cargó el martes antes de que las notifique a las 06:00.
   # Todos los días lo lanza el panel (panel/programador.py, 18:05 ART): espera a que el escaneo de actas libere el
   # carril de INPI (entre las 18:20 y las 20:10) y se corta solo a las 22:40 (o a los 100 minutos) para no pisar a
   # los procesos de las 23:00. Antes se encadenaba al escaneo con workflow_run; los horarios de GitHub se atrasan
@@ -22,6 +24,14 @@ on:
         default: "90"
       hasta_hora:
         description: "Hora de Argentina (HH:MM) a la que se corta la corrida, por ejemplo 22:40 (vacío = sin hora de corte)"
+        required: false
+        default: ""
+      forzar_cada:
+        description: "Mirar de nuevo cada N días las marcas sin vista, sin importar el día de la semana (vacío = cadencia según el día; la pasada de la madrugada del miércoles usa 1)"
+        required: false
+        default: ""
+      edad_maxima:
+        description: "Solo leads presentados hace N días o menos (vacío = sin tope; la pasada de la madrugada del miércoles usa 25)"
         required: false
         default: ""
       actas:
@@ -72,6 +82,8 @@ jobs:
         run: |
           cd scripts
           args="--dias-minimos ${{ inputs.dias_minimos }} --limite ${{ inputs.limite }} --max-minutes ${{ inputs.max_minutes }}"
+          if [ -n "${{ inputs.forzar_cada }}" ]; then args="$args --forzar-cada ${{ inputs.forzar_cada }}"; fi
+          if [ -n "${{ inputs.edad_maxima }}" ]; then args="$args --edad-maxima ${{ inputs.edad_maxima }}"; fi
           if [ -n "${{ inputs.hasta_hora }}" ]; then args="$args --hasta-hora ${{ inputs.hasta_hora }}"; fi
           if [ "${{ inputs.guardar }}" = "true" ]; then args="$args --guardar"; fi
           if [ -n "${{ inputs.actas }}" ]; then args="$args --actas ${{ inputs.actas }}"; fi

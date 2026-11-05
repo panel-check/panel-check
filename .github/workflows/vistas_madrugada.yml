@@ -1,0 +1,65 @@
+name: "Vistas: pasada de la madrugada del miércoles"
+
+on:
+  # Lo lanza el panel (panel/programador.py, cron UTC «30 6 * * 3» = miércoles 03:30 ART), después de la rotación de
+  # oposiciones (mismo carril de INPI: si oposiciones sigue corriendo, espera su turno). INPI carga en la Grilla
+  # muchas vistas el martes y las notifica todas el miércoles a las 06:00; esta pasada vuelve a mirar los leads
+  # pre-boletín presentados hace 3 a 25 días que no se revisaron hoy, para encontrarlas antes que los demás.
+  # Mismo script que la revisión diaria (probar_vistas_preboletin.yml), con la cadencia forzada a 1 día.
+  workflow_dispatch:
+    inputs:
+      limite:
+        description: "Tope de marcas a consultar"
+        required: false
+        default: "3000"
+      max_minutes:
+        description: "Minutos máximos de la corrida"
+        required: false
+        default: "130"
+      hasta_hora:
+        description: "Hora de Argentina (HH:MM) a la que se corta (INPI notifica a las 06:00)"
+        required: false
+        default: "05:45"
+      edad_maxima:
+        description: "Solo leads presentados hace N días o menos"
+        required: false
+        default: "25"
+
+permissions:
+  contents: read
+
+# Un solo carril contra INPI: si hay otro proceso de INPI corriendo, este espera su turno.
+concurrency:
+  group: inpi-lane
+  cancel-in-progress: false
+
+jobs:
+  revisar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 200
+    env:
+      # Alarma de bloqueo masivo de INPI (scripts/monitor_bloqueo.py)
+      RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+      RESEND_FROM: ${{ secrets.RESEND_FROM }}
+      NOTIFICAR_A: ${{ secrets.NOTIFICAR_A }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.11"
+
+      - name: Instalar dependencias
+        run: pip install -r requirements.txt
+
+      - name: Volver a mirar la Grilla de los leads pre-boletín jóvenes
+        run: |
+          cd scripts
+          python3 probar_vistas_preboletin.py --guardar --dias-minimos 3 --forzar-cada 1 \
+            --edad-maxima "${{ inputs.edad_maxima || '25' }}" \
+            --limite "${{ inputs.limite || '3000' }}" \
+            --max-minutes "${{ inputs.max_minutes || '130' }}" \
+            --hasta-hora "${{ inputs.hasta_hora || '05:45' }}"
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL || secrets.DATABASE_PUBLIC_URL }}
+          PYTHONUNBUFFERED: "1"
