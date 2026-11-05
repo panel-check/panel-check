@@ -74,7 +74,8 @@
   const params = new URLSearchParams(location.search);
   function destino() {
     const n = params.get("next") || "/";
-    return n.startsWith("/") && !n.startsWith("//") && !n.includes("\\") ? n : "/";
+    // El «#…» (por ejemplo el informe del link /informes#cargar=…) no viaja al servidor: se vuelve a pegar acá.
+    return (n.startsWith("/") && !n.startsWith("//") && !n.includes("\\") ? n : "/") + (n.includes("#") ? "" : location.hash);
   }
   const err = document.getElementById("error");
   function mostrarError(t) { err.textContent = t; err.classList.add("visible"); }
