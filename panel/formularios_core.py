@@ -69,6 +69,10 @@ FORMULARIOS = {
                        "Algunos de los datos solicitados al completar el formulario generarán un PDF automático que se te enviará por email.",
         "otro": {"slug": "persona-juridica", "texto": "¿La marca va a nombre de una empresa? Completá el formulario de Persona Jurídica"},
         "campos": [
+            {"id": "nota_datos_inpi", "tipo": "nota", "etiqueta": "Datos personales",
+             "ayuda": "Si tu marca ya fue solicitada en el INPI (por ejemplo, para responder una oposición o una vista), "
+                      "todos los datos personales tienen que coincidir con los ingresados a la hora de hacer la solicitud "
+                      "de la marca en el INPI."},
             {"id": "email", "tipo": "email", "etiqueta": "Correo electrónico", "obligatorio": True, "cliente": "email"},
             {"id": "nombre", "tipo": "texto", "etiqueta": "Apellido y Nombre del titular", "obligatorio": True, "cliente": "nombre"},
             {"id": "nacionalidad", "tipo": "texto", "etiqueta": "Nacionalidad", "obligatorio": True, "cliente": "nacionalidad"},
@@ -105,6 +109,10 @@ FORMULARIOS = {
              "ayuda": "Imagen (JPG, PNG, WEBP, GIF) o PDF. Máximo 10 MB.", "mimes": MIME_LOGO,
              "si": [SI_NUEVA, {"campo": "nueva_tiene_logo", "valor": "SI"}]},
             # ── Opción 2: responder a las oposiciones recibidas y Opción 3: respuesta de vistas ──
+            {"id": "nota_coinciden_inpi", "tipo": "nota", "etiqueta": "Importante",
+             "ayuda": "Revisá que todos los datos personales que completaste arriba (nombre, DNI, CUIL/CUIT y domicilio) "
+                      "coincidan con los ingresados a la hora de hacer la solicitud de la marca en el INPI.",
+             "si": SI_OPOSICION_O_VISTAS},
             {"id": "marca_nombre", "tipo": "texto", "etiqueta": "Nombre de la marca", "obligatorio": True, "si": SI_OPOSICION_O_VISTAS},
             {"id": "marca_descripcion", "tipo": "parrafo",
              "etiqueta": "Describa de manera sencilla pero a la vez completa los servicios y/o productos que brinda su marca",
