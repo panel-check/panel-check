@@ -697,6 +697,8 @@
       svg: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>' },
     { id: "consultas-web", nombre: "Consultas web", href: "/consultas-web", color: "#475569",
       svg: '<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/>' },
+    { id: "informes", nombre: "Informes", href: "/informes", color: "#475569",
+      svg: '<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h4"/>' },
     { id: "mails", nombre: "Mails", href: "/mails", color: "#475569",
       svg: '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/>' },
     { id: "chat", nombre: "Chat", color: "#1a8754", accion: "chat",
@@ -714,7 +716,7 @@
     if (p === "/" || p.startsWith("/titular/")) return "leads";
     const mapa = {
       "/calendario": "calendario", "/clientes": "clientes", "/crm": "crm",
-      "/boletines": "boletines", "/crons": "crons", "/consultas-web": "consultas-web",
+      "/boletines": "boletines", "/crons": "crons", "/consultas-web": "consultas-web", "/informes": "informes",
       "/mails": "mails", "/ayuda": "ayuda",
       "/agendar-llamada": "llamada", "/disponibilidad": "llamada",
     };

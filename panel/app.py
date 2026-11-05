@@ -4123,6 +4123,11 @@ def pagina_mails(_: str = Depends(verificar_pagina)):
     return FileResponse(os.path.join(os.path.dirname(__file__), "static", "mails.html"))
 
 
+@app.get("/informes")
+def pagina_informes(_: str = Depends(verificar_pagina)):
+    return FileResponse(os.path.join(os.path.dirname(__file__), "static", "informes.html"))
+
+
 @app.get("/consultas-web")
 def pagina_consultas_web(_: str = Depends(verificar_pagina)):
     return FileResponse(os.path.join(os.path.dirname(__file__), "static", "consultas_web.html"))

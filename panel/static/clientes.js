@@ -1476,7 +1476,11 @@ document.querySelectorAll("#pestanas button").forEach(b => b.addEventListener("c
   const v = VISTAS.includes(p.get("vista")) ? p.get("vista") : "marcas";
   cargarResumen();
   cambiarVista(v, { sinURL: true });
-  if (p.get("cliente")) abrirCliente(+p.get("cliente"));
+  if (p.get("cliente")) {
+    // ?ctab=informes (desde Más → Informes) abre la ficha directo en esa solapa
+    if (["datos", "poderes", "informes", "formularios"].includes(p.get("ctab"))) { est.clienteTab = p.get("ctab"); est.clienteTabId = +p.get("cliente"); }
+    abrirCliente(+p.get("cliente"));
+  }
   cargarBadgeFormularios();
   // el badge de "Por matrícula" se llena sin entrar a la pestaña
   try { const r = await api("/api/cartera/por-matricula"); $("badge-matricula").textContent = r.grupos.length ? String(r.grupos.length) : ""; } catch (_) {}
