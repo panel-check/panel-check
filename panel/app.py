@@ -44,13 +44,13 @@ import re
 import secrets
 from contextlib import contextmanager
 from typing import Optional
-from urllib.parse import parse_qsl
+from urllib.parse import parse_qsl, quote
 
 import psycopg2
 import psycopg2.extras
 import requests
-from fastapi import Depends, FastAPI, HTTPException, Query
-from fastapi.responses import FileResponse, Response
+from fastapi import Depends, FastAPI, HTTPException, Query, Request
+from fastapi.responses import FileResponse, HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -4108,8 +4108,20 @@ def pagina_comentarios(_: str = Depends(verificar_pagina)):
 
 
 @app.get("/informes/{iid}")
-def pagina_informe(iid: int, _: str = Depends(verificar_pagina)):
-    """Un informe de la solapa Informes de la ficha del cliente, en su propia dirección (botón «Abrir link»)."""
+def pagina_informe(iid: int, request: Request, c: str = ""):
+    """Un informe en su propia dirección. Sin sesión y con el código de compartir (?c=, el link que se
+    manda por WhatsApp) devuelve la vista previa con el tipo, la marca y de quién es, y lleva al login;
+    sin código, directo al login como cualquier página."""
+    try:
+        verificar_pagina(request)
+    except auth_api.RedirigirA:
+        if c:
+            destino = f"/informes/{iid}?c={quote(c, safe='')}"
+            base = os.environ.get("PANEL_URL") or mails_core.DEFAULT_PANEL
+            html_previa = informes_api.vista_previa_html(conexion, iid, c, base, destino)
+            if html_previa:
+                return HTMLResponse(html_previa, headers={"Cache-Control": "no-store"})
+        raise
     return FileResponse(os.path.join(os.path.dirname(__file__), "static", "informe.html"))
 
 

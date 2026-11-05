@@ -84,6 +84,11 @@ INTRO_DEFAULT = "De acuerdo con la información disponible, se identifican las s
 _RE_CLASE = re.compile(r"\bclases?\s*(?:n[°ºo.]*\s*)?\d+", re.IGNORECASE)
 
 
+def codigo_compartir() -> str:
+    import secrets
+    return secrets.token_urlsafe(12)
+
+
 class InformeInvalido(ValueError):
     """El JSON pegado no sirve (no es JSON, le falta algo o menciona una clase)."""
 
@@ -109,6 +114,13 @@ def crear_tablas(cur):
     cur.execute("ALTER TABLE informes_viabilidad ADD COLUMN IF NOT EXISTS lead_clave TEXT")
     cur.execute("ALTER TABLE informes_viabilidad ADD COLUMN IF NOT EXISTS lead_nombre TEXT")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_informes_lead ON informes_viabilidad(lead_clave) WHERE lead_clave IS NOT NULL")
+    # Código para compartir el link por WhatsApp: /informes/{id}?c=<código> muestra la vista previa
+    # (tipo, marca y de quién es) a quien no tiene sesión; el informe en sí sigue pidiendo iniciar sesión.
+    cur.execute("ALTER TABLE informes_viabilidad ADD COLUMN IF NOT EXISTS compartir TEXT")
+    cur.execute("SELECT id FROM informes_viabilidad WHERE compartir IS NULL")
+    for f in cur.fetchall():
+        cur.execute("UPDATE informes_viabilidad SET compartir = %s WHERE id = %s",
+                    (codigo_compartir(), f["id"] if isinstance(f, dict) else f[0]))
     # Tercer tipo: 'oposicion' (Informe Oposición IA de la skill revisador-de-oposiciones, informes_oposicion.py).
     cur.execute("SELECT pg_get_constraintdef(oid) AS d FROM pg_constraint "
                 "WHERE conrelid = 'informes_viabilidad'::regclass AND conname = 'informes_viabilidad_tipo_check'")

@@ -1195,7 +1195,7 @@ function htmlInformes(lista) {
   let h = "";
   if (cli.length) h += `<h4>Informes preliminares (para el cliente)</h4><ul class="cl-lista-simple">${cli.map(i => `<li data-informe="${i.id}">
       ${quien(i)} · <strong>${esc(i.marca || "")}</strong>${i.referencia ? ` · <span class="cl-tag">${esc(i.referencia)}</span>` : ""}${i.fecha_informe ? " · fecha del informe " + esc(i.fecha_informe) : ""}${i.formato === 1 ? ' <span class="crm-gris">(formato anterior)</span>' : ""}
-      <a class="cl-btn mini" style="text-decoration:none;display:inline-block" href="/informes/${i.id}" target="_blank" rel="noopener" title="Abre el PDF en una pestaña nueva, con su propio link">Abrir link ↗</a>
+      <a class="cl-btn mini" style="text-decoration:none;display:inline-block" href="/informes/${i.id}${i.c ? `?c=${encodeURIComponent(i.c)}` : ""}" target="_blank" rel="noopener" title="Abre el PDF en una pestaña nueva, con su propio link">Abrir link ↗</a>
       <button type="button" class="cl-btn sec mini" data-inf-pdf>PDF</button>
       <button type="button" class="cl-btn sec mini" data-inf-json title="Bajar el JSON con el que se armó">JSON</button>
       <button type="button" class="cl-btn peligro mini" data-inf-borrar title="Borrar este informe">×</button></li>`).join("")}</ul>`;
@@ -1206,7 +1206,7 @@ function htmlInformes(lista) {
     return `<li data-informe="${i.id}">
       ${quien(i)} · <strong>${esc(i.marca || "")}</strong>${(r.oponentes || []).length ? ` vs. ${esc(r.oponentes.join(", "))}` : ""}
       ${r.chances ? ` · <span class="cl-tag ${col}">chances ${esc(r.chances)}</span>` : ""}${(r.actas || []).length ? ` · actas ${esc(r.actas.join(", "))}` : ""}${vto ? ` · vencen los 3 meses el ${vto[3]}/${vto[2]}/${vto[1]}` : ""}
-      <a class="cl-btn mini" style="text-decoration:none;display:inline-block" href="/informes/${i.id}" target="_blank" rel="noopener" title="Abre el informe completo en una pestaña nueva">Abrir link ↗</a>
+      <a class="cl-btn mini" style="text-decoration:none;display:inline-block" href="/informes/${i.id}${i.c ? `?c=${encodeURIComponent(i.c)}` : ""}" target="_blank" rel="noopener" title="Abre el informe completo en una pestaña nueva">Abrir link ↗</a>
       <button type="button" class="cl-btn sec mini" data-inf-json title="Bajar el JSON completo">JSON</button>
       <button type="button" class="cl-btn peligro mini" data-inf-borrar title="Borrar este informe">×</button>
       ${r.camino ? `<div class="crm-gris" style="margin-top:4px;font-size:12.5px">→ ${esc(r.camino)}</div>` : ""}</li>`; }).join("")}</ul>`;
@@ -1215,7 +1215,7 @@ function htmlInformes(lista) {
     return `<li data-informe="${i.id}">
       ${quien(i)} · <strong>${esc(i.marca || "")}</strong>${r.referencia ? ` · <span class="cl-tag">${esc(r.referencia)}</span>` : ""} · ${r.identicas ? `<span class="cl-tag mal">${r.identicas} coincidencia(s) exacta(s)</span>` : '<span class="cl-tag ok">sin coincidencias exactas</span>'}
       · ${(r.relevantes || []).length} antecedente(s) relevante(s)${r.antecedentes_listados ? ` · ${r.antecedentes_listados} listados` : ""}
-      <a class="cl-btn mini" style="text-decoration:none;display:inline-block" href="/informes/${i.id}" target="_blank" rel="noopener" title="Abre el informe completo en una pestaña nueva, con su propio link">Abrir link ↗</a>
+      <a class="cl-btn mini" style="text-decoration:none;display:inline-block" href="/informes/${i.id}${i.c ? `?c=${encodeURIComponent(i.c)}` : ""}" target="_blank" rel="noopener" title="Abre el informe completo en una pestaña nueva, con su propio link">Abrir link ↗</a>
       <button type="button" class="cl-btn sec mini" data-inf-ver>Ver resumen</button>
       <button type="button" class="cl-btn sec mini" data-inf-json title="Bajar el JSON completo">JSON</button>
       <button type="button" class="cl-btn peligro mini" data-inf-borrar title="Borrar este informe">×</button>
