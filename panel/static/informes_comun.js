@@ -40,7 +40,7 @@ function ixVersiones(lista) {
 function ixDocPdf(lista, g) {
   if (!lista.length) return `<button type="button" class="ix-doc falta" data-ix-cargar data-tipo="cliente">
       <span class="ix-doc-ico">${IX_ICO.mas}</span><span class="ix-doc-txt"><span class="ix-doc-titulo">Informe al cliente</span>
-      <span class="ix-doc-meta">Falta · pegar el JSON</span></span></button>`;
+      <span class="ix-doc-meta">Falta · cargarlo</span></span></button>`;
   const u = lista[0];
   const fecha = u.fecha_informe || ixFechaCorta(u.generado_en);
   return `<div><div class="ix-doc pdf">
@@ -55,7 +55,7 @@ function ixDocPdf(lista, g) {
 function ixDocIa(lista, g) {
   if (!lista.length) return `<button type="button" class="ix-doc falta" data-ix-cargar data-tipo="interno">
       <span class="ix-doc-ico">${IX_ICO.mas}</span><span class="ix-doc-txt"><span class="ix-doc-titulo">Informe IA interno</span>
-      <span class="ix-doc-meta">Falta · pegar el JSON</span></span></button>`;
+      <span class="ix-doc-meta">Falta · cargarlo</span></span></button>`;
   const u = lista[0];
   const exactas = u.identicas
     ? `<span class="ix-punto mal"></span>${ixPlural(u.identicas, "coincidencia exacta", "coincidencias exactas")}`
@@ -96,7 +96,7 @@ function ixConectarLista(cont, grupos, alTerminar) {
     const g = grupos[+b.closest("[data-ix]").dataset.ix];
     const destino = g.cliente_id ? { cliente_id: g.cliente_id, nombre: g.cliente_nombre, tipo: "cliente" }
       : { lead_clave: g.lead_clave, nombre: g.lead_nombre, tipo: "lead" };
-    ixNuevoInforme({ destino, marca: g.marca, esperado: b.dataset.tipo, alTerminar });
+    ixNuevoInforme({ destino, marca: g.marca, solo: b.dataset.tipo, alTerminar });
   }));
 }
 
@@ -131,9 +131,23 @@ function ixPrevia(texto) {
 }
 
 /* ── Diálogo «Nuevo informe» ──
+ * Dos cuadros separados: el JSON del informe al cliente (arma el PDF) y el del informe IA interno.
+ * Se puede cargar uno solo o los dos; si van los dos, primero el del cliente (el interno toma su INFPR).
  * destino: {cliente_id, nombre, tipo:"cliente"} | {lead_clave, nombre, tipo:"lead"} | null (se elige buscando)
- * fijo: el destino no se puede cambiar (ficha del lead). esperado: "cliente" | "interno" (solo para el texto). */
-function ixNuevoInforme({ destino = null, fijo = false, marca = "", esperado = "", alTerminar = null } = {}) {
+ * fijo: el destino no se puede cambiar (ficha del lead). solo: "cliente" | "interno" muestra un solo cuadro. */
+const IX_CAJAS = {
+  cliente: { titulo: "Informe al cliente (PDF)", ico: "pdf",
+    ayuda: "Pegá el <strong>…_cliente.json</strong>. El panel arma el PDF del informe preliminar que se le manda a la persona.",
+    placeholder: '{ "tipo": "informe_viabilidad_cliente", "encabezado": { … }, "secciones": [ … ] }',
+    otro: "Ese es el JSON interno: pegalo en el cuadro «Informe IA interno»." },
+  interno: { titulo: "Informe IA interno", ico: "ia",
+    ayuda: "Pegá el <strong>…_interno.json</strong>. Queda guardado para el estudio (búsquedas, antecedentes, revisión legal); no se manda.",
+    placeholder: '{ "tipo": "informe_viabilidad_interno", "caso": { … }, "busqueda_inpi": { … } }',
+    otro: "Ese es el JSON del informe al cliente: pegalo en el cuadro «Informe al cliente (PDF)»." },
+};
+
+function ixNuevoInforme({ destino = null, fijo = false, marca = "", solo = "", esperado = "", alTerminar = null } = {}) {
+  solo = solo || esperado;
   let modal = document.getElementById("ix-modal");
   if (!modal) {
     modal = document.createElement("div");
@@ -152,23 +166,33 @@ function ixNuevoInforme({ destino = null, fijo = false, marca = "", esperado = "
     document.addEventListener("keydown", (ev) => { if (ev.key === "Escape" && modal.classList.contains("abierto")) cerrar(); });
   }
   const $m = (id) => modal.querySelector("#" + id);
-  let elegido = destino, previa = { ok: false }, guardado = false;
+  const tipos = solo ? [solo] : ["cliente", "interno"];
+  let elegido = destino;
+  const est = { cliente: { previa: { ok: false }, hecho: null }, interno: { previa: { ok: false }, hecho: null } };
   const cuerpo = $m("ix-cuerpo"), estado = $m("ix-estado"), guardar = $m("ix-guardar");
-  $m("ix-titulo").textContent = esperado === "interno" ? "Cargar informe IA interno" : esperado === "cliente" ? "Cargar informe al cliente" : "Nuevo informe";
+  $m("ix-titulo").textContent = solo === "cliente" ? "Cargar informe al cliente" : solo === "interno" ? "Cargar informe IA interno" : "Nuevo informe";
   cuerpo.innerHTML = `
-    <p class="ix-paso">1 · Para quién</p>
+    <p class="ix-paso">Para quién</p>
     <div class="ix-bloque" id="ix-destino"></div>
-    <p class="ix-paso">2 · JSON que generó la IA</p>
-    <div class="ix-bloque">
-      <textarea id="ix-texto" spellcheck="false" placeholder="Pegá acá el …_cliente.json (arma el PDF) o el …_interno.json (queda para el estudio). Se reconoce solo."></textarea>
-      <div class="ix-previa" id="ix-previa"></div>
-    </div>`;
+    ${tipos.map((t) => `
+    <div class="ix-caja" id="ix-caja-${t}">
+      <div class="ix-caja-cab"><span class="ix-doc-ico ${IX_CAJAS[t].ico}">${IX_ICO[IX_CAJAS[t].ico]}</span>
+        <div><div class="ix-caja-titulo">${IX_CAJAS[t].titulo}${solo ? "" : ' <span class="ix-opcional">opcional</span>'}</div>
+          <div class="ix-caja-ayuda">${IX_CAJAS[t].ayuda}</div></div></div>
+      <textarea id="ix-texto-${t}" spellcheck="false" placeholder='${IX_CAJAS[t].placeholder}'></textarea>
+      <div class="ix-previa" id="ix-previa-${t}"></div>
+    </div>`).join("")}
+    ${solo ? "" : '<p class="ix-nota">Podés pegar uno solo o los dos. Si pegás los dos, el interno toma la misma referencia INFPR que el PDF.</p>'}`;
   estado.textContent = ""; estado.className = "ix-estado";
-  guardar.textContent = "Guardar"; guardar.disabled = true;
+  $m("ix-cancelar").textContent = "Cancelar";
 
+  const listos = () => tipos.filter((t) => !est[t].hecho && est[t].previa.ok);
+  const conTexto = () => tipos.filter((t) => !est[t].hecho && $m("ix-texto-" + t).value.trim());
   const actualizarBoton = () => {
-    guardar.disabled = guardado || !elegido || !previa.ok;
-    guardar.textContent = previa.tipo === "cliente" ? "Generar PDF" : previa.tipo === "interno" ? "Guardar informe interno" : "Guardar";
+    const l = listos(), malos = conTexto().filter((t) => !est[t].previa.ok);
+    guardar.disabled = !elegido || !l.length || malos.length > 0;
+    guardar.textContent = l.includes("cliente") && l.includes("interno") ? "Generar PDF y guardar los dos"
+      : l.includes("cliente") ? "Generar PDF" : l.includes("interno") ? "Guardar informe interno" : "Guardar";
   };
 
   function pintarDestino() {
@@ -176,7 +200,7 @@ function ixNuevoInforme({ destino = null, fijo = false, marca = "", esperado = "
     if (elegido) {
       const quien = elegido.tipo === "cliente" ? '<span class="ix-chip-tipo cliente">Cliente</span>' : '<span class="ix-chip-tipo lead">Lead</span>';
       caja.innerHTML = `<div class="ix-destino">${quien}<div class="ix-destino-txt"><strong>${ixEsc(elegido.nombre || "")}</strong>
-          <span>${elegido.tipo === "lead" ? "Queda en su ficha de lead; si después se convierte en cliente, pasa a la ficha del cliente." : "Queda en la ficha del cliente, solapa Informes."}</span></div>
+          <span>${elegido.tipo === "lead" ? "No hace falta que sea cliente: queda en su ficha de lead y, si después se convierte, pasa a la del cliente." : "Queda en la ficha del cliente, solapa Informes."}</span></div>
         ${fijo ? "" : '<button type="button" class="ix-link" id="ix-cambiar">Cambiar</button>'}</div>`;
       if (!fijo) $m("ix-cambiar").addEventListener("click", () => { elegido = null; pintarDestino(); actualizarBoton(); });
       return;
@@ -215,7 +239,7 @@ function ixNuevoInforme({ destino = null, fijo = false, marca = "", esperado = "
         res.querySelectorAll(".ix-opcion").forEach((b) => b.addEventListener("click", () => {
           elegido = b.dataset.tipo === "cliente" ? { tipo: "cliente", cliente_id: +b.dataset.id, nombre: b.dataset.nombre }
             : { tipo: "lead", lead_clave: b.dataset.clave, nombre: b.dataset.nombre };
-          pintarDestino(); actualizarBoton(); $m("ix-texto").focus();
+          pintarDestino(); actualizarBoton(); $m("ix-texto-" + tipos[0]).focus();
         }));
       } catch (e) { if (n === pedido) res.innerHTML = `<div class="ix-nada">No se pudo buscar (${ixEsc(e.message)}).</div>`; }
     };
@@ -225,32 +249,57 @@ function ixNuevoInforme({ destino = null, fijo = false, marca = "", esperado = "
   }
   pintarDestino();
 
-  const ta = $m("ix-texto");
-  ta.addEventListener("input", () => { previa = ixPrevia(ta.value); $m("ix-previa").innerHTML = previa.html; estado.textContent = ""; actualizarBoton(); });
+  tipos.forEach((t) => {
+    const ta = $m("ix-texto-" + t);
+    ta.addEventListener("input", () => {
+      let p = ixPrevia(ta.value);
+      if (p.tipo && p.tipo !== t) p = { ok: false, html: `<span class="mal">${IX_CAJAS[t].otro}</span>` };
+      est[t].previa = p;
+      $m("ix-previa-" + t).innerHTML = p.html;
+      estado.textContent = ""; estado.className = "ix-estado";
+      actualizarBoton();
+    });
+  });
+
+  function marcarHecho(t, r) {
+    est[t].hecho = r;
+    const caja = $m("ix-caja-" + t);
+    caja.classList.add("hecho");
+    $m("ix-texto-" + t).disabled = true;
+    $m("ix-previa-" + t).innerHTML = `<span class="bien">✓ Guardado${r.referencia ? " · " + ixEsc(r.referencia) : ""}</span>
+      <a class="ix-boton chico" href="/informes/${r.id}" target="_blank" rel="noopener">${t === "cliente" ? "Ver el PDF ↗" : "Ver el informe ↗"}</a>
+      ${t === "cliente" ? `<a class="ix-boton sec chico" href="/api/informes/${r.id}/pdf">Descargar PDF</a>` : ""}`;
+  }
+
   guardar.onclick = async () => {
     if (guardar.disabled) return;
     guardar.disabled = true; estado.className = "ix-estado";
-    estado.textContent = previa.tipo === "cliente" ? "Generando el PDF…" : "Guardando…";
-    try {
-      const body = { texto: ta.value, ...(elegido.cliente_id ? { cliente_id: elegido.cliente_id } : { lead_clave: elegido.lead_clave }) };
-      const r = await apiJson("/api/informes/cargar", "POST", body);
-      guardado = true;
-      estado.className = "ix-estado ok";
-      estado.textContent = r.tipo === "cliente" ? `Listo${r.referencia ? " · " + r.referencia : ""}` : "Listo";
-      cuerpo.insertAdjacentHTML("beforeend", `<div class="ix-listo">
-        <a class="ix-boton" href="/informes/${r.id}" target="_blank" rel="noopener">${r.tipo === "cliente" ? "Ver el PDF ↗" : "Ver el informe ↗"}</a>
-        ${r.tipo === "cliente" ? `<a class="ix-boton sec" href="/api/informes/${r.id}/pdf">Descargar PDF</a>` : ""}
-        <button type="button" class="ix-boton sec" id="ix-otro">Cargar el otro JSON</button></div>`);
-      $m("ix-otro").addEventListener("click", () => {
-        ixNuevoInforme({ destino: r.cliente_id ? { tipo: "cliente", cliente_id: r.cliente_id, nombre: elegido.nombre } : elegido, fijo, marca: r.marca,
-          esperado: r.tipo === "cliente" ? "interno" : "cliente", alTerminar });
-      });
-      guardar.textContent = "Guardado"; guardar.disabled = true;
-      if (alTerminar) alTerminar(r);
-    } catch (e) {
-      estado.className = "ix-estado mal"; estado.textContent = e.message; guardar.disabled = false;
+    const orden = ["cliente", "interno"].filter((t) => listos().includes(t));  // el del cliente primero: el interno hereda su INFPR
+    let alguno = false;
+    for (const t of orden) {
+      estado.textContent = t === "cliente" ? "Generando el PDF…" : "Guardando el informe interno…";
+      try {
+        const body = { texto: $m("ix-texto-" + t).value, tipo: t,
+          ...(elegido.cliente_id ? { cliente_id: elegido.cliente_id } : { lead_clave: elegido.lead_clave }) };
+        const r = await apiJson("/api/informes/cargar", "POST", body);
+        marcarHecho(t, r); alguno = true;
+        if (r.cliente_id && elegido.tipo === "lead") elegido = { tipo: "cliente", cliente_id: r.cliente_id, nombre: elegido.nombre };
+      } catch (e) {
+        estado.className = "ix-estado mal";
+        estado.textContent = `${IX_CAJAS[t].titulo}: ${e.message}`;
+        actualizarBoton();
+        if (alguno && alTerminar) alTerminar();
+        return;
+      }
     }
+    estado.className = "ix-estado ok"; estado.textContent = "Listo";
+    if (fijo || elegido) { const c = $m("ix-cambiar"); if (c) c.remove(); }
+    guardar.textContent = "Guardado";
+    guardar.disabled = true;
+    $m("ix-cancelar").textContent = "Cerrar";
+    if (alTerminar) alTerminar();
   };
+  actualizarBoton();
   modal.classList.add("abierto");
-  if (elegido) setTimeout(() => ta.focus(), 30);
+  if (elegido) setTimeout(() => $m("ix-texto-" + tipos[0]).focus(), 30);
 }
