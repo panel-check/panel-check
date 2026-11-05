@@ -4179,8 +4179,11 @@ app.include_router(cartera_api.crear_router(
 # Formularios para clientes (persona física / jurídica): páginas públicas
 # /formulario/... (sin login) + gestión de respuestas en Clientes → Formularios.
 app.include_router(formularios_api.crear_router(verificar_login, conexion))
-# Pestaña «Informes» de la ficha del cliente: informe preliminar de viabilidad (PDF) e informe IA interno.
-app.include_router(informes_api.crear_router(verificar_login, conexion))
+# Informes preliminares (PDF para el cliente + IA interno): ficha del cliente, ficha del lead y Más → Informes.
+app.include_router(informes_api.crear_router(
+    verificar_login, conexion,
+    SimpleNamespace(asegurar_claves=_asegurar_claves, cte_marcas=lambda: _cte_marcas_con_clave()),
+))
 app.include_router(verificador_api.crear_router(verificar_login, conexion))
 app.include_router(accesos_api.crear_router(verificar_login, conexion, CLAVES_ACCESO_RAPIDO, _contar_consulta))
 

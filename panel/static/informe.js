@@ -64,7 +64,8 @@
     document.title = `${titulo} — ${r.marca || ""}`;
     return `<div class="inf-barra">
       <div><h2>${esc(titulo)} · ${esc(r.marca || "")}${ref && /^INFPR-\d+$/i.test(ref) ? ` · <span class="cl-tag">${esc(ref)}</span>` : ""}</h2>
-        <div class="crm-gris">${r.cliente_id ? `Cliente: <a href="/clientes?cliente=${r.cliente_id}">${esc(r.cliente_nombre || "#" + r.cliente_id)}</a> · ` : ""}cargado ${esc(fmtFechaHora(r.generado_en))}${r.generado_por ? " por " + esc(r.generado_por) : ""}</div></div>
+        <div class="crm-gris">${r.cliente_id ? `Cliente: <a href="/clientes?cliente=${r.cliente_id}&ctab=informes">${esc(r.cliente_nombre || "#" + r.cliente_id)}</a> · `
+          : r.lead_clave ? `Lead: <a href="/titular/${encodeURIComponent(r.lead_clave)}#informes">${esc(r.lead_nombre || r.lead_clave)}</a> · ` : ""}cargado ${esc(fmtFechaHora(r.generado_en))}${r.generado_por ? " por " + esc(r.generado_por) : ""}</div></div>
       <div class="der">${extra}<a class="cl-btn sec" href="/api/informes/${r.id}/json">Descargar JSON</a></div></div>`;
   }
 

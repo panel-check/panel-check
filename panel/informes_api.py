@@ -1,5 +1,7 @@
 """
-API de la pestaña «Informes» de la ficha del cliente (ver informes_viabilidad.py).
+API de los informes preliminares (ver informes_viabilidad.py): pestaña «Informes» de la ficha del
+cliente y de la del lead, y sección Más → Informes. Un informe es de un cliente (cliente_id) o de un
+lead que todavía no es cliente (lead_clave: clave del titular en el CRM); al convertirse, pasa al cliente.
 El informe al cliente nuevo (formato 2) recibe acá su referencia INFPR si el JSON no la trae.
 
 Rutas (todas con sesión):
@@ -7,8 +9,12 @@ Rutas (todas con sesión):
   POST   /api/clientes/{id}/informes/cliente   pegar el JSON del CLIENTE: se valida y se guarda;
                                                devuelve el id para bajar el PDF
   POST   /api/clientes/{id}/informes/interno   pegar el JSON INTERNO de la IA: se guarda tal cual
-  GET    /api/informes                         todos los informes (Más → Informes), agrupados por cliente y marca;
-                                               filtros q (marca, cliente o INFPR) y falta (interno|cliente)
+  GET    /api/informes                         todos los informes (Más → Informes), agrupados por dueño y marca;
+                                               filtros q (marca, cliente/lead o INFPR), falta (interno|cliente|leads),
+                                               cliente_id y lead (clave del CRM: la solapa Informes de la ficha del lead)
+  GET    /api/informes/destinos?q=             «Nuevo informe»: clientes y leads de los boletines que coinciden
+  POST   /api/informes/cargar                  pegar un JSON (cliente o interno, se reconoce solo) para un
+                                               cliente (cliente_id) o un lead que no es cliente (lead_clave)
   GET    /api/informes/{iid}                   el JSON guardado
   GET    /api/informes/{iid}/pdf               el PDF (solo los del cliente); con ver=1 se abre en el navegador
   GET    /api/informes/{iid}/json              descargar el JSON
@@ -19,7 +25,9 @@ import json
 from urllib.parse import quote
 
 import psycopg2.extras
-from fastapi import APIRouter, Depends, HTTPException
+from typing import Optional
+
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response
 from pydantic import BaseModel
 
@@ -30,7 +38,23 @@ class JsonPegado(BaseModel):
     texto: str
 
 
-def crear_router(verificar_login, conexion) -> APIRouter:
+class JsonCarga(BaseModel):
+    """Más → Informes y ficha del lead: el JSON (cliente o interno, se detecta solo) y a quién va."""
+    texto: str
+    cliente_id: Optional[int] = None
+    lead_clave: Optional[str] = None
+
+
+def es_json_interno(d: dict) -> bool:
+    if d.get("tipo") == "informe_viabilidad_interno":
+        return True
+    if d.get("tipo") == "informe_viabilidad_cliente" or ("secciones" in d and "encabezado" in d):
+        return False
+    return "busqueda_inpi" in d or "caso" in d
+
+
+def crear_router(verificar_login, conexion, crm=None) -> APIRouter:
+    """`crm`: helpers del CRM de app.py (asegurar_claves, cte_marcas) para los informes de leads."""
     router = APIRouter()
 
     def rcur(conn):
@@ -50,19 +74,68 @@ def crear_router(verificar_login, conexion) -> APIRouter:
             raise HTTPException(status_code=404, detail="No existe ese informe")
         return f
 
-    def _guardar(cliente_id, tipo, marca, datos, usuario, antes=None) -> int:
-        """`antes(cur)` corre en la misma transacción, antes de insertar (ej.: asignar la referencia INFPR)."""
-        with conexion() as conn:
-            with rcur(conn) as cur:
-                _cliente(cur, cliente_id)
-                if antes:
-                    antes(cur)
-                cur.execute("INSERT INTO informes_viabilidad (cliente_id, tipo, marca, datos, generado_por) "
-                            "VALUES (%s, %s, %s, %s, %s) RETURNING id",
-                            (cliente_id, tipo, marca, json.dumps(datos, ensure_ascii=False), usuario))
-                iid = cur.fetchone()["id"]
-            conn.commit()
-        return iid
+    def _dueno(cur, cliente_id=None, lead_clave=None) -> dict:
+        """{cliente_id, lead_clave, nombre}. Un lead que ya es cliente (convertido) guarda en el cliente."""
+        if cliente_id:
+            c = _cliente(cur, cliente_id)
+            return {"cliente_id": c["id"], "lead_clave": None, "nombre": c["nombre"]}
+        clave = (lead_clave or "").strip()
+        if not clave:
+            raise HTTPException(status_code=400, detail="Falta a quién va el informe (cliente o lead)")
+        cur.execute("SELECT id, nombre FROM clientes WHERE clave_crm = %s", (clave,))
+        c = cur.fetchone()
+        if c:
+            return {"cliente_id": c["id"], "lead_clave": None, "nombre": c["nombre"]}
+        cur.execute("SELECT m.titular FROM crm_claves cc JOIN marcas m ON m.acta = cc.acta "
+                    "WHERE cc.clave = %s AND coalesce(m.titular, '') <> '' LIMIT 1", (clave,))
+        f = cur.fetchone()
+        if not f:  # marca cargada después del último recálculo de claves: por CUIT
+            cur.execute("SELECT titular FROM marcas WHERE trim(cuit) = %s AND coalesce(titular, '') <> '' LIMIT 1", (clave,))
+            f = cur.fetchone()
+        if not f:
+            raise HTTPException(status_code=404, detail="No se encontró ese lead")
+        return {"cliente_id": None, "lead_clave": clave, "nombre": " ".join(f["titular"].split())}
+
+    def _guardar(cur, dn, tipo, marca, datos, usuario) -> int:
+        cur.execute("INSERT INTO informes_viabilidad (cliente_id, lead_clave, lead_nombre, tipo, marca, datos, generado_por) "
+                    "VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id",
+                    (dn["cliente_id"], dn["lead_clave"], dn["nombre"] if dn["lead_clave"] else None,
+                     tipo, marca, json.dumps(datos, ensure_ascii=False), usuario))
+        return cur.fetchone()["id"]
+
+    def _cargar(tipo, texto, usuario, cliente_id=None, lead_clave=None) -> dict:
+        """Valida, asigna la referencia INFPR (cliente) o la hereda (interno) y guarda, todo en una transacción."""
+        try:
+            crudo = iv.leer_json(texto)
+            if tipo is None:
+                tipo = "interno" if es_json_interno(crudo) else "cliente"
+            with conexion() as conn:
+                with rcur(conn) as cur:
+                    dn = _dueno(cur, cliente_id, lead_clave)
+                    quien = iv.dueno(dn["cliente_id"], dn["lead_clave"])
+                    if tipo == "cliente":
+                        d = iv.normalizar_cliente(crudo, dn["nombre"])
+                        if d.get("formato") == 2:  # referencia INFPR: controla duplicados o asigna la siguiente
+                            iv.asignar_referencia(cur, quien, d)
+                        iv.generar_pdf(d)  # que no falle recién al bajarlo
+                        marca = d["encabezado"]["marca_pretendida"]
+                    else:
+                        d = iv.normalizar_interno(crudo)
+                        marca = iv.marca_interno(d)
+                        # Si el interno no trae la referencia INFPR, toma la del informe al cliente de esa marca.
+                        caso = d.get("caso") if isinstance(d.get("caso"), dict) else None
+                        if caso is not None and not iv.normalizar_referencia_silenciosa(caso.get("referencia")):
+                            ref = iv.referencia_de_marca(cur, quien, marca)
+                            if ref:
+                                caso["referencia"] = ref
+                    iid = _guardar(cur, dn, tipo, marca, d, usuario)
+                conn.commit()
+        except iv.InformeInvalido as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        out = {"id": iid, "tipo": tipo, "marca": marca, "cliente_id": dn["cliente_id"], "lead_clave": dn["lead_clave"]}
+        if tipo == "cliente":
+            out.update(archivo=iv.nombre_archivo(d), referencia=d["encabezado"].get("referencia", ""))
+        return out
 
     @router.get("/api/clientes/{cliente_id}/informes")
     def listar(cliente_id: int, _: str = Depends(verificar_login)):
@@ -73,40 +146,79 @@ def crear_router(verificar_login, conexion) -> APIRouter:
 
     @router.post("/api/clientes/{cliente_id}/informes/cliente")
     def guardar_cliente(cliente_id: int, body: JsonPegado, usuario: str = Depends(verificar_login)):
-        with conexion() as conn:
-            with rcur(conn) as cur:
-                nombre = _cliente(cur, cliente_id)["nombre"]
-        try:
-            d = iv.normalizar_cliente(iv.leer_json(body.texto), nombre)
-
-            def antes(cur):
-                if d.get("formato") == 2:  # referencia INFPR: controla duplicados o asigna la siguiente
-                    iv.asignar_referencia(cur, cliente_id, d)
-                iv.generar_pdf(d)  # que no falle recién al bajarlo
-
-            iid = _guardar(cliente_id, "cliente", d["encabezado"]["marca_pretendida"], d, usuario, antes)
-        except iv.InformeInvalido as e:
-            raise HTTPException(status_code=400, detail=str(e))
-        return {"id": iid, "archivo": iv.nombre_archivo(d), "referencia": d["encabezado"].get("referencia", "")}
+        return _cargar("cliente", body.texto, usuario, cliente_id=cliente_id)
 
     @router.post("/api/clientes/{cliente_id}/informes/interno")
     def guardar_interno(cliente_id: int, body: JsonPegado, usuario: str = Depends(verificar_login)):
-        try:
-            d = iv.normalizar_interno(iv.leer_json(body.texto))
-        except iv.InformeInvalido as e:
-            raise HTTPException(status_code=400, detail=str(e))
-        marca = iv.marca_interno(d)
+        return _cargar("interno", body.texto, usuario, cliente_id=cliente_id)
 
-        def antes(cur):
-            # Si el interno no trae la referencia INFPR, toma la del informe al cliente de esa marca.
-            caso = d.get("caso") if isinstance(d.get("caso"), dict) else None
-            if caso is not None and not iv.normalizar_referencia_silenciosa(caso.get("referencia")):
-                ref = iv.referencia_de_marca(cur, cliente_id, marca)
-                if ref:
-                    caso["referencia"] = ref
+    @router.post("/api/informes/cargar")
+    def cargar(body: JsonCarga, usuario: str = Depends(verificar_login)):
+        """Pegar un JSON (el del cliente o el interno: se reconoce solo) para un cliente o un lead."""
+        if not body.cliente_id and not (body.lead_clave or "").strip():
+            raise HTTPException(status_code=400, detail="Elegí a quién va el informe")
+        return _cargar(None, body.texto, usuario, cliente_id=body.cliente_id, lead_clave=body.lead_clave)
 
-        iid = _guardar(cliente_id, "interno", marca, d, usuario, antes)
-        return {"id": iid}
+    @router.get("/api/informes")
+    def todos(q: str = "", falta: str = "", cliente_id: Optional[int] = None, lead: str = "",
+              _: str = Depends(verificar_login)):
+        """Más → Informes (todos) o la solapa de la ficha del lead (lead=<clave>), agrupados por dueño y marca."""
+        donde, params = [], []
+        if cliente_id:
+            donde.append("i.cliente_id = %s"); params.append(cliente_id)
+        if lead:
+            donde.append("(i.lead_clave = %s OR c.clave_crm = %s)"); params += [lead, lead]
+        with conexion() as conn:
+            with rcur(conn) as cur:
+                cur.execute("SELECT i.id, i.tipo, i.marca, i.datos, i.generado_por, i.generado_en, i.cliente_id, "
+                            "i.lead_clave, i.lead_nombre, c.nombre AS cliente_nombre FROM informes_viabilidad i "
+                            "LEFT JOIN clientes c ON c.id = i.cliente_id "
+                            + ("WHERE " + " AND ".join(donde) + " " if donde else "")
+                            + "ORDER BY i.generado_en DESC LIMIT 3000", params)
+                filas = cur.fetchall()
+        return {"grupos": agrupar_informes(filas, q, falta)}
+
+    @router.get("/api/informes/destinos")
+    def destinos(q: str = Query(..., min_length=2), _: str = Depends(verificar_login)):
+        """Para «Nuevo informe»: clientes (por nombre o marca en cartera) y leads de los boletines
+        (por marca o titular) que coinciden, para elegir a quién va sin convertirlo en cliente."""
+        patron = f"%{q.strip()}%"
+        with conexion() as conn:
+            with rcur(conn) as cur:
+                cur.execute(
+                    "SELECT c.id, c.nombre, array_remove(array_agg(DISTINCT cm.denominacion) "
+                    "FILTER (WHERE cm.denominacion ILIKE %s), NULL) AS marcas "
+                    "FROM clientes c LEFT JOIN cartera_marcas cm ON cm.cliente_id = c.id "
+                    "WHERE c.activo AND (c.nombre ILIKE %s OR cm.denominacion ILIKE %s) "
+                    "GROUP BY c.id, c.nombre ORDER BY c.nombre LIMIT 15", (patron, patron, patron))
+                clientes = [dict(f) for f in cur.fetchall()]
+                leads = []
+                if crm is not None:
+                    try:
+                        crm.asegurar_claves(cur)
+                        conn.commit()
+                    except Exception as e:  # la búsqueda sirve igual con las claves que haya
+                        conn.rollback()
+                        print(f"[informes] no se pudieron recalcular las claves: {e}")
+                    cur.execute(
+                        f"WITH {crm.cte_marcas()} SELECT acta, clase, boletin, es_lead, titular, clave, fecha_presentacion, "
+                        "COALESCE(NULLIF(denominacion_inpi, ''), denominacion) AS denominacion FROM mk "
+                        "WHERE (denominacion ILIKE %s OR denominacion_inpi ILIKE %s OR titular ILIKE %s) "
+                        "AND clave NOT LIKE 'ACTA %%' "
+                        "ORDER BY fecha_presentacion DESC NULLS LAST LIMIT 60", (patron, patron, patron))
+                    marcas = cur.fetchall()
+                    claves = list({m["clave"] for m in marcas})
+                    cur.execute("SELECT clave_crm, id, nombre FROM clientes WHERE clave_crm = ANY(%s)", (claves,))
+                    ya_clientes = {f["clave_crm"]: {"id": f["id"], "nombre": f["nombre"]} for f in cur.fetchall()}
+                    por_clave = {}
+                    for m in marcas:
+                        g = por_clave.setdefault(m["clave"], {"clave": m["clave"], "titular": " ".join((m["titular"] or "").split()),
+                                                              "cliente": ya_clientes.get(m["clave"]), "marcas": []})
+                        if len(g["marcas"]) < 6:
+                            g["marcas"].append({"acta": m["acta"], "denominacion": m["denominacion"] or "", "clase": m["clase"],
+                                                "boletin": m["boletin"], "es_lead": m["es_lead"]})
+                    leads = list(por_clave.values())[:20]
+        return {"clientes": clientes, "leads": leads}
 
     @router.get("/api/informes/{iid}")
     def ver(iid: int, _: str = Depends(verificar_login)):
@@ -117,6 +229,7 @@ def crear_router(verificar_login, conexion) -> APIRouter:
                 c = cur.fetchone()
         return {"id": f["id"], "tipo": f["tipo"], "marca": f["marca"], "datos": f["datos"],
                 "cliente_id": f["cliente_id"], "cliente_nombre": c["nombre"] if c else "",
+                "lead_clave": f.get("lead_clave"), "lead_nombre": f.get("lead_nombre") or "",
                 "generado_por": f["generado_por"], "generado_en": f["generado_en"]}
 
     @router.get("/api/informes/{iid}/pdf")
@@ -196,10 +309,12 @@ def agrupar_informes(filas: list, q: str = "", falta: str = "") -> list:
     grupos = {}
     for f in filas:  # vienen de la más nueva a la más vieja
         d = f.get("datos") or {}
-        clave = (f.get("cliente_id"), _norm(f.get("marca")))
+        clave = (f.get("cliente_id") or "lead:" + (f.get("lead_clave") or ""), _norm(f.get("marca")))
         g = grupos.get(clave)
         if g is None:
             g = grupos[clave] = {"cliente_id": f.get("cliente_id"), "cliente_nombre": f.get("cliente_nombre") or "",
+                                 "lead_clave": None if f.get("cliente_id") else f.get("lead_clave"),
+                                 "lead_nombre": "" if f.get("cliente_id") else (f.get("lead_nombre") or ""),
                                  "marca": f.get("marca") or "", "ultimo": f["generado_en"], "referencia": "",
                                  "cliente": [], "interno": []}
         item = {"id": f["id"], "generado_en": f["generado_en"], "generado_por": f.get("generado_por") or ""}
@@ -216,7 +331,9 @@ def agrupar_informes(filas: list, q: str = "", falta: str = "") -> list:
     out = list(grupos.values())
     nq = _norm(q)
     if nq:
-        out = [g for g in out if nq in _norm(f'{g["marca"]} {g["cliente_nombre"]} {g["referencia"]}')]
+        out = [g for g in out if nq in _norm(f'{g["marca"]} {g["cliente_nombre"]} {g["lead_nombre"]} {g["referencia"]}')]
     if falta in ("interno", "cliente"):
         out = [g for g in out if not g[falta]]
+    elif falta == "leads":  # solo los de leads que todavía no son clientes
+        out = [g for g in out if g["lead_clave"]]
     return out

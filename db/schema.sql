@@ -527,6 +527,10 @@ CREATE TABLE IF NOT EXISTS informes_viabilidad (
     generado_en   TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_informes_cliente ON informes_viabilidad(cliente_id, generado_en DESC);
+-- Informes de leads que todavía no son clientes (clave del titular en el CRM); al convertirse, pasan a cliente_id.
+ALTER TABLE informes_viabilidad ADD COLUMN IF NOT EXISTS lead_clave TEXT;
+ALTER TABLE informes_viabilidad ADD COLUMN IF NOT EXISTS lead_nombre TEXT;
+CREATE INDEX IF NOT EXISTS idx_informes_lead ON informes_viabilidad(lead_clave) WHERE lead_clave IS NOT NULL;
 
 -- ── Configuración de mails (pestaña Mails del panel) ────────────────────
 -- Las crea el panel al arrancar (panel/mails_core.py: crear_tablas). Las API
