@@ -24,6 +24,7 @@ Rutas (todas con sesión):
 """
 
 import json
+import re
 from urllib.parse import quote
 
 import psycopg2.extras
@@ -66,6 +67,27 @@ def es_json_interno(d: dict) -> bool:
     if d.get("tipo") == "informe_viabilidad_cliente" or ("secciones" in d and "encabezado" in d):
         return False
     return "busqueda_inpi" in d or "caso" in d
+
+
+_CON_ACENTO = "áéíóúüàèìòùâêîôûñç"
+_SIN_ACENTO = "aeiouuaeiouaeiounc"
+
+
+def _sin_acentos(col: str) -> str:
+    return f"translate(lower(COALESCE({col}, '')), '{_CON_ACENTO}', '{_SIN_ACENTO}')"
+
+
+def terminos_busqueda(q: str) -> list:
+    """Lo que se escribió en «Para quién», partido en marcas: «PAPÁ NAOS / MAMÁ NAOS» → dos búsquedas.
+    Separa por «/», «+», «;» o «|» entre marcas; minúsculas, sin acentos y con %, _ y \\ escapados para LIKE."""
+    partes = re.split(r"\s*[/+;|]\s*", q or "")
+    salida = []
+    for p in partes:
+        t = " ".join(p.split()).lower().translate(str.maketrans(_CON_ACENTO, _SIN_ACENTO))
+        t = t.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        if len(t) >= 2 and t not in salida:
+            salida.append(t)
+    return salida[:6]
 
 
 def crear_router(verificar_login, conexion, crm=None) -> APIRouter:
@@ -214,16 +236,22 @@ def crear_router(verificar_login, conexion, crm=None) -> APIRouter:
     @router.get("/api/informes/destinos")
     def destinos(q: str = Query(..., min_length=2), _: str = Depends(verificar_login)):
         """Para «Nuevo informe»: clientes (por nombre o marca en cartera) y leads de los boletines
-        (por marca o titular) que coinciden, para elegir a quién va sin convertirlo en cliente."""
-        patron = f"%{q.strip()}%"
+        (por marca o titular) que coinciden, para elegir a quién va sin convertirlo en cliente.
+        Varias marcas juntas («PAPÁ NAOS / MAMÁ NAOS») se buscan cada una por separado, y la
+        búsqueda no distingue acentos ni mayúsculas."""
+        terminos = terminos_busqueda(q)
+        if not terminos:
+            return {"clientes": [], "leads": []}
+        patrones = [f"%{t}%" for t in terminos]
+        coincide = lambda *cols: "(" + " OR ".join(f"{_sin_acentos(c)} LIKE ANY(%s)" for c in cols) + ")"
         with conexion() as conn:
             with rcur(conn) as cur:
                 cur.execute(
                     "SELECT c.id, c.nombre, array_remove(array_agg(DISTINCT cm.denominacion) "
-                    "FILTER (WHERE cm.denominacion ILIKE %s), NULL) AS marcas "
+                    f"FILTER (WHERE {coincide('cm.denominacion')}), NULL) AS marcas "
                     "FROM clientes c LEFT JOIN cartera_marcas cm ON cm.cliente_id = c.id "
-                    "WHERE c.activo AND (c.nombre ILIKE %s OR cm.denominacion ILIKE %s) "
-                    "GROUP BY c.id, c.nombre ORDER BY c.nombre LIMIT 15", (patron, patron, patron))
+                    f"WHERE c.activo AND {coincide('c.nombre', 'cm.denominacion')} "
+                    "GROUP BY c.id, c.nombre ORDER BY c.nombre LIMIT 15", (patrones, patrones, patrones))
                 clientes = [dict(f) for f in cur.fetchall()]
                 leads = []
                 if crm is not None:
@@ -236,9 +264,9 @@ def crear_router(verificar_login, conexion, crm=None) -> APIRouter:
                     cur.execute(
                         f"WITH {crm.cte_marcas()} SELECT acta, clase, boletin, es_lead, titular, clave, fecha_presentacion, "
                         "COALESCE(NULLIF(denominacion_inpi, ''), denominacion) AS denominacion FROM mk "
-                        "WHERE (denominacion ILIKE %s OR denominacion_inpi ILIKE %s OR titular ILIKE %s) "
+                        f"WHERE {coincide('denominacion', 'denominacion_inpi', 'titular')} "
                         "AND clave NOT LIKE 'ACTA %%' "
-                        "ORDER BY fecha_presentacion DESC NULLS LAST LIMIT 60", (patron, patron, patron))
+                        "ORDER BY fecha_presentacion DESC NULLS LAST LIMIT 60", (patrones, patrones, patrones))
                     marcas = cur.fetchall()
                     claves = list({m["clave"] for m in marcas})
                     cur.execute("SELECT clave_crm, id, nombre FROM clientes WHERE clave_crm = ANY(%s)", (claves,))
