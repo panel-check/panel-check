@@ -7,6 +7,8 @@ Rutas (todas con sesión):
   POST   /api/clientes/{id}/informes/cliente   pegar el JSON del CLIENTE: se valida y se guarda;
                                                devuelve el id para bajar el PDF
   POST   /api/clientes/{id}/informes/interno   pegar el JSON INTERNO de la IA: se guarda tal cual
+  GET    /api/informes                         todos los informes (Más → Informes), agrupados por cliente y marca;
+                                               filtros q (marca, cliente o INFPR) y falta (interno|cliente)
   GET    /api/informes/{iid}                   el JSON guardado
   GET    /api/informes/{iid}/pdf               el PDF (solo los del cliente); con ver=1 se abre en el navegador
   GET    /api/informes/{iid}/json              descargar el JSON
@@ -141,6 +143,17 @@ def crear_router(verificar_login, conexion) -> APIRouter:
                         media_type="application/json",
                         headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(nombre)}"})
 
+    @router.get("/api/informes")
+    def todos(q: str = "", falta: str = "", _: str = Depends(verificar_login)):
+        """Sección Más → Informes: todos los informes de todos los clientes, agrupados por cliente y marca."""
+        with conexion() as conn:
+            with rcur(conn) as cur:
+                cur.execute("SELECT i.id, i.tipo, i.marca, i.datos, i.generado_por, i.generado_en, i.cliente_id, "
+                            "c.nombre AS cliente_nombre FROM informes_viabilidad i "
+                            "LEFT JOIN clientes c ON c.id = i.cliente_id ORDER BY i.generado_en DESC LIMIT 3000")
+                filas = cur.fetchall()
+        return {"grupos": agrupar_informes(filas, q, falta)}
+
     @router.delete("/api/informes/{iid}")
     def borrar(iid: int, _: str = Depends(verificar_login)):
         with conexion() as conn:
@@ -167,4 +180,43 @@ def listar_informes(cur, cliente_id: int) -> list:
             f["referencia"] = enc.get("referencia", "")
             f["formato"] = d.get("formato") or 1
         out.append(f)
+    return out
+
+
+def _norm(s) -> str:
+    """Para agrupar y buscar sin que importen mayúsculas, tildes, comillas ni espacios de más."""
+    import unicodedata
+    t = unicodedata.normalize("NFD", str(s or "")).encode("ascii", "ignore").decode().upper()
+    return " ".join(t.replace("“", "").replace("”", "").replace('"', "").split())
+
+
+def agrupar_informes(filas: list, q: str = "", falta: str = "") -> list:
+    """Una entrada por cliente + marca, con las versiones del informe al cliente y del interno
+    (la más nueva primero). `falta`: "interno" o "cliente" deja solo las marcas a las que les falta ese."""
+    grupos = {}
+    for f in filas:  # vienen de la más nueva a la más vieja
+        d = f.get("datos") or {}
+        clave = (f.get("cliente_id"), _norm(f.get("marca")))
+        g = grupos.get(clave)
+        if g is None:
+            g = grupos[clave] = {"cliente_id": f.get("cliente_id"), "cliente_nombre": f.get("cliente_nombre") or "",
+                                 "marca": f.get("marca") or "", "ultimo": f["generado_en"], "referencia": "",
+                                 "cliente": [], "interno": []}
+        item = {"id": f["id"], "generado_en": f["generado_en"], "generado_por": f.get("generado_por") or ""}
+        if f["tipo"] == "interno":
+            r = iv.resumen_interno(d)
+            item.update(referencia=r["referencia"] or "", identicas=r["identicas"], relevantes=len(r["relevantes"]))
+        else:
+            enc = d.get("encabezado") or {}
+            item.update(referencia=enc.get("referencia", "") or "", fecha_informe=enc.get("fecha") or enc.get("fecha_informe", ""),
+                        formato=d.get("formato") or 1)
+        g[f["tipo"]].append(item)
+        if not g["referencia"] and item.get("referencia"):
+            g["referencia"] = item["referencia"]
+    out = list(grupos.values())
+    nq = _norm(q)
+    if nq:
+        out = [g for g in out if nq in _norm(f'{g["marca"]} {g["cliente_nombre"]} {g["referencia"]}')]
+    if falta in ("interno", "cliente"):
+        out = [g for g in out if not g[falta]]
     return out
