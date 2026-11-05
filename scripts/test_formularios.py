@@ -137,3 +137,47 @@ class ServicioPersonaFisica(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CorreccionConLink(unittest.TestCase):
+    """Link para que el cliente corrija lo que mandó (sin base: solo las reglas)."""
+
+    def test_al_corregir_el_archivo_ya_guardado_cuenta(self):
+        extra = {**OPOSICION, "tiene_logo": "SI"}
+        with self.assertRaises(fc.ErrorFormulario):
+            validar(extra)
+        datos, validos = fc.validar("persona-fisica", {**BASE, **extra}, {}, existentes={"logo"})
+        self.assertEqual(validos, [])
+        self.assertEqual(datos["tiene_logo"], "SI")
+
+    def test_diferencias_en_orden_y_con_archivos(self):
+        antes = {**BASE, **OPOSICION}
+        despues = {**antes, "domicilio": "Calle 2", "marca_web_redes": "@luna"}
+        cambios = fc.diferencias("persona-fisica", antes, despues, {"logo": "viejo.png"}, {"logo": "nuevo.png"})
+        self.assertEqual([c["etiqueta"] for c in cambios], ["Domicilio particular", "Web o Redes", "Adjunte su logo en el tamaño 4x4"])
+        self.assertEqual(cambios[0], {"etiqueta": "Domicilio particular", "antes": "Calle 1", "despues": "Calle 2"})
+        self.assertEqual(cambios[1]["antes"], "—")
+        self.assertEqual(fc.diferencias("persona-fisica", antes, dict(antes)), [])
+
+    def test_solo_los_datos_del_poder_reenvian_el_poder(self):
+        antes = {**BASE, **OPOSICION}
+        self.assertFalse(fc.cambia_poder(antes, {**antes, "marca_nombre": "Sol", "telefono": "11"}))
+        for campo in ("nombre", "dni", "domicilio", "localidad", "provincia", "email"):
+            self.assertTrue(fc.cambia_poder(antes, {**antes, campo: "otro"}), campo)
+
+    def test_token_largo_y_distinto(self):
+        a, b = fc.nuevo_token(), fc.nuevo_token()
+        self.assertNotEqual(a, b)
+        self.assertGreaterEqual(len(a), 30)
+
+    def test_mail_de_correccion_muestra_que_cambio(self):
+        resp = {"id": 1, "formulario": "persona-fisica", "tipo_persona": "fisica", "cliente_id": 5, "cliente_nuevo": False,
+                "datos": {**BASE, **VISTAS}}
+        cambios = [{"etiqueta": "Domicilio particular", "antes": "Calle 1", "despues": "Calle <2>"}]
+        asunto, cuerpo, _ = fc.armar_mail(resp, {}, [], "https://panel", cambios)
+        self.assertTrue(asunto.startswith("✏️ Formulario corregido: Gómez María"))
+        self.assertIn("Qué cambió", cuerpo)
+        self.assertIn("Calle &lt;2&gt;", cuerpo)
+        asunto, cuerpo, _ = fc.armar_mail(resp, {}, [], "https://panel")
+        self.assertTrue(asunto.startswith("📝 Formulario recibido"))
+        self.assertNotIn("Qué cambió", cuerpo)

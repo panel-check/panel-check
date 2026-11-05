@@ -1313,16 +1313,35 @@ function htmlRespuesta(f, { enFicha = false } = {}) {
         <small class="crm-gris">(${tamanoLegible(a.tamano)})</small>
         <a href="/api/formularios/archivos/${a.id}" title="Descargar">⬇</a></span>`).join("")}</div>` : "";
   const filas = f.respuestas.map(r => `<tr><td>${esc(r.etiqueta)}</td><td>${esc(r.valor).replace(/\n/g, "<br>")}</td></tr>`).join("");
+  const corrs = f.correcciones || [];
+  const htmlCorrs = corrs.length ? `<details class="fm-corrs"><summary>Correcciones del cliente (${corrs.length})</summary>
+      ${corrs.map(c => `<div class="fm-corr"><strong>${fmtFechaHora(c.editado_en)}</strong>${c.cambios.length ? `<table class="fm-tabla">
+        ${c.cambios.map(x => `<tr><td>${esc(x.etiqueta)}</td><td><s class="crm-gris">${esc(x.antes)}</s> → <strong>${esc(x.despues)}</strong></td></tr>`).join("")}
+        </table>` : ' <span class="crm-gris">· no cambió nada</span>'}</div>`).join("")}</details>` : "";
+  const lk = f.link_correccion;
+  const urlCorr = lk ? location.origin + lk.ruta : "";
+  const htmlLink = lk ? `<div class="fm-link-corr">
+      <div><strong>🔗 Link para que corrija sus datos</strong> <small class="crm-gris">· sirve una sola vez · vence ${fmtFechaHora(lk.vence_en)}${lk.creado_por ? " · lo pidió " + esc(lk.creado_por) : ""}</small></div>
+      <input readonly value="${esc(urlCorr)}" onclick="this.select()">
+      <div class="cl-acciones" style="margin-top:0">
+        <button type="button" class="cl-btn mini" data-fm="copiar-link" data-url="${esc(urlCorr)}">Copiar link</button>
+        <a class="cl-btn sec mini" href="https://wa.me/?text=${encodeURIComponent("Hola! Te paso el link para corregir los datos del formulario que completaste. Ya están cargadas tus respuestas: cambiá lo que haga falta y tocá «Guardar cambios». " + urlCorr)}" target="_blank" rel="noopener">WhatsApp</a>
+        <a class="cl-btn sec mini" href="${esc(urlCorr)}" target="_blank" rel="noopener" title="Ojo: si guardás desde acá, se usa el link.">Abrir</a>
+        <button type="button" class="cl-btn sec mini" data-fm="renovar-link" title="Arma un link nuevo; el anterior deja de andar.">Link nuevo</button>
+        <button type="button" class="cl-btn peligro mini" data-fm="anular-link">Anular link</button></div></div>` : "";
   const aviso = f.aviso_enviado_en ? `mail enviado ${fmtFechaHora(f.aviso_enviado_en)}`
     : f.aviso_error ? `<span class="crm-error" style="padding:0" title="${esc(f.aviso_error)}">mail pendiente (se reintenta solo)</span>` : "mail pendiente (se envía en minutos)";
   return `<div class="fm-resp cl-caja" data-resp="${f.id}">
     <div class="fm-cab"><strong>${esc(f.tipo_legible)}</strong> · recibido ${fmtFechaHora(f.recibido_en)}
       ${f.estado === "nueva" ? '<span class="cl-tag azul">Nueva</span>' : f.estado === "archivada" ? '<span class="cl-tag">Archivada</span>' : `<span class="cl-tag ok" title="${esc(f.revisado_por || "")}">Revisada</span>`}
       ${f.cliente_nuevo ? '<span class="cl-tag">creó el cliente</span>' : '<span class="cl-tag">actualizó datos del cliente</span>'}
+      ${f.editado_en ? `<span class="cl-tag aviso" title="Corrigió los datos con el link">✏️ corregido ${fmtFechaHora(f.editado_en)}</span>` : ""}
       <small class="crm-gris">· ${aviso}</small></div>
     <details ${enFicha ? "" : "open"}><summary>Ver respuestas${f.archivos.length ? ` y ${f.archivos.length} archivo(s)` : ""}</summary>
       <table class="fm-tabla">${filas}</table>${archivos}</details>
+    ${htmlCorrs}${htmlLink}
     <div class="cl-acciones">
+      ${lk ? "" : '<button type="button" class="cl-btn mini" data-fm="link" title="Arma un link para mandarle al cliente: abre el formulario con lo que ya completó, para que corrija lo que haga falta.">🔗 Link para corregir datos</button>'}
       ${f.estado === "nueva" ? '<button type="button" class="cl-btn sec mini" data-fm="revisada">✓ Marcar revisada</button>' : f.estado === "revisada" ? '<button type="button" class="cl-btn sec mini" data-fm="nueva">Volver a «nueva»</button>' : ""}
       ${f.estado === "archivada" ? '<button type="button" class="cl-btn sec mini" data-fm="revisada">Desarchivar</button>' : '<button type="button" class="cl-btn sec mini" data-fm="archivada" title="La saca de la lista; se ve en «Ver archivados».">Archivar</button>'}
       <button type="button" class="cl-btn peligro mini" data-fm="borrar" title="Borra la respuesta y sus archivos. El cliente queda.">Borrar respuesta</button></div>
@@ -1333,9 +1352,23 @@ function conectarRespuestas(cont, recargar) {
   cont.querySelectorAll("[data-fm]").forEach(b => b.addEventListener("click", async () => {
     const id = b.closest("[data-resp]").dataset.resp;
     const acc = b.dataset.fm;
+    if (acc === "copiar-link") {
+      try { await navigator.clipboard.writeText(b.dataset.url); }
+      catch (_) { b.closest(".fm-link-corr").querySelector("input").select(); document.execCommand("copy"); }
+      b.textContent = "¡Copiado!"; setTimeout(() => { b.textContent = "Copiar link"; }, 1800);
+      return;
+    }
     if (acc === "borrar" && !confirm("¿Borrar esta respuesta y sus archivos? El cliente y sus datos quedan como están.")) return;
+    if (acc === "anular-link" && !confirm("¿Anular el link? Si el cliente lo abre, le va a decir que ya no está disponible.")) return;
+    if (acc === "renovar-link" && !confirm("¿Armar un link nuevo? El que ya mandaste deja de andar.")) return;
     b.disabled = true;
     try {
+      if (acc === "link" || acc === "renovar-link") {
+        await apiJson(`/api/formularios/${id}/link-correccion`, "POST", { renovar: acc === "renovar-link" });
+        recargar();
+        return;
+      }
+      if (acc === "anular-link") { await apiJson(`/api/formularios/${id}/link-correccion`, "DELETE"); recargar(); return; }
       if (acc === "borrar") await apiJson(`/api/formularios/${id}`, "DELETE");
       else await apiJson(`/api/formularios/${id}/estado`, "POST", { estado: acc });
       cargarBadgeFormularios();
@@ -1397,7 +1430,8 @@ async function pintarFormularios() {
         <td>${esc(f.marca || "—")}</td>
         <td>${f.archivos ? "📎 " + f.archivos : "—"}</td>
         <td>${f.estado === "nueva" ? '<span class="cl-tag azul">Nueva</span>' : f.estado === "archivada" ? '<span class="cl-tag">Archivada</span>' : '<span class="cl-tag ok">Revisada</span>'}
-          ${f.cliente_nuevo ? "" : '<br><small class="crm-gris">ya era cliente</small>'}</td>
+          ${f.cliente_nuevo ? "" : '<br><small class="crm-gris">ya era cliente</small>'}
+          ${f.editado_en ? `<br><span class="cl-tag aviso" title="Corrigió los datos con el link">✏️ corregido</span>` : ""}</td>
         <td style="white-space:nowrap">${f.cliente_id ? `<button type="button" class="cl-btn mini" data-ver-cliente="${f.cliente_id}">Ver cliente</button>` : '<small class="crm-gris">cliente borrado</small>'}
           <button type="button" class="cl-btn sec mini" data-ver-resp="${f.id}">Respuestas</button>
           <button type="button" class="cl-btn sec mini" data-fm-fila="${f.estado === "archivada" ? "revisada" : "archivada"}">${f.estado === "archivada" ? "Desarchivar" : "Archivar"}</button>
