@@ -16,7 +16,7 @@ import probar_vistas_preboletin as pv
 DSN = os.environ.get("TEST_DATABASE_URL")
 HOY = dt.date(2026, 10, 28)  # miércoles
 PARAMS = {"hoy": HOY.isoformat(), "dias_min": 3, "dias_venc": 7, "cada_vista": 1, "cada_joven": 3,
-          "dias_jovenes": 30, "cada": 7}
+          "dias_jovenes": 30, "cada": 7, "edad_max": None}
 
 TABLA = """
 CREATE TEMP TABLE marcas (
@@ -162,6 +162,19 @@ class Seleccion(unittest.TestCase):
         self.assertFalse(set(restantes) & set(hechas))
 
     # ---- denegadas conocidas
+    def test_edad_maxima_deja_afuera_las_viejas(self):
+        self.marca("joven", presentada=10)
+        self.marca("borde", presentada=25)
+        self.marca("vieja", presentada=26)
+        self.assertEqual(sorted(self.elegidas(edad_max=25)), ["borde", "joven"])
+        self.assertEqual(sorted(self.elegidas()), ["borde", "joven", "vieja"])
+
+    def test_madrugada_del_miercoles_vuelve_a_mirar_lo_revisado_el_martes(self):
+        # Revisada el martes a la noche: con la cadencia forzada a 1 sale de nuevo el miércoles de madrugada.
+        self.marca("martes", presentada=10, revisada=ar(1, "20:00"))
+        self.marca("hoy", presentada=10, revisada=ar(0, "03:40"))
+        self.assertEqual(self.elegidas(cada_joven=1, cada=1, edad_max=25), ["martes"])
+
     def test_cerrar_denegadas_conocidas(self):
         self.marca("den", tuvo_vista=True, vista_sirve=True, vista_estado="plazo_vencido", estado_tramite="Denegada")
         self.marca("viva", tuvo_vista=True, vista_sirve=True, vista_estado="sin_notificar")

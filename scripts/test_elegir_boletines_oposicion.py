@@ -14,7 +14,9 @@ import unittest
 import elegir_boletines_oposicion as m
 
 TZ = dt.timezone.utc
-HOY = dt.date(2026, 10, 19)
+HOY = dt.date(2026, 10, 19)  # lunes
+# Jueves: sin la prioridad de antes de la notificación, solo la rotación.
+JUEVES = dt.date(2026, 10, 15)
 
 
 class _FakeCursor:
@@ -54,7 +56,7 @@ class RotacionNocturna(unittest.TestCase):
         filas = [_fila(str(n), dt.date(2026, 9, 16), revisados_anoche) for n in range(11117, 11122)]
         filas += [_fila(str(n), dt.date(2026, 9, 23)) for n in (11122, 11123)]
 
-        elegidos = m.elegir(_FakeConn(filas), HOY, maximo=5)
+        elegidos = m.elegir(_FakeConn(filas), JUEVES, maximo=5)
 
         self.assertIn("11122", elegidos)
         self.assertIn("11123", elegidos)
@@ -64,7 +66,7 @@ class RotacionNocturna(unittest.TestCase):
             _fila("11200", dt.date(2026, 9, 16)),  # cierra antes (16/09)
             _fila("11201", dt.date(2026, 9, 18)),  # cierra después (18/09)
         ]
-        self.assertEqual(m.elegir(_FakeConn(filas), HOY, maximo=5), ["11200", "11201"])
+        self.assertEqual(m.elegir(_FakeConn(filas), JUEVES, maximo=5), ["11200", "11201"])
 
     def test_boletin_recien_revisado_pasa_al_final_de_la_cola(self):
         recien = dt.datetime(2026, 10, 19, 1, tzinfo=TZ)
@@ -72,7 +74,21 @@ class RotacionNocturna(unittest.TestCase):
             _fila("11300", dt.date(2026, 9, 16), recien),  # más urgente pero recién revisado
             _fila("11301", dt.date(2026, 9, 18)),  # nunca revisado, menos urgente
         ]
-        self.assertEqual(m.elegir(_FakeConn(filas), HOY, maximo=5), ["11301", "11300"])
+        self.assertEqual(m.elegir(_FakeConn(filas), JUEVES, maximo=5), ["11301", "11300"])
+
+    def test_lunes_entran_primero_los_que_se_notifican_el_miercoles(self):
+        # 11500 cerró el 16/10 y se notifica el miércoles 21/10, pero se revisó recién; los otros, nunca.
+        recien = dt.datetime(2026, 10, 19, 1, tzinfo=TZ)
+        filas = [_fila("11500", dt.date(2026, 9, 16), recien)]
+        filas += [_fila(str(n), dt.date(2026, 10, 1)) for n in range(11501, 11507)]
+        elegidos = m.elegir(_FakeConn(filas), HOY, maximo=5)
+        self.assertEqual(elegidos[0], "11500")
+        self.assertEqual(len(elegidos), 5)
+
+    def test_jueves_sin_prioridad_sigue_la_rotacion(self):
+        recien = dt.datetime(2026, 10, 15, 1, tzinfo=TZ)
+        filas = [_fila("11500", dt.date(2026, 9, 16), recien), _fila("11501", dt.date(2026, 10, 1))]
+        self.assertEqual(m.elegir(_FakeConn(filas), JUEVES, maximo=1), ["11501"])
 
     def test_respeta_la_ventana_de_oposicion(self):
         # fecha + 30 (cierre) + hasta 6 días (miércoles de notificación) ya pasó

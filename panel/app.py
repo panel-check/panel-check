@@ -655,7 +655,10 @@ _SQL_VISTAS_PENDIENTES = f"""
       AND (vista_revisada_en IS NULL
            OR {_SQL_VISTAS_REVISADA_EL} <= {_SQL_HOY_AR} - CASE
                 WHEN tuvo_vista IS TRUE AND vista_sirve IS TRUE THEN 1
-                WHEN {_SQL_HOY_AR} - fecha_presentacion::date < 30 THEN 3
+                -- domingo, lunes y martes (antes de la notificación de los miércoles): jóvenes 1, viejas 3
+                WHEN EXTRACT(ISODOW FROM {_SQL_HOY_AR}) IN (7, 1, 2)
+                     THEN CASE WHEN {_SQL_HOY_AR} - fecha_presentacion::date < 30 THEN 1 ELSE 3 END
+                WHEN {_SQL_HOY_AR} - fecha_presentacion::date < 30 THEN 2
                 ELSE 7 END)
 """
 # Repaso de los miércoles: marcas con una vista abierta, contactadas o no (misma regla que --repaso).
@@ -755,11 +758,16 @@ GRUPOS_AUTOMATIZACIONES = [
                                "libre el carril de INPI, y se corta sola a las 22:40, antes de los procesos de la "
                                "noche. Una marca no se revisa dos "
                                "veces el mismo día; las que tienen una vista sin contestar se miran todos los "
-                               "días y las demás cada 3 o 7 días. Dejan de revisarse las contestadas, las "
+                               "días. INPI carga las vistas de miércoles a martes y las notifica todas el "
+                               "miércoles, así que domingo, lunes y martes las presentadas hace menos de 30 días se "
+                               "miran todos los días (las más viejas, cada 3) y de miércoles a sábado cada 2 (las "
+                               "más viejas, cada 7). El miércoles de madrugada, después de oposiciones, hay una "
+                               "pasada extra de las presentadas hace 3 a 25 días para agarrar las vistas cargadas "
+                               "el martes antes de que INPI las notifique a las 06:00. Dejan de revisarse las contestadas, las "
                                "denegadas, las que ya tienen apoderado y las que salieron en un boletín. No revisa "
                                "las contactadas: esas con vista las repasa los miércoles a las 14:00, junto con "
                                "las demás, para actualizar si se notificó, se contestó o venció el plazo.",
-                "horario": "Todos los días, desde las 18:05 (espera al escaneo; se corta a las 22:40) · repaso: miércoles 14:00 hs",
+                "horario": "Todos los días, desde las 18:05 (espera al escaneo; se corta a las 22:40) · pasada extra: miércoles 03:30 hs · repaso: miércoles 14:00 hs",
                 "metricas": [
                     {"sql": "SELECT COUNT(*) FROM marcas WHERE es_lead = true AND boletin IS NULL "
                             "AND tuvo_vista IS TRUE AND vista_sirve IS TRUE",
@@ -771,11 +779,20 @@ GRUPOS_AUTOMATIZACIONES = [
                     {"sql": "SELECT COUNT(*) FROM marcas WHERE tuvo_vista IS TRUE "
                             "AND vista_detectada_en >= now() - interval '7 days'",
                      "etiqueta": "detectadas en los últimos 7 días"},
+                    # Encontradas antes de que INPI las notifique (antes de las 06:00 del miércoles de la
+                    # notificación), sobre las notificadas en los últimos 30 días.
+                    {"sql": "SELECT COUNT(*) FILTER (WHERE vista_detectada_en < (vista_fecha_notificacion + time '06:00') "
+                            "AT TIME ZONE 'America/Argentina/Buenos_Aires') || ' de ' || COUNT(*) FROM marcas "
+                            "WHERE tuvo_vista IS TRUE AND vista_fecha_notificacion >= current_date - 30",
+                     "etiqueta": "encontradas antes de la notificación (últimos 30 días)"},
                 ],
                 "procesos": [
                     {"etiqueta": "Revisión diaria", "workflow_file": "probar_vistas_preboletin.yml", "cron": programador.cron_de("probar_vistas_preboletin.yml"),
                      "horario": "todos los días, 18:05 hs (espera a que termine el escaneo; se corta a las 22:40)",
                      "pendientes_sql": _SQL_VISTAS_PENDIENTES},
+                    {"etiqueta": "Pasada de la madrugada del miércoles", "workflow_file": "vistas_madrugada.yml",
+                     "cron": programador.cron_de("vistas_madrugada.yml"),
+                     "horario": "miércoles, 03:30 hs (después de oposiciones; se corta a las 05:45)"},
                     {"etiqueta": "Repaso de los miércoles", "workflow_file": "repasar_vistas.yml", "cron": programador.cron_de("repasar_vistas.yml"),
                      "horario": "miércoles, 14:00 hs",
                      "pendientes_sql": _SQL_VISTAS_REPASO_PENDIENTES},

@@ -51,7 +51,7 @@ CARRIL_INPI = frozenset({
     "escanear_actas.yml", "estimar_demora_publicacion.yml", "importar_cartera.yml", "inspeccionar_acta.yml",
     "pipeline.yml", "probar_verificador.yml", "probar_vistas_preboletin.yml", "reintentar_sin_email.yml",
     "reintentar_sin_verificar.yml", "repasar_vistas.yml", "revisar_cartera.yml", "revisar_estado.yml",
-    "revisar_oposiciones.yml", "verificar_orden_publicacion.yml",
+    "revisar_oposiciones.yml", "verificar_orden_publicacion.yml", "vistas_madrugada.yml",
 })
 
 # Qué corre y cuándo. `cron`: 5 campos en UTC (minuto hora * * días-de-la-semana, 0 = domingo), como en GitHub.
@@ -64,7 +64,10 @@ PROGRAMADOS = [
     {"workflow": "escanear_actas.yml", "cron": "0 21 * * *", "gracia": 360},
     # 18:05  Revisión diaria de vistas: espera a que el escaneo libere el carril y se corta sola a las 22:40
     {"workflow": "probar_vistas_preboletin.yml", "cron": "5 21 * * *", "gracia": 270,
-     "inputs": {"limite": "3000", "max_minutes": "100", "hasta_hora": "22:40", "guardar": "true"}},
+     "inputs": {"limite": "4000", "max_minutes": "200", "hasta_hora": "22:40", "guardar": "true"}},
+    # 03:30 miércoles  Pasada extra de vistas: las presentadas hace 3 a 25 días, para agarrar las que INPI cargó el
+    # martes antes de que las notifique a las 06:00. Espera a que termine oposiciones (mismo carril) y se corta a las 05:45.
+    {"workflow": "vistas_madrugada.yml", "cron": "30 6 * * 3", "gracia": 120},
     # 22:35  Seguimiento de la cartera
     {"workflow": "revisar_cartera.yml", "cron": "35 1 * * *", "gracia": 360},
     # 23:05  Sin verificar (no los martes a la noche)

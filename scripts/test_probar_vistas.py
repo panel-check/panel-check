@@ -99,3 +99,21 @@ class AvisoDeVistasSinEntender(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class Cadencias(unittest.TestCase):
+    """Cada cuántos días se mira una marca sin vista según el día de la semana (05/11/2026)."""
+
+    def test_domingo_lunes_y_martes_las_jovenes_todos_los_dias(self):
+        import datetime as dt
+        for d in (dt.date(2026, 11, 8), dt.date(2026, 11, 9), dt.date(2026, 11, 10)):  # dom, lun, mar
+            self.assertEqual(pv.cadencias(d), {"cada_joven": 1, "cada": 3}, d)
+
+    def test_miercoles_a_sabado_cada_2_y_cada_7(self):
+        import datetime as dt
+        for d in (dt.date(2026, 11, 4), dt.date(2026, 11, 5), dt.date(2026, 11, 6), dt.date(2026, 11, 7)):
+            self.assertEqual(pv.cadencias(d), {"cada_joven": 2, "cada": 7}, d)
+
+    def test_forzar_reemplaza_las_dos(self):
+        import datetime as dt
+        self.assertEqual(pv.cadencias(dt.date(2026, 11, 11), forzar=1), {"cada_joven": 1, "cada": 1})
