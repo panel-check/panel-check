@@ -43,6 +43,7 @@ class JsonCarga(BaseModel):
     texto: str
     cliente_id: Optional[int] = None
     lead_clave: Optional[str] = None
+    tipo: Optional[str] = None  # "cliente" | "interno"; sin tipo se reconoce por el JSON
 
 
 def es_json_interno(d: dict) -> bool:
@@ -109,6 +110,9 @@ def crear_router(verificar_login, conexion, crm=None) -> APIRouter:
             crudo = iv.leer_json(texto)
             if tipo is None:
                 tipo = "interno" if es_json_interno(crudo) else "cliente"
+            elif (tipo == "interno") != es_json_interno(crudo):
+                raise iv.InformeInvalido("Ese es el JSON interno: va en «Informe IA interno»." if tipo == "cliente"
+                                         else "Ese es el JSON del informe al cliente: va en «Informe al cliente (PDF)».")
             with conexion() as conn:
                 with rcur(conn) as cur:
                     dn = _dueno(cur, cliente_id, lead_clave)
@@ -154,10 +158,11 @@ def crear_router(verificar_login, conexion, crm=None) -> APIRouter:
 
     @router.post("/api/informes/cargar")
     def cargar(body: JsonCarga, usuario: str = Depends(verificar_login)):
-        """Pegar un JSON (el del cliente o el interno: se reconoce solo) para un cliente o un lead."""
+        """Pegar un JSON (el del cliente o el interno; con `tipo` se controla que sea ese) para un cliente o un lead."""
         if not body.cliente_id and not (body.lead_clave or "").strip():
             raise HTTPException(status_code=400, detail="Elegí a quién va el informe")
-        return _cargar(None, body.texto, usuario, cliente_id=body.cliente_id, lead_clave=body.lead_clave)
+        tipo = body.tipo if body.tipo in ("cliente", "interno") else None
+        return _cargar(tipo, body.texto, usuario, cliente_id=body.cliente_id, lead_clave=body.lead_clave)
 
     @router.get("/api/informes")
     def todos(q: str = "", falta: str = "", cliente_id: Optional[int] = None, lead: str = "",
