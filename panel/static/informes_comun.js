@@ -1,7 +1,8 @@
-/* Informes preliminares, compartido entre Más → Informes (informes.js) y la solapa Informes de la
- * ficha del lead (titular.html): la lista agrupada por marca y el diálogo «Nuevo informe», que
- * carga el JSON (el del cliente o el interno: se reconoce solo) a un cliente o a un lead que
- * todavía no es cliente. Depende de comun.js (api, apiJson). Estilos en informes_comun.css.
+/* Informes, compartido entre Más → Informes (informes.js), la solapa Informes de la ficha del lead
+ * (titular.html) y la del cliente (clientes.js): la lista agrupada por marca y el diálogo «Nuevo
+ * informe», que carga el JSON a un cliente o a un lead que todavía no es cliente. Tipos: el informe
+ * preliminar (al cliente en PDF + IA interno) y el Informe Oposición IA (skill revisador-de-oposiciones).
+ * Depende de comun.js (api, apiJson). Estilos en informes_comun.css.
  * Todo texto que viene de la base pasa por ixEsc() antes de ir al HTML. */
 
 const ixEsc = (s) => (s ?? "").toString()
@@ -13,7 +14,22 @@ const IX_ICO = {
   mas: '<svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>',
   bajar: '<svg viewBox="0 0 24 24"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg>',
   buscar: '<svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>',
+  opo: '<svg viewBox="0 0 24 24"><path d="M12 3v18M5 21h14M5 7h14"/><path d="M5 7l-3 7a3 3 0 0 0 6 0zM19 7l-3 7a3 3 0 0 0 6 0z"/></svg>',
 };
+
+/* Chances del informe de oposición → color del puntito. */
+const ixColorChances = (c) => /^(muy bajas|bajas)$/.test(c || "") ? "mal" : /^(bajas a medias|medias)$/.test(c || "") ? "aviso" : c ? "ok" : "";
+
+function ixFechaIso(iso) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso || "");
+  return m ? `${m[3]}/${m[2]}/${m[1]}` : "";
+}
+function ixDiasHasta(iso) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso || "");
+  if (!m) return null;
+  const hoy = new Date(); hoy.setHours(0, 0, 0, 0);
+  return Math.round((new Date(+m[1], +m[2] - 1, +m[3]) - hoy) / 86400000);
+}
 
 function ixFechaCorta(iso) {
   if (!iso) return "";
@@ -76,15 +92,29 @@ function ixDueno(g) {
   return '<span class="ix-chip-tipo">Sin dueño</span>';
 }
 
+/* Informe Oposición IA: una tarjeta ancha con las chances, el oponente y el vencimiento de los 3 meses. */
+function ixDocOposicion(lista) {
+  const u = lista[0];
+  const dias = ixDiasHasta(u.vencimiento);
+  const vto = u.vencimiento ? `vence ${ixFechaIso(u.vencimiento)}${dias != null ? (dias < 0 ? " (vencido)" : dias <= 30 ? ` (faltan ${dias} días)` : "") : ""}` : "";
+  return `<div class="ix-opo-celda"><div class="ix-doc opo">
+      <a class="ix-doc-abrir" href="/informes/${u.id}" target="_blank" rel="noopener" title="Abrir el informe de oposición">
+        <span class="ix-doc-ico">${IX_ICO.opo}</span>
+        <span class="ix-doc-txt"><span class="ix-doc-titulo">Informe Oposición IA${u.oponentes && u.oponentes.length ? ` · vs. ${ixEsc(u.oponentes.join(", "))}` : ""}</span>
+          <span class="ix-doc-meta">${u.chances ? `<span class="ix-punto ${ixColorChances(u.chances)}"></span>Chances ${ixEsc(u.chances)}` : "Sin chances"}${u.oposiciones ? ` · ${ixPlural(u.oposiciones, "oposición", "oposiciones")}` : ""}${vto ? ` · <span class="${dias != null && dias <= 30 ? "ix-urgente" : ""}">${ixEsc(vto)}</span>` : ""}</span>
+          ${u.camino ? `<span class="ix-doc-meta ix-camino">→ ${ixEsc(u.camino)}</span>` : ""}</span></a>
+    </div>${ixVersiones(lista)}</div>`;
+}
+
 /* La lista. `mostrarDueno` en false para la ficha del lead (ya se sabe de quién es). */
 function ixListaHtml(grupos, { mostrarDueno = true } = {}) {
   return `<div class="ix-lista">${grupos.map((g, i) => {
     const ref = /^INFPR-\d+$/i.test(g.referencia || "") ? `<span class="ix-ref">${ixEsc(g.referencia.toUpperCase())}</span>` : "";
-    return `<div class="ix-fila" data-ix="${i}">
-      <div class="ix-marca"><div><span class="ix-marca-nombre">${ixEsc(g.marca || "—")}</span>${ref}</div>
+    const opo = g.familia === "oposicion";
+    return `<div class="ix-fila${opo ? " es-opo" : ""}" data-ix="${i}">
+      <div class="ix-marca"><div><span class="ix-marca-nombre">${ixEsc(g.marca || "—")}</span>${ref}${opo ? '<span class="ix-ref opo">OPOSICIÓN</span>' : ""}</div>
         ${mostrarDueno ? `<div class="ix-dueno">${ixDueno(g)}</div>` : ""}</div>
-      ${ixDocPdf(g.cliente, g)}
-      ${ixDocIa(g.interno, g)}
+      ${opo ? ixDocOposicion(g.oposicion) : ixDocPdf(g.cliente, g) + ixDocIa(g.interno, g)}
       <div class="ix-fecha" title="Último informe cargado"><strong>${ixEsc(ixFechaCorta(g.ultimo))}</strong>último</div>
     </div>`;
   }).join("")}</div>`;
@@ -107,6 +137,17 @@ function ixPrevia(texto) {
   let d;
   try { d = JSON.parse(t); } catch (e) { return { ok: false, html: `<span class="mal">No es un JSON válido: ${ixEsc(e.message)}</span>` }; }
   if (!d || typeof d !== "object" || Array.isArray(d)) return { ok: false, html: '<span class="mal">No es un informe.</span>' };
+  if (d.tipo === "informe_oposicion_ia" || (!d.tipo && d.oposiciones && d.marca_cliente)) {
+    const marca = (d.marca_cliente || {}).denominacion || "";
+    const ops = Array.isArray(d.oposiciones) ? d.oposiciones : [];
+    const oponentes = [...new Set(ops.map((o) => o && o.oponente).filter(Boolean))];
+    const ch = typeof d.chances === "string" ? d.chances : (d.chances || {}).nivel || "";
+    const rx = d.resumen_express && typeof d.resumen_express === "object" && Object.values(d.resumen_express).some((v) => String(v || "").trim());
+    const faltas = [!marca && "marca_cliente.denominacion", !rx && "resumen_express", !ops.length && "oposiciones"].filter(Boolean);
+    return { ok: !faltas.length, tipo: "oposicion", marca, html: `<span class="tipo opo">Informe Oposición IA</span><strong>${ixEsc(marca || "— falta la marca —")}</strong>
+      · ${ixPlural(ops.length, "oposición", "oposiciones")}${oponentes.length ? " de " + ixEsc(oponentes.join(", ")) : ""}${ch ? " · chances " + ixEsc(ch) : ""}` +
+      (faltas.length ? `<br><span class="mal">Falta ${ixEsc(faltas.join(", "))}.</span>` : "") };
+  }
   const interno = d.tipo === "informe_viabilidad_interno" || (!(d.secciones && d.encabezado) && d.tipo !== "informe_viabilidad_cliente" && ("busqueda_inpi" in d || "caso" in d));
   if (interno) {
     const marca = (d.caso || {}).marca_pretendida || d.marca_pretendida || "";
@@ -131,10 +172,14 @@ function ixPrevia(texto) {
 }
 
 /* ── Diálogo «Nuevo informe» ──
- * Dos cuadros separados: el JSON del informe al cliente (arma el PDF) y el del informe IA interno.
- * Se puede cargar uno solo o los dos; si van los dos, primero el del cliente (el interno toma su INFPR).
+ * Arriba se elige qué se carga: el informe preliminar (dos cuadros separados: el JSON del informe al
+ * cliente, que arma el PDF, y el del IA interno; uno o los dos, y si van los dos primero el del cliente
+ * para que el interno tome su INFPR) o el Informe Oposición IA (un cuadro, el JSON de la skill
+ * revisador-de-oposiciones).
  * destino: {cliente_id, nombre, tipo:"cliente"} | {lead_clave, nombre, tipo:"lead"} | null (se elige buscando)
- * fijo: el destino no se puede cambiar (ficha del lead). solo: "cliente" | "interno" muestra un solo cuadro. */
+ * fijo: el destino no se puede cambiar (ficha del lead o del cliente).
+ * solo: "cliente" | "interno" | "oposicion" muestra un solo cuadro y no deja cambiar de tipo.
+ * modo: "preliminar" | "oposicion": con qué tipo abre (se puede cambiar). */
 const IX_CAJAS = {
   cliente: { titulo: "Informe al cliente (PDF)", ico: "pdf",
     ayuda: "Pegá el <strong>…_cliente.json</strong>. El panel arma el PDF del informe preliminar que se le manda a la persona.",
@@ -144,9 +189,14 @@ const IX_CAJAS = {
     ayuda: "Pegá el <strong>…_interno.json</strong>. Queda guardado para el estudio (búsquedas, antecedentes, revisión legal); no se manda.",
     placeholder: '{ "tipo": "informe_viabilidad_interno", "caso": { … }, "busqueda_inpi": { … } }',
     otro: "Ese es el JSON del informe al cliente: pegalo en el cuadro «Informe al cliente (PDF)»." },
+  oposicion: { titulo: "Informe Oposición IA", ico: "opo",
+    ayuda: "Pegá el JSON que entrega la skill <strong>revisador-de-oposiciones</strong> junto con el análisis. Es de uso interno: queda guardado para el estudio, no se manda al cliente.",
+    placeholder: '{ "tipo": "informe_oposicion_ia", "resumen_express": { … }, "oposiciones": [ … ] }',
+    otro: "Ese no es el JSON de oposición: es el del informe preliminar (elegí «Informe preliminar» arriba)." },
 };
+const IX_NOMBRE = { cliente: "Informe al cliente (PDF)", interno: "Informe IA interno", oposicion: "Informe Oposición IA" };
 
-function ixNuevoInforme({ destino = null, fijo = false, marca = "", solo = "", esperado = "", alTerminar = null } = {}) {
+function ixNuevoInforme({ destino = null, fijo = false, marca = "", solo = "", esperado = "", modo = "", alTerminar = null } = {}) {
   solo = solo || esperado;
   let modal = document.getElementById("ix-modal");
   if (!modal) {
@@ -166,25 +216,58 @@ function ixNuevoInforme({ destino = null, fijo = false, marca = "", solo = "", e
     document.addEventListener("keydown", (ev) => { if (ev.key === "Escape" && modal.classList.contains("abierto")) cerrar(); });
   }
   const $m = (id) => modal.querySelector("#" + id);
-  const tipos = solo ? [solo] : ["cliente", "interno"];
+  modo = solo === "oposicion" || modo === "oposicion" ? "oposicion" : "preliminar";
+  let tipos = [];
   let elegido = destino;
-  const est = { cliente: { previa: { ok: false }, hecho: null }, interno: { previa: { ok: false }, hecho: null } };
+  const nuevoEst = () => ({ previa: { ok: false }, hecho: null });
+  const est = { cliente: nuevoEst(), interno: nuevoEst(), oposicion: nuevoEst() };
   const cuerpo = $m("ix-cuerpo"), estado = $m("ix-estado"), guardar = $m("ix-guardar");
-  $m("ix-titulo").textContent = solo === "cliente" ? "Cargar informe al cliente" : solo === "interno" ? "Cargar informe IA interno" : "Nuevo informe";
+  $m("ix-titulo").textContent = solo ? `Cargar ${IX_NOMBRE[solo].replace(" (PDF)", "")}` : "Nuevo informe";
   cuerpo.innerHTML = `
     <p class="ix-paso">Para quién</p>
     <div class="ix-bloque" id="ix-destino"></div>
-    ${tipos.map((t) => `
+    ${solo ? "" : `<p class="ix-paso">Qué informe</p>
+    <div class="ix-segmentos ix-modo" id="ix-modo" role="group" aria-label="Tipo de informe">
+      <button type="button" data-modo="preliminar">Informe preliminar <span class="ix-n">PDF al cliente + IA interno</span></button>
+      <button type="button" data-modo="oposicion">Informe Oposición IA</button>
+    </div>`}
+    <div id="ix-cajas"></div>`;
+  estado.textContent = ""; estado.className = "ix-estado";
+  $m("ix-cancelar").textContent = "Cancelar";
+
+  function pintarCajas() {
+    tipos = solo ? [solo] : modo === "oposicion" ? ["oposicion"] : ["cliente", "interno"];
+    tipos.forEach((t) => { est[t] = nuevoEst(); });
+    if (!solo) cuerpo.querySelectorAll("#ix-modo [data-modo]").forEach((b) => b.classList.toggle("activo", b.dataset.modo === modo));
+    const varias = tipos.length > 1;
+    $m("ix-cajas").innerHTML = tipos.map((t) => `
     <div class="ix-caja" id="ix-caja-${t}">
       <div class="ix-caja-cab"><span class="ix-doc-ico ${IX_CAJAS[t].ico}">${IX_ICO[IX_CAJAS[t].ico]}</span>
-        <div><div class="ix-caja-titulo">${IX_CAJAS[t].titulo}${solo ? "" : ' <span class="ix-opcional">opcional</span>'}</div>
+        <div><div class="ix-caja-titulo">${IX_CAJAS[t].titulo}${varias ? ' <span class="ix-opcional">opcional</span>' : ""}</div>
           <div class="ix-caja-ayuda">${IX_CAJAS[t].ayuda}</div></div></div>
       <textarea id="ix-texto-${t}" spellcheck="false" placeholder='${IX_CAJAS[t].placeholder}'></textarea>
       <div class="ix-previa" id="ix-previa-${t}"></div>
-    </div>`).join("")}
-    ${solo ? "" : '<p class="ix-nota">Podés pegar uno solo o los dos. Si pegás los dos, el interno toma la misma referencia INFPR que el PDF.</p>'}`;
-  estado.textContent = ""; estado.className = "ix-estado";
-  $m("ix-cancelar").textContent = "Cancelar";
+    </div>`).join("") +
+      (varias ? '<p class="ix-nota">Podés pegar uno solo o los dos. Si pegás los dos, el interno toma la misma referencia INFPR que el PDF.</p>' : "");
+    tipos.forEach((t) => {
+      const ta = $m("ix-texto-" + t);
+      ta.addEventListener("input", () => {
+        let p = ixPrevia(ta.value);
+        if (p.tipo && p.tipo !== t) {
+          const msg = t === "oposicion" ? IX_CAJAS.oposicion.otro
+            : p.tipo === "oposicion" ? "Ese es el JSON del Informe Oposición IA: elegí «Informe Oposición IA» arriba."
+            : IX_CAJAS[t].otro;
+          p = { ok: false, html: `<span class="mal">${msg}</span>` };
+        }
+        est[t].previa = p;
+        $m("ix-previa-" + t).innerHTML = p.html;
+        estado.textContent = ""; estado.className = "ix-estado";
+        actualizarBoton();
+      });
+    });
+    estado.textContent = ""; estado.className = "ix-estado";
+    actualizarBoton();
+  }
 
   const listos = () => tipos.filter((t) => !est[t].hecho && est[t].previa.ok);
   const conTexto = () => tipos.filter((t) => !est[t].hecho && $m("ix-texto-" + t).value.trim());
@@ -192,7 +275,8 @@ function ixNuevoInforme({ destino = null, fijo = false, marca = "", solo = "", e
     const l = listos(), malos = conTexto().filter((t) => !est[t].previa.ok);
     guardar.disabled = !elegido || !l.length || malos.length > 0;
     guardar.textContent = l.includes("cliente") && l.includes("interno") ? "Generar PDF y guardar los dos"
-      : l.includes("cliente") ? "Generar PDF" : l.includes("interno") ? "Guardar informe interno" : "Guardar";
+      : l.includes("cliente") ? "Generar PDF" : l.includes("interno") ? "Guardar informe interno"
+      : l.includes("oposicion") ? "Guardar informe de oposición" : "Guardar";
   };
 
   function pintarDestino() {
@@ -248,17 +332,14 @@ function ixNuevoInforme({ destino = null, fijo = false, marca = "", solo = "", e
     setTimeout(() => q.focus(), 30);
   }
   pintarDestino();
-
-  tipos.forEach((t) => {
-    const ta = $m("ix-texto-" + t);
-    ta.addEventListener("input", () => {
-      let p = ixPrevia(ta.value);
-      if (p.tipo && p.tipo !== t) p = { ok: false, html: `<span class="mal">${IX_CAJAS[t].otro}</span>` };
-      est[t].previa = p;
-      $m("ix-previa-" + t).innerHTML = p.html;
-      estado.textContent = ""; estado.className = "ix-estado";
-      actualizarBoton();
-    });
+  pintarCajas();
+  if (!solo) $m("ix-modo").addEventListener("click", (ev) => {
+    const b = ev.target.closest("[data-modo]");
+    if (!b || b.dataset.modo === modo) return;
+    if (tipos.some((t) => est[t].hecho)) return;  // ya se guardó algo: no se cambia de tipo
+    modo = b.dataset.modo;
+    pintarCajas();
+    $m("ix-texto-" + tipos[0]).focus();
   });
 
   function marcarHecho(t, r) {
@@ -274,10 +355,10 @@ function ixNuevoInforme({ destino = null, fijo = false, marca = "", solo = "", e
   guardar.onclick = async () => {
     if (guardar.disabled) return;
     guardar.disabled = true; estado.className = "ix-estado";
-    const orden = ["cliente", "interno"].filter((t) => listos().includes(t));  // el del cliente primero: el interno hereda su INFPR
+    const orden = ["cliente", "interno", "oposicion"].filter((t) => listos().includes(t));  // el del cliente primero: el interno hereda su INFPR
     let alguno = false;
     for (const t of orden) {
-      estado.textContent = t === "cliente" ? "Generando el PDF…" : "Guardando el informe interno…";
+      estado.textContent = t === "cliente" ? "Generando el PDF…" : t === "interno" ? "Guardando el informe interno…" : "Guardando el informe de oposición…";
       try {
         const body = { texto: $m("ix-texto-" + t).value, tipo: t,
           ...(elegido.cliente_id ? { cliente_id: elegido.cliente_id } : { lead_clave: elegido.lead_clave }) };

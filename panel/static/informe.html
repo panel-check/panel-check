@@ -43,6 +43,27 @@
   .inf-destacado { background: #fff8e6; border-left: 3px solid #f0b429; padding: 8px 10px; border-radius: 4px; }
   .cl-tabla td { white-space: normal; }
   .inf-obs { white-space: pre-wrap; font-size: 13.5px; line-height: 1.5; margin: 0; }
+  /* Informe Oposición IA */
+  .op-rx { margin: 0; display: grid; gap: 0; font-size: 13.5px; }
+  .op-rx-fila { display: grid; grid-template-columns: 150px 1fr; gap: 12px; padding: 7px 0; border-top: 1px solid var(--borde); }
+  .op-rx-fila:first-child { border-top: 0; padding-top: 0; }
+  .op-rx-fila dt { color: var(--gris); font-weight: 600; }
+  .op-rx-fila dd { margin: 0; line-height: 1.45; }
+  .op-rx-fila.ojo dd { color: #8a4b00; font-weight: 600; }
+  .op-ch::first-letter { text-transform: uppercase; }
+  .op-ch { display: block; }
+  .op-ch.mal { color: var(--rojo); } .op-ch.aviso { color: #b86e00; } .op-ch.ok { color: var(--verde); }
+  .op-lista { display: grid; gap: 12px; }
+  .op-item { border: 1px solid var(--borde); border-radius: 8px; padding: 10px 14px; background: #fafbfc; }
+  .op-item-cab { font-size: 14px; margin-bottom: 8px; }
+  .op-caminos { display: grid; gap: 10px; }
+  .op-camino { border: 1px solid var(--borde); border-radius: 8px; padding: 10px 14px; }
+  .op-camino.reco { border-color: var(--verde); background: #f3faf6; }
+  .op-camino-cab { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 14px; }
+  .op-camino p { margin: 6px 0 0 30px; font-size: 13px; line-height: 1.5; }
+  .op-num { width: 22px; height: 22px; border-radius: 50%; background: #eef2f7; display: grid; place-items: center; font-size: 12px; font-weight: 700; }
+  .op-costo { margin-left: auto; font-size: 13px; color: #374151; font-weight: 600; }
+  @media (max-width: 640px) { .op-rx-fila { grid-template-columns: 1fr; gap: 2px; } .op-camino p { margin-left: 0; } }
   @media (max-width: 640px) { .inf-grid { grid-template-columns: 1fr; } .inf-grid dt { margin-top: 6px; } .inf-pdf { height: 75vh; } }
 </style>
 <script src="/static/sesion.js" defer></script>
@@ -82,6 +103,6 @@
 <div class="contenido" id="informe"><p class="crm-cargando">Cargando…</p></div>
 
 <script src="/static/comun.js?v=vp9"></script>
-<script src="/static/informe.js?v=5"></script>
+<script src="/static/informe.js?v=6"></script>
 </body>
 </html>

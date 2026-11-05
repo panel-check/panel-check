@@ -548,7 +548,8 @@ async function abrirCliente(id) {
 
       <div data-cpanel="informes" ${est.clienteTab === "informes" ? "" : "hidden"}>
         <div class="cl-acciones" style="margin-top:12px"><button type="button" class="cl-btn" id="cli-inf-btn">📄 Generar informe de disponibilidad marcaria</button>
-          <button type="button" class="cl-btn sec" id="cli-iai-btn">🧠 Adjuntar informe IA interno</button></div>
+          <button type="button" class="cl-btn sec" id="cli-iai-btn">🧠 Adjuntar informe IA interno</button>
+          <button type="button" class="cl-btn sec" id="cli-iop-btn" title="El JSON que entrega la skill revisador-de-oposiciones">⚖️ Cargar informe de oposición IA</button></div>
         <div class="cl-caja" id="cli-inf" hidden style="margin-top:10px"></div>
         <div class="cl-caja" id="cli-iai" hidden style="margin-top:10px"></div>
         <div id="cli-informes-lista">${htmlInformes(d.informes)}</div>
@@ -598,6 +599,11 @@ async function abrirCliente(id) {
   $("cli-toma-btn").addEventListener("click", () => abrirGeneradorToma(id));
   $("cli-inf-btn").addEventListener("click", () => abrirCajaInforme(id, "cliente"));
   $("cli-iai-btn").addEventListener("click", () => abrirCajaInforme(id, "interno"));
+  // Informe Oposición IA: diálogo compartido con Más → Informes (informes_comun.js), con el cliente ya elegido.
+  $("cli-iop-btn").addEventListener("click", () => ixNuevoInforme({
+    destino: { tipo: "cliente", cliente_id: id, nombre: c.nombre }, fijo: true, solo: "oposicion",
+    alTerminar: () => recargarInformes(id),
+  }));
   conectarPoderes(id);
   conectarInformes(id);
   conectarFichaCliente(cont, d);
@@ -1181,10 +1187,10 @@ function conectarPoderes(clienteId) {
   }));
 }
 
-/* ── Informes (viabilidad marcaria para el cliente + informe IA interno) ── */
+/* ── Informes (viabilidad marcaria para el cliente + informe IA interno + Informe Oposición IA) ── */
 function htmlInformes(lista) {
-  if (!lista || !lista.length) return '<p class="crm-gris" style="margin-top:12px">Todavía no hay informes. Pegá el JSON que generó la IA con alguno de los dos botones.</p>';
-  const cli = lista.filter(i => i.tipo === "cliente"), inte = lista.filter(i => i.tipo === "interno");
+  if (!lista || !lista.length) return '<p class="crm-gris" style="margin-top:12px">Todavía no hay informes. Pegá el JSON que generó la IA con alguno de los botones.</p>';
+  const cli = lista.filter(i => i.tipo === "cliente"), inte = lista.filter(i => i.tipo === "interno"), opo = lista.filter(i => i.tipo === "oposicion");
   const quien = i => `<span class="crm-gris">${fmtFechaHora(i.generado_en)}${i.generado_por ? " · " + esc(i.generado_por) : ""}</span>`;
   let h = "";
   if (cli.length) h += `<h4>Informes preliminares (para el cliente)</h4><ul class="cl-lista-simple">${cli.map(i => `<li data-informe="${i.id}">
@@ -1193,6 +1199,17 @@ function htmlInformes(lista) {
       <button type="button" class="cl-btn sec mini" data-inf-pdf>PDF</button>
       <button type="button" class="cl-btn sec mini" data-inf-json title="Bajar el JSON con el que se armó">JSON</button>
       <button type="button" class="cl-btn peligro mini" data-inf-borrar title="Borrar este informe">×</button></li>`).join("")}</ul>`;
+  if (opo.length) h += `<h4>Informes Oposición IA</h4><ul class="cl-lista-simple">${opo.map(i => {
+    const r = i.resumen || {};
+    const col = /^(muy bajas|bajas)$/.test(r.chances || "") ? "mal" : /^(bajas a medias|medias)$/.test(r.chances || "") ? "aviso" : r.chances ? "ok" : "";
+    const vto = /^(\d{4})-(\d{2})-(\d{2})$/.exec(r.vencimiento || "");
+    return `<li data-informe="${i.id}">
+      ${quien(i)} · <strong>${esc(i.marca || "")}</strong>${(r.oponentes || []).length ? ` vs. ${esc(r.oponentes.join(", "))}` : ""}
+      ${r.chances ? ` · <span class="cl-tag ${col}">chances ${esc(r.chances)}</span>` : ""}${(r.actas || []).length ? ` · actas ${esc(r.actas.join(", "))}` : ""}${vto ? ` · vencen los 3 meses el ${vto[3]}/${vto[2]}/${vto[1]}` : ""}
+      <a class="cl-btn mini" style="text-decoration:none;display:inline-block" href="/informes/${i.id}" target="_blank" rel="noopener" title="Abre el informe completo en una pestaña nueva">Abrir link ↗</a>
+      <button type="button" class="cl-btn sec mini" data-inf-json title="Bajar el JSON completo">JSON</button>
+      <button type="button" class="cl-btn peligro mini" data-inf-borrar title="Borrar este informe">×</button>
+      ${r.camino ? `<div class="crm-gris" style="margin-top:4px;font-size:12.5px">→ ${esc(r.camino)}</div>` : ""}</li>`; }).join("")}</ul>`;
   if (inte.length) h += `<h4>Informes IA internos</h4><ul class="cl-lista-simple">${inte.map(i => {
     const r = i.resumen || {};
     return `<li data-informe="${i.id}">
