@@ -39,7 +39,7 @@ class CorreccionDePuntaAPunta(unittest.TestCase):
             finally:
                 conn.close()
 
-        cls.conexion = conexion
+        cls.conexion = staticmethod(conexion)
         with conexion() as conn:
             with conn.cursor() as cur:
                 cartera.crear_tablas(cur)
