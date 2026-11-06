@@ -8,7 +8,7 @@ Desde el 06/11/2026 el portal del INPI no acepta conexiones desde servidores fue
     INPI_RELAY_CLAVE  = la clave del archivo PHP
 
 todo pedido que haga `requests` (en cualquier parte del panel o de los scripts) a portaltramites.inpi.gob.ar
-o ws.inpi.gob.ar sale por ese archivo: se le manda el pedido con la URL real en `u` y la clave en la
+o ws.inpi.gob.ar sale por ese archivo: se le manda el pedido con la URL real en `b` (base64url) y la clave en la
 cabecera X-Relay-Clave, y la respuesta vuelve como si fuera del INPI (mismo estado, tipo, cookies, URL).
 Los demás pedidos (Resend, Apify, GitHub, la base) no se tocan. Sin las variables no hace nada.
 
@@ -21,6 +21,7 @@ Si el hosting no puede llegar al INPI (responde con X-Relay-Error) se levanta re
 igual que si fallara la conexión directa: los reintentos y avisos que ya existen siguen funcionando.
 """
 
+import base64
 import os
 import sys
 from urllib.parse import urlsplit
@@ -57,7 +58,9 @@ def _send(self, request, **kwargs):
     if not url or not es_de_inpi(request.url) or CABECERA_CLAVE in request.headers:
         return _send_original(self, request, **kwargs)
     copia = request.copy()
-    copia.prepare_url(url, {"u": request.url})
+    # base64url y no la URL a la vista: el firewall de los hostings compartidos (ModSecurity) bloquea
+    # pedidos con «https://…» dentro de la dirección.
+    copia.prepare_url(url, {"b": base64.urlsafe_b64encode(request.url.encode()).decode().rstrip("=")})
     copia.headers[CABECERA_CLAVE] = clave
     copia.headers.pop("Host", None)
     respuesta = _send_original(self, copia, **kwargs)
