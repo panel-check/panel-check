@@ -5,6 +5,7 @@ porta como wordpress/inpi-relay.php: devuelve estado, tipo, cookies y redireccio
     cd scripts && python3 -m unittest test_inpi_relay
 """
 
+import base64
 import json
 import os
 import sys
@@ -38,7 +39,10 @@ class RelayFalso(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(b"Not found")
             return
-        destino = parse_qs(partes.query)["u"][0]
+        q = parse_qs(partes.query)
+        cod = q["b"][0]
+        destino = base64.urlsafe_b64decode(cod + "=" * (-len(cod) % 4)).decode()
+        assert "u" not in q and "https" not in partes.query
         largo = int(self.headers.get("Content-Length") or 0)
         cuerpo = self.rfile.read(largo).decode() if largo else ""
         PEDIDOS.append({"u": destino, "metodo": self.command, "cookie": self.headers.get("Cookie"),

@@ -70,7 +70,14 @@ if (isset($_GET['prueba'])) {
 }
 
 // ── Reenvío ────────────────────────────────────────────────────────────────
-$destino = $_GET['u'] ?? '';
+// La dirección del INPI llega codificada en base64url («b»): una URL https:// a la vista dentro de la
+// dirección la bloquea el firewall de muchos hostings compartidos (ModSecurity, regla de inclusión remota).
+$destino = '';
+if (isset($_GET['b']) && is_string($_GET['b'])) {
+    $destino = base64_decode(strtr($_GET['b'], '-_', '+/'), true) ?: '';
+} elseif (isset($_GET['u'])) {
+    $destino = $_GET['u'];
+}
 $partes = is_string($destino) ? parse_url($destino) : false;
 if (!$partes || ($partes['scheme'] ?? '') !== 'https' || !in_array(strtolower($partes['host'] ?? ''), HOSTS_PERMITIDOS, true)
     || isset($partes['user']) || isset($partes['port'])) {
