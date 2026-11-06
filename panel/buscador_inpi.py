@@ -10,6 +10,11 @@ Búsquedas (las mismas grillas que usa el portal, por POST JSON):
   - renovaciones → /MarcasConsultas/GrillaMarcasRenovaciones {FechaPresentacionDesde/Hasta, limit, offset}
   - cuit         → webservice SOAP ConsultaCuitOTitular (el portal no busca por CUIT; ver inpi_lead)
 
+Con el token del integrador (INPI_WS_TOKEN), la búsqueda por denominación o titular sin fechas ni «solo
+vigentes» va primero por el webservice oficial (ConsultaDenominacion / ConsultaCuitOTitular por nombre) y los
+demás filtros (clase, tipo de resolución, empieza/contiene) se aplican acá. Si el webservice falla, se usa el
+portal. El webservice no tiene ficha del acta, Grilla Digital ni renovaciones: eso sale siempre del portal.
+
 INPI distingue tildes («CATASTROFE» no encuentra «CATÁSTROFE»), pero acepta los comodines de SQL
 («_» = una letra cualquiera, «%» = cualquier cosa; probado el 06/11/2026). Si una búsqueda por
 denominación o titular no trae nada, se reintenta con «_» en lugar de cada vocal y después se filtra
@@ -167,7 +172,9 @@ def fila_ws(row: dict) -> dict:
         "titulares": _titulares_limpios(titulares) or None,
         "cuit": _cuit_de_titulares(titulares),
         "fecha_ingreso": _fecha_ws(row.get("Fecha_Ingreso")),
-        "numero_resolucion": None, "estado": None, "vencimiento": None,
+        "numero_resolucion": (str(row.get("Numero_Resolucion") or "").strip() or None),
+        "estado": estado_legible(row.get("Estado")),
+        "vencimiento": None,
     }
 
 
@@ -277,6 +284,13 @@ def buscar_avanzada(p: dict) -> dict:
     if len(comparable(denominacion)) < 2 and len(comparable(titular)) < 2 and not hay_fecha:
         raise BuscadorError("Escribí al menos 2 letras de la denominación o del titular, o elegí un rango de fechas.")
     limit, offset = _limites(p.get("limit"), p.get("offset"))
+    # El webservice (con el token del integrador) responde aunque el portal no le conteste al panel.
+    # No filtra por fechas ni «solo vigentes»: con esos filtros se usa el portal.
+    if inpi_lead.token_ws() and not hay_fecha and not p.get("vigentes"):
+        try:
+            return _avanzada_por_ws(p, denominacion, titular, limit, offset)
+        except inpi_lead.ErrorWs as e:
+            print(f"[buscador-inpi] webservice: {e}; se prueba con el portal")
     with _semaforo:
         s = _sesion()
         datos = _pedir_grilla(s, "/MarcasConsultas/GrillaMarcasAvanzada",
@@ -296,7 +310,55 @@ def buscar_avanzada(p: dict) -> dict:
             total, sin_tildes = len(filas), True
             filas = filas[:limit]
     return {"modo": "avanzada", "total": total, "filas": filas, "sin_tildes": sin_tildes,
-            "recortado": sin_tildes and int(datos.get("total") or 0) > TOPE_SIN_TILDES}
+            "recortado": sin_tildes and int(datos.get("total") or 0) > TOPE_SIN_TILDES, "fuente": "portal"}
+
+
+_CODIGO_ESTADO = {v: k for k, v in _ESTADOS.items()}
+
+
+def _filtrar_ws(filas: list, p: dict, denominacion: str, titular: str) -> list:
+    """Los filtros del buscador que el webservice no tiene, aplicados acá (sin tildes)."""
+    clase = str(p.get("clase") or "").strip()
+    tipo = p.get("tipo_resolucion") or ""
+    out = []
+    for f in filas:
+        if clase and clase != "-1" and str(f.get("clase")) != clase:
+            continue
+        if tipo:
+            if tipo == "E":
+                if f.get("estado") not in (None, "En trámite"):
+                    continue
+            elif f.get("estado") != _ESTADOS.get(tipo):
+                continue
+        if not _coincide(f.get("denominacion"), denominacion, bool(p.get("denominacion_empieza"))):
+            continue
+        if not _coincide(f.get("titulares"), titular, bool(p.get("titular_empieza"))):
+            continue
+        out.append(f)
+    out.sort(key=lambda f: f.get("fecha_ingreso") or "", reverse=True)
+    return out
+
+
+def _avanzada_por_ws(p: dict, denominacion: str, titular: str, limit: int, offset: int) -> dict:
+    """Búsqueda avanzada con el webservice: ConsultaDenominacion (o ConsultaCuitOTitular por nombre si solo
+    se buscó el titular) y el resto de los filtros acá. Si no hay resultados y lo escrito tiene vocales, se
+    repite con «_» por cada vocal por si INPI la tiene con tilde. Levanta inpi_lead.ErrorWs."""
+    def consultar(den, tit):
+        if comparable(den):
+            return inpi_lead.consultar_denominacion_ws(den)["filas"]
+        return inpi_lead.consultar_ws("ConsultaCuitOTitular", {"cuit": "", "titular": tit})["filas"]
+
+    with _semaforo:
+        filas = _filtrar_ws([fila_ws(r) for r in consultar(denominacion, titular) if r.get("Acta")], p, denominacion, titular)
+        sin_tildes = False
+        if not filas:
+            den2 = patron_sin_tildes(denominacion) if comparable(denominacion) else denominacion
+            tit2 = titular if comparable(denominacion) else patron_sin_tildes(titular)
+            if (den2, tit2) != (denominacion, titular):
+                filas = _filtrar_ws([fila_ws(r) for r in consultar(den2, tit2) if r.get("Acta")], p, denominacion, titular)
+                sin_tildes = bool(filas)
+    return {"modo": "avanzada", "total": len(filas), "filas": filas[offset:offset + limit],
+            "sin_tildes": sin_tildes, "recortado": False, "fuente": "webservice"}
 
 
 def buscar_renovaciones(desde: str, hasta: str, limit=50, offset=0) -> dict:
@@ -318,9 +380,13 @@ def buscar_cuit(cuit: str) -> dict:
     if len(cuit) != 11:
         raise BuscadorError("El CUIT tiene que tener 11 números.")
     with _semaforo:
-        filas = [fila_ws(r) for r in inpi_lead.consultar_titular_ws(cuit=cuit, timeout=40, reintentos=0) if r.get("Acta")]
+        try:
+            res = inpi_lead.consultar_ws("ConsultaCuitOTitular", {"cuit": cuit, "titular": ""})
+        except inpi_lead.ErrorWs as e:
+            raise BuscadorError(str(e))
+    filas = [fila_ws(r) for r in res["filas"] if r.get("Acta")]
     filas.sort(key=lambda f: f["fecha_ingreso"] or "", reverse=True)
-    return {"modo": "cuit", "total": len(filas), "filas": filas}
+    return {"modo": "cuit", "total": len(filas), "filas": filas, "fuente": "webservice"}
 
 
 def buscar_rapido(q: str, limit=50) -> dict:

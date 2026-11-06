@@ -131,7 +131,8 @@ function pintarResultado(r) {
   }
   const total = r.total || filas.length;
   const desde = est.offset + 1, hasta = est.offset + filas.length;
-  const resumen = `<div class="bi-resumen"><span><strong>${total.toLocaleString("es-AR")}</strong> resultado${total === 1 ? "" : "s"} en INPI${total > filas.length ? ` · mostrando ${desde}–${hasta}` : ""}</span>
+  const fuente = r.fuente === "webservice" ? "webservice de INPI" : r.fuente === "portal" ? "buscador del portal de INPI" : "";
+  const resumen = `<div class="bi-resumen"><span><strong>${total.toLocaleString("es-AR")}</strong> resultado${total === 1 ? "" : "s"} en INPI${total > filas.length ? ` · mostrando ${desde}–${hasta}` : ""}${fuente ? ` <span class="bi-sub">(${fuente})</span>` : ""}</span>
     ${avisos.map(a => `<span class="bi-aviso">${esc(a)}</span>`).join("")}</div>`;
   const tabla = r.modo === "renovaciones" ? tablaRenovaciones(filas) : tablaMarcas(filas, r.modo);
   res.innerHTML = resumen + `<div class="bi-tabla-caja">${tabla}</div>` + paginas(total, filas.length, r.modo);

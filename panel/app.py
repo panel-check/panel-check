@@ -19,6 +19,9 @@ Variables de entorno:
                     - formato viejo (HTTP Basic). Solo se leen una vez, para
                       crear los usuarios si la tabla usuarios_panel está vacía.
                       Después se pueden (y conviene) borrar de Railway.
+    INPI_WS_TOKEN   - token del integrador del webservice de INPI (Autogestión de WS). Lo piden
+                      ConsultaDenominacion y ConsultaCuitOTitular: Buscador INPI y Clientes →
+                      «Buscar por CUIT o titular en INPI». Sin él esas consultas no traen nada.
     CALENDARIO_LINK_REUNION
                     - opcional, link fijo de las reuniones por videollamada
                       del calendario interno (por defecto el del estudio).
