@@ -117,3 +117,25 @@ class Cadencias(unittest.TestCase):
     def test_forzar_reemplaza_las_dos(self):
         import datetime as dt
         self.assertEqual(pv.cadencias(dt.date(2026, 11, 11), forzar=1), {"cada_joven": 1, "cada": 1})
+
+
+class MomentoDeCorte(unittest.TestCase):
+    def _t(self, h, m):
+        import datetime as dt
+        return dt.datetime(2026, 11, 5, h, m)
+
+    def test_corte_mas_tarde_el_mismo_dia(self):
+        import datetime as dt
+        self.assertEqual(pv.momento_de_corte(self._t(19, 30), dt.time(22, 40)), self._t(22, 40))
+
+    def test_corte_que_ya_paso_hace_poco_no_hace_nada(self):
+        import datetime as dt
+        self.assertIsNone(pv.momento_de_corte(self._t(22, 50), dt.time(22, 40)))
+
+    def test_corte_de_la_madrugada_siguiente(self):
+        import datetime as dt
+        self.assertEqual(pv.momento_de_corte(self._t(21, 9), dt.time(5, 0)), self._t(5, 0) + dt.timedelta(days=1))
+
+    def test_madrugada_del_miercoles(self):
+        import datetime as dt
+        self.assertEqual(pv.momento_de_corte(self._t(3, 30), dt.time(5, 45)), self._t(5, 45))
