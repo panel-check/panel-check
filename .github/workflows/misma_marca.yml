@@ -18,6 +18,13 @@ concurrency:
   group: misma-marca
   cancel-in-progress: false
 
+env:
+  # Pedidos al INPI por el hosting de la web en Argentina (panel/inpi_relay.py, wordpress/inpi-relay.php).
+  # Sin los secrets INPI_RELAY_URL / INPI_RELAY_CLAVE no cambia nada.
+  INPI_RELAY_URL: ${{ secrets.INPI_RELAY_URL }}
+  INPI_RELAY_CLAVE: ${{ secrets.INPI_RELAY_CLAVE }}
+  PYTHONPATH: ${{ github.workspace }}/panel/relay_site
+
 jobs:
   aplicar:
     runs-on: ubuntu-latest

@@ -19,6 +19,10 @@ Variables de entorno:
                     - formato viejo (HTTP Basic). Solo se leen una vez, para
                       crear los usuarios si la tabla usuarios_panel está vacía.
                       Después se pueden (y conviene) borrar de Railway.
+    INPI_RELAY_URL / INPI_RELAY_CLAVE
+                    - opcionales: dirección y clave del archivo de reenvío en el hosting
+                      de la web (wordpress/inpi-relay.php). Con las dos cargadas, los
+                      pedidos al INPI salen desde Argentina (ver inpi_relay.py).
     INPI_WS_TOKEN   - token del integrador del webservice de INPI (Autogestión de WS). Lo piden
                       ConsultaDenominacion y ConsultaCuitOTitular: Buscador INPI y Clientes →
                       «Buscar por CUIT o titular en INPI». Sin él esas consultas no traen nada.
@@ -40,6 +44,8 @@ Variables de entorno:
 Correr local:
     DATABASE_URL=... PANEL_RECUPERAR=admin:unaClaveLarga uvicorn app:app --reload
 """
+
+import inpi_relay  # noqa: F401 — pedidos al INPI por el hosting en Argentina si INPI_RELAY_URL está cargada
 
 import datetime as _dt
 import inspect
