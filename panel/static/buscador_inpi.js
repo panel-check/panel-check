@@ -14,7 +14,12 @@ async function pedir(url, opciones = {}) {
   if (r.status === 401 && typeof irAlLogin === "function") irAlLogin();
   let datos = null;
   try { datos = await r.json(); } catch (_) { /* sin cuerpo */ }
-  if (!r.ok) throw new Error((datos && datos.detail) || `Error ${r.status}`);
+  if (!r.ok) {
+    if (datos && datos.detail) throw new Error(datos.detail);
+    // 502/503/504/524: el pedido a INPI tardó más de lo que espera el servidor (Cloudflare corta a los 100 s).
+    if ([502, 503, 504, 524].includes(r.status)) throw new Error("INPI no respondió a tiempo. Puede estar caído o lento: probá de nuevo en unos minutos o abrilo directo en la web de INPI.");
+    throw new Error(`Error ${r.status}`);
+  }
   return datos;
 }
 

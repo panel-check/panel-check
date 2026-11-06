@@ -15,6 +15,9 @@ INPI distingue tildes («CATASTROFE» no encuentra «CATÁSTROFE»), pero acepta
 denominación o titular no trae nada, se reintenta con «_» en lugar de cada vocal y después se filtra
 acá sin tildes, para quedarse solo con lo que de verdad coincide (`sin_tildes` en la respuesta).
 
+Cada pedido a INPI tiene tiempos cortos y sin reintentos (TIMEOUT): si INPI no contesta, se avisa
+antes de que Cloudflare corte la página a los 100 s.
+
 Detalle de un acta (`detalle_acta`): UN pedido al expediente (datos, titulares, gestión, resolución,
 protección/limitación, publicaciones, oposiciones, vistas, logo) y otro a la Grilla Digital (los
 archivos). `archivo_grilla` baja un PDF de la grilla para verlo desde el panel, solo si ese documento
@@ -42,6 +45,10 @@ TIPOS_RESOLUCION = {
     "D": "Desistida", "E": "En trámite", "NU": "Nula",
 }
 LIMITE_MAX = 200          # el portal pagina de a 5 a 200
+# Cada pedido a INPI: (conexión, lectura) en segundos, sin reintentos. Cloudflare corta a los 100 s,
+# así que una búsqueda completa (página de búsqueda + grilla) tiene que fallar antes y avisar.
+TIMEOUT = (8, 30)
+TIMEOUT_PREVIO = (8, 15)
 TOPE_SIN_TILDES = 200     # filas que se piden a INPI en el reintento sin tildes
 
 # Pocas consultas a la vez: el portal deja de responder si se le pide mucho seguido.
@@ -176,25 +183,38 @@ def fila_renovacion(row: dict) -> dict:
 
 # ── Conexión con INPI ──────────────────────────────────────────────────────
 
-def _sesion(timeout: int = 30) -> requests.Session:
-    """Sesión con las cookies de la página de búsqueda (sin ellas la grilla avanzada devuelve 0 filas)."""
-    s = inpi_lead._crear_sesion()
+def _no_responde(e) -> BuscadorError:
+    if isinstance(e, requests.Timeout):
+        return BuscadorError("INPI no respondió a tiempo. Puede estar caído o lento: probá de nuevo en unos minutos "
+                             "o abrilo directo en la web de INPI.")
+    return BuscadorError(f"No se pudo conectar con INPI ({e.__class__.__name__}). Probá de nuevo en unos minutos.")
+
+
+def _bloqueado(texto: str) -> bool:
+    return "Web Page Blocked" in texto or "Attack ID" in texto
+
+
+def _sesion(pagina: str = URL_BUSQUEDA) -> requests.Session:
+    """Sesión con las cookies de la página de búsqueda (sin ellas la grilla avanzada devuelve 0 filas).
+    Si INPI no contesta acá, se avisa enseguida en vez de seguir esperando."""
+    s = requests.Session()
+    s.headers.update(inpi_lead.HEADERS)
     try:
-        s.get(URL_BUSQUEDA, timeout=timeout)
-    except requests.RequestException:
-        pass
+        r = s.get(pagina, timeout=TIMEOUT_PREVIO)
+    except requests.RequestException as e:
+        raise _no_responde(e)
+    if _bloqueado(r.text):
+        raise BuscadorError("INPI bloqueó la consulta. Esperá unos minutos y probá de nuevo.")
     return s
 
 
-def _pedir_grilla(s, ruta: str, cuerpo: dict, timeout: int = 45) -> dict:
+def _pedir_grilla(s, ruta: str, cuerpo: dict) -> dict:
     try:
-        r = inpi_lead._get_con_reintentos(lambda: s.post(
-            f"{BASE}{ruta}", json=cuerpo, timeout=timeout,
-            headers={"Referer": URL_BUSQUEDA, "X-Requested-With": "XMLHttpRequest"},
-        ))
+        r = s.post(f"{BASE}{ruta}", json=cuerpo, timeout=TIMEOUT,
+                   headers={"Referer": URL_BUSQUEDA, "X-Requested-With": "XMLHttpRequest"})
     except requests.RequestException as e:
-        raise BuscadorError(f"INPI no respondió ({e.__class__.__name__}). Probá de nuevo en un rato.")
-    if "Web Page Blocked" in r.text or "Attack ID" in r.text:
+        raise _no_responde(e)
+    if _bloqueado(r.text):
         raise BuscadorError("INPI bloqueó la consulta. Esperá unos minutos y probá de nuevo.")
     try:
         datos = r.json()
@@ -298,7 +318,7 @@ def buscar_cuit(cuit: str) -> dict:
     if len(cuit) != 11:
         raise BuscadorError("El CUIT tiene que tener 11 números.")
     with _semaforo:
-        filas = [fila_ws(r) for r in inpi_lead.consultar_titular_ws(cuit=cuit) if r.get("Acta")]
+        filas = [fila_ws(r) for r in inpi_lead.consultar_titular_ws(cuit=cuit, timeout=40, reintentos=0) if r.get("Acta")]
     filas.sort(key=lambda f: f["fecha_ingreso"] or "", reverse=True)
     return {"modo": "cuit", "total": len(filas), "filas": filas}
 
@@ -336,28 +356,43 @@ def _archivo(a: dict) -> dict:
             "nombre": (a.get("ruta") or "").rsplit("/", 1)[-1] or None}
 
 
-def detalle_acta(acta: str, timeout: int = 40) -> dict:
+def _archivos_grilla(s, acta: str) -> list:
+    """Los archivos de la Grilla Digital (como inpi_lead._buscar_archivos_grilla, sin reintentos y con
+    tiempos cortos). Puede levantar requests.RequestException."""
+    r = s.post(f"{BASE}/Home/GrillaDigital", data={"fname": f"1-{acta}"}, timeout=TIMEOUT,
+               headers={"Referer": f"{BASE}/MarcasConsultas/Resultado"})
+    if _bloqueado(r.text):
+        return []
+    r = s.post(f"{BASE}/Home/GrillaDigitales", data={"acta": acta, "limit": 50, "offset": 0, "direccion": 1},
+               timeout=TIMEOUT, headers={"Referer": f"{BASE}/Home/GrillaDigital", "X-Requested-With": "XMLHttpRequest"})
+    try:
+        filas = r.json().get("rows", [])
+    except ValueError:
+        return []
+    return filas if isinstance(filas, list) else []
+
+
+def detalle_acta(acta: str) -> dict:
     acta = re.sub(r"\D", "", acta or "")
     if not acta:
         raise BuscadorError("Número de acta inválido.")
     with _semaforo:
-        s = inpi_lead._crear_sesion()
+        s = _sesion(f"{BASE}/MarcasConsultas/Grilla")
         try:
-            r = inpi_lead._get_con_reintentos(lambda: s.post(
-                f"{BASE}/MarcasConsultas/Resultado", data={"acta": acta}, timeout=timeout,
-                headers={"Referer": f"{BASE}/MarcasConsultas/Grilla"}))
+            r = s.post(f"{BASE}/MarcasConsultas/Resultado", data={"acta": acta}, timeout=TIMEOUT,
+                       headers={"Referer": f"{BASE}/MarcasConsultas/Grilla"})
         except requests.RequestException as e:
-            raise BuscadorError(f"INPI no respondió ({e.__class__.__name__}). Probá de nuevo en un rato.")
+            raise _no_responde(e)
         html = r.text
-        if "Web Page Blocked" in html or "Attack ID" in html:
+        if _bloqueado(html):
             raise BuscadorError("INPI bloqueó la consulta. Esperá unos minutos y probá de nuevo.")
         if "GESTION DEL TRAMITE" not in html and "TITULARIDAD" not in html:
             raise BuscadorError("INPI no tiene un expediente con ese número de acta.")
         try:
-            archivos = inpi_lead._buscar_archivos_grilla(s, acta, timeout=timeout)
+            archivos = _archivos_grilla(s, acta)
             error_grilla = None
         except requests.RequestException:
-            archivos, error_grilla = [], "No se pudo leer la Grilla Digital (INPI no respondió)."
+            archivos, error_grilla = [], "No se pudo leer la Grilla Digital (INPI no respondió). Abrila en INPI con el botón de arriba."
 
     datos = inpi_lead.datos_de_expediente(html)
     exp = inpi_lead.parsear_datos_expediente(html)
@@ -401,28 +436,27 @@ def detalle_acta(acta: str, timeout: int = 40) -> dict:
     }
 
 
-def archivo_grilla(acta: str, id_doc: str, timeout: int = 60):
+def archivo_grilla(acta: str, id_doc: str):
     """(bytes, content_type, nombre) de un archivo de la Grilla Digital del acta. Solo baja documentos
     que figuran en la grilla de ESA acta (no sirve para pedir cualquier id a INPI)."""
     acta = re.sub(r"\D", "", acta or "")
     if not acta or not id_doc:
         raise BuscadorError("Faltan datos del archivo.")
     with _semaforo:
-        s = inpi_lead._crear_sesion()
+        s = _sesion(f"{BASE}/MarcasConsultas/Grilla")
         try:
-            archivos = inpi_lead._buscar_archivos_grilla(s, acta, timeout=timeout)
-        except requests.RequestException:
-            raise BuscadorError("INPI no respondió al leer la Grilla Digital. Probá de nuevo en un rato.")
+            archivos = _archivos_grilla(s, acta)
+        except requests.RequestException as e:
+            raise _no_responde(e)
         elegido = next((a for a in archivos if isinstance(a, dict) and a.get("id_Documento_encriptado") == id_doc), None)
         if not elegido:
             raise BuscadorError("Ese archivo no figura en la Grilla Digital del acta.")
         nombre = (elegido.get("ruta") or "").rsplit("/", 1)[-1] or f"acta-{acta}.pdf"
         try:
-            r = inpi_lead._get_con_reintentos(lambda: s.get(
-                f"{BASE}/Home/edmsxidd", params={"id": id_doc, "nombre": nombre}, timeout=timeout,
-                headers={"Referer": f"{BASE}/Home/GrillaDigital"}))
-        except requests.RequestException:
-            raise BuscadorError("INPI no respondió al bajar el archivo. Probá de nuevo en un rato.")
+            r = s.get(f"{BASE}/Home/edmsxidd", params={"id": id_doc, "nombre": nombre}, timeout=(8, 45),
+                      headers={"Referer": f"{BASE}/Home/GrillaDigital"})
+        except requests.RequestException as e:
+            raise _no_responde(e)
     tipo = (r.headers.get("Content-Type") or "").split(";")[0].strip().lower()
     if r.status_code != 200 or not r.content or tipo in ("text/html", ""):
         raise BuscadorError("INPI no entregó el archivo. Abrilo desde la Grilla Digital en INPI.")
