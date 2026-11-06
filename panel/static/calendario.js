@@ -1,4 +1,4 @@
-/* Página /calendario: vista mensual y agenda de los eventos de Google Calendar,
+/* Página /calendario: vista mensual y agenda del calendario interno del panel,
  * con el detalle del día, vínculos por número de acta y alta/edición de eventos.
  * Las piezas compartidas con la ficha del titular están en calendario_comun.js. */
 
@@ -26,16 +26,6 @@ const est = {
   cargando: false,
   abiertos: new Set(),     // eventos de hoy ya pasados que se desplegaron en la agenda
 };
-
-function calHace(iso) {
-  if (!iso) return "nunca";
-  const min = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
-  if (min < 1) return "hace un momento";
-  if (min < 60) return `hace ${min} min`;
-  const h = Math.round(min / 60);
-  if (h < 24) return `hace ${h} h`;
-  return `hace ${Math.round(h / 24)} días`;
-}
 
 // ── Rangos ───────────────────────────────────────────────────────────
 function ultimoDiaDelMes(iso) {
@@ -86,82 +76,30 @@ async function cargar({ silencioso = false } = {}) {
   }
 }
 
-// ── Estado de la conexión con Google ─────────────────────────────────
+// ── Estado del calendario (interno: ya no depende de Google) ─────────
 function pintarEstado() {
   const e = est.estado;
   const aviso = $("cal-aviso");
   const linea = $("cal-estado");
   if (!e) { linea.innerHTML = ""; aviso.innerHTML = '<div class="cal-aviso error">No se pudo consultar el estado del calendario.</div>'; return; }
-
-  if (!e.configurado) {
-    linea.innerHTML = '<span><span class="cal-punto espera"></span>Sin conectar con Google Calendar</span>';
-    aviso.innerHTML = `<div class="cal-aviso"><b>Falta conectar el calendario con Google.</b> Esto se hace una sola vez:
-      <ol>
-        <li>En <b>Google Cloud</b>: activar la <i>Google Calendar API</i> y crear una <b>cuenta de servicio</b> con una clave JSON.</li>
-        <li>En <b>Google Calendar</b>: compartir el calendario del estudio con el mail de esa cuenta de servicio, con permiso <i>«Hacer cambios en eventos»</i>.</li>
-        <li>En <b>Railway</b> (servicio del panel), cargar dos variables:
-          <code>GOOGLE_SERVICE_ACCOUNT_JSON</code> (el contenido completo del archivo JSON) y
-          <code>GOOGLE_CALENDAR_ID</code> (el ID del calendario; en el principal de una cuenta de Gmail es el mismo mail).</li>
-      </ol>
-      Cuando el panel se reinicie con las variables, esta pantalla se conecta sola. Más detalle en <a href="/ayuda#calendario">Ayuda → Calendario</a>.
-      ${e.cuenta_servicio ? `<br>Compartí el calendario con: <code>${esc(e.cuenta_servicio)}</code>` : ""}</div>`;
-    return;
-  }
-
-  const mal = !!e.ultimo_error;
-  const ultima = e.ultimo_ok_en ? `última sincronización ${calHace(e.ultimo_ok_en)}` : "todavía no sincronizó";
   linea.innerHTML = `
-    <span><span class="cal-punto ${mal ? "mal" : (e.ultimo_ok_en ? "" : "espera")}"></span>Sincronizado con Google Calendar${e.calendario ? ` (${esc(e.calendario)})` : ""} · ${ultima}</span>
-    <span>Se actualiza solo cada ${Math.round((e.sondeo_segundos || 120) / 60)} min</span>
-    <a href="https://calendar.google.com/calendar/u/0/r" target="_blank" rel="noopener">Abrir Google Calendar ↗</a>
-    <a href="#" id="cal-resync" title="Vuelve a leer todo el calendario desde cero">Resincronizar todo</a>`;
-  let html = mal
-    ? `<div class="cal-aviso error"><b>La última sincronización con Google falló:</b> ${esc(e.ultimo_error)}
-        ${e.cuenta_servicio && !e.oauth_conectado ? `<br>Cuenta de servicio: <code>${esc(e.cuenta_servicio)}</code> (el calendario tiene que estar compartido con ese mail).` : ""}
-        ${e.oauth_conectado && /Conectar con Google/.test(e.ultimo_error) ? `<br><a class="cal-btn principal chico" href="/api/calendario/google/conectar">Conectar con Google</a>
-          Entrá con <code>${esc(e.calendario || "la cuenta del estudio")}</code>, aceptá el permiso y copiá el token nuevo a Railway (variable <code>GOOGLE_OAUTH_REFRESH_TOKEN</code>). Lo tiene que hacer un administrador.` : ""}</div>`
+    <span><span class="cal-punto"></span>Calendario interno del panel</span>
+    ${e.link_reunion
+      ? `<span>Link de las videollamadas: <a href="${esc(e.link_reunion)}" target="_blank" rel="noopener">${esc(e.link_reunion)}</a>
+         <a href="#" id="cal-copiar-link">Copiar</a></span>`
+      : "<span>Sin link de reunión cargado: se agenda como llamada o presencial</span>"}`;
+  // La cuenta de Google del estudio ya no la usa el calendario: solo «Guardar en Drive» (análisis de marca).
+  aviso.innerHTML = e.drive_pendiente
+    ? `<div class="cal-aviso">«Guardar en Drive» (análisis de marca) necesita conectar la cuenta de Google del estudio:
+        <a class="cal-btn principal chico" href="/api/calendario/google/conectar">Conectar con Google</a>
+        y copiar el token que aparece a Railway (variable <code>GOOGLE_OAUTH_REFRESH_TOKEN</code>). Lo tiene que hacer un administrador. El calendario no lo necesita.</div>`
     : "";
-  if (!e.puede_meet) html += pasosMeet(e);
-  aviso.innerHTML = html;
-  const r = $("cal-resync");
-  if (r) r.addEventListener("click", (ev) => { ev.preventDefault(); sincronizar(true); });
-}
-
-// Guía para poder generar links de Meet: hace falta conectar la cuenta de Google del estudio.
-function pasosMeet(e) {
-  if (e.oauth_pendiente) {
-    return `<div class="cal-aviso"><b>Último paso para generar links de Meet:</b> conectar la cuenta de Google del estudio.
-      <a class="cal-btn principal chico" href="/api/calendario/google/conectar">Conectar con Google</a>
-      Entrá con <code>${esc(e.calendario || "la cuenta del estudio")}</code>, aceptá el permiso y copiá el token que aparece a Railway
-      (variable <code>GOOGLE_OAUTH_REFRESH_TOKEN</code>). Lo tiene que hacer un administrador.</div>`;
-  }
-  return `<div class="cal-aviso"><b>Para generar links de Meet</b> el panel tiene que usar la cuenta de Google del estudio (la cuenta de servicio no puede). Se hace una sola vez:
-    <ol>
-      <li>En <b>Google Cloud</b> → <i>APIs y servicios</i> → <i>Credenciales</i> → <i>Crear credenciales</i> → <b>ID de cliente de OAuth</b>, tipo <i>Aplicación web</i>.
-        En <i>URI de redireccionamiento autorizados</i> poné: <code>${esc(e.redirect_uri || "")}</code></li>
-      <li>En la <i>Pantalla de consentimiento de OAuth</i>: tipo <i>Externo</i>, agregá el permiso de Calendar y <b>publicá la app («En producción»)</b> para que la conexión no venza a los 7 días. Google va a avisar que la app «no está verificada»: es la nuestra, se acepta.</li>
-      <li>En <b>Railway</b> (servicio del panel): <code>GOOGLE_OAUTH_CLIENT_ID</code> y <code>GOOGLE_OAUTH_CLIENT_SECRET</code>.</li>
-      <li>Volvé acá y tocá <b>Conectar con Google</b>.</li>
-    </ol>
-    Mientras tanto se puede agendar como llamada o presencial. Más detalle en <a href="/ayuda#calendario">Ayuda → Calendario</a>.</div>`;
-}
-
-async function sincronizar(completa = false) {
-  const b = $("cal-sync");
-  b.disabled = true;
-  const txt = b.textContent;
-  b.textContent = "Sincronizando…";
-  try {
-    const r = await apiJson(`/api/calendario/sincronizar?completa=${completa ? "true" : "false"}`, "POST");
-    if (r.omitida) mostrarAviso("Ya hay una sincronización en curso; probá de nuevo en un momento.", "aviso");
-    else mostrarAviso(r.cambios ? `Sincronizado: ${r.cambios} cambio${r.cambios === 1 ? "" : "s"} desde Google Calendar` : "Ya estaba al día");
-  } catch (e) {
-    mostrarAviso(`No se pudo sincronizar: ${e.message}`, "aviso");
-  } finally {
-    b.disabled = false;
-    b.textContent = txt;
-    cargar();
-  }
+  const c = $("cal-copiar-link");
+  if (c) c.addEventListener("click", async (ev) => {
+    ev.preventDefault();
+    try { await navigator.clipboard.writeText(e.link_reunion); mostrarAviso("Link de reunión copiado"); }
+    catch (_) { mostrarAviso("No se pudo copiar: copialo a mano", "aviso"); }
+  });
 }
 
 // ── Pintado ──────────────────────────────────────────────────────────
@@ -579,7 +517,7 @@ function moverMes(n) {
 $("cal-ant").addEventListener("click", () => moverMes(-1));
 $("cal-sig").addEventListener("click", () => moverMes(1));
 $("cal-hoy").addEventListener("click", () => irAlMes(calHoy().slice(0, 7) + "-01", calHoy()));
-$("cal-sync").addEventListener("click", () => sincronizar(false));
+$("cal-sync").addEventListener("click", () => cargar());
 $("cal-agenda-mail").addEventListener("click", async () => {
   if (!confirm("¿Mandar ahora el mail AGENDA con las reuniones y llamadas de mañana?\n\nEs el mismo que sale solo a las 20 hs.")) return;
   const b = $("cal-agenda-mail"), txt = b.textContent;
@@ -625,7 +563,7 @@ $("cal-vista").addEventListener("dblclick", (ev) => {
   if (celda && !ev.target.closest("[data-chip]")) calAbrirModal({ fecha: celda.dataset.dia, alGuardar: () => cargar() });
 });
 
-// Se refresca solo mientras la pestaña está a la vista (el panel ya sincroniza con Google cada pocos minutos).
+// Se refresca solo mientras la pestaña está a la vista (para ver lo que cargó la otra persona).
 setInterval(() => { if (document.visibilityState === "visible" && !document.getElementById("modal-cal")?.classList.contains("abierto")) cargar({ silencioso: true }); }, 60000);
 document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") cargar({ silencioso: true }); });
 

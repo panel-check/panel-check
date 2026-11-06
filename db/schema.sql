@@ -598,7 +598,8 @@ CREATE TABLE IF NOT EXISTS analisis_titular_opcion (
     actualizado_en   TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
--- Agregado el 07/10/2026: Calendario (sincronización con Google Calendar, ver
+-- Agregado el 07/10/2026: Calendario (desde el 06/11/2026 es interno: ya no se
+-- sincroniza con Google Calendar y todas las filas tienen calendar_id = 'panel'; ver
 -- panel/calendario_core.py). calendario_eventos es la copia local de los eventos del
 -- calendario de Google; `actas` son los números de acta que nombra la nota del evento
 -- (el cliente o lead se resuelve al leer). calendario_estado es una sola fila con el

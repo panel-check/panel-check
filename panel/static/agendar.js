@@ -14,7 +14,7 @@ function resumenAgendado(r) {
                           : `⚠️ No se pudo avisar ${quien}: ${_escapeHtml(x.error || "error")}`);
   }
   const meet = e.meet_url
-    ? `<p>🎥 Link de Meet: <a href="${_escapeHtml(e.meet_url)}" target="_blank" rel="noopener">${_escapeHtml(e.meet_url)}</a></p>
+    ? `<p>🎥 Link de la reunión: <a href="${_escapeHtml(e.meet_url)}" target="_blank" rel="noopener">${_escapeHtml(e.meet_url)}</a></p>
        <button type="button" class="cal-btn chico" id="ag-copiar">Copiar link</button>`
     : "";
   $ag("ag-exito").innerHTML = `
@@ -59,7 +59,7 @@ window.addEventListener("message", (ev) => {
   let estado = null;
   try { estado = await api("/api/calendario/estado"); } catch (_) {}
   if (!estado || !estado.configurado) {
-    $ag("ag-estado").innerHTML = '<p class="cal-aviso">El calendario todavía no está conectado con Google. La guía está en <a href="/calendario">Calendario</a>.</p>';
+    $ag("ag-estado").innerHTML = '<p class="cal-aviso">No se pudo abrir el calendario. Probá de nuevo en un momento o entrá a <a href="/calendario">Calendario</a>.</p>';
     return;
   }
   abrirFormulario();
