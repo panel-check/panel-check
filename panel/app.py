@@ -72,6 +72,7 @@ import formularios_api
 import informes_api
 import informes_viabilidad
 import verificador_api
+import buscador_inpi_api
 import verificador_core
 import mails_api
 import mails_core
@@ -4158,6 +4159,11 @@ def pagina_boletines(_: str = Depends(verificar_pagina)):
     return FileResponse(os.path.join(os.path.dirname(__file__), "static", "boletines.html"))
 
 
+@app.get("/buscador-inpi")
+def pagina_buscador_inpi(_: str = Depends(verificar_pagina)):
+    return FileResponse(os.path.join(os.path.dirname(__file__), "static", "buscador_inpi.html"))
+
+
 @app.get("/comentarios")
 def pagina_comentarios(_: str = Depends(verificar_pagina)):
     return FileResponse(os.path.join(os.path.dirname(__file__), "static", "comentarios.html"))
@@ -4253,6 +4259,7 @@ app.include_router(informes_api.crear_router(
     SimpleNamespace(asegurar_claves=_asegurar_claves, cte_marcas=lambda: _cte_marcas_con_clave()),
 ))
 app.include_router(verificador_api.crear_router(verificar_login, conexion))
+app.include_router(buscador_inpi_api.crear_router(verificar_login, conexion))
 app.include_router(accesos_api.crear_router(verificar_login, conexion, CLAVES_ACCESO_RAPIDO, _contar_consulta))
 
 # Pestaña "Mails": cuenta de Resend, remitente, reply-to y plantillas de cada mail.
