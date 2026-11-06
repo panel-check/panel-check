@@ -1204,6 +1204,50 @@ NOMBRE_NORMALIZADO_SQL = (
 )
 TITULAR_NORMALIZADO_SQL = "upper(regexp_replace(trim(titular), '\\s+', ' ', 'g'))"
 
+# Búsqueda por texto del listado (lupa de la barra y campo «Buscar»): la marca y el titular se
+# comparan sin acentos, sin mayúsculas y sin espacios ni signos, así «CINE CATASTROFE»,
+# «cine catástrofe» o «CINE-CATÁSTROFE» encuentran «CINE CATÁSTROFE». Si se escriben varias
+# palabras, también encuentra la marca que las tenga todas en cualquier orden («CATASTROFE CINE»).
+_BUSQ_CON_ACENTO = "ÁÉÍÓÚÜÀÈÌÒÙÂÊÎÔÛÄËÏÖÑÇáéíóúüàèìòùâêîôûäëïöñç"
+_BUSQ_SIN_ACENTO = "AEIOUUAEIOUAEIOUAEIONCaeiouuaeiouaeiouaeionc"
+
+
+def _comparable_sql(columna: str) -> str:
+    """La columna en mayúsculas, sin acentos y solo con letras y números (para comparar textos)."""
+    return (f"regexp_replace(upper(translate(COALESCE({columna}, ''), '{_BUSQ_CON_ACENTO}', '{_BUSQ_SIN_ACENTO}')),"
+            " '[^A-Z0-9]', '', 'g')")
+
+
+def texto_comparable(texto: str) -> str:
+    """Lo mismo que _comparable_sql, del lado de Python: «Cine Catástrofe!» → «CINECATASTROFE»."""
+    import unicodedata
+
+    sin_acentos = "".join(c for c in unicodedata.normalize("NFKD", texto or "") if not unicodedata.combining(c))
+    return re.sub(r"[^A-Z0-9]", "", sin_acentos.upper())
+
+
+def condicion_busqueda_texto(q: str):
+    """(sql, valores) del filtro de búsqueda por texto: marca o titular parecidos (ver arriba),
+    o mail, CUIT o acta que contengan lo escrito (el CUIT y el acta también sin guiones ni espacios)."""
+    crudo = f"%{q}%"
+    partes = ["email ILIKE %s", "email_apoderado ILIKE %s", "cuit ILIKE %s", "acta ILIKE %s"]
+    valores = [crudo, crudo, crudo, crudo]
+    digitos = re.sub(r"\D", "", q)
+    if digitos and len(digitos) >= 4 and digitos != q.strip():
+        partes += ["regexp_replace(COALESCE(cuit, ''), '\\D', '', 'g') LIKE %s", "acta LIKE %s"]
+        valores += [f"%{digitos}%", f"%{digitos}%"]
+    junto = texto_comparable(q)
+    if junto:
+        nombre, nombre_inpi, titular = (_comparable_sql(c) for c in ("denominacion", "denominacion_inpi", "titular"))
+        partes += [f"{nombre} LIKE %s", f"{nombre_inpi} LIKE %s", f"{titular} LIKE %s"]
+        valores += [f"%{junto}%"] * 3
+        palabras = [p for p in (texto_comparable(w) for w in q.split()) if p]
+        if len(palabras) > 1:
+            todo = _comparable_sql("concat_ws(' ', denominacion, denominacion_inpi, titular)")
+            partes.append("(" + " AND ".join(f"{todo} LIKE %s" for _ in palabras) + ")")
+            valores += [f"%{p}%" for p in palabras]
+    return "(" + " OR ".join(partes) + ")", valores
+
 
 def _cruce_clases_sql(minimo, clase_a, clase_b, titular):
     """Devuelve (join_sql, valores_join, condicion_extra) o None si el filtro
@@ -1434,16 +1478,10 @@ def _consulta_marcas(f: dict) -> dict:
         else:
             condiciones.append("estado_tramite = %s")
             valores.append(f["estado_marca"])
-    if f["q"]:
-        condiciones.append(
-            """(
-                titular ILIKE %s OR denominacion ILIKE %s OR denominacion_inpi ILIKE %s
-                OR email ILIKE %s OR email_apoderado ILIKE %s
-                OR cuit ILIKE %s OR acta ILIKE %s
-            )"""
-        )
-        patron = f"%{f['q']}%"
-        valores.extend([patron, patron, patron, patron, patron, patron, patron])
+    if f["q"] and f["q"].strip():
+        sql_q, valores_q = condicion_busqueda_texto(f["q"].strip())
+        condiciones.append(sql_q)
+        valores.extend(valores_q)
 
     join_sql = ""
     columnas_extra = ""
