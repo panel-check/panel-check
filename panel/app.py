@@ -19,11 +19,13 @@ Variables de entorno:
                     - formato viejo (HTTP Basic). Solo se leen una vez, para
                       crear los usuarios si la tabla usuarios_panel está vacía.
                       Después se pueden (y conviene) borrar de Railway.
-    GOOGLE_SERVICE_ACCOUNT_JSON / GOOGLE_CALENDAR_ID
-                    - opcionales, para la sección Calendario (sincronización
-                      con Google Calendar): el contenido completo del .json de
-                      la cuenta de servicio y el ID del calendario. Sin esto la
-                      sección muestra cómo conectarlo. Ver calendario_core.py.
+    CALENDARIO_LINK_REUNION
+                    - opcional, link fijo de las reuniones por videollamada
+                      del calendario interno (por defecto el del estudio).
+                      Desde el 06/11/2026 el calendario no se sincroniza con
+                      Google: GOOGLE_SERVICE_ACCOUNT_JSON y GOOGLE_CALENDAR_ID
+                      ya no se usan (GOOGLE_CALENDAR_ID sigue sirviendo como
+                      mail del equipo si falta CALENDARIO_AVISO_EQUIPO).
     KAN_URL         - opcional, dirección de Kan (tablero de tareas) a la que
                       lleva la pestaña "Tareas" del menú (/tareas).
     GITHUB_TOKEN    - opcional, para la sección "Automatizaciones" (/crons):
@@ -204,9 +206,8 @@ def migrar_columnas_panel():
     except Exception as e:
         print(f"[startup] tabla de análisis de marca salteada (no bloqueante): {e}")
 
-    # Calendario sincronizado con Google Calendar (sección /calendario): no toca
-    # `marcas`. El sondeo (un hilo que pregunta a Google cada 2 minutos qué
-    # cambió) solo se prende si están GOOGLE_SERVICE_ACCOUNT_JSON y GOOGLE_CALENDAR_ID.
+    # Calendario interno (sección /calendario): no toca `marcas`. Desde el 06/11/2026
+    # no se sincroniza con Google; iniciar_sondeo solo deja constancia en el log.
     try:
         with conexion() as conn:
             with conn.cursor() as cur:
@@ -219,7 +220,7 @@ def migrar_columnas_panel():
         calendario_core.iniciar_sondeo(conexion)
     except Exception as e:
         print(f"[startup] sondeo del calendario no arrancó (no bloqueante): {e}")
-    # Mail diario «AGENDA» de las 20 hs (reuniones y llamadas de mañana); necesita el calendario conectado.
+    # Mail diario «AGENDA» de las 20 hs (reuniones y llamadas de mañana).
     try:
         calendario_core.iniciar_agenda_diaria(conexion)
     except Exception as e:
@@ -4252,7 +4253,7 @@ app.include_router(mails_api.crear_router(verificar_login, _auth.verificar_admin
 # Pestaña «Análisis de marca» de la ficha del titular: texto, oposiciones y PDF con membrete.
 app.include_router(analisis_api.crear_router(verificar_login, conexion))
 
-# Sección Calendario: eventos sincronizados con Google Calendar, vinculados por número de acta.
+# Sección Calendario: calendario interno del panel, con eventos vinculados por número de acta.
 app.include_router(calendario_api.crear_router(verificar_login, conexion, _auth.verificar_admin))
 
 

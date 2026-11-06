@@ -1,22 +1,22 @@
 """
-API de la sección Calendario (sincronizada con Google Calendar).
+API de la sección Calendario (calendario interno del panel; desde el 06/11/2026 no se sincroniza con Google).
 
 Se arma con una fábrica (crear_router) para no importar app.py desde acá: app.py
 le pasa el login y la conexión. La lógica está en calendario_core.py.
 
 Rutas:
-  GET    /api/calendario/estado               ¿está configurado? última sincronización, errores
-  POST   /api/calendario/sincronizar          sincronizar ahora (con ?completa=true, relee todo)
+  GET    /api/calendario/estado               estado del calendario interno y link fijo de reunión
+  POST   /api/calendario/sincronizar          (sin efecto: se dejó por compatibilidad)
   GET    /api/calendario/eventos?desde&hasta  eventos de un rango de fechas (AAAA-MM-DD)
   GET    /api/calendario/por-actas?actas=a,b  eventos que nombran esas actas (ficha del titular)
   GET    /api/calendario/actas?actas=a,b      de quién es cada acta (vista previa del formulario)
   GET    /api/calendario/buscar?q=texto       búsqueda en vivo de marcas por nombre, titular, cliente o acta
   POST   /api/calendario/agenda/enviar        manda ahora el mail AGENDA de mañana (el de las 20 hs); si no hay nada, no manda
   POST   /api/calendario/interpretar          «Agendar con IA»: texto pegado → propuesta para el formulario + preguntas (no crea nada)
-  POST   /api/calendario/eventos              crear (en Google y en el panel); con modalidad «meet» genera el link;
+  POST   /api/calendario/eventos              crear; con modalidad «meet» lleva el link fijo de reunión;
                                               con avisar=true manda el mail a la persona y la copia al equipo
   PUT    /api/calendario/eventos/{id}         editar (con avisar=true, manda el aviso de cambio)
-  DELETE /api/calendario/eventos/{id}         borrar (también en Google)
+  DELETE /api/calendario/eventos/{id}         borrar
   GET    /api/calendario/seguimientos         recordatorios pendientes (atrasados incluidos) y los hechos hace poco
   POST   /api/calendario/eventos/{id}/hecho   marcar un recordatorio como hecho (o reabrirlo)
   POST   /api/calendario/eventos/{id}/postergar  pasar un recordatorio pendiente al día hábil siguiente (viernes → lunes)
@@ -26,7 +26,7 @@ Rutas:
   DELETE /api/calendario/disponibilidad/{id}  borrar una ventana
   GET    /api/calendario/dias-cerrados?desde&hasta  los días marcados «sin reuniones» (se pintan en rojo en el calendario)
   DELETE /api/calendario/disponibilidad/cierre/{id}  volver a habilitar un día marcado sin reuniones
-  GET    /api/calendario/google/conectar      (admin) empieza la conexión con la cuenta de Google del estudio (OAuth)
+  GET    /api/calendario/google/conectar      (admin) conexión con la cuenta de Google del estudio (OAuth; hoy solo la usa Google Drive)
   GET    /api/calendario/google/callback      (admin) vuelta de Google: muestra el token para cargar en Railway
 """
 
@@ -121,11 +121,10 @@ def crear_router(verificar_login, conexion, verificar_admin=None) -> APIRouter:
         if not cal.configurado():
             raise HTTPException(
                 status_code=409,
-                detail="El calendario todavía no está conectado con Google (faltan GOOGLE_SERVICE_ACCOUNT_JSON y GOOGLE_CALENDAR_ID en Railway).",
+                detail="El calendario no está disponible.",
             )
 
     def _como_http(e: cal.CalendarioError):
-        # Los errores de Google (permisos, calendario no compartido, pedido rechazado) no son del usuario.
         # 424 y no 502: el proxy de Railway reemplaza el cuerpo de un 502 y la pantalla perdería el motivo.
         codigo = 424 if isinstance(e, cal.GoogleError) else 400
         return HTTPException(status_code=codigo, detail=str(e))
@@ -147,11 +146,9 @@ def crear_router(verificar_login, conexion, verificar_admin=None) -> APIRouter:
                 except Exception:
                     conn.rollback()
                     # La tabla puede no existir todavía si el panel recién arrancó: se informa igual.
-                    return {"configurado": cal.configurado(), "calendario": cal.calendar_id(),
-                            "cuenta_servicio": cal.cuenta_servicio(), "puede_meet": cal.puede_meet(),
-                            "oauth_conectado": cal.oauth_completo(), "oauth_pendiente": cal.oauth_pendiente(),
-                            "aviso_equipo": cal.mail_equipo(), "ultimo_ok_en": None,
-                            "ultimo_error": None, "sondeo_segundos": cal.SONDEO_SEGUNDOS,
+                    return {"configurado": True, "interno": True, "calendario": cal.CAL_PANEL,
+                            "link_reunion": cal.link_reunion(), "puede_meet": cal.puede_meet(),
+                            "aviso_equipo": cal.mail_equipo(),
                             "redirect_uri": _redirect_uri(request),
                             "ia_disponible": ia_texto.configurada()}
 
@@ -235,7 +232,7 @@ def crear_router(verificar_login, conexion, verificar_admin=None) -> APIRouter:
                 return cal._con_vinculos(cur, [cal.evento_a_json(fila)])[0]
 
     def _avisar(evento_id: int, datos: EventoEntrada, accion: str, usuario: str):
-        """El evento ya está en Google: un mail que falla no lo deshace, se informa aparte."""
+        """El evento ya está guardado: un mail que falla no lo deshace, se informa aparte."""
         if not datos.avisar:
             return None
         try:
@@ -357,7 +354,7 @@ def crear_router(verificar_login, conexion, verificar_admin=None) -> APIRouter:
             raise _como_http(e)
         return {"ok": True}
 
-    # ── Conexión con la cuenta de Google del estudio (para poder generar links de Meet) ──
+    # ── Conexión con la cuenta de Google del estudio (hoy solo para Google Drive) ──
 
     def _pagina(titulo: str, cuerpo_html: str, codigo: int = 200) -> HTMLResponse:
         pagina = (
@@ -413,7 +410,7 @@ def crear_router(verificar_login, conexion, verificar_admin=None) -> APIRouter:
                            "<code>myaccount.google.com/permissions</code>, quitale el acceso a la app y volvé a tocar «Conectar con Google».</p>", 400)
         cuenta = ""
         try:
-            c = requests.get(cal.API + "/calendars/primary", headers={"Authorization": f"Bearer {datos['access_token']}"}, timeout=30)
+            c = requests.get("https://www.googleapis.com/calendar/v3/calendars/primary", headers={"Authorization": f"Bearer {datos['access_token']}"}, timeout=30)
             cuenta = (c.json() or {}).get("id") or ""
         except Exception:
             pass
@@ -426,7 +423,7 @@ def crear_router(verificar_login, conexion, verificar_admin=None) -> APIRouter:
             (f"<p>Cuenta conectada: <strong>{_html.escape(cuenta)}</strong>.</p>" if cuenta else "")
             + aviso_cuenta
             + "<p>Último paso: copiá este valor completo y cargalo en Railway, en el servicio del panel, como variable "
-              "<code>GOOGLE_OAUTH_REFRESH_TOKEN</code>. Cuando Railway reinicie el panel, ya se pueden generar links de Meet y guardar los análisis de marca en Drive.</p>"
+              "<code>GOOGLE_OAUTH_REFRESH_TOKEN</code>. Cuando Railway reinicie el panel, ya se pueden guardar los análisis de marca en Drive.</p>"
               f'<p><code style="word-break:break-all;user-select:all;display:block;padding:10px;background:#f4f6f9;border-radius:6px">{_html.escape(refresco)}</code></p>'
               "<p>Es una clave: no la compartas ni la pegues en un chat o mail. Esta página no se guarda en ningún lado; "
               "si la cerrás sin copiarla, se vuelve a generar con «Conectar con Google».</p>"

@@ -12,6 +12,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 import test_calendario as base  # noqa: E402  (deja lista la base falsa de psycopg2)
 
 cc = base.cc
+from calendario_falso import BaseCalendario  # noqa: E402
 HOY = dt.date(2026, 10, 8)   # jueves
 
 
@@ -149,68 +150,59 @@ class Calculo(unittest.TestCase):
         self.assertEqual(cc.unir_ventanas([(480, 600), (600, 720), (800, 900)]), [(480, 720), (800, 900)])
 
 
-class Recordatorios(unittest.TestCase):
-    def test_cuerpo_para_google(self):
-        c = cc._cuerpo_seguimiento({"titulo": "Llamar a Pérez", "fecha": "2026-10-12", "actas": ["1234567"]}, "marcos")
-        self.assertEqual(c["summary"], "🔔 Llamar a Pérez")
-        self.assertEqual(c["colorId"], cc.COLOR_SEGUIMIENTO)
-        self.assertEqual(c["start"].get("date"), "2026-10-12")
-        self.assertEqual(c["extendedProperties"]["private"]["tipo"], "seguimiento")
-        self.assertNotIn("hecho", c["extendedProperties"]["private"])
-        h = cc._cuerpo_seguimiento({"titulo": "Llamar", "fecha": "2026-10-12"}, "marcos", hecho=True)
-        self.assertEqual(h["colorId"], cc.COLOR_SEGUIMIENTO_HECHO)
-        self.assertEqual(h["extendedProperties"]["private"]["hecho"], "1")
+class _ConBase(unittest.TestCase):
+    """Calendario interno sobre la base en memoria (calendario_falso)."""
+
+    def setUp(self):
+        self.env = dict(os.environ)
+        self.base = BaseCalendario()
+        self._parche = self.base.parche(cc)
+        self._parche.__enter__()
+
+    def tearDown(self):
+        self._parche.__exit__(None, None, None)
+        os.environ.clear(); os.environ.update(self.env)
+
+
+class Recordatorios(_ConBase):
+    def test_se_guarda_de_todo_el_dia_sin_modalidad(self):
+        nuevo = cc.crear_evento(self.base.conexion, {"titulo": "🔔 Llamar a Pérez", "fecha": "2026-10-12", "hora": "10:00",
+                                                      "actas": ["1234567"], "tipo": "seguimiento", "modalidad": "meet"}, "marcos")
+        f = self.base.filas[nuevo]
+        self.assertEqual((f["tipo"], f["hecho"], f["titulo"]), ("seguimiento", False, "Llamar a Pérez"))
+        self.assertTrue(f["todo_el_dia"])
+        self.assertIsNone(f["modalidad"]); self.assertIsNone(f["meet_url"])
+        self.assertEqual(f["inicio"], _ts(2026, 10, 12))
+        self.assertEqual(f["actas"], ["1234567"])
 
     def test_sin_titulo_falla(self):
         with self.assertRaises(cc.CalendarioError):
-            cc._cuerpo_seguimiento({"titulo": "🔔  ", "fecha": "2026-10-12"}, "m")
+            cc.crear_evento(self.base.conexion, {"titulo": "🔔  ", "fecha": "2026-10-12", "tipo": "seguimiento"}, "m")
+        self.assertEqual(self.base.filas, {})
 
-    def test_tipo_seguimiento_va_por_cuerpo_evento(self):
-        c = cc._cuerpo_evento({"titulo": "x", "fecha": "2026-10-12", "tipo": "seguimiento", "modalidad": "meet"}, "m")
-        self.assertEqual(c["summary"], "🔔 x")
-        self.assertNotIn("modalidad", c["extendedProperties"]["private"])
-
-    def test_google_a_fila_saca_la_campanita_y_lee_el_estado(self):
-        e = base.ev("s1", "🔔 Llamar a Pérez")
-        e["start"], e["end"] = {"date": "2026-10-12"}, {"date": "2026-10-13"}
-        e["extendedProperties"] = {"private": {"panel": "1", "tipo": "seguimiento", "hecho": "1"}}
-        f = cc.evento_a_fila(e, "c")
-        self.assertEqual((f["tipo"], f["hecho"], f["titulo"]), ("seguimiento", True, "Llamar a Pérez"))
-        self.assertIsNone(f["modalidad"])
-        normal = cc.evento_a_fila(base.ev("a"), "c")
-        self.assertEqual((normal["tipo"], normal["hecho"]), ("evento", False))
+    def test_editar_sigue_siendo_recordatorio_y_conserva_hecho(self):
+        r = self.base.agregar(tipo="seguimiento", hecho=True, todo_el_dia=True, inicio=_ts(2026, 10, 12), fin=_ts(2026, 10, 13))
+        cc.editar_evento(self.base.conexion, r, {"titulo": "Otro", "fecha": "2026-10-20", "tipo": "evento", "modalidad": "meet"}, "m")
+        f = self.base.filas[r]
+        self.assertEqual((f["tipo"], f["hecho"], f["titulo"], f["meet_url"]), ("seguimiento", True, "Otro", None))
+        self.assertEqual(f["inicio"], _ts(2026, 10, 20))
 
 
-class MarcarHecho(unittest.TestCase):
-    def setUp(self):
-        self.env = dict(os.environ)
-        os.environ["GOOGLE_CALENDAR_ID"] = "estudio@gmail.com"
-        os.environ["GOOGLE_SERVICE_ACCOUNT_JSON"] = '{"client_email": "sa@x.iam", "private_key": "k"}'
-        self.pedidos = []
-        self._pedir, self._guardar = cc._pedir, cc._guardar_resultado
-        cc._pedir = lambda metodo, ruta, **kw: self.pedidos.append((metodo, ruta, kw.get("json"))) or {"id": "g1"}
-        cc._guardar_resultado = lambda conexion, recurso: 7
-
-    def tearDown(self):
-        cc._pedir, cc._guardar_resultado = self._pedir, self._guardar
-        os.environ.clear(); os.environ.update(self.env)
-
+class MarcarHecho(_ConBase):
     def test_marca_y_reabre(self):
-        cc.marcar_hecho(conexion_falsa([("g1", "seguimiento")]), 7, True)
-        cuerpo = self.pedidos[-1][2]
-        self.assertEqual(cuerpo["colorId"], cc.COLOR_SEGUIMIENTO_HECHO)
-        self.assertEqual(cuerpo["extendedProperties"]["private"]["hecho"], "1")
-        cc.marcar_hecho(conexion_falsa([("g1", "seguimiento")]), 7, False)
-        cuerpo = self.pedidos[-1][2]
-        self.assertEqual(cuerpo["colorId"], cc.COLOR_SEGUIMIENTO)
-        self.assertIsNone(cuerpo["extendedProperties"]["private"]["hecho"])
+        r = self.base.agregar(tipo="seguimiento")
+        cc.marcar_hecho(self.base.conexion, r, True)
+        self.assertTrue(self.base.filas[r]["hecho"])
+        cc.marcar_hecho(self.base.conexion, r, False)
+        self.assertFalse(self.base.filas[r]["hecho"])
 
     def test_un_evento_comun_no_se_marca(self):
+        e = self.base.agregar(tipo="evento")
         with self.assertRaises(cc.CalendarioError):
-            cc.marcar_hecho(conexion_falsa([("g1", "evento")]), 7)
+            cc.marcar_hecho(self.base.conexion, e)
         with self.assertRaises(cc.CalendarioError):
-            cc.marcar_hecho(conexion_falsa([]), 7)
-        self.assertEqual(self.pedidos, [])
+            cc.marcar_hecho(self.base.conexion, 99)
+        self.assertFalse(self.base.filas[e]["hecho"])
 
 
 def _ts(y, m, d):
@@ -257,109 +249,68 @@ class DiasHabiles(unittest.TestCase):
         self.assertEqual(cc.fecha_pase_automatico(self.SAB, self.DOM), self.LUN)
 
 
-class _BaseGoogleFalso(unittest.TestCase):
-    """Google falso (anota los PATCH) y variables de entorno del calendario; sin tests propios."""
+class PostergarRecordatorio(_ConBase):
     HOY = dt.date(2026, 10, 13)   # martes
 
-    def setUp(self):
-        self.env = dict(os.environ)
-        os.environ["GOOGLE_CALENDAR_ID"] = "estudio@gmail.com"
-        os.environ["GOOGLE_SERVICE_ACCOUNT_JSON"] = '{"client_email": "sa@x.iam", "private_key": "k"}'
-        self.pedidos = []
-        self.falla = None
-        self._pedir, self._guardar = cc._pedir, cc._guardar_resultado
+    def fila(self, d=13, tipo="seguimiento", hecho=False, dias=1):
+        return self.base.agregar(tipo=tipo, hecho=hecho, todo_el_dia=True, inicio=_ts(2026, 10, d),
+                                 fin=_ts(2026, 10, d) + dt.timedelta(days=dias))
 
-        def pedir(metodo, ruta, **kw):
-            if self.falla:
-                raise self.falla
-            self.pedidos.append((metodo, ruta, kw.get("json")))
-            return {"id": "g1"}
-        cc._pedir = pedir
-        cc._guardar_resultado = lambda conexion, recurso: 7
-
-    def tearDown(self):
-        cc._pedir, cc._guardar_resultado = self._pedir, self._guardar
-        os.environ.clear(); os.environ.update(self.env)
-
-
-
-class PostergarRecordatorio(_BaseGoogleFalso):
-    def fila(self, y=2026, m=10, d=13, tipo="seguimiento", hecho=False, dias=1):
-        return ("g1", tipo, hecho, _ts(y, m, d), _ts(y, m, d) + dt.timedelta(days=dias))
+    def fechas(self, i):
+        f = self.base.filas[i]
+        return f["inicio"].date().isoformat(), f["fin"].date().isoformat()
 
     def test_martes_pasa_al_miercoles(self):
-        nueva = cc.postergar_recordatorio(conexion_falsa([self.fila()]), 7, hoy=self.HOY)
-        self.assertEqual(nueva, dt.date(2026, 10, 14))
-        metodo, ruta, cuerpo = self.pedidos[-1]
-        self.assertEqual(metodo, "PATCH")
-        self.assertTrue(ruta.endswith("/events/g1"))
-        self.assertEqual(cuerpo["start"]["date"], "2026-10-14")
-        self.assertEqual(cuerpo["end"]["date"], "2026-10-15")
-        # no toca color ni si está hecho
-        self.assertNotIn("colorId", cuerpo)
-        self.assertNotIn("extendedProperties", cuerpo)
-        # y anula dateTime/timeZone para que el PATCH no mezcle fecha con hora
-        self.assertIsNone(cuerpo["start"]["dateTime"])
+        r = self.fila()
+        self.assertEqual(cc.postergar_recordatorio(self.base.conexion, r, hoy=self.HOY), dt.date(2026, 10, 14))
+        self.assertEqual(self.fechas(r), ("2026-10-14", "2026-10-15"))
+        self.assertFalse(self.base.filas[r]["hecho"])
+        self.assertEqual(self.base.filas[r]["inicio"], _ts(2026, 10, 14))   # 00:00 de Argentina
 
     def test_viernes_pasa_al_lunes(self):
-        nueva = cc.postergar_recordatorio(conexion_falsa([self.fila(d=16)]), 7, hoy=dt.date(2026, 10, 16))
-        self.assertEqual(nueva, dt.date(2026, 10, 19))
-        self.assertEqual(self.pedidos[-1][2]["start"]["date"], "2026-10-19")
+        r = self.fila(d=16)
+        self.assertEqual(cc.postergar_recordatorio(self.base.conexion, r, hoy=dt.date(2026, 10, 16)), dt.date(2026, 10, 19))
 
     def test_conserva_el_largo_en_dias(self):
-        cc.postergar_recordatorio(conexion_falsa([self.fila(dias=3)]), 7, hoy=self.HOY)
-        cuerpo = self.pedidos[-1][2]
-        self.assertEqual((cuerpo["start"]["date"], cuerpo["end"]["date"]), ("2026-10-14", "2026-10-17"))
+        r = self.fila(dias=3)
+        cc.postergar_recordatorio(self.base.conexion, r, hoy=self.HOY)
+        self.assertEqual(self.fechas(r), ("2026-10-14", "2026-10-17"))
 
     def test_no_se_posterga_lo_que_no_corresponde(self):
-        with self.assertRaises(cc.CalendarioError):
-            cc.postergar_recordatorio(conexion_falsa([self.fila(tipo="evento")]), 7, hoy=self.HOY)
-        with self.assertRaises(cc.CalendarioError):
-            cc.postergar_recordatorio(conexion_falsa([self.fila(hecho=True)]), 7, hoy=self.HOY)
-        with self.assertRaises(cc.CalendarioError):
-            cc.postergar_recordatorio(conexion_falsa([]), 7, hoy=self.HOY)
-        self.assertEqual(self.pedidos, [])
+        evento, hecho = self.fila(tipo="evento"), self.fila(hecho=True)
+        for i in (evento, hecho, 99):
+            with self.assertRaises(cc.CalendarioError):
+                cc.postergar_recordatorio(self.base.conexion, i, hoy=self.HOY)
+        self.assertEqual(self.fechas(evento), ("2026-10-13", "2026-10-14"))
 
 
-class PaseAutomatico(_BaseGoogleFalso):
+class PaseAutomatico(_ConBase):
     HOY = dt.date(2026, 10, 14)   # miércoles
 
-    def fila_pase(self, google_id, d, dias=1):
-        return (google_id, _ts(2026, 10, d), _ts(2026, 10, d) + dt.timedelta(days=dias))
+    def fila(self, d, tipo="seguimiento", hecho=False):
+        return self.base.agregar(tipo=tipo, hecho=hecho, todo_el_dia=True, inicio=_ts(2026, 10, d), fin=_ts(2026, 10, d + 1))
 
     def test_mueve_los_atrasados_y_deja_el_resto(self):
-        ejecutadas = []
-        filas = [self.fila_pase("a", 13), self.fila_pase("b", 9)]   # martes y viernes anterior, ambos sin hacer
-        n = cc.pasar_recordatorios_atrasados(conexion_falsa(ejecutadas=ejecutadas, filas_fetchall=filas), hoy=self.HOY)
-        self.assertEqual(n, 2)
-        # el SQL pide solo pendientes de tipo seguimiento con fecha anterior a hoy (00:00 de Argentina)
-        sql, params = ejecutadas[0]
-        self.assertIn("NOT hecho", sql)
-        self.assertEqual(params[1], cc.TIPO_SEGUIMIENTO)
-        self.assertEqual(params[2], dt.datetime(2026, 10, 14, tzinfo=cc.TZ))
+        martes, viernes = self.fila(13), self.fila(9)           # sin hacer
+        hecho, futuro, evento = self.fila(12, hecho=True), self.fila(20), self.fila(10, tipo="evento")
+        self.assertEqual(cc.pasar_recordatorios_atrasados(self.base.conexion, hoy=self.HOY), 2)
         # los dos pasan a hoy (miércoles): el martes por «día siguiente», el viernes viejo porque no puede quedar atrasado
-        self.assertEqual([p[2]["start"]["date"] for p in self.pedidos], ["2026-10-14", "2026-10-14"])
+        for i in (martes, viernes):
+            self.assertEqual(self.base.filas[i]["inicio"], _ts(2026, 10, 14))
+        self.assertEqual(self.base.filas[hecho]["inicio"], _ts(2026, 10, 12))
+        self.assertEqual(self.base.filas[futuro]["inicio"], _ts(2026, 10, 20))
+        self.assertEqual(self.base.filas[evento]["inicio"], _ts(2026, 10, 10))
 
     def test_sin_atrasados_no_hace_nada(self):
-        self.assertEqual(cc.pasar_recordatorios_atrasados(conexion_falsa(), hoy=self.HOY), 0)
-        self.assertEqual(self.pedidos, [])
+        self.assertEqual(cc.pasar_recordatorios_atrasados(self.base.conexion, hoy=self.HOY), 0)
 
     def test_viernes_sin_hacer_el_sabado_pasa_al_lunes(self):
-        n = cc.pasar_recordatorios_atrasados(conexion_falsa(filas_fetchall=[self.fila_pase("v", 16)]), hoy=dt.date(2026, 10, 17))
-        self.assertEqual(n, 1)
-        self.assertEqual(self.pedidos[-1][2]["start"]["date"], "2026-10-19")
-
-    def test_borrado_en_google_se_saltea(self):
-        self.falla = cc.GoogleError(404, "no existe")
-        n = cc.pasar_recordatorios_atrasados(conexion_falsa(filas_fetchall=[self.fila_pase("a", 13)]), hoy=self.HOY)
-        self.assertEqual(n, 0)
-
-    def test_un_error_de_google_corta_la_tanda(self):
-        self.falla = cc.GoogleError(403, "sin permiso")
-        with self.assertRaises(cc.GoogleError):
-            cc.pasar_recordatorios_atrasados(conexion_falsa(filas_fetchall=[self.fila_pase("a", 13)]), hoy=self.HOY)
+        v = self.fila(16)
+        self.assertEqual(cc.pasar_recordatorios_atrasados(self.base.conexion, hoy=dt.date(2026, 10, 17)), 1)
+        self.assertEqual(self.base.filas[v]["inicio"], _ts(2026, 10, 19))
 
     def test_se_puede_apagar(self):
+        os.environ.pop("RECORDATORIOS_PASE_AUTOMATICO", None)
         self.assertTrue(cc.pase_recordatorios_activo())
         for valor in ("off", "OFF", "0", "no"):
             os.environ["RECORDATORIOS_PASE_AUTOMATICO"] = valor
@@ -389,7 +340,7 @@ class TextoWhatsApp(unittest.TestCase):
         hoy = dt.date(2026, 10, 13)
         t = cc.texto_whatsapp(self.ev(modalidad="meet", meet_url="https://meet.google.com/abc"), hoy=hoy)
         self.assertEqual(t.splitlines()[0],
-                         "Hola! Cómo estás? Te paso los datos de nuestra reunión virtual por Google Meet de hoy:")
+                         "Hola! Cómo estás? Te paso los datos de nuestra reunión virtual de hoy:")
         t = cc.texto_whatsapp(self.ev(modalidad="llamada", lugar="11 5555-1234"), hoy=hoy)
         self.assertEqual(t.splitlines()[0],
                          "Hola! Cómo estás? Te paso los datos de nuestra llamada telefónica de hoy:")
@@ -400,9 +351,9 @@ class TextoWhatsApp(unittest.TestCase):
     def test_saludo_si_no_es_hoy(self):
         ev = self.ev(modalidad="meet", meet_url="https://meet.google.com/abc")
         manana = cc.texto_whatsapp(ev, hoy=dt.date(2026, 10, 12)).splitlines()[0]
-        self.assertTrue(manana.endswith("Google Meet de mañana:"))
+        self.assertTrue(manana.endswith("reunión virtual de mañana:"))
         otro = cc.texto_whatsapp(ev, hoy=dt.date(2026, 10, 1)).splitlines()[0]
-        self.assertTrue(otro.endswith("Google Meet:"))
+        self.assertTrue(otro.endswith("reunión virtual:"))
 
     def test_json_trae_el_texto_solo_en_reuniones(self):
         f = base.fila_evento()

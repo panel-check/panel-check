@@ -1,37 +1,25 @@
 """
-Calendario del panel sincronizado con Google Calendar.
+Calendario interno del panel (desde el 06/11/2026 ya no se sincroniza con Google Calendar).
 
 Qué hace:
-  - Lee los eventos de UN calendario de Google (el del estudio) y los copia a la
-    tabla `calendario_eventos`, para que la sección /calendario del panel los
-    muestre sin consultar a Google en cada visita.
-  - Lo que se agenda desde el panel (ficha del lead, sección Calendario) se crea
-    primero en Google y después se copia acá: se ve en los dos lados.
-  - Lo que se agenda directamente en Google Calendar aparece en el panel en un
-    par de minutos (sondeo incremental con syncToken: Google solo devuelve lo
-    que cambió desde la última vez).
+  - Los eventos (reuniones, llamadas) y los recordatorios viven solo en la tabla
+    `calendario_eventos`: se crean, editan, borran, marcan como hechos y postergan
+    directamente en la base, sin depender de ninguna clave ni conexión externa.
+  - Las videollamadas usan siempre el mismo link de reunión del estudio
+    (variable CALENDARIO_LINK_REUNION; por defecto LINK_REUNION_DEFECTO).
+  - Los eventos que se habían copiado de Google antes del cambio se conservan y se
+    editan como cualquier otro (quedan con calendar_id = «panel»).
   - Si en el título o la nota del evento figura un número de acta ("Acta
     4797001", "Actas 4797001 y 4797002", "#4797001" o incluso el número suelto
     si existe en la base), el evento queda vinculado al titular o cliente dueño
-    de esa marca. El vínculo NO se guarda: se calcula al leer, así que si la
-    marca se carga después, el evento se vincula solo.
+    de esa marca. El vínculo se recalcula al guardar.
 
-Acceso a Google, de dos maneras (variables de entorno en Railway):
-  1) Cuenta de servicio (sirve para ver y agendar, pero Google no le deja crear
-     links de Meet a una cuenta de servicio con Gmail común):
-       GOOGLE_SERVICE_ACCOUNT_JSON  el contenido COMPLETO del .json.
-       GOOGLE_CALENDAR_ID           el ID del calendario (para el calendario
-                                    principal de una cuenta Gmail es el mismo mail).
-     El calendario tiene que estar compartido con el mail de la cuenta de servicio
-     (client_email del JSON) con permiso «Hacer cambios en eventos».
-  2) La propia cuenta de Google del estudio (OAuth): lo que hace falta para generar
-     links de Meet. Si estas tres variables están, se usan en lugar de la cuenta de servicio:
-       GOOGLE_OAUTH_CLIENT_ID, GOOGLE_OAUTH_CLIENT_SECRET, GOOGLE_OAUTH_REFRESH_TOKEN
-     (el token se consigue con el botón «Conectar con Google» de la pantalla Calendario).
+Las variables GOOGLE_OAUTH_* siguen usándose para Google Drive (drive_core.py);
+el calendario ya no las necesita.
 
-Al agendar desde el panel se elige la modalidad (videollamada de Meet, llamada o
-presencial) y, si se pide, se manda un mail de aviso a la persona y una copia al
-equipo (por Resend, ver armar_aviso / avisar).
+Al agendar se elige la modalidad (videollamada, llamada o presencial) y, si se pide,
+se manda un mail de aviso a la persona y una copia al equipo (por Resend, ver
+armar_aviso / avisar).
 
 Sin FastAPI: lo usan el panel (calendario_api.py) y las pruebas.
 """
@@ -50,21 +38,14 @@ import psycopg2.extras
 TZ_NOMBRE = "America/Argentina/Buenos_Aires"
 TZ = ZoneInfo(TZ_NOMBRE)
 
-API = "https://www.googleapis.com/calendar/v3"
-SCOPE = "https://www.googleapis.com/auth/calendar"
+SCOPE = "https://www.googleapis.com/auth/calendar"     # lo sigue pidiendo la conexión de Google Drive
 TOKEN_URI = "https://oauth2.googleapis.com/token"
 AUTH_URI = "https://accounts.google.com/o/oauth2/v2/auth"
 
-# Primera sincronización (y la completa semanal): ventana de eventos que se copian.
-DIAS_ATRAS = 90
-DIAS_ADELANTE = 400
-# Cada tanto se rehace la sincronización completa para que la ventana acompañe al día de hoy.
-RESINCRONIZAR_CADA_DIAS = 7
-SONDEO_SEGUNDOS = 120
-
-# Candado de Postgres: solo una corrida de sincronización a la vez (aunque haya
-# más de una instancia del panel o se apriete «Sincronizar ahora» en simultáneo).
-CLAVE_CANDADO = 7424001
+# Todos los eventos del calendario interno se guardan con este calendar_id.
+CAL_PANEL = "panel"
+# Link fijo para todas las reuniones por videollamada con clientes (decisión con Pame, 06/11/2026).
+LINK_REUNION_DEFECTO = "https://calendar.app.google/MEWNwFCPrYv1pYgz5"
 
 
 class CalendarioError(Exception):
@@ -95,6 +76,8 @@ def _info_cuenta():
 
 
 def calendar_id():
+    """GOOGLE_CALENDAR_ID (el mail del calendario de Google). El calendario ya no lo usa para guardar
+    eventos (ver CAL_PANEL); solo sirve de mail del equipo si falta CALENDARIO_AVISO_EQUIPO."""
     return (os.environ.get("GOOGLE_CALENDAR_ID") or "").strip() or None
 
 
@@ -115,13 +98,20 @@ def oauth_pendiente() -> bool:
     return bool(cid and secreto and not token)
 
 
+def link_reunion() -> str:
+    """El link de videollamada que llevan todas las reuniones (CALENDARIO_LINK_REUNION o el del estudio)."""
+    valor = os.environ.get("CALENDARIO_LINK_REUNION")
+    return (LINK_REUNION_DEFECTO if valor is None else valor).strip()
+
+
 def puede_meet() -> bool:
-    return oauth_completo() and bool(calendar_id())
+    """Hay link de reunión cargado: se puede agendar como videollamada."""
+    return bool(link_reunion())
 
 
 def configurado() -> bool:
-    credenciales = oauth_completo() or bool((os.environ.get("GOOGLE_SERVICE_ACCOUNT_JSON") or "").strip())
-    return bool(credenciales and calendar_id())
+    """El calendario interno siempre está disponible (no depende de Google)."""
+    return True
 
 
 def cuenta_servicio():
@@ -131,93 +121,6 @@ def cuenta_servicio():
     except CalendarioError:
         return None
     return info and info.get("client_email")
-
-
-_sesion_lock = threading.Lock()
-_sesion_cache = {"clave": None, "sesion": None}
-
-
-def _sesion():
-    if not calendar_id():
-        raise CalendarioError("Falta configurar GOOGLE_CALENDAR_ID en Railway.")
-    cid, secreto, token = _oauth_config()
-    if cid and secreto and token:
-        clave = ("oauth", cid, token)
-    else:
-        info = _info_cuenta()
-        if not info:
-            raise CalendarioError("Falta configurar GOOGLE_SERVICE_ACCOUNT_JSON (o conectar la cuenta de Google) y GOOGLE_CALENDAR_ID en Railway.")
-        clave = ("servicio", info["client_email"], info.get("private_key_id"))
-    with _sesion_lock:
-        if _sesion_cache["clave"] != clave:
-            from google.auth.transport.requests import AuthorizedSession
-
-            if clave[0] == "oauth":
-                from google.oauth2.credentials import Credentials
-
-                creds = Credentials(None, refresh_token=token, token_uri=TOKEN_URI, client_id=cid,
-                                    client_secret=secreto, scopes=[SCOPE])
-            else:
-                from google.oauth2 import service_account
-
-                creds = service_account.Credentials.from_service_account_info(info, scopes=[SCOPE])
-            _sesion_cache["sesion"] = AuthorizedSession(creds)
-            _sesion_cache["clave"] = clave
-        return _sesion_cache["sesion"]
-
-
-def _mensaje_google(status, cuerpo):
-    detalle = ""
-    try:
-        detalle = (cuerpo.get("error") or {}).get("message") or ""
-    except Exception:
-        pass
-    if oauth_completo():
-        if status == 404:
-            return ("Google no encuentra el calendario: con la cuenta del estudio conectada, GOOGLE_CALENDAR_ID tiene que ser el mail "
-                    "de esa misma cuenta (o el ID de un calendario suyo).")
-        if status == 403:
-            return f"Google rechazó el acceso con la cuenta conectada (¿Calendar API desactivada o sin permiso de edición?). {detalle}".strip()
-        if status == 401:
-            return f"Google no aceptó la conexión con la cuenta del estudio: hay que volver a conectarla. {detalle}".strip()
-    if status == 404:
-        return ("Google no encuentra el calendario: revisá GOOGLE_CALENDAR_ID y que el calendario esté compartido con "
-                f"{cuenta_servicio() or 'la cuenta de servicio'} (permiso «Hacer cambios en eventos»).")
-    if status == 403:
-        return ("Google rechazó el acceso: puede que la Calendar API no esté activada en el proyecto de Google Cloud, "
-                f"o que el calendario no esté compartido con {cuenta_servicio() or 'la cuenta de servicio'} con permiso de edición. {detalle}").strip()
-    if status == 401:
-        return f"Google no aceptó la cuenta de servicio (clave inválida o revocada). {detalle}".strip()
-    return f"Google respondió {status}. {detalle}".strip()
-
-
-def _pedir(metodo, ruta, **kw):
-    """Pedido a la API de Google Calendar; devuelve el JSON (o None si no hay cuerpo)."""
-    sesion = _sesion()
-    try:
-        r = sesion.request(metodo, API + ruta, timeout=30, **kw)
-    except CalendarioError:
-        raise
-    except Exception as e:  # red caída, clave mal formada, etc.
-        if "invalid_grant" in str(e) or "invalid_client" in str(e):
-            raise CalendarioError("Google ya no acepta la conexión con la cuenta del estudio (el permiso se revocó, venció o cambió el cliente OAuth). "
-                                  "Entrá a Calendario → «Conectar con Google» y cargá el token nuevo en GOOGLE_OAUTH_REFRESH_TOKEN.")
-        raise CalendarioError(f"No se pudo hablar con Google: {e}")
-    if r.status_code >= 400:
-        try:
-            cuerpo = r.json()
-        except Exception:
-            cuerpo = {}
-        raise GoogleError(r.status_code, _mensaje_google(r.status_code, cuerpo))
-    if not r.content:
-        return None
-    return r.json()
-
-
-def _ruta_eventos(extra=""):
-    from urllib.parse import quote
-
-    return f"/calendars/{quote(calendar_id(), safe='')}/events{extra}"
 
 
 # ── Tablas ─────────────────────────────────────────────────────────────
@@ -251,7 +154,7 @@ def crear_tablas(cur):
     cur.execute("ALTER TABLE calendario_eventos ADD COLUMN IF NOT EXISTS meet_url TEXT")
     # Mail de la persona a la que se le avisa (para poder avisarle también si después se cambia la fecha u hora).
     cur.execute("ALTER TABLE calendario_eventos ADD COLUMN IF NOT EXISTS email_aviso TEXT")
-    # Recordatorios / seguimientos (08/10/2026): eventos de «todo el día» con otro color en Google.
+    # Recordatorios / seguimientos (08/10/2026): eventos de «todo el día».
     # tipo: 'evento' (reunión, llamada…) | 'seguimiento'; hecho: el recordatorio ya se cumplió.
     cur.execute("ALTER TABLE calendario_eventos ADD COLUMN IF NOT EXISTS tipo TEXT NOT NULL DEFAULT 'evento'")
     cur.execute("ALTER TABLE calendario_eventos ADD COLUMN IF NOT EXISTS hecho BOOLEAN NOT NULL DEFAULT false")
@@ -298,6 +201,16 @@ def crear_tablas(cur):
     )
     cur.execute("CREATE INDEX IF NOT EXISTS idx_calendario_eventos_inicio ON calendario_eventos(inicio)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_calendario_eventos_actas ON calendario_eventos USING GIN (actas)")
+    # 06/11/2026: el calendario dejó de sincronizarse con Google. Lo que se había copiado de Google pasa al
+    # calendario interno (calendar_id = 'panel') para seguir viéndose y poder editarlo desde el panel.
+    cur.execute(
+        """
+        UPDATE calendario_eventos e SET calendar_id = %s
+        WHERE e.calendar_id <> %s
+          AND NOT EXISTS (SELECT 1 FROM calendario_eventos p WHERE p.calendar_id = %s AND p.google_id = e.google_id)
+        """,
+        (CAL_PANEL, CAL_PANEL, CAL_PANEL),
+    )
     cur.execute(
         """
         CREATE TABLE IF NOT EXISTS calendario_estado (
@@ -390,10 +303,10 @@ def actas_del_evento(titulo, descripcion, privadas, existentes: set) -> list:
     return actas
 
 
-# ── Eventos de Google → filas ──────────────────────────────────────────
+# ── Texto de los eventos ───────────────────────────────────────────────
 
 def texto_plano(s: str) -> str:
-    """La nota de un evento de Google puede traer HTML (<br>, <a>...): se guarda como texto."""
+    """La nota de un evento (los copiados de Google) puede traer HTML (<br>, <a>...): se guarda como texto."""
     if not s:
         return ""
     s = re.sub(r"(?i)<\s*br\s*/?\s*>", "\n", s)
@@ -403,84 +316,13 @@ def texto_plano(s: str) -> str:
     return re.sub(r"\n{3,}", "\n\n", s).strip()
 
 
-def _fecha_hora(valor: dict):
-    """{'dateTime': ...} o {'date': ...} de Google → (datetime con zona, es_todo_el_dia)."""
-    if valor.get("dateTime"):
-        s = valor["dateTime"].replace("Z", "+00:00")
-        d = _dt.datetime.fromisoformat(s)
-        if d.tzinfo is None:
-            d = d.replace(tzinfo=TZ)
-        return d, False
-    d = _dt.date.fromisoformat(valor["date"])
-    return _dt.datetime.combine(d, _dt.time(0, 0), tzinfo=TZ), True
-
-
 MODALIDADES = ("meet", "llamada", "presencial")
 
-# Recordatorios / seguimientos: eventos de «todo el día» marcados en Google (propiedad privada «tipo»)
-# con otro color. Pendiente = naranja (Mandarina); hecho = gris (Grafito).
+# Recordatorios / seguimientos: eventos de «todo el día» con tipo = 'seguimiento'.
+# En el panel se ven en naranja (pendiente) o gris (hecho).
 TIPO_EVENTO = "evento"
 TIPO_SEGUIMIENTO = "seguimiento"
 ICONO_SEGUIMIENTO = "🔔"
-COLOR_SEGUIMIENTO = "6"
-COLOR_SEGUIMIENTO_HECHO = "8"
-
-
-def meet_de_evento(ev: dict):
-    """Link de la videollamada de Meet de un evento de Google (o None)."""
-    if ev.get("hangoutLink"):
-        return ev["hangoutLink"]
-    for punto in ((ev.get("conferenceData") or {}).get("entryPoints") or []):
-        if punto.get("entryPointType") == "video" and punto.get("uri"):
-            return punto["uri"]
-    return None
-
-
-def evento_a_fila(ev: dict, calendar: str) -> dict:
-    """Un evento de la API de Google → los campos de calendario_eventos (sin actas validadas)."""
-    inicio, todo = _fecha_hora(ev.get("start") or {})
-    fin, _ = _fecha_hora(ev.get("end") or ev.get("start") or {})
-    if fin <= inicio:
-        fin = inicio + (_dt.timedelta(days=1) if todo else _dt.timedelta(minutes=30))
-    privadas = ((ev.get("extendedProperties") or {}).get("private")) or {}
-    actualizado = None
-    if ev.get("updated"):
-        try:
-            actualizado = _dt.datetime.fromisoformat(ev["updated"].replace("Z", "+00:00"))
-        except ValueError:
-            pass
-    meet = meet_de_evento(ev)
-    modalidad = privadas.get("modalidad") if privadas.get("modalidad") in MODALIDADES else None
-    if meet:
-        modalidad = "meet"
-    elif modalidad == "meet":
-        modalidad = None  # le sacaron el Meet desde Google
-    titulo = (ev.get("summary") or "").strip() or "(sin título)"
-    es_seguimiento = privadas.get("tipo") == TIPO_SEGUIMIENTO
-    if es_seguimiento:
-        # En Google el título lleva la campanita para reconocerlo de un vistazo; en el panel la pone el estilo.
-        titulo = titulo.replace(ICONO_SEGUIMIENTO, "", 1).strip() or "(sin título)"
-    return {
-        "modalidad": None if es_seguimiento else modalidad,
-        "meet_url": None if es_seguimiento else meet,
-        "email_aviso": None if es_seguimiento else ((privadas.get("email_aviso") or "").strip() or None),
-        "tipo": TIPO_SEGUIMIENTO if es_seguimiento else TIPO_EVENTO,
-        "hecho": bool(es_seguimiento and privadas.get("hecho") == "1"),
-        "calendar_id": calendar,
-        "google_id": ev["id"],
-        "titulo": titulo,
-        "descripcion": texto_plano(ev.get("description") or ""),
-        "lugar": (ev.get("location") or "").strip() or None,
-        "inicio": inicio,
-        "fin": fin,
-        "todo_el_dia": todo,
-        "privadas_actas": privadas.get("actas") or "",
-        "origen": "panel" if privadas.get("panel") == "1" else "google",
-        "creado_por": privadas.get("usuario") or ((ev.get("creator") or {}).get("email")),
-        "link": ev.get("htmlLink"),
-        "etag": ev.get("etag"),
-        "actualizado_google": actualizado,
-    }
 
 
 def _guardar_eventos(cur, filas: list) -> None:
@@ -517,7 +359,7 @@ def _guardar_eventos(cur, filas: list) -> None:
     )
 
 
-# ── Sincronización Google → panel ──────────────────────────────────────
+# ── Estado (compatibilidad: ya no hay sincronización) ──────────────────
 
 def _leer_estado(cur):
     cur.execute("INSERT INTO calendario_estado (id) VALUES (1) ON CONFLICT (id) DO NOTHING")
@@ -526,148 +368,22 @@ def _leer_estado(cur):
 
 
 def sincronizar(conexion, completa: bool = False) -> dict:
-    """Trae de Google lo que cambió y lo copia a la base. Devuelve un resumen.
-
-    `completa=True` ignora el syncToken y vuelve a leer toda la ventana de fechas
-    (y borra del panel lo que ya no existe en Google). Si otra corrida está en
-    marcha, devuelve {"omitida": True} sin hacer nada."""
-    if not configurado():
-        raise CalendarioError("El calendario todavía no está configurado (faltan variables en Railway).")
-    cal = calendar_id()
-    ahora = _dt.datetime.now(_dt.timezone.utc)
-
-    with conexion() as conn:
-        conn.autocommit = False
-        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-            cur.execute("SELECT pg_try_advisory_lock(%s) AS ok", (CLAVE_CANDADO,))
-            if not cur.fetchone()["ok"]:
-                conn.rollback()
-                return {"omitida": True}
-            try:
-                return _sincronizar_con_candado(conn, cur, cal, ahora, completa)
-            finally:
-                try:
-                    conn.rollback()
-                    cur.execute("SELECT pg_advisory_unlock(%s)", (CLAVE_CANDADO,))
-                    conn.commit()
-                except Exception:
-                    pass
+    """Ya no se sincroniza con Google (06/11/2026): el calendario es interno. Se deja para no romper
+    llamadas viejas; no hace nada."""
+    return {"omitida": False, "cambios": 0, "completa": False, "interno": True}
 
 
-def _sincronizar_con_candado(conn, cur, cal, ahora, completa) -> dict:
-    estado = _leer_estado(cur)
-    conn.commit()
-    token = estado["sync_token"]
-    if estado["calendar_id"] != cal:
-        token = None  # cambió de calendario: lo anterior no sirve
-    ultima_completa = estado["ultima_completa_en"]
-    if not completa and (not ultima_completa or ahora - ultima_completa > _dt.timedelta(days=RESINCRONIZAR_CADA_DIAS)):
-        token = None
-    if completa:
-        token = None
-
-    cur.execute("UPDATE calendario_estado SET ultimo_intento_en = now() WHERE id = 1")
-    conn.commit()
-
-    cambios = 0
-    try:
-        for intento in (1, 2):
-            vistos = set()
-            cambios = 0
-            es_completa = token is None
-            params = {"singleEvents": "true", "showDeleted": "true", "maxResults": 250}
-            if token:
-                params["syncToken"] = token
-            else:
-                params["timeMin"] = (ahora - _dt.timedelta(days=DIAS_ATRAS)).isoformat()
-                params["timeMax"] = (ahora + _dt.timedelta(days=DIAS_ADELANTE)).isoformat()
-            siguiente_token = None
-            try:
-                while True:
-                    resp = _pedir("GET", _ruta_eventos(), params=params) or {}
-                    filas, borrar = [], []
-                    for ev in resp.get("items", []):
-                        if ev.get("status") == "cancelled":
-                            borrar.append(ev["id"])
-                            continue
-                        if not (ev.get("start") or {}):
-                            continue
-                        vistos.add(ev["id"])
-                        filas.append(evento_a_fila(ev, cal))
-                    _guardar_eventos(cur, filas)
-                    if borrar:
-                        cur.execute("DELETE FROM calendario_eventos WHERE calendar_id = %s AND google_id = ANY(%s)", (cal, borrar))
-                    cambios += len(filas) + len(borrar)
-                    conn.commit()
-                    if resp.get("nextPageToken"):
-                        params["pageToken"] = resp["nextPageToken"]
-                        continue
-                    siguiente_token = resp.get("nextSyncToken")
-                    break
-            except GoogleError as e:
-                if e.status == 410 and token and intento == 1:
-                    token = None  # el syncToken venció: se rehace completa
-                    conn.rollback()
-                    continue
-                raise
-            if es_completa:
-                # Lo que está en el panel y ya no vino de Google se borró allá.
-                if vistos:
-                    cur.execute(
-                        "DELETE FROM calendario_eventos WHERE calendar_id = %s AND NOT (google_id = ANY(%s))",
-                        (cal, sorted(vistos)),
-                    )
-                else:
-                    cur.execute("DELETE FROM calendario_eventos WHERE calendar_id = %s", (cal,))
-            cur.execute(
-                """
-                UPDATE calendario_estado SET calendar_id = %s, sync_token = %s, ultimo_ok_en = now(),
-                       ultimo_error = NULL, ultimo_cambios = %s,
-                       ultima_completa_en = CASE WHEN %s THEN now() ELSE ultima_completa_en END
-                WHERE id = 1
-                """,
-                (cal, siguiente_token, cambios, es_completa),
-            )
-            conn.commit()
-            return {"omitida": False, "cambios": cambios, "completa": es_completa}
-    except Exception as e:
-        conn.rollback()
-        try:
-            cur.execute("UPDATE calendario_estado SET ultimo_error = %s WHERE id = 1", (str(e)[:500],))
-            conn.commit()
-        except Exception:
-            conn.rollback()
-        raise
+def iniciar_sondeo(conexion, cada: int = 0):
+    """Antes traía los cambios de Google cada 2 minutos. El calendario ahora es interno: no arranca nada."""
+    print("[calendario] calendario interno: sin sincronización con Google Calendar")
+    return None
 
 
-def iniciar_sondeo(conexion, cada: int = SONDEO_SEGUNDOS):
-    """Arranca (una vez) el hilo que sincroniza cada `cada` segundos mientras el panel esté
-    prendido. Si el calendario no está configurado no hace nada."""
-    if not configurado():
-        print("[calendario] sin GOOGLE_SERVICE_ACCOUNT_JSON / GOOGLE_CALENDAR_ID: sincronización desactivada")
-        return None
+# ── Guardar eventos del panel ──────────────────────────────────────────
 
-    def bucle():
-        time.sleep(15)  # que el panel termine de arrancar
-        while True:
-            try:
-                r = sincronizar(conexion)
-                if r.get("cambios"):
-                    print(f"[calendario] {r['cambios']} cambio(s) traídos de Google{' (completa)' if r.get('completa') else ''}")
-            except Exception as e:
-                print(f"[calendario] la sincronización falló: {e}")
-            time.sleep(cada)
-
-    hilo = threading.Thread(target=bucle, name="sondeo-calendario", daemon=True)
-    hilo.start()
-    return hilo
-
-
-# ── Panel → Google ─────────────────────────────────────────────────────
-
-def _inicio_fin_google(datos: dict):
-    """Arma start/end de Google a partir de fecha (YYYY-MM-DD) + hora + duración.
-    Devuelve (start, end, inicio_datetime). Sin hora = evento de todo el día."""
+def _inicio_fin(datos: dict):
+    """(inicio, fin, todo_el_dia) a partir de fecha (YYYY-MM-DD) + hora + duración.
+    Sin hora = evento de todo el día (el fin es exclusivo: el día siguiente al último)."""
     try:
         fecha = _dt.date.fromisoformat(datos["fecha"])
     except (KeyError, ValueError, TypeError):
@@ -682,9 +398,8 @@ def _inicio_fin_google(datos: dict):
             if ultimo < fecha:
                 raise CalendarioError("La fecha de fin es anterior a la de inicio.")
             dias = (ultimo - fecha).days + 1
-        fin = fecha + _dt.timedelta(days=dias)
-        return ({"date": fecha.isoformat()}, {"date": fin.isoformat()},
-                _dt.datetime.combine(fecha, _dt.time(0, 0), tzinfo=TZ))
+        inicio = _dt.datetime.combine(fecha, _dt.time(0, 0), tzinfo=TZ)
+        return inicio, inicio + _dt.timedelta(days=dias), True
     try:
         h, m = [int(x) for x in str(datos["hora"]).split(":")[:2]]
         inicio = _dt.datetime.combine(fecha, _dt.time(h, m), tzinfo=TZ)
@@ -693,9 +408,7 @@ def _inicio_fin_google(datos: dict):
     minutos = int(datos.get("duracion_min") or 60)
     if not 5 <= minutos <= 24 * 60:
         raise CalendarioError("La duración tiene que estar entre 5 minutos y 24 horas.")
-    fin = inicio + _dt.timedelta(minutes=minutos)
-    return ({"dateTime": inicio.isoformat(), "timeZone": TZ_NOMBRE},
-            {"dateTime": fin.isoformat(), "timeZone": TZ_NOMBRE}, inicio)
+    return inicio, inicio + _dt.timedelta(minutes=minutos), False
 
 
 def _normalizar_actas(actas) -> list:
@@ -709,225 +422,108 @@ def _normalizar_actas(actas) -> list:
     return out
 
 
-def _nota_con_actas(descripcion: str, actas: list) -> str:
-    """La nota que se manda a Google: el texto + una línea «Acta N» por si falta, para que
-    el número se vea en Google Calendar y el vínculo sobreviva si alguien edita el evento allá."""
-    descripcion = (descripcion or "").strip()
-    faltan = [a for a in actas if a not in extraer_actas(descripcion)]
-    if faltan:
-        etiqueta = "Acta" if len(faltan) == 1 else "Actas"
-        descripcion = (descripcion + "\n\n" if descripcion else "") + f"{etiqueta} {', '.join(faltan)}"
-    return descripcion
-
-
-def _cuerpo_seguimiento(datos: dict, usuario: str, hecho: bool = False):
-    """Cuerpo de Google para un recordatorio: evento de todo el día, con la campanita en el título,
-    de otro color (naranja; gris si ya está hecho) y marcado en las propiedades privadas."""
-    titulo = " ".join((datos.get("titulo") or "").replace(ICONO_SEGUIMIENTO, "").split())
+def _titulo_valido(texto: str, vacio: str) -> str:
+    titulo = " ".join((texto or "").replace(ICONO_SEGUIMIENTO, "").split())
     if not titulo:
-        raise CalendarioError("Poné de qué es el recordatorio.")
+        raise CalendarioError(vacio)
     if len(titulo) > 200:
         raise CalendarioError("El título es demasiado largo (máximo 200 letras).")
+    return titulo
+
+
+def fila_desde_datos(datos: dict, usuario: str, hecho: bool = False, meet_actual: str = None) -> dict:
+    """Los datos del formulario → los campos de calendario_eventos (sin google_id ni actas calculadas).
+    Un recordatorio es de todo el día y sin modalidad. Una videollamada lleva el link fijo de reunión
+    (o el que ya tenía el evento)."""
     actas = _normalizar_actas(datos.get("actas"))
-    start, end, _ = _inicio_fin_google({"fecha": datos.get("fecha"), "todo_el_dia": True})
-    privadas = {"panel": "1", "usuario": usuario or "", "actas": ",".join(actas), "tipo": TIPO_SEGUIMIENTO}
-    if hecho:
-        privadas["hecho"] = "1"
-    return {
-        "summary": f"{ICONO_SEGUIMIENTO} {titulo}",
-        "description": _nota_con_actas(datos.get("descripcion"), actas),
-        "location": "",
-        "start": start,
-        "end": end,
-        "colorId": COLOR_SEGUIMIENTO_HECHO if hecho else COLOR_SEGUIMIENTO,
-        "extendedProperties": {"private": privadas},
-    }
-
-
-def _cuerpo_evento(datos: dict, usuario: str, hecho: bool = False):
+    base = {"calendar_id": CAL_PANEL, "descripcion": (datos.get("descripcion") or "").strip(),
+            "privadas_actas": ",".join(actas), "origen": "panel", "creado_por": usuario or None,
+            "link": None, "etag": None, "actualizado_google": None}
     if (datos.get("tipo") or TIPO_EVENTO) == TIPO_SEGUIMIENTO:
-        return _cuerpo_seguimiento(datos, usuario, hecho)
-    titulo = " ".join((datos.get("titulo") or "").split())
-    if not titulo:
-        raise CalendarioError("Poné un título para el evento.")
-    if len(titulo) > 200:
-        raise CalendarioError("El título es demasiado largo (máximo 200 letras).")
-    actas = _normalizar_actas(datos.get("actas"))
+        inicio, fin, _ = _inicio_fin({"fecha": datos.get("fecha"), "todo_el_dia": True})
+        return {**base, "titulo": _titulo_valido(datos.get("titulo"), "Poné de qué es el recordatorio."),
+                "lugar": None, "inicio": inicio, "fin": fin, "todo_el_dia": True, "modalidad": None,
+                "meet_url": None, "email_aviso": None, "tipo": TIPO_SEGUIMIENTO, "hecho": bool(hecho)}
+    titulo = _titulo_valido(datos.get("titulo"), "Poné un título para el evento.")
     modalidad = (datos.get("modalidad") or "").strip() or None
     if modalidad not in (None,) + MODALIDADES:
-        raise CalendarioError("La modalidad tiene que ser videollamada de Meet, llamada o presencial.")
-    start, end, _ = _inicio_fin_google(datos)
-    privadas = {"panel": "1", "usuario": usuario or "", "actas": ",".join(actas)}
-    if modalidad:
-        privadas["modalidad"] = modalidad
-    email = " ".join(str(datos.get("email_aviso") or "").split())
-    if email:
-        privadas["email_aviso"] = email
-    return {
-        "summary": titulo,
-        "description": _nota_con_actas(datos.get("descripcion"), actas),
-        "location": (datos.get("lugar") or "").strip(),
-        "start": start,
-        "end": end,
-        "extendedProperties": {"private": privadas},
-    }
+        raise CalendarioError("La modalidad tiene que ser videollamada, llamada o presencial.")
+    meet = None
+    if modalidad == "meet":
+        meet = meet_actual or link_reunion()
+        if not meet:
+            raise CalendarioError("No hay link de reunión cargado (variable CALENDARIO_LINK_REUNION): agendalo como llamada o presencial.")
+    inicio, fin, todo = _inicio_fin(datos)
+    email = " ".join(str(datos.get("email_aviso") or "").split()) or None
+    return {**base, "titulo": titulo, "lugar": None if modalidad == "meet" else ((datos.get("lugar") or "").strip() or None),
+            "inicio": inicio, "fin": fin, "todo_el_dia": todo, "modalidad": modalidad, "meet_url": meet,
+            "email_aviso": email, "tipo": TIPO_EVENTO, "hecho": False}
 
 
-def _guardar_resultado(conexion, recurso: dict) -> int:
-    cal = calendar_id()
+def _guardar_fila(conexion, fila: dict) -> int:
     with conexion() as conn:
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-            _guardar_eventos(cur, [evento_a_fila(recurso, cal)])
-            cur.execute("SELECT id FROM calendario_eventos WHERE calendar_id = %s AND google_id = %s", (cal, recurso["id"]))
-            fila = cur.fetchone()
+            _guardar_eventos(cur, [fila])
+            cur.execute("SELECT id FROM calendario_eventos WHERE calendar_id = %s AND google_id = %s",
+                        (fila["calendar_id"], fila["google_id"]))
+            r = cur.fetchone()
         conn.commit()
-    return fila["id"]
+    return r["id"]
 
 
-def _pedir_meet():
-    """El fragmento que le pide a Google que cree la videollamada de Meet del evento."""
-    import uuid
-
-    return {"createRequest": {"requestId": uuid.uuid4().hex, "conferenceSolutionKey": {"type": "hangoutsMeet"}}}
-
-
-INVITADO_MEET = "marcaskom@gmail.com"
-
-
-def _invitados_meet() -> list:
-    """Quien queda siempre invitado a los Meet que genera el panel, para entrar sin esperar que lo admitan.
-    Se cambia con CALENDARIO_INVITADO_MEET (vacío = no invitar a nadie). Con sendUpdates=none no sale mail."""
-    mail = os.environ.get("CALENDARIO_INVITADO_MEET")
-    mail = INVITADO_MEET if mail is None else mail.strip()
-    return [{"email": mail}] if mail else []
-
-
-def _exigir_meet_posible():
-    if not puede_meet():
-        raise CalendarioError(
-            "Para generar el link de Meet hay que conectar el panel con la cuenta de Google del estudio: "
-            "entrá a Calendario → «Conectar con Google» (Google no deja crear Meet con la cuenta de servicio). "
-            "Mientras tanto se puede agendar como llamada o presencial."
-        )
-
-
-def _esperar_meet(google_id: str, recurso: dict) -> dict:
-    """Google arma la sala de Meet en el momento, pero a veces el link llega unos segundos
-    después de crear el evento: se vuelve a pedir hasta tenerlo."""
-    for _ in range(4):
-        if meet_de_evento(recurso):
-            return recurso
-        time.sleep(1.2)
-        recurso = _pedir("GET", _ruta_eventos("/" + google_id)) or recurso
-    return recurso
+def _fila_actual(conexion, evento_id: int, que: str = "evento") -> dict:
+    with conexion() as conn:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute("SELECT * FROM calendario_eventos WHERE id = %s AND calendar_id = %s", (evento_id, CAL_PANEL))
+            fila = cur.fetchone()
+    if not fila:
+        raise CalendarioError(f"Ese {que} ya no existe (puede que lo hayan borrado).")
+    return fila
 
 
 def crear_evento(conexion, datos: dict, usuario: str) -> int:
-    """Crea el evento en Google y lo copia al panel. Devuelve el id local. Con modalidad
-    «meet», Google genera la videollamada y su link queda guardado en el evento."""
-    cuerpo = _cuerpo_evento(datos, usuario)
-    params = {"sendUpdates": "none"}
-    if (datos.get("tipo") or TIPO_EVENTO) == TIPO_SEGUIMIENTO:
-        datos = {**datos, "modalidad": None}   # un recordatorio no es una reunión: sin Meet ni modalidad
-    if datos.get("modalidad") == "meet":
-        _exigir_meet_posible()
-        cuerpo["conferenceData"] = _pedir_meet()
-        params["conferenceDataVersion"] = 1
-        if _invitados_meet():
-            cuerpo["attendees"] = _invitados_meet()
-    recurso = _pedir("POST", _ruta_eventos(), json=cuerpo, params=params)
-    if datos.get("modalidad") == "meet":
-        recurso = _esperar_meet(recurso["id"], recurso)
-        if not meet_de_evento(recurso):
-            _guardar_resultado(conexion, recurso)
-            raise CalendarioError("El evento se creó, pero Google todavía no devolvió el link de Meet. Editalo y guardalo de nuevo en un momento.")
-    return _guardar_resultado(conexion, recurso)
+    """Crea el evento o recordatorio en el calendario del panel. Devuelve el id."""
+    import uuid
 
-
-def _google_id_de(conexion, evento_id: int) -> str:
-    with conexion() as conn:
-        with conn.cursor() as cur:
-            cur.execute("SELECT google_id FROM calendario_eventos WHERE id = %s AND calendar_id = %s", (evento_id, calendar_id()))
-            fila = cur.fetchone()
-    if not fila:
-        raise CalendarioError("Ese evento ya no existe (puede que lo hayan borrado desde Google Calendar).")
-    return fila[0]
+    fila = fila_desde_datos(datos, usuario)
+    fila["google_id"] = "panel-" + uuid.uuid4().hex
+    return _guardar_fila(conexion, fila)
 
 
 def editar_evento(conexion, evento_id: int, datos: dict, usuario: str) -> int:
-    with conexion() as conn:
-        with conn.cursor() as cur:
-            cur.execute("SELECT google_id, meet_url, tipo, hecho FROM calendario_eventos WHERE id = %s AND calendar_id = %s",
-                        (evento_id, calendar_id()))
-            fila = cur.fetchone()
-    if not fila:
-        raise CalendarioError("Ese evento ya no existe (puede que lo hayan borrado desde Google Calendar).")
-    google_id, meet_actual, tipo_actual, hecho_actual = fila[0], fila[1], fila[2] or TIPO_EVENTO, bool(fila[3])
+    actual = _fila_actual(conexion, evento_id)
     # El tipo no cambia al editar: un recordatorio sigue siendo recordatorio (y conserva si está hecho).
-    datos = {**datos, "tipo": tipo_actual}
-    if tipo_actual == TIPO_SEGUIMIENTO:
+    tipo = actual.get("tipo") or TIPO_EVENTO
+    datos = {**datos, "tipo": tipo}
+    if tipo == TIPO_SEGUIMIENTO:
         datos["modalidad"] = None
-    cuerpo = _cuerpo_evento(datos, usuario, hecho=hecho_actual)
-    params = {"sendUpdates": "none"}
-    quiere_meet = datos.get("modalidad") == "meet"
-    if quiere_meet and not meet_actual:
-        _exigir_meet_posible()
-        cuerpo["conferenceData"] = _pedir_meet()
-        params["conferenceDataVersion"] = 1
-        if _invitados_meet():
-            cuerpo["attendees"] = _invitados_meet()
-    elif quiere_meet and _invitados_meet():
-        # Meet ya existente: se suma el invitado fijo conservando a los que ya estaban (un PATCH reemplaza la lista).
-        actuales = (_pedir("GET", _ruta_eventos("/" + google_id)) or {}).get("attendees") or []
-        mails = {(a.get("email") or "").lower() for a in actuales}
-        cuerpo["attendees"] = actuales + [i for i in _invitados_meet() if i["email"].lower() not in mails]
-    elif not quiere_meet and meet_actual:
-        cuerpo["conferenceData"] = None  # se saca la videollamada del evento
-        params["conferenceDataVersion"] = 1
-    if not datos.get("modalidad"):
-        cuerpo["extendedProperties"]["private"]["modalidad"] = None  # en un PATCH, null borra la marca anterior
-    if "email_aviso" not in cuerpo["extendedProperties"]["private"]:
-        cuerpo["extendedProperties"]["private"]["email_aviso"] = None
-    # En un PATCH, start y end se MEZCLAN con lo que ya tiene el evento: pasar de un evento con horario a «todo el día»
-    # (o al revés) deja date y dateTime juntos y Google lo rechaza. Se anula explícitamente el que no corresponde.
-    for k in ("start", "end"):
-        t = cuerpo[k]
-        for campo in ("date", "dateTime", "timeZone"):
-            t.setdefault(campo, None)
-    recurso = _pedir("PATCH", _ruta_eventos("/" + google_id), json=cuerpo, params=params)
-    if quiere_meet and not meet_actual:
-        recurso = _esperar_meet(google_id, recurso)
-    return _guardar_resultado(conexion, recurso)
+    fila = fila_desde_datos(datos, usuario, hecho=bool(actual.get("hecho")), meet_actual=actual.get("meet_url"))
+    fila["google_id"] = actual["google_id"]
+    fila["creado_por"] = actual.get("creado_por") or fila["creado_por"]   # se respeta quién lo agendó
+    return _guardar_fila(conexion, fila)
 
 
 def borrar_evento(conexion, evento_id: int) -> None:
-    google_id = _google_id_de(conexion, evento_id)
-    try:
-        _pedir("DELETE", _ruta_eventos("/" + google_id))
-    except GoogleError as e:
-        if e.status not in (404, 410):  # ya estaba borrado en Google: igual se limpia acá
-            raise
     with conexion() as conn:
         with conn.cursor() as cur:
-            cur.execute("DELETE FROM calendario_eventos WHERE id = %s", (evento_id,))
+            cur.execute("DELETE FROM calendario_eventos WHERE id = %s AND calendar_id = %s", (evento_id, CAL_PANEL))
+            borrados = cur.rowcount
         conn.commit()
+    if not borrados:
+        raise CalendarioError("Ese evento ya no existe (puede que lo hayan borrado).")
 
 
 def marcar_hecho(conexion, evento_id: int, hecho: bool = True) -> int:
-    """Marca un recordatorio como hecho (o lo reabre). En Google queda en gris (o vuelve al naranja)."""
+    """Marca un recordatorio como hecho (queda en gris) o lo reabre."""
+    actual = _fila_actual(conexion, evento_id, "recordatorio")
+    if (actual.get("tipo") or TIPO_EVENTO) != TIPO_SEGUIMIENTO:
+        raise CalendarioError("Solo los recordatorios se marcan como hechos.")
     with conexion() as conn:
         with conn.cursor() as cur:
-            cur.execute("SELECT google_id, tipo FROM calendario_eventos WHERE id = %s AND calendar_id = %s",
-                        (evento_id, calendar_id()))
-            fila = cur.fetchone()
-    if not fila:
-        raise CalendarioError("Ese recordatorio ya no existe (puede que lo hayan borrado desde Google Calendar).")
-    if (fila[1] or TIPO_EVENTO) != TIPO_SEGUIMIENTO:
-        raise CalendarioError("Solo los recordatorios se marcan como hechos.")
-    cuerpo = {"colorId": COLOR_SEGUIMIENTO_HECHO if hecho else COLOR_SEGUIMIENTO,
-              "extendedProperties": {"private": {"hecho": "1" if hecho else None}}}
-    recurso = _pedir("PATCH", _ruta_eventos("/" + fila[0]), json=cuerpo, params={"sendUpdates": "none"})
-    return _guardar_resultado(conexion, recurso)
+            cur.execute("UPDATE calendario_eventos SET hecho = %s, sincronizado_en = now() WHERE id = %s",
+                        (bool(hecho), evento_id))
+        conn.commit()
+    return evento_id
 
 
 # ── Postergar recordatorios (a mano y automático) ──────────────────────
@@ -965,14 +561,16 @@ def fecha_pase_automatico(fecha: _dt.date, hoy: _dt.date) -> _dt.date:
     return max(proximo_dia_habil(fecha), primer_dia_habil(hoy))
 
 
-def _mover_recordatorio(conexion, google_id: str, nueva: _dt.date, dias: int) -> int:
-    """Cambia la fecha de un recordatorio en Google (mismo largo en días) y copia el resultado al panel.
-    No toca el color ni si está hecho."""
-    fin = nueva + _dt.timedelta(days=max(1, dias))
-    cuerpo = {"start": {"date": nueva.isoformat(), "dateTime": None, "timeZone": None},
-              "end": {"date": fin.isoformat(), "dateTime": None, "timeZone": None}}
-    recurso = _pedir("PATCH", _ruta_eventos("/" + google_id), json=cuerpo, params={"sendUpdates": "none"})
-    return _guardar_resultado(conexion, recurso)
+def _mover_recordatorio(conexion, evento_id: int, nueva: _dt.date, dias: int) -> int:
+    """Cambia la fecha de un recordatorio (mismo largo en días). No toca si está hecho."""
+    inicio = _dt.datetime.combine(nueva, _dt.time(0, 0), tzinfo=TZ)
+    fin = inicio + _dt.timedelta(days=max(1, dias))
+    with conexion() as conn:
+        with conn.cursor() as cur:
+            cur.execute("UPDATE calendario_eventos SET inicio = %s, fin = %s, sincronizado_en = now() WHERE id = %s",
+                        (inicio, fin, evento_id))
+        conn.commit()
+    return evento_id
 
 
 def _fecha_y_dias(inicio: _dt.datetime, fin: _dt.datetime) -> tuple:
@@ -986,53 +584,47 @@ def postergar_recordatorio(conexion, evento_id: int, hoy: _dt.date = None) -> _d
     hoy = hoy or _dt.datetime.now(TZ).date()
     with conexion() as conn:
         with conn.cursor() as cur:
-            cur.execute("SELECT google_id, tipo, hecho, inicio, fin FROM calendario_eventos WHERE id = %s AND calendar_id = %s",
-                        (evento_id, calendar_id()))
+            cur.execute("SELECT id, tipo, hecho, inicio, fin FROM calendario_eventos WHERE id = %s AND calendar_id = %s",
+                        (evento_id, CAL_PANEL))
             fila = cur.fetchone()
     if not fila:
-        raise CalendarioError("Ese recordatorio ya no existe (puede que lo hayan borrado desde Google Calendar).")
-    google_id, tipo, hecho, inicio, fin = fila
+        raise CalendarioError("Ese recordatorio ya no existe (puede que lo hayan borrado).")
+    _id, tipo, hecho, inicio, fin = fila
     if (tipo or TIPO_EVENTO) != TIPO_SEGUIMIENTO:
         raise CalendarioError("Solo los recordatorios se pueden postergar.")
     if hecho:
         raise CalendarioError("Ese recordatorio ya está hecho: reabrilo si querés volver a postergarlo.")
     fecha, dias = _fecha_y_dias(inicio, fin)
     nueva = fecha_postergada(fecha, hoy)
-    _mover_recordatorio(conexion, google_id, nueva, dias)
+    _mover_recordatorio(conexion, evento_id, nueva, dias)
     return nueva
 
 
 def pasar_recordatorios_atrasados(conexion, hoy: _dt.date = None) -> int:
     """Pasa al día hábil siguiente todos los recordatorios pendientes cuya fecha ya quedó atrás.
     Devuelve cuántos movió. La fecha nueva sale solo de la fecha del recordatorio y de hoy, así que si
-    dos copias del panel corren a la vez dejan el mismo resultado. Un error de Google corta la tanda
-    (se reintenta en el próximo control); un recordatorio borrado en Google se saltea."""
+    dos copias del panel corren a la vez dejan el mismo resultado."""
     hoy = hoy or _dt.datetime.now(TZ).date()
     desde_hoy = _dt.datetime.combine(hoy, _dt.time(0, 0), tzinfo=TZ)
     with conexion() as conn:
         with conn.cursor() as cur:
             cur.execute(
                 """
-                SELECT google_id, inicio, fin FROM calendario_eventos
+                SELECT id, inicio, fin FROM calendario_eventos
                 WHERE calendar_id = %s AND tipo = %s AND NOT hecho AND inicio < %s
                 ORDER BY inicio, id
                 LIMIT 200
                 """,
-                (calendar_id(), TIPO_SEGUIMIENTO, desde_hoy),
+                (CAL_PANEL, TIPO_SEGUIMIENTO, desde_hoy),
             )
             filas = cur.fetchall()
     movidos = 0
-    for google_id, inicio, fin in filas:
+    for evento_id, inicio, fin in filas:
         fecha, dias = _fecha_y_dias(inicio, fin)
         nueva = fecha_pase_automatico(fecha, hoy)
         if nueva == fecha:
             continue
-        try:
-            _mover_recordatorio(conexion, google_id, nueva, dias)
-        except GoogleError as e:
-            if e.status in (404, 410):   # lo borraron en Google: la sincronización lo saca del panel
-                continue
-            raise
+        _mover_recordatorio(conexion, evento_id, nueva, dias)
         movidos += 1
     return movidos
 
@@ -1054,7 +646,7 @@ def iniciar_pase_recordatorios(conexion, cada: int = PASE_RECORDATORIOS_CADA):
         return None
 
     def bucle():
-        time.sleep(75)   # que el panel termine de arrancar y haga la primera sincronización
+        time.sleep(75)   # que el panel termine de arrancar
         while True:
             try:
                 n = pasar_recordatorios_atrasados(conexion)
@@ -1073,10 +665,10 @@ def iniciar_pase_recordatorios(conexion, cada: int = PASE_RECORDATORIOS_CADA):
 
 def _intro_whatsapp(ev: dict, d0: _dt.date, hoy: _dt.date) -> str:
     """La primera línea del texto: saluda y dice de qué se trata según cómo es el evento
-    (reunión virtual por Google Meet, llamada telefónica o en persona) y, si es hoy o mañana, lo aclara."""
+    (reunión virtual, llamada telefónica o en persona) y, si es hoy o mañana, lo aclara."""
     modalidad = ev.get("modalidad")
     if modalidad == "meet" or ev.get("meet_url"):
-        que = "reunión virtual por Google Meet"
+        que = "reunión virtual"
     elif modalidad == "llamada":
         que = "llamada telefónica"
     elif modalidad == "presencial":
@@ -1090,7 +682,7 @@ def _intro_whatsapp(ev: dict, d0: _dt.date, hoy: _dt.date) -> str:
 def texto_whatsapp(ev: dict, hoy: _dt.date | None = None) -> str:
     """El texto con los datos de una reunión, listo para pegar en WhatsApp (o abrir el chat con él).
     `ev` es un evento ya convertido con evento_a_json. Dice qué, cuándo y cómo; con la videollamada
-    incluye el link de Meet. `hoy` solo se pasa en las pruebas (por defecto, hoy en Argentina)."""
+    incluye el link de la reunión. `hoy` solo se pasa en las pruebas (por defecto, hoy en Argentina)."""
     d0 = _dt.date.fromisoformat(ev["fecha"])
     hoy = hoy or _dt.datetime.now(TZ).date()
     lineas = [_intro_whatsapp(ev, d0, hoy), ""]
@@ -1100,7 +692,7 @@ def texto_whatsapp(ev: dict, hoy: _dt.date | None = None) -> str:
     lugar = (ev.get("lugar") or "").strip()
     modalidad = ev.get("modalidad")
     if modalidad == "meet" or ev.get("meet_url"):
-        lineas.append("🎥 Videollamada por Google Meet")
+        lineas.append("🎥 Videollamada")
         if ev.get("meet_url"):
             lineas.append(f"🔗 {ev['meet_url']}")
     elif modalidad == "llamada":
@@ -1130,9 +722,13 @@ def remitente_equipo() -> str:
     return (os.environ.get("RESEND_FROM") or "").strip() or mc.DEFAULT_FROM_INTERNO
 
 
+MAIL_EQUIPO_DEFECTO = "smartiesconsultora@gmail.com"
+
+
 def mail_equipo():
-    """A dónde llega la copia de cada aviso: el mail del estudio (el del calendario)."""
-    valor = (os.environ.get("CALENDARIO_AVISO_EQUIPO") or calendar_id() or "").strip()
+    """A dónde llega la copia de cada aviso: CALENDARIO_AVISO_EQUIPO, o GOOGLE_CALENDAR_ID si quedó cargada
+    (era el mail del calendario de Google), o el mail del estudio."""
+    valor = (os.environ.get("CALENDARIO_AVISO_EQUIPO") or calendar_id() or MAIL_EQUIPO_DEFECTO).strip()
     return valor if re.fullmatch(r"[^\s<>@,;]+@[^\s<>@,;]+\.[^\s<>@,;]+", valor) else None
 
 
@@ -1183,7 +779,7 @@ def como_texto(ev: dict, para_equipo: bool = False) -> str:
     lugar = (ev.get("lugar") or "").strip()
     modalidad = ev.get("modalidad")
     if modalidad == "meet":
-        return "Videollamada por Google Meet"
+        return "Videollamada"
     if modalidad == "llamada":
         if para_equipo:
             return f"Llamada al {lugar}" if lugar else "Llamada (sin teléfono anotado)"
@@ -1233,7 +829,7 @@ def armar_aviso(ev: dict, accion: str = "agendada", para_equipo: bool = False, u
     meet = "* **Videollamada (link):** {{link_meet}}\n" if ev.get("meet_url") else ""
     if not para_equipo:
         # Escrito como un mail común de una persona (sin lista, negritas ni el link largo de Google
-        # Calendar, con un solo link: el de Meet) para que Gmail lo ponga en Principal y no en Promociones.
+        # Calendar, con un solo link: el de la reunión) para que Gmail lo ponga en Principal y no en Promociones.
         asunto = f"{verbo_persona} tu reunión: {{{{titulo}}}}"
         intro = ("Te confirmamos que agendamos una reunión con Smarties Consultora" if accion == "agendada"
                  else "Actualizamos los datos de tu reunión con Smarties Consultora")
@@ -1255,7 +851,7 @@ def armar_aviso(ev: dict, accion: str = "agendada", para_equipo: bool = False, u
                 + f" – {etiquetas.get(v.get('tipo'), '')}" for v in vinculos)
         asunto = "{{titulo}}" if accion == "agendada" else "Actualizada: {{titulo}}"
         cuerpo = ("{{estado}}: {{cuando_corto}}\n\n"
-                  "* **Cómo:** {{como}}\n" + meet.replace("Videollamada (link)", "Link de Meet") +
+                  "* **Cómo:** {{como}}\n" + meet.replace("Videollamada (link)", "Link de la reunión") +
                   ("* **Actas:** {{actas}}\n" if vinculos else "") +
                   ("* **Aviso a la persona:** {{persona}}\n" if email_persona else "* **Aviso a la persona:** no se mandó\n") +
                   "* **Agendó:** {{quien}}\n"
@@ -1265,7 +861,7 @@ def armar_aviso(ev: dict, accion: str = "agendada", para_equipo: bool = False, u
 
 def avisar(conexion, evento_id: int, accion: str, usuario: str, email_persona: str = "", a_equipo: bool = True) -> dict:
     """Manda el aviso del evento: a la persona (si hay mail) y una copia al equipo. Un mail que
-    falla no frena al otro ni al evento (que ya está en Google): el resultado cuenta qué pasó con cada uno.
+    falla no frena al otro ni al evento (que ya está guardado): el resultado cuenta qué pasó con cada uno.
     Devuelve {"persona": {...}|None, "equipo": {...}|None}; cada uno {email, enviado, error}."""
     import mails_core as mc
 
@@ -1372,7 +968,7 @@ def seguimientos_de_agenda(cur, fecha: _dt.date) -> list:
         WHERE calendar_id = %s AND tipo = %s AND NOT hecho AND inicio < %s
         ORDER BY inicio, id
         """,
-        (calendar_id(), TIPO_SEGUIMIENTO, _dt.datetime.combine(fecha + _dt.timedelta(days=1), _dt.time(0, 0), tzinfo=TZ)),
+        (CAL_PANEL, TIPO_SEGUIMIENTO, _dt.datetime.combine(fecha + _dt.timedelta(days=1), _dt.time(0, 0), tzinfo=TZ)),
     )
     return _con_vinculos(cur, [evento_a_json(f) for f in _sin_ocultos(cur.fetchall())])
 
@@ -1540,10 +1136,6 @@ def enviar_agenda(conexion, fecha: _dt.date = None, manual: bool = False) -> dic
     if not manual and not _reservar_envio(conexion, fecha):
         return {"estado": "ya_enviada", "fecha": fecha.isoformat()}
     try:
-        try:
-            sincronizar(conexion)   # lo último de Google antes de armar la agenda (si falla, vale lo que ya hay)
-        except Exception as e:
-            print(f"[agenda] no se pudo sincronizar antes de armar la agenda: {e}")
         with conexion() as conn:
             with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
                 eventos = eventos_de_agenda(cur, fecha)
@@ -1618,7 +1210,7 @@ def _hora_local(d: _dt.datetime) -> _dt.datetime:
 def evento_a_json(f: dict) -> dict:
     ini, fin = _hora_local(f["inicio"]), _hora_local(f["fin"])
     if f["todo_el_dia"]:
-        ultimo = (fin - _dt.timedelta(days=1)).date()  # el fin de Google es exclusivo
+        ultimo = (fin - _dt.timedelta(days=1)).date()  # el fin es exclusivo
     else:
         ultimo = fin.date()
         if fin.time() == _dt.time(0, 0) and fin > ini:
@@ -1721,7 +1313,7 @@ def resolver_actas(cur, actas) -> dict:
     return res
 
 
-# Eventos que NO se muestran en el panel (siguen en Google Calendar): el Meet fijo del equipo,
+# Eventos que NO se muestran en el panel (copiados de Google antes del 06/11/2026): el Meet fijo del equipo,
 # que se repite todos los días y estorba. Se compara el título sin tildes, mayúsculas ni espacios
 # de más. Se cambia con CALENDARIO_OCULTAR (títulos separados por «;»; vacío = no ocultar nada).
 OCULTAR_POR_DEFECTO = "MEET PAME / TOMI"
@@ -1758,7 +1350,7 @@ def listar_eventos(cur, desde: _dt.date, hasta: _dt.date) -> list:
         WHERE calendar_id = %s AND inicio < %s AND fin > %s
         ORDER BY inicio, id
         """,
-        (calendar_id(), d1, d0),
+        (CAL_PANEL, d1, d0),
     )
     return _con_vinculos(cur, [evento_a_json(f) for f in _sin_ocultos(cur.fetchall())])
 
@@ -1775,7 +1367,7 @@ def eventos_de_actas(cur, actas, dias_atras: int = 60) -> list:
         WHERE calendar_id = %s AND actas && %s AND fin > %s
         ORDER BY inicio, id
         """,
-        (calendar_id(), actas, desde),
+        (CAL_PANEL, actas, desde),
     )
     return _con_vinculos(cur, [evento_a_json(f) for f in _sin_ocultos(cur.fetchall())])
 
@@ -2009,22 +1601,17 @@ def _con_vinculos(cur, eventos: list) -> list:
 
 
 def estado(cur) -> dict:
-    cur.execute("SELECT * FROM calendario_estado WHERE id = 1")
-    f = cur.fetchone() or {}
+    """Cómo está el calendario. Es interno: siempre disponible, con el link fijo de reunión."""
     return {
-        "configurado": configurado(),
-        "calendario": calendar_id(),
-        "cuenta_servicio": cuenta_servicio(),
+        "configurado": True,
+        "interno": True,
+        "calendario": CAL_PANEL,
+        "link_reunion": link_reunion(),
         "puede_meet": puede_meet(),
-        "oauth_conectado": oauth_completo(),
-        "oauth_pendiente": oauth_pendiente(),
         "aviso_equipo": mail_equipo(),
-        "ultimo_ok_en": f.get("ultimo_ok_en"),
-        "ultimo_intento_en": f.get("ultimo_intento_en"),
-        "ultimo_error": f.get("ultimo_error"),
-        "ultima_completa_en": f.get("ultima_completa_en"),
-        "ultimo_cambios": f.get("ultimo_cambios"),
-        "sondeo_segundos": SONDEO_SEGUNDOS,
+        # La conexión con la cuenta de Google del estudio ya no la usa el calendario, solo «Guardar en Drive».
+        "drive_conectado": oauth_completo(),
+        "drive_pendiente": oauth_pendiente(),
     }
 
 
@@ -2041,7 +1628,7 @@ def listar_seguimientos(cur, hechos_dias: int = 14, limite: int = 300) -> list:
         ORDER BY inicio, id
         LIMIT %s
         """,
-        (calendar_id(), TIPO_SEGUIMIENTO, desde_hechos, limite),
+        (CAL_PANEL, TIPO_SEGUIMIENTO, desde_hechos, limite),
     )
     return _con_vinculos(cur, [evento_a_json(f) for f in _sin_ocultos(cur.fetchall())])
 

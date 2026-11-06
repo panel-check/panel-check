@@ -98,10 +98,10 @@ function calHoraTexto(e) {
   return `${e.hora} – ${e.hora_fin}`;
 }
 
-// «Cómo» es el evento: videollamada de Meet (con link), llamada o presencial.
+// «Cómo» es el evento: videollamada (con el link de reunión), llamada o presencial.
 function calComoHtml(e) {
   const lugar = e.lugar ? _escapeHtml(e.lugar) : "";
-  if (e.meet_url) return `🎥 Videollamada · <a href="${_escapeHtml(e.meet_url)}" target="_blank" rel="noopener">Unirse a Meet</a>`;
+  if (e.meet_url) return `🎥 Videollamada · <a href="${_escapeHtml(e.meet_url)}" target="_blank" rel="noopener">Link de la reunión</a>`;
   if (e.modalidad === "llamada") return `📞 Llamada${lugar ? " · " + lugar : ""}`;
   if (e.modalidad === "presencial") return `📍 ${lugar || "Presencial"}`;
   return lugar ? `📍 ${lugar}` : "";
@@ -157,7 +157,7 @@ function calAccionesHtml(e) {
     const postergar = e.hecho ? "" : `
       <button type="button" class="cal-btn chico" data-cal-postergar="${e.id}" title="Pasarlo al ${calFechaLarga(calFechaPostergada(e))} (si cae en fin de semana, al lunes)">⏭ Postergar para ${calCuandoPostergar(e)}</button>`;
     return `
-      <button type="button" class="cal-btn chico ${e.hecho ? "" : "principal"}" data-cal-hecho="${e.id}" data-hecho="${e.hecho ? "0" : "1"}" title="${e.hecho ? "Volver a dejarlo pendiente" : "Ya se hizo: en Google Calendar queda en gris"}">${e.hecho ? "↺ Reabrir" : "✓ Hecho"}</button>${postergar}
+      <button type="button" class="cal-btn chico ${e.hecho ? "" : "principal"}" data-cal-hecho="${e.id}" data-hecho="${e.hecho ? "0" : "1"}" title="${e.hecho ? "Volver a dejarlo pendiente" : "Ya se hizo: queda en gris"}">${e.hecho ? "↺ Reabrir" : "✓ Hecho"}</button>${postergar}
       <button type="button" class="cal-btn chico" data-cal-editar="${e.id}">Editar</button>
       <button type="button" class="cal-btn chico peligro" data-cal-borrar="${e.id}">Borrar</button>`;
   }
@@ -204,7 +204,7 @@ function calEnlazarTarjetas(cont, porId, alCambiar, opciones = {}) {
     b.disabled = true;
     try {
       await apiJson(`/api/calendario/eventos/${b.dataset.calHecho}/hecho`, "POST", { hecho: quiere });
-      mostrarAviso(quiere ? "Recordatorio hecho ✓ (en Google Calendar queda en gris)" : "Recordatorio reabierto");
+      mostrarAviso(quiere ? "Recordatorio hecho ✓" : "Recordatorio reabierto");
       if (alCambiar) alCambiar();
     } catch (err) {
       b.disabled = false;
@@ -315,7 +315,7 @@ function calMostrarWhatsApp(ev, { recienAgendado = false } = {}) {
 }
 
 async function calBorrar(e, alBorrar) {
-  if (!confirm(`¿Borrar «${e.titulo}»?\n\nTambién se borra de Google Calendar.`)) return;
+  if (!confirm(`¿Borrar «${e.titulo}»?`)) return;
   try {
     await apiJson(`/api/calendario/eventos/${e.id}`, "DELETE");
     mostrarAviso("Evento borrado");
@@ -456,7 +456,7 @@ function _calAsegurarModal() {
         <label class="check solo-evento" id="mc-l-todo"><input type="checkbox" id="mc-todo" /> Todo el día</label>
         <fieldset class="mc-como solo-evento" id="mc-como">
           <legend>Cómo es</legend>
-          <label><input type="radio" name="mc-mod" value="meet" /> 🎥 Videollamada (Meet)</label>
+          <label><input type="radio" name="mc-mod" value="meet" /> 🎥 Videollamada</label>
           <label><input type="radio" name="mc-mod" value="llamada" /> 📞 Llamada</label>
           <label><input type="radio" name="mc-mod" value="presencial" /> 📍 Presencial</label>
         </fieldset>
@@ -472,9 +472,9 @@ function _calAsegurarModal() {
         </label>
         <div class="mc-marcas" id="mc-marcas" hidden></div>
         <div class="mc-vista-actas" id="mc-vista-actas" hidden></div>
-        <p class="mc-ayuda">Con la acta, el evento queda vinculado al lead o cliente dueño de esa marca. También sirve escribir «Acta 4797001» en las notas, incluso si lo agendás directo en Google Calendar.</p>
+        <p class="mc-ayuda">Con la acta, el evento queda vinculado al lead o cliente dueño de esa marca. También sirve escribir «Acta 4797001» en el título o las notas.</p>
         <label class="campo">Notas (opcional) <textarea id="mc-notas" rows="4" placeholder="Qué hay que hacer, qué traer…"></textarea></label>
-        <p class="mc-ayuda solo-seg">El recordatorio queda en el calendario como un evento de todo el día, en naranja, y también en Google Calendar. Mientras no lo marques como hecho se ve en «Recordatorios» y llega en el mail AGENDA de las 20 hs.</p>
+        <p class="mc-ayuda solo-seg">El recordatorio queda en el calendario como un evento de todo el día, en naranja. Mientras no lo marques como hecho se ve en «Recordatorios» y llega en el mail AGENDA de las 20 hs.</p>
         <div class="mc-aviso solo-evento" id="mc-aviso-caja">
           <label class="check"><input type="checkbox" id="mc-avisar" /> <span id="mc-avisar-txt">Avisar por mail</span></label>
           <label class="campo" id="mc-l-email">Mail de la persona (si lo dejás vacío, el aviso va solo al equipo)
@@ -618,7 +618,7 @@ function _calIAAplicar(prop) {
   if (c.modalidad) {
     const radio = document.querySelector(`input[name="mc-mod"][value="${c.modalidad}"]`);
     if (radio && !radio.disabled) { radio.checked = true; _calPintarModalidad(); }
-    else avisos.push("Meet no está conectado con la cuenta de Google del estudio: elegí «Llamada» o «Presencial», o conectá Meet en Calendario.");
+    else avisos.push("No hay link de reunión cargado: elegí «Llamada» o «Presencial».");
   }
   if (c.lugar) $("mc-lugar").value = c.lugar;
   if ((c.actas || []).length) {
@@ -818,8 +818,8 @@ function _calPintarModalidad() {
   nota.hidden = mod !== "meet";
   if (mod === "meet") {
     nota.textContent = ctx.evento && ctx.evento.meet_url
-      ? "Este evento ya tiene su videollamada de Meet; el link no cambia al guardar."
-      : "Al guardar, Google genera la videollamada y el link de Meet queda en el evento y en el mail de aviso.";
+      ? `La videollamada es con este link (no cambia al guardar): ${ctx.evento.meet_url}`
+      : `La videollamada usa siempre el mismo link de reunión${_calEstado && _calEstado.link_reunion ? ` (${_calEstado.link_reunion})` : ""}: queda en el evento, en el texto para WhatsApp y en el mail de aviso.`;
   }
   const rotulo = { llamada: "Teléfono al que se llama", presencial: "Lugar" }[mod] || "Lugar o link (opcional)";
   $("mc-l-lugar").firstChild.textContent = rotulo + " ";
@@ -978,12 +978,11 @@ async function calAbrirModal({ evento = null, fecha = null, hora = null, duracio
     durSel.value = duracion && [...durSel.options].some(o => +o.value === +duracion) ? String(duracion) : "30";
   }
   if (seg) $("mc-todo").checked = true;   // un recordatorio es siempre de todo el día
-  // Cómo es: Meet solo se ofrece si el panel está conectado con la cuenta de Google del estudio
-  // (o si el evento ya tiene su Meet).
+  // Cómo es: la videollamada se ofrece si hay link de reunión cargado (o si el evento ya tiene uno).
   const puedeMeet = !!(_calEstado && _calEstado.puede_meet) || !!(evento && evento.meet_url);
   const radioMeet = document.querySelector('input[name="mc-mod"][value="meet"]');
   radioMeet.disabled = !puedeMeet;
-  radioMeet.parentElement.title = puedeMeet ? "" : "Para generar el link de Meet hay que conectar el panel con la cuenta de Google (Calendario → Conectar con Google)";
+  radioMeet.parentElement.title = puedeMeet ? "" : "No hay link de reunión cargado (variable CALENDARIO_LINK_REUNION)";
   radioMeet.parentElement.classList.toggle("deshabilitado", !puedeMeet);
   const modInicial = evento ? (evento.meet_url ? "meet" : evento.modalidad) : (puedeMeet ? "meet" : "llamada");
   document.querySelectorAll('input[name="mc-mod"]').forEach(r => { r.checked = r.value === modInicial; });
@@ -1057,9 +1056,9 @@ async function _calGuardar(ev) {
   try {
     const r = ctx.evento ? await apiJson(`/api/calendario/eventos/${ctx.evento.id}`, "PUT", cuerpo)
                          : await apiJson("/api/calendario/eventos", "POST", cuerpo);
-    const partes = [seg ? (ctx.evento ? "Recordatorio actualizado" : "Recordatorio guardado") + " (también en Google Calendar, en naranja)"
-                        : (ctx.evento ? "Evento actualizado (también en Google Calendar)" : "Evento agendado (también en Google Calendar)")];
-    if (r && r.evento && r.evento.meet_url && modalidad === "meet") partes.push("videollamada de Meet creada");
+    const partes = [seg ? (ctx.evento ? "Recordatorio actualizado" : "Recordatorio guardado")
+                        : (ctx.evento ? "Evento actualizado" : "Evento agendado")];
+    if (r && r.evento && r.evento.meet_url && modalidad === "meet" && !ctx.evento) partes.push("con el link de reunión");
     let hayError = false;
     const av = r && r.aviso;
     if (av) {
@@ -1111,10 +1110,10 @@ async function calAgendaFicha(rows, titular) {
       ${habilitado ? '<button type="button" class="cal-btn principal chico" id="cal-ficha-nuevo">＋ Agendar</button><button type="button" class="cal-btn chico" id="cal-ficha-seg" title="Un recordatorio para hacerle el seguimiento: queda en el calendario, de otro color">🔔 Recordatorio</button>' : ""}
       <a class="cal-btn chico" href="/calendario" style="text-decoration:none;display:inline-flex;align-items:center">Ver calendario</a>
     </div>
-    ${!habilitado ? '<p class="cal-nota">El calendario todavía no está conectado con Google Calendar. Ver «Calendario» en el menú.</p>'
+    ${!habilitado ? '<p class="cal-nota">El calendario no está disponible en este momento.</p>'
       : proximos.length ? proximos.map(e => calTarjetaHtml(e, { fechaCorta: true })).join("") : '<p class="cal-nota">No hay nada agendado para este titular.</p>'}
     ${pasados.length ? `<details style="margin-top:8px"><summary class="cal-nota" style="cursor:pointer">Anteriores (${pasados.length})</summary>${pasados.map(e => calTarjetaHtml(e, { fechaCorta: true })).join("")}</details>` : ""}
-    ${habilitado ? '<p class="cal-nota">Lo que agendás acá se crea también en Google Calendar. Si en Google escribís el número de acta de alguna de estas marcas en la nota del evento, aparece acá solo.</p>' : ""}
+    ${habilitado ? '<p class="cal-nota">Lo que agendás acá queda en el calendario del panel. Si en otro evento escribís el número de acta de alguna de estas marcas, aparece acá solo.</p>' : ""}
   </div>`;
   const nuevo = document.getElementById("cal-ficha-nuevo");
   if (nuevo) nuevo.addEventListener("click", () => calAbrirModal({
