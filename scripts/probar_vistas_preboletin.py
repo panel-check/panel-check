@@ -196,6 +196,18 @@ def cadencias(hoy: datetime.date, previos=DIAS_PREVIOS, joven=2, joven_previo=1,
     return {"cada_joven": joven, "cada": vieja}
 
 
+def momento_de_corte(ahora: datetime.datetime, hora: datetime.time):
+    """Instante en que se corta la corrida, o None si la hora de corte ya pasó hoy. Una hora que quedó atrás
+    hace menos de 12 horas ya pasó (la diaria de las 18:05 que arranca después de las 22:40: no hace nada);
+    si quedó atrás hace más, es la de la madrugada siguiente (una corrida de las 21:00 con corte a las 05:00)."""
+    corte = ahora.replace(hour=hora.hour, minute=hora.minute, second=0, microsecond=0)
+    if corte > ahora:
+        return corte
+    if ahora - corte < datetime.timedelta(hours=12):
+        return None
+    return corte + datetime.timedelta(days=1)
+
+
 def resumen_notificadas(conn, hoy_iso: str) -> tuple[int, int]:
     """(encontradas antes de la notificación, total) de las vistas notificadas `hoy_iso`. Cuenta como «antes»
     la que se detectó antes de las 06:00 de Argentina del día de la notificación (INPI publica a esa hora)."""
@@ -472,8 +484,8 @@ def main():
         return
     hasta = None
     if args.hasta_hora:
-        hasta = datetime.datetime.strptime(args.hasta_hora, "%H:%M").time()
-        if ahora_argentina().time() >= hasta:
+        hasta = momento_de_corte(ahora_argentina(), datetime.datetime.strptime(args.hasta_hora, "%H:%M").time())
+        if hasta is None:
             print(f"Ya pasó la hora de corte ({args.hasta_hora} de Argentina): no se revisa nada hoy, queda para mañana.", flush=True)
             conn.close()
             return
@@ -539,7 +551,7 @@ def main():
         if (time.time() - inicio) / 60 >= args.max_minutes:
             corte = "se agotó el tiempo de la prueba"
             break
-        if hasta and ahora_argentina().time() >= hasta:
+        if hasta and ahora_argentina() >= hasta:
             corte = f"se llegó a la hora de corte ({args.hasta_hora})"
             break
         if monitor_bloqueo.debe_cortar():
