@@ -1044,34 +1044,80 @@ def consultar_oposiciones(acta: str, s=None, timeout: int = 30) -> dict:
     return out
 
 
-# Webservice SOAP público (ver references/inpi-webservice.md): marcas de un
-# titular por CUIT o por nombre. No trae agente ni estado.
+# Webservice SOAP de INPI (https://ws.inpi.gob.ar/wsinpi.asmx, ver references/inpi-webservice.md y la
+# Autogestión de WS: https://portaltramites.inpi.gob.ar/AutogestionWS). Las consultas ConsultaCuitOTitular
+# y ConsultaDenominacion piden el token del integrador (`tokenIntegrador`): sin token INPI responde
+# «Debe indicar un token de integrador para operar el método [...]» (confirmado el 06/11/2026).
+# El token va en la variable de Railway INPI_WS_TOKEN (se ve en la Autogestión de WS, panel del integrador).
 WS_URL = "https://ws.inpi.gob.ar/wsinpi.asmx"
+_NS_WS = "{http://tempuri.org/}"
 
 
-def consultar_titular_ws(cuit: str = "", titular: str = "", timeout: int = 60, reintentos: int = 2) -> list:
-    """[{Acta, Titulares, Fecha_Ingreso, Clase, Denominacion, Tipo_Marca}, ...].
-    Lista vacía si no hay resultados o el servicio no respondió."""
+class ErrorWs(Exception):
+    """El webservice no respondió o rechazó el pedido (el texto es el de INPI, para mostrarlo)."""
+
+
+def token_ws() -> str:
+    import os
+
+    return (os.environ.get("INPI_WS_TOKEN") or "").strip()
+
+
+def consultar_ws(operacion: str, campos: dict, timeout=(8, 40), reintentos: int = 0) -> dict:
+    """Llama a una consulta del webservice con el token del integrador.
+    Devuelve {"filas": [{campo: texto}], "total": int | None, "estado": str | None}.
+    Levanta ErrorWs si falta el token, si INPI devuelve un error (soap:Fault) o si no responde."""
+    token = token_ws()
+    if not token:
+        raise ErrorWs("Falta el token del integrador del webservice de INPI (variable INPI_WS_TOKEN en Railway).")
+    nodos = "".join(f"<{k}>{_xml_escape(str(v or ''))}</{k}>" for k, v in campos.items())
     cuerpo = (
         '<?xml version="1.0" encoding="utf-8"?>'
         '<soap:Envelope xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" '
         'xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">'
-        '<soap:Body><ConsultaCuitOTitular xmlns="http://tempuri.org/">'
-        f"<cuit>{_xml_escape(cuit)}</cuit><titular>{_xml_escape(titular)}</titular>"
-        "</ConsultaCuitOTitular></soap:Body></soap:Envelope>"
+        f'<soap:Body><{operacion} xmlns="http://tempuri.org/">{nodos}'
+        f"<tokenIntegrador>{_xml_escape(token)}</tokenIntegrador></{operacion}></soap:Body></soap:Envelope>"
     )
-    for _ in range(reintentos + 1):
+    ultimo = None
+    for intento in range(reintentos + 1):
+        if intento:
+            time.sleep(5 * intento)   # backoff, como pide INPI en sus buenas prácticas
         try:
-            r = requests.post(
-                WS_URL, data=cuerpo.encode("utf-8"), timeout=timeout,
-                headers={"Content-Type": "text/xml; charset=utf-8",
-                         "SOAPAction": '"http://tempuri.org/ConsultaCuitOTitular"'},
-            )
-            root = ET.fromstring(r.text)
-        except (requests.RequestException, ET.ParseError):
+            r = requests.post(WS_URL, data=cuerpo.encode("utf-8"), timeout=timeout,
+                              headers={"Content-Type": "text/xml; charset=utf-8",
+                                       "SOAPAction": f'"http://tempuri.org/{operacion}"'})
+        except requests.RequestException as e:
+            ultimo = ErrorWs(f"El webservice de INPI no respondió ({e.__class__.__name__}).")
             continue
-        filas = []
-        for g in root.iter("{http://tempuri.org/}GrillaMarcas"):
-            filas.append({c.tag.split("}")[-1]: (c.text or "") for c in g})
-        return filas
-    return []
+        try:
+            root = ET.fromstring(r.text)
+        except ET.ParseError:
+            ultimo = ErrorWs(f"El webservice de INPI devolvió una respuesta que no se pudo leer (HTTP {r.status_code}).")
+            continue
+        falla = root.find(".//faultstring")
+        if falla is not None:
+            raise ErrorWs(f"INPI rechazó la consulta: {(falla.text or '').strip()}")
+        filas = [{c.tag.replace(_NS_WS, ""): (c.text or "") for c in g} for g in root.iter(f"{_NS_WS}GrillaMarcas")]
+        total = root.find(f".//{_NS_WS}total")
+        estado = root.find(f".//{_NS_WS}estado")
+        return {"filas": filas,
+                "total": int(total.text) if total is not None and (total.text or "").strip().isdigit() else None,
+                "estado": (estado.text or "").strip() or None if estado is not None else None}
+    raise ultimo
+
+
+def consultar_titular_ws(cuit: str = "", titular: str = "", timeout: int = 60, reintentos: int = 2) -> list:
+    """[{Acta, Titulares, Fecha_Ingreso, Clase, Denominacion, Tipo_Marca}, ...].
+    Lista vacía si no hay resultados o el servicio no respondió (el error se anota en el log)."""
+    try:
+        return consultar_ws("ConsultaCuitOTitular", {"cuit": cuit, "titular": titular},
+                            timeout=(8, timeout), reintentos=reintentos)["filas"]
+    except ErrorWs as e:
+        print(f"aviso: ConsultaCuitOTitular: {e}", file=sys.stderr)
+        return []
+
+
+def consultar_denominacion_ws(denominacion: str, timeout=(8, 40)) -> dict:
+    """Marcas cuya denominación contiene el texto: {"filas": [{Acta, Titulares, Fecha_Ingreso, Clase,
+    Denominacion, Tipo_Marca, Numero_Resolucion, Estado}], "total", "estado"}. Levanta ErrorWs."""
+    return consultar_ws("ConsultaDenominacion", {"Denominacion": denominacion}, timeout=timeout)
