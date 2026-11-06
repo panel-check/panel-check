@@ -63,13 +63,13 @@ class Busquedas(unittest.TestCase):
     def setUp(self):
         self.pedidos = []
         self._orig = (bi._sesion, bi._pedir_grilla)
-        bi._sesion = lambda timeout=30: object()
+        bi._sesion = lambda pagina=None: object()
 
     def tearDown(self):
         bi._sesion, bi._pedir_grilla = self._orig
 
     def simular(self, respuestas):
-        def pedir(s, ruta, cuerpo, timeout=45):
+        def pedir(s, ruta, cuerpo):
             self.pedidos.append((ruta, cuerpo))
             return respuestas.pop(0)
         bi._pedir_grilla = pedir
