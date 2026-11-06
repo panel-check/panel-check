@@ -298,3 +298,65 @@ class Grilla(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class IncisosEscritosDeOtrasFormas(unittest.TestCase):
+    """«2A» se leía como «Art. 2» a secas (05/11/2026). Tiene que valer para cualquier número y letra."""
+
+    VARIANTES = [
+        "ART. {n}{L} de la Ley 22.362",
+        "ART. {n}{l} dela Ley 22.362",
+        "el art. {n}{L}, de la Ley 22.362",
+        "el artículo {n}{L} de la Ley 22.362",
+        "el art {n} {L} de la Ley 22.362",
+        "el artículo {n}° {l}) de la Ley 22.362",
+        "el artículo {n}°{l}) de la Ley 22.362",
+        "el artículo {n}º, {l}) de la Ley 22.362",
+        "el artículo {n} ({l}) de la Ley 22.362",
+        "el art. {n} inc. {l}) de la Ley 22.362",
+        "el art. {n} inc {l} de la Ley 22.362",
+        "el artículo {n}, inciso {l}), de la Ley 22.362",
+        "el artículo {n}, inciso {L}, de la Ley 22.362",
+        "el art. {n} {l} de la Ley 22.362",
+        "el art. {n}°{L} de la Ley 22.362",
+    ]
+
+    def test_todas_las_variantes_con_varios_numeros_y_letras(self):
+        for n in ("2", "3", "4", "10"):
+            for l in "abcdefghij":
+                for v in self.VARIANTES:
+                    texto = "El signo pretendido se encuentra alcanzado por " + v.format(n=n, l=l, L=l.upper()) + ". Notifíquese."
+                    with self.subTest(texto=texto):
+                        self.assertEqual(parsear_vista(texto)["articulos"], [f"Art. {n} inc. {l})"])
+
+    def test_dos_articulos_con_inciso_pegado(self):
+        r = parsear_vista("alcanzado por los arts. 2A y 3B de la Ley 22.362. Notifíquese.")
+        self.assertEqual(r["articulos"], ["Art. 2 inc. a)", "Art. 3 inc. b)"])
+
+    def test_dos_incisos_del_mismo_articulo(self):
+        r = parsear_vista("lo establecido en el artículo 3 a y b de la Ley 22.362. Notifíquese.")
+        self.assertIn("Art. 3 inc. a)", r["articulos"])
+
+    def test_articulo_sin_inciso_no_inventa_letra(self):
+        for t in ("el artículo 4 de la Ley 22.362.", "el art. 4° de la Ley 22.362.", "el art 2 de la Ley 22.362."):
+            with self.subTest(t=t):
+                self.assertEqual(parsear_vista(t)["articulos"], [f"Art. {t.split()[2].rstrip('°')}"])
+
+    def test_la_preposicion_a_no_es_un_inciso(self):
+        self.assertEqual(parsear_vista("conforme el artículo 4 a la luz de la Ley 22.362.")["articulos"], ["Art. 4"])
+
+
+class ListasDeArticulosEIncisos(unittest.TestCase):
+    def test_letras_sueltas_despues_del_primer_inciso(self):
+        self.assertEqual(parsear_vista("el artículo 3 a y b de la Ley 22.362.")["articulos"], ["Art. 3 inc. a)", "Art. 3 inc. b)"])
+        self.assertEqual(parsear_vista("art. 3 inc. a, b y c de la Ley 22.362")["articulos"],
+                         ["Art. 3 inc. a)", "Art. 3 inc. b)", "Art. 3 inc. c)"])
+
+    def test_lista_con_un_articulo_sin_inciso(self):
+        self.assertEqual(parsear_vista("ART. 2A, 3B y 4 de la Ley 22.362")["articulos"], ["Art. 2 inc. a)", "Art. 3 inc. b)", "Art. 4"])
+
+    def test_sin_la_palabra_articulo(self):
+        self.assertEqual(parsear_vista("Elsigno pretendido se encuentra alcanzado por el 2A de la Ley 22.362.")["articulos"], ["Art. 2 inc. a)"])
+
+    def test_articulo_de_dos_cifras(self):
+        self.assertEqual(parsear_vista("ART. 24 b) de la Ley 22.362")["articulos"], ["Art. 24 inc. b)"])

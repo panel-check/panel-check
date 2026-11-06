@@ -52,7 +52,7 @@ RE_ARTICULO = re.compile(
 # en el tramo de texto justo antes de cada «Ley 22.362».
 RE_LEY_22362 = re.compile(r"Ley\s*(?:N[°º.]?\s*)?22\.?362", re.I)
 RE_ARTICULO_LARGO = re.compile(
-    r"(?:art[ií]culos?|arts?\.)\s*(\d+)\s*[°ºo]?\s*,?\s*"
+    r"\b(?:art[ií]culos?|arts?\.?)\s*(\d+)\s*[°ºo]?\s*,?\s*"
     r"(?:inc(?:isos?|\.)?\s*(\(?[a-z]\)(?:\s*(?:y|,|e)\s*\(?[a-z]\))*)\s*)?"
     r"(?:,?\s*y\s*(?:el\s*)?(\d+)\s*[°º]?)?", re.I)
 # «cúrsese vista … bajo apercibimiento de denegatoria»: INPI a veces no escribe el plazo en la vista
@@ -71,6 +71,43 @@ RE_CLASIFICACION = re.compile(
 RE_ANTECEDENTE = re.compile(
     r"acta_antecedente:\s*(\d+)\s*[;,–—-]?\s*(?:denom:\s*(.*?))?\s*"
     r"(?=El\s*signo|acta_antecedente|D[eé]se\s*vista|C[uú]rsese|En\s*virtud|Not[ií]f[ií]quese|Visto\s*el|$)", re.I)
+
+
+# Incisos escritos de otras formas (05/11/2026: «2A» se leía como «Art. 2» a secas). Antes de buscar los
+# artículos, el tramo previo a «Ley 22.362» se lleva a la forma «N inc. x)»:
+#   «2A», «2a», «2°a», «2° a)», «2 (a)», «2, a)», «2 A», «2 a de la Ley», «inc. a», «inciso A,».
+# Vale para cualquier número de artículo y los incisos a) a j) del art. 3 (y a) a d) del 2).
+_LETRA = r"([a-jA-J])"
+_NORMALIZAR_INCISO = [
+    # «inc a», «inc. A», «inciso a,» (sin paréntesis de cierre) -> «inc. a)»
+    (re.compile(r"\binc(?:iso|\.)?\s*\(?\s*" + _LETRA + r"(?![)a-zA-Zñáéíóú])"), r"inc. \1)"),
+    # «2° a)», «2 (a)», «2, a)», «2a)»: letra con paréntesis de cierre pegada al número
+    (re.compile(r"(\d)\s*[°º]?\s*,?\s*\(?\s*" + _LETRA + r"\s*\)"), r"\1 inc. \2)"),
+    # «2A», «2a», «2°a», «2°A»: letra pegada al número (o al °), sin paréntesis
+    (re.compile(r"(\d)[°º]?" + _LETRA + r"(?![a-zA-Zñáéíóú)])"), r"\1 inc. \2)"),
+    # «2 A», «2° B»: mayúscula suelta después del número
+    (re.compile(r"(\d)\s*[°º]?\s+([A-J])(?![a-zA-Zñáéíóú)])"), r"\1 inc. \2)"),
+    # «2 a de la Ley», «3 b, y 4», «2 a y b»: minúscula suelta seguida de «de», «del», «y», coma o punto
+    (re.compile(r"(\d)\s*[°º]?\s+([a-j])(?![a-zñáéíóú])(?=\s*(?:,|\.|;|y\s|e\s|de\b|del\b|dela))"), r"\1 inc. \2)"),
+]
+
+
+# Ya normalizado: «N inc. x)» (con «y x)» o «, x)» para otros incisos del mismo artículo).
+RE_INCISO_NORMALIZADO = re.compile(r"(\d{1,2})\s*[°º]?\s*,?\s*inc\.\s*([a-j])\)((?:\s*(?:y|e|,)\s*\(?[a-j]\))*)", re.I)
+RE_ANCLA_ARTICULO = re.compile(r"\bart(?:[ií]culos?|s?\.?)?\s*\d|alcanzad[oa]\s*por", re.I)
+# Más incisos sueltos del mismo artículo: «inc. a) y b», «inc. a), b y c» -> «inc. a) y b)», etc.
+RE_INCISO_SIGUIENTE = re.compile(r"(inc\.\s*[a-j]\)(?:\s*(?:,|y|e)\s*[a-j]\))*\s*(?:,|y|e)\s*)([a-j])(?![a-zñáéíóú)])", re.I)
+# Artículo sin inciso en una lista («2A, 3B y 4»): número de 1 o 2 cifras después de «art…», una coma o «y».
+RE_ARTICULO_SUELTO = re.compile(r"(?:\bart[a-zíÍ]*\.?|,|\by|\be)\s*(\d{1,2})(?![\d.])(?!\s*[°º]?\s*,?\s*inc\.)", re.I)
+
+
+def normalizar_incisos(tramo: str) -> str:
+    for patron, reemplazo in _NORMALIZAR_INCISO:
+        tramo = patron.sub(reemplazo, tramo)
+    anterior = None
+    while anterior != tramo:
+        anterior, tramo = tramo, RE_INCISO_SIGUIENTE.sub(r"\1\2)", tramo)
+    return tramo
 
 
 def _plano(texto: str) -> str:
@@ -99,7 +136,15 @@ def parsear_vista(texto: str) -> dict:
         hallados.append((m.start(), f"Art. {m.group(1)}" + (f" inc. {m.group(2).lower()})" if m.group(2) else "")))
     for ley in RE_LEY_22362.finditer(p):
         desde = max(0, ley.start() - VENTANA_ARTICULO)
-        for m in RE_ARTICULO_LARGO.finditer(p[desde:ley.start()]):
+        tramo = normalizar_incisos(p[desde:ley.start()])
+        ancla = RE_ANCLA_ARTICULO.search(tramo)
+        if ancla:
+            for m in RE_INCISO_NORMALIZADO.finditer(tramo, ancla.start()):
+                for l in [m.group(2)] + re.findall(r"([a-j])\)", m.group(3) or "", re.I):
+                    hallados.append((desde + m.start(), f"Art. {m.group(1)} inc. {l.lower()})"))
+            for m in RE_ARTICULO_SUELTO.finditer(tramo, ancla.start()):
+                hallados.append((desde + m.start(1), f"Art. {m.group(1)}"))
+        for m in RE_ARTICULO_LARGO.finditer(tramo):
             letras = re.findall(r"([a-z])\)", m.group(2) or "", re.I)
             hallados += [(desde + m.start(), f"Art. {m.group(1)} inc. {l.lower()})") for l in letras] or [(desde + m.start(), f"Art. {m.group(1)}")]
             if m.group(3):
