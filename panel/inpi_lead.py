@@ -630,6 +630,27 @@ def _firma_grilla(a: dict) -> str:
     return f"{_parsear_fecha_grilla(a.get('Fecha') or '') or ''}|{(a.get('Indice') or '').strip()}|{(a.get('Referencia') or '').strip()}"
 
 
+def datos_de_expediente(texto: str) -> dict:
+    """Lo que se lee de la página del expediente sin pedir nada más: caracter, agente y matrícula
+    (GESTION DEL TRAMITE), cuit, clase, titular, datos generales y resolución. Lo usan
+    consultar_expediente y el buscador INPI del panel (buscador_inpi.detalle_acta)."""
+    out = {}
+    m_gestion = RE_GESTION.search(texto)
+    bloque_gestion = m_gestion.group(1) if m_gestion else ""
+    m_car = RE_CARACTER_SPAN.search(bloque_gestion or texto)
+    out["caracter"] = re.sub(r"\s+", " ", m_car.group(1)).strip() if m_car else ""
+    out.update(_agente_de_bloque(bloque_gestion))
+    m_cuit = RE_CUIT_SPAN.search(texto)
+    cuit = re.sub(r"[^\d]", "", m_cuit.group(1)) if m_cuit else ""
+    out["cuit"] = cuit if len(cuit) in (10, 11) else None
+    m_clase = RE_CLASE_SPAN.search(texto)
+    out["clase"] = int(m_clase.group(1)) if m_clase else None
+    out["titular"] = _titulares_de_pagina(texto)
+    out.update(_datos_generales(texto))
+    out.update(_parsear_resolucion(texto))
+    return out
+
+
 def consultar_expediente(acta: str, s=None, timeout: int = 30, con_grilla: bool = True) -> dict:
     """Ficha completa de un expediente. Devuelve siempre un dict:
       estado_consulta: "ok" | "no_existe" | "bloqueado" | "error"
@@ -666,23 +687,10 @@ def consultar_expediente(acta: str, s=None, timeout: int = 30, con_grilla: bool 
 
     texto = r.text
     out["estado_consulta"] = "ok"
-    m_gestion = RE_GESTION.search(texto)
-    bloque_gestion = m_gestion.group(1) if m_gestion else ""
-    m_car = RE_CARACTER_SPAN.search(bloque_gestion or texto)
-    out["caracter"] = re.sub(r"\s+", " ", m_car.group(1)).strip() if m_car else ""
-    out.update(_agente_de_bloque(bloque_gestion))
+    out.update(datos_de_expediente(texto))
     # El logo viene en la misma página del expediente: no hace falta otro pedido a INPI.
     # (bytes, mime) o None si la marca no tiene (las denominativas no tienen).
     out["logo"] = extraer_logo(texto)
-
-    m_cuit = RE_CUIT_SPAN.search(texto)
-    cuit = re.sub(r"[^\d]", "", m_cuit.group(1)) if m_cuit else ""
-    out["cuit"] = cuit if len(cuit) in (10, 11) else None
-    m_clase = RE_CLASE_SPAN.search(texto)
-    out["clase"] = int(m_clase.group(1)) if m_clase else None
-    out["titular"] = _titulares_de_pagina(texto)
-    out.update(_datos_generales(texto))
-    out.update(_parsear_resolucion(texto))
 
     out.update({"fecha_publicacion": None, "tuvo_oposicion": None, "detalle_oposicion": "",
                 "grilla_claves": None, "movimientos": None,

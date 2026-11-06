@@ -1980,6 +1980,16 @@ tr.seleccionada, tr.seleccionada.lead { background: var(--azul-claro); }
   box-shadow: 0 0 0 1px var(--borde);
 }
 .app-header .nav-buscar-input:focus { outline: none; box-shadow: 0 0 0 1px var(--azul), var(--foco); }
+/* Botón «INPI» al lado del campo: busca lo escrito en INPI en vivo (/buscador-inpi). Solo se ve con la lupa abierta. */
+.app-header .nav-buscar-inpi {
+  display: none; align-items: center; gap: 3px; height: 30px; margin-left: 4px; padding: 0 9px 0 7px;
+  border: 1px solid var(--borde-control); border-radius: 8px; background: #fff; color: var(--azul);
+  font: inherit; font-size: 11.5px; font-weight: 700; letter-spacing: .03em; cursor: pointer; white-space: nowrap;
+}
+.app-header .nav-buscar-inpi .nav-ico { width: 15px; height: 15px; }
+.app-header .nav-buscar-inpi:hover { background: var(--azul-claro); border-color: var(--azul); }
+.app-header .nav-buscar-inpi:focus-visible { outline: none; box-shadow: var(--foco); }
+.app-header .nav-buscar.abierto .nav-buscar-inpi { display: inline-flex; }
 @media (max-width: 860px) { .app-header .nav-buscar.abierto .nav-buscar-input { width: 180px; } }
 /* Pantallas chicas: no hay lugar al lado de los otros botones, así que el campo
    abierto ocupa toda la barra (tapa el menú hasta que se cierra o se busca). */

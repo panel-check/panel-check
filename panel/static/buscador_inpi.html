@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Buscador INPI — Kom Marcas Inpi</title>
+<link rel="icon" type="image/png" href="/static/favicon.png" />
+<link rel="apple-touch-icon" href="/static/apple-touch-icon.png" />
+<link rel="stylesheet" href="/static/comun.css?v=mv3" />
+<link rel="stylesheet" href="/static/buscador_inpi.css?v=1" />
+<script src="/static/sesion.js" defer></script>
+<script src="/static/menu.js?v=inf2" defer></script>
+</head>
+<body>
+
+<header class="app-header">
+  <a class="marca" href="/" title="Volver al panel de leads"><img class="marca-img" src="/static/logo-smarties-header.png" alt="Smarties Consultora" width="90" height="40" /><span class="marca-nombre">Panel de leads</span></a>
+  <span class="marca-sep">/</span>
+  <h1>Buscador INPI</h1>
+  <nav class="nav">
+    <a href="/" title="Leads"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5h18M3 12h18M3 19h12"/></svg><span class="nav-txt">Leads</span></a>
+    <a href="/crm" title="CRM"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="5" height="16" rx="1.5"/><rect x="10" y="4" width="5" height="11" rx="1.5"/><rect x="17" y="4" width="4" height="7" rx="1.5"/></svg><span class="nav-txt">CRM</span></a>
+    <a href="/clientes" title="Clientes"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M16 20v-1.5a3.5 3.5 0 0 0-3.5-3.5h-5A3.5 3.5 0 0 0 4 18.5V20"/><circle cx="10" cy="8" r="3.5"/><path d="M20 20v-1.5a3.5 3.5 0 0 0-2.5-3.35M15 4.6a3.5 3.5 0 0 1 0 6.8"/></svg><span class="nav-txt">Clientes</span></a>
+    <a href="/calendario" title="Calendario"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg><span class="nav-txt">Calendario</span></a>
+    <div class="nav-grupo">
+      <button type="button" class="nav-boton" aria-haspopup="true" aria-expanded="false" title="Más"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1.2"/><circle cx="12" cy="12" r="1.2"/><circle cx="19" cy="12" r="1.2"/></svg><span class="nav-txt">Más</span><svg class="nav-chev" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button>
+      <div class="nav-sub nav-sub-der" role="menu">
+        <div class="nav-sub-grupo">
+          <button type="button" class="nav-sub-boton" aria-haspopup="true" aria-expanded="false" title="Automatizaciones"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg><span class="nav-sub-txt">Automatizaciones</span><svg class="nav-chev nav-chev-lado" viewBox="0 0 24 24" aria-hidden="true"><path d="m15 6-6 6 6 6"/></svg></button>
+          <div class="nav-sub-2" role="menu">
+            <a href="/boletines" role="menuitem"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h13a2 2 0 0 1 2 2v14H6a2 2 0 0 1-2-2z"/><path d="M19 8h1a1 1 0 0 1 1 1v9a2 2 0 0 1-2 2"/><path d="M8 8h7M8 12h7M8 16h4"/></svg><span class="nav-sub-txt">Boletines</span></a>
+            <a href="/crons" role="menuitem"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg><span class="nav-sub-txt">Crons</span></a>
+          </div>
+        </div>
+        <a href="/consultas-web" role="menuitem"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg><span class="nav-sub-txt">Consultas web</span></a>
+        <a href="/informes" role="menuitem"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h4"/></svg><span class="nav-sub-txt">Informes</span></a>
+        <a href="/mails" role="menuitem"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/></svg><span class="nav-sub-txt">Mails</span></a>
+        <a href="/ayuda" role="menuitem"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.6v.6"/><path d="M12 17h.01"/></svg><span class="nav-sub-txt">Ayuda</span></a>
+      </div>
+    </div>
+    <button type="button" class="nav-boton nav-coment" id="link-comentarios" title="Chat" aria-label="Chat" aria-expanded="false"><svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H8l-5 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg><span class="nav-badge"></span></button>
+  </nav>
+</header>
+
+<div class="contenido">
+  <div class="bi-cab">
+    <p class="bi-nota">Consulta <strong>en vivo</strong> al buscador de marcas de INPI (nada se guarda en el panel). Las actas que ya están en el panel muestran si son cliente o lead y se abren acá; el resto se abre con <strong>Ver acta</strong> o directo en INPI.</p>
+  </div>
+
+  <div class="bi-tabs" role="tablist">
+    <button type="button" class="bi-tab activa" data-tab="marcas" role="tab">Buscador de marcas</button>
+    <button type="button" class="bi-tab" data-tab="puntual" role="tab">Acta / resolución</button>
+    <button type="button" class="bi-tab" data-tab="cuit" role="tab">CUIT</button>
+    <button type="button" class="bi-tab" data-tab="renovaciones" role="tab">Renovaciones</button>
+  </div>
+
+  <form class="bi-form" data-panel="marcas" id="f-marcas" autocomplete="off">
+    <div class="bi-grid">
+      <label>Tipo de resolución
+        <select name="tipo_resolucion">
+          <option value="">Todas</option><option value="A">Abandonada</option><option value="CA">Caduca</option>
+          <option value="C">Concedida</option><option value="N">Denegada</option><option value="D">Desistida</option>
+          <option value="E">En trámite</option><option value="NU">Nula</option>
+        </select>
+      </label>
+      <label>Clase <select name="clase" id="sel-clase"><option value="-1">Todas</option></select></label>
+      <label class="bi-doble">Denominación
+        <span class="bi-combo">
+          <select name="denominacion_modo"><option value="contiene">Contiene</option><option value="empieza">Empieza con</option></select>
+          <input type="text" name="denominacion" maxlength="120" placeholder="Ej.: CINE CATASTROFE" />
+        </span>
+      </label>
+      <label class="bi-doble">Titular
+        <span class="bi-combo">
+          <select name="titular_modo"><option value="contiene">Contiene</option><option value="empieza">Empieza con</option></select>
+          <input type="text" name="titular" maxlength="120" placeholder="Nombre o razón social" />
+        </span>
+      </label>
+      <label>Fecha de ingreso desde <input type="date" name="ingreso_desde" /></label>
+      <label>Fecha de ingreso hasta <input type="date" name="ingreso_hasta" /></label>
+      <label>Fecha de resolución desde <input type="date" name="resolucion_desde" /></label>
+      <label>Fecha de resolución hasta <input type="date" name="resolucion_hasta" /></label>
+    </div>
+    <div class="bi-acciones">
+      <label class="bi-check"><input type="checkbox" name="vigentes" /> Solo vigentes</label>
+      <span class="bi-espacio"></span>
+      <button type="button" class="btn-sec" data-limpiar>Limpiar</button>
+      <button type="submit" class="btn-prim">Buscar en INPI</button>
+    </div>
+  </form>
+
+  <form class="bi-form" data-panel="puntual" id="f-puntual" autocomplete="off" hidden>
+    <div class="bi-grid">
+      <label>Número de acta <input type="text" name="acta" inputmode="numeric" maxlength="12" placeholder="Ej.: 4797414" /></label>
+      <label>Número de resolución (registro) <input type="text" name="resolucion" inputmode="numeric" maxlength="12" placeholder="Ej.: 3955971" /></label>
+    </div>
+    <div class="bi-acciones"><span class="bi-espacio"></span><button type="submit" class="btn-prim">Buscar en INPI</button></div>
+  </form>
+
+  <form class="bi-form" data-panel="cuit" id="f-cuit" autocomplete="off" hidden>
+    <div class="bi-grid">
+      <label>CUIT del titular <input type="text" name="cuit" inputmode="numeric" maxlength="14" placeholder="Ej.: 20-30494454-5" /></label>
+    </div>
+    <p class="bi-ayuda">El portal de INPI no busca por CUIT: esta búsqueda usa el webservice de INPI y trae todas las marcas de ese CUIT (sin estado ni resolución; se ven al abrir cada acta).</p>
+    <div class="bi-acciones"><span class="bi-espacio"></span><button type="submit" class="btn-prim">Buscar en INPI</button></div>
+  </form>
+
+  <form class="bi-form" data-panel="renovaciones" id="f-renovaciones" autocomplete="off" hidden>
+    <div class="bi-grid">
+      <label>Fecha de presentación desde <input type="date" name="presentacion_desde" /></label>
+      <label>Fecha de presentación hasta <input type="date" name="presentacion_hasta" /></label>
+    </div>
+    <div class="bi-acciones"><span class="bi-espacio"></span><button type="submit" class="btn-prim">Buscar en INPI</button></div>
+  </form>
+
+  <div id="bi-resultado" class="bi-resultado" aria-live="polite"></div>
+</div>
+
+<div class="bi-modal" id="bi-modal" hidden>
+  <div class="bi-modal-fondo" data-cerrar></div>
+  <div class="bi-modal-caja" role="dialog" aria-modal="true" aria-labelledby="bi-modal-titulo">
+    <button type="button" class="bi-modal-x" data-cerrar aria-label="Cerrar">×</button>
+    <div id="bi-modal-contenido"></div>
+  </div>
+</div>
+
+
+<script src="/static/comun.js?v=vp9"></script>
+<script src="/static/buscador_inpi.js?v=1"></script>
+</body>
+</html>

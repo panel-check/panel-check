@@ -1,0 +1,100 @@
+/* Pantalla /buscador-inpi (buscador_inpi.js): búsqueda en vivo en INPI. */
+.contenido { max-width: 1180px; margin: 22px auto 60px; padding: 0 20px; }
+.bi-nota { margin: 0 0 14px; font-size: 13px; color: var(--gris); line-height: 1.5; }
+
+.bi-tabs { display: flex; gap: 4px; flex-wrap: wrap; border-bottom: 1px solid var(--borde); margin-bottom: 0; }
+.bi-tab {
+  border: 1px solid transparent; border-bottom: none; background: none; padding: 9px 14px; font: inherit; font-size: 13px;
+  font-weight: 600; color: var(--gris); cursor: pointer; border-radius: 8px 8px 0 0; margin-bottom: -1px;
+}
+.bi-tab:hover { color: var(--azul); }
+.bi-tab.activa { background: white; color: var(--azul); border-color: var(--borde); }
+.bi-tab:focus-visible { outline: none; box-shadow: var(--foco); }
+
+.bi-form { background: white; border: 1px solid var(--borde); border-top: none; border-radius: 0 0 10px 10px; padding: 16px; }
+.bi-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 16px; }
+.bi-grid label { display: flex; flex-direction: column; gap: 5px; font-size: 11px; font-weight: 600; color: var(--gris); text-transform: uppercase; letter-spacing: .02em; }
+.bi-grid input, .bi-grid select {
+  font: inherit; font-size: 13px; text-transform: none; letter-spacing: 0; color: var(--texto); font-weight: 400;
+  border: 1px solid var(--borde-control); border-radius: 7px; padding: 8px 10px; background: white; min-width: 0; height: 36px;
+}
+.bi-grid select { appearance: none; background: white var(--chevron) no-repeat right 10px center; padding-right: 28px; }
+.bi-grid input:focus, .bi-grid select:focus { outline: none; border-color: var(--azul); box-shadow: var(--foco); }
+.bi-combo { display: flex; gap: 6px; }
+.bi-combo select { flex: 0 0 132px; }
+.bi-combo input { flex: 1; }
+.bi-acciones { display: flex; align-items: center; gap: 8px; margin-top: 14px; flex-wrap: wrap; }
+.bi-espacio { flex: 1; }
+.bi-check { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer; }
+.bi-ayuda { margin: 10px 0 0; font-size: 12px; color: var(--gris); }
+
+.btn-prim, .btn-sec, .bi-btn {
+  font: inherit; font-size: 13px; font-weight: 600; border-radius: 7px; padding: 0 14px; height: 34px; cursor: pointer;
+  display: inline-flex; align-items: center; gap: 6px; text-decoration: none; white-space: nowrap;
+}
+.btn-prim { background: var(--azul); color: white; border: 1px solid var(--azul); }
+.btn-prim:hover { background: var(--azul-oscuro); }
+.btn-prim:disabled { opacity: .6; cursor: progress; }
+.btn-sec, .bi-btn { background: white; color: var(--texto); border: 1px solid var(--borde-control); }
+.btn-sec:hover, .bi-btn:hover { border-color: var(--azul); color: var(--azul); }
+.bi-btn.chico { height: 28px; padding: 0 10px; font-size: 12px; }
+.btn-prim:focus-visible, .btn-sec:focus-visible, .bi-btn:focus-visible { outline: none; box-shadow: var(--foco); }
+
+.bi-resultado { margin-top: 18px; }
+.bi-estado { font-size: 13px; color: var(--gris); padding: 14px 2px; }
+.bi-estado.error { color: var(--rojo); }
+.bi-resumen { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 13px; color: var(--gris); margin-bottom: 8px; }
+.bi-resumen strong { color: var(--texto); }
+.bi-aviso { background: #fff7e6; color: #8a5a00; border: 1px solid #f3dfb3; border-radius: 7px; padding: 6px 10px; font-size: 12px; }
+
+.bi-tabla-caja { background: white; border: 1px solid var(--borde); border-radius: 10px; overflow-x: auto; }
+table.bi-tabla { width: 100%; border-collapse: collapse; font-size: 13px; }
+table.bi-tabla th { background: #fafbfc; color: var(--gris); font-size: 11px; font-weight: 600; text-transform: uppercase; text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--borde); white-space: nowrap; }
+table.bi-tabla td { padding: 9px 12px; border-bottom: 1px solid var(--borde); vertical-align: top; }
+table.bi-tabla tr:last-child td { border-bottom: none; }
+table.bi-tabla tbody tr:hover { background: #fafcff; }
+.bi-acta { font-weight: 700; color: var(--azul); background: none; border: none; padding: 0; font: inherit; cursor: pointer; text-decoration: none; }
+.bi-acta:hover { text-decoration: underline; }
+.bi-den { font-weight: 600; }
+.bi-sub { color: var(--gris); font-size: 12px; }
+.bi-num { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.bi-tag { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; background: #eef0f2; color: var(--gris); white-space: nowrap; text-decoration: none; }
+.bi-tag.cliente { background: #e6f4ea; color: var(--verde); }
+.bi-tag.lead { background: var(--azul-claro); color: var(--azul); }
+.bi-tag.ok { background: #e6f4ea; color: var(--verde); }
+.bi-tag.mal { background: #fdecea; color: var(--rojo); }
+.bi-tag.aviso { background: #fff4e0; color: #b26a00; }
+a.bi-tag:hover { text-decoration: underline; }
+.bi-fila-acc { display: flex; gap: 6px; justify-content: flex-end; }
+
+.bi-paginas { display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin-top: 10px; font-size: 13px; color: var(--gris); flex-wrap: wrap; }
+.bi-paginas select { font: inherit; font-size: 12px; border: 1px solid var(--borde-control); border-radius: 6px; padding: 4px 6px; }
+
+/* Ficha del acta (modal) */
+.bi-modal { position: fixed; inset: 0; z-index: 1000; display: flex; align-items: flex-start; justify-content: center; padding: 40px 16px; overflow-y: auto; }
+.bi-modal[hidden] { display: none; }
+.bi-modal-fondo { position: fixed; inset: 0; background: rgba(15, 23, 42, .45); }
+.bi-modal-caja { position: relative; background: white; border-radius: 12px; width: min(980px, 100%); padding: 22px 24px 26px; box-shadow: 0 20px 50px rgba(0,0,0,.25); }
+.bi-modal-x { position: absolute; top: 10px; right: 12px; border: none; background: none; font-size: 26px; line-height: 1; color: var(--gris); cursor: pointer; padding: 4px 8px; border-radius: 6px; }
+.bi-modal-x:hover { background: #f0f2f5; color: var(--texto); }
+.bi-ficha-cab { display: flex; gap: 16px; align-items: flex-start; padding-right: 30px; }
+.bi-logo { width: 84px; height: 84px; object-fit: contain; border: 1px solid var(--borde); border-radius: 8px; background: white; flex: none; }
+.bi-ficha-cab h2 { margin: 0 0 4px; font-size: 20px; }
+.bi-ficha-acc { display: flex; gap: 8px; flex-wrap: wrap; margin: 14px 0 4px; }
+.bi-sec { margin-top: 18px; }
+.bi-sec h3 { font-size: 12px; text-transform: uppercase; letter-spacing: .03em; color: var(--gris); margin: 0 0 8px; padding-bottom: 6px; border-bottom: 1px solid var(--borde); }
+.bi-datos { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px 18px; font-size: 13px; }
+.bi-datos div > span { display: block; font-size: 10.5px; font-weight: 700; color: #9aa1ab; text-transform: uppercase; letter-spacing: .03em; margin-bottom: 2px; }
+.bi-texto { font-size: 13px; line-height: 1.5; white-space: pre-wrap; }
+.bi-fundamento summary { cursor: pointer; color: var(--azul); font-size: 12px; }
+.bi-fundamento div { white-space: pre-wrap; font-size: 12px; line-height: 1.45; background: #fafbfc; border: 1px solid var(--borde); border-radius: 6px; padding: 8px 10px; margin-top: 6px; max-height: 260px; overflow-y: auto; }
+.bi-vacio { font-size: 13px; color: var(--gris); }
+
+@media (max-width: 720px) {
+  .bi-grid { grid-template-columns: 1fr; }
+  .bi-datos { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .bi-combo select { flex-basis: 112px; }
+  .bi-modal { padding: 0; }
+  .bi-modal-caja { border-radius: 0; min-height: 100%; padding: 18px 16px 24px; }
+  .bi-ficha-cab { flex-direction: column; }
+}

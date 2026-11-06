@@ -241,6 +241,19 @@
     if (!boton) return;
     // En la propia pantalla /comentarios no hace falta el panel: el botón queda marcado y listo.
     if (location.pathname === "/comentarios") return;
+    // Mismo texto, pero en INPI en vivo (pantalla /buscador-inpi): acta, CUIT o denominación.
+    // Sin texto abre el buscador avanzado de INPI. Ctrl/Cmd+clic: en otra pestaña.
+    function buscarEnInpi(nuevaPestana) {
+      const texto = campo.value.trim();
+      const url = "/buscador-inpi" + (texto ? `?q=${encodeURIComponent(texto)}` : "");
+      campo.value = "";
+      abrir(false);
+      if (nuevaPestana) window.open(url, "_blank", "noopener");
+      else location.href = url;
+    }
+    botonInpi.addEventListener("click", (e) => { e.stopPropagation(); buscarEnInpi(e.ctrlKey || e.metaKey); });
+    botonInpi.addEventListener("auxclick", (e) => { if (e.button === 1) { e.stopPropagation(); buscarEnInpi(true); } });
+
     boton.addEventListener("click", (e) => {
       e.stopPropagation();
       abrirChat(!panelAbierto());
@@ -487,7 +500,8 @@
   // nombre de la marca o del titular. Con Enter busca en Leads sobre TODAS las
   // marcas: Lead y Contactado en "Todos" y el resto de los filtros limpios.
   // Estando en Leads se aplica sin recargar (aplicarAccesoRapido); desde otra
-  // pantalla lleva a Leads ya con la búsqueda hecha.
+  // pantalla lleva a Leads ya con la búsqueda hecha. Al lado del campo, el botón
+  // «INPI» (o Shift+Enter) busca lo mismo en INPI en vivo (/buscador-inpi).
   const LUPA_SVG = '<svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>';
 
   function iniciarBusqueda() {
@@ -498,8 +512,10 @@
     form.setAttribute("role", "search");
     form.innerHTML = `
       <button type="button" class="nav-boton nav-buscar-btn" title="Buscar una marca" aria-label="Buscar una marca" aria-expanded="false">${LUPA_SVG}</button>
-      <input type="search" class="nav-buscar-input" placeholder="Acta, CUIT, mail, marca…" aria-label="Buscar por número de acta, CUIT, mail o nombre de la marca" autocomplete="off" maxlength="120" tabindex="-1" />`;
+      <input type="search" class="nav-buscar-input" placeholder="Acta, CUIT, mail, marca…" aria-label="Buscar por número de acta, CUIT, mail o nombre de la marca" autocomplete="off" maxlength="120" tabindex="-1" />
+      <button type="button" class="nav-buscar-inpi" title="Buscar en INPI (en vivo). Vacío: abre el buscador avanzado de INPI" aria-label="Buscar en INPI" tabindex="-1">${LUPA_SVG}<span>INPI</span></button>`;
     nav.insertBefore(form, nav.firstChild);
+    const botonInpi = form.querySelector(".nav-buscar-inpi");
 
     const boton = form.querySelector(".nav-buscar-btn");
     const campo = form.querySelector(".nav-buscar-input");
@@ -508,6 +524,7 @@
       form.classList.toggle("abierto", abrirla);
       boton.setAttribute("aria-expanded", abrirla ? "true" : "false");
       campo.tabIndex = abrirla ? 0 : -1;
+      botonInpi.tabIndex = abrirla ? 0 : -1;
       if (abrirla) setTimeout(() => campo.focus(), 40);
       else campo.blur();
     }
@@ -525,6 +542,19 @@
       }
     }
 
+    // Mismo texto, pero en INPI en vivo (pantalla /buscador-inpi): acta, CUIT o denominación.
+    // Sin texto abre el buscador avanzado de INPI. Ctrl/Cmd+clic: en otra pestaña.
+    function buscarEnInpi(nuevaPestana) {
+      const texto = campo.value.trim();
+      const url = "/buscador-inpi" + (texto ? `?q=${encodeURIComponent(texto)}` : "");
+      campo.value = "";
+      abrir(false);
+      if (nuevaPestana) window.open(url, "_blank", "noopener");
+      else location.href = url;
+    }
+    botonInpi.addEventListener("click", (e) => { e.stopPropagation(); buscarEnInpi(e.ctrlKey || e.metaKey); });
+    botonInpi.addEventListener("auxclick", (e) => { if (e.button === 1) { e.stopPropagation(); buscarEnInpi(true); } });
+
     boton.addEventListener("click", (e) => {
       e.stopPropagation();
       if (!form.classList.contains("abierto")) abrir(true);
@@ -535,6 +565,8 @@
     campo.addEventListener("click", (e) => e.stopPropagation());
     campo.addEventListener("keydown", (e) => {
       if (e.key === "Escape") { e.stopPropagation(); campo.value = ""; abrir(false); boton.focus(); }
+      // Shift+Enter: busca en INPI en vez de en el panel.
+      if (e.key === "Enter" && e.shiftKey) { e.preventDefault(); buscarEnInpi(false); }
     });
     // Clic afuera: se vuelve a esconder, pero solo si no hay nada escrito.
     document.addEventListener("click", () => { if (form.classList.contains("abierto") && !campo.value.trim()) abrir(false); });
