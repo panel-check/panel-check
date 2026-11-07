@@ -725,7 +725,8 @@ def existe_expediente(s: requests.Session, acta: str, timeout: int = 30) -> tupl
 
     Devuelve (existe, texto_pagina): texto_pagina se puede reusar para no
     tener que volver a pedir la misma página (ver revisar_acta).
-    existe=None si el WAF bloqueó la consulta (no se pudo saber)."""
+    existe=None si no se pudo saber: bloqueo del WAF o una página que no es ni el expediente ni el aviso
+    «Marca no encontrada» (INPI lento o con error)."""
     r = _get_con_reintentos(
         lambda: s.post(
             f"{BASE}/MarcasConsultas/Resultado",
@@ -736,10 +737,15 @@ def existe_expediente(s: requests.Session, acta: str, timeout: int = 30) -> tupl
     )
     if "Web Page Blocked" in r.text or "Attack ID" in r.text:
         return None, r.text
-    # Un expediente real siempre trae al menos estas dos secciones. Si
-    # ninguna aparece, es que ese número de acta todavía no fue asignado.
-    existe = ("GESTION DEL TRAMITE" in r.text) or ("TITULARIDAD" in r.text)
-    return existe, r.text
+    # Un expediente real siempre trae al menos estas dos secciones.
+    if ("GESTION DEL TRAMITE" in r.text) or ("TITULARIDAD" in r.text):
+        return True, r.text
+    # Un número todavía no asignado devuelve «Su operacion no se ha podido realizar! Marca no encontrada.»
+    # Cualquier otra página (INPI lento o con error, visto el 07/11/2026: actas que existen devolvían una
+    # página sin el expediente) NO quiere decir que no exista: se devuelve None para no saltearla.
+    if "Marca no encontrada" in r.text:
+        return False, r.text
+    return None, r.text
 
 
 
