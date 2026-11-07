@@ -231,7 +231,7 @@ def main():
             if existe is None:
                 # Un bloqueo suelto es normal: esperar y reintentar una vez.
                 # la espera progresiva (5/10/20 s...) ya la hace monitor_bloqueo
-                print(f"  acta {acta}: bloqueado por el WAF, reintento una vez")
+                print(f"  acta {acta}: INPI no respondió bien (bloqueo o página de error), reintento una vez")
                 existe, _texto = existe_expediente(s, acta)
             if existe is None:
                 # WAF bloqueó la consulta -- no sabemos si existe, cortamos
@@ -239,7 +239,7 @@ def main():
                 # sobre números que en realidad no se llegaron a revisar.
                 bloqueado_seguido += 1
                 bloqueos += 1
-                print(f"  acta {acta}: bloqueado por el WAF de INPI, frenando esta corrida")
+                print(f"  acta {acta}: INPI sigue sin responder bien (bloqueo o página de error), frenando esta corrida")
                 break
 
             if not existe:
