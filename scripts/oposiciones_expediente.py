@@ -62,6 +62,8 @@ import datetime as _dt
 import json
 import re
 
+import requests
+
 from validar_leads import (
     BASE,
     RE_CARACTER_SPAN,
@@ -175,14 +177,21 @@ def consultar_expediente(s, acta: str, timeout: int = 30) -> dict:
     """Pide el expediente a INPI (misma llamada que ya usa el resto del
     sistema) y devuelve parsear_expediente(...). bloqueado=True si el WAF
     frenó la consulta: el que llama reintenta en la próxima corrida."""
-    r = _get_con_reintentos(
-        lambda: s.post(
-            f"{BASE}/MarcasConsultas/Resultado",
-            headers={"Referer": f"{BASE}/MarcasConsultas/Grilla"},
-            data={"acta": acta},
-            timeout=timeout,
+    try:
+        r = _get_con_reintentos(
+            lambda: s.post(
+                f"{BASE}/MarcasConsultas/Resultado",
+                headers={"Referer": f"{BASE}/MarcasConsultas/Grilla"},
+                data={"acta": acta},
+                timeout=timeout,
+            )
         )
-    )
+    except requests.RequestException as e:
+        # INPI no contestó ni con los reintentos: se trata igual que un bloqueo (esta acta se saltea y
+        # se vuelve a revisar en la próxima corrida) en vez de cortar la corrida entera.
+        print(f"  acta {acta}: INPI no contestó ({type(e).__name__}), se revisa en la próxima corrida")
+        return {"bloqueado": True, "estado_tramite": None, "oposiciones": [], "vistas": [], "titular_caracter": "",
+                "titular_agente": "", "titular_matricula": "", "error_lectura": False}
     if "Web Page Blocked" in r.text or "Attack ID" in r.text:
         return {"bloqueado": True, "estado_tramite": None, "oposiciones": [], "vistas": [], "titular_caracter": "",
                 "titular_agente": "", "titular_matricula": "", "error_lectura": False}

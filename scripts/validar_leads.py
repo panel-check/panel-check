@@ -727,14 +727,20 @@ def existe_expediente(s: requests.Session, acta: str, timeout: int = 30) -> tupl
     tener que volver a pedir la misma página (ver revisar_acta).
     existe=None si no se pudo saber: bloqueo del WAF o una página que no es ni el expediente ni el aviso
     «Marca no encontrada» (INPI lento o con error)."""
-    r = _get_con_reintentos(
-        lambda: s.post(
-            f"{BASE}/MarcasConsultas/Resultado",
-            headers={"Referer": f"{BASE}/MarcasConsultas/Grilla"},
-            data={"acta": acta},
-            timeout=timeout,
+    try:
+        r = _get_con_reintentos(
+            lambda: s.post(
+                f"{BASE}/MarcasConsultas/Resultado",
+                headers={"Referer": f"{BASE}/MarcasConsultas/Grilla"},
+                data={"acta": acta},
+                timeout=timeout,
+            )
         )
-    )
+    except requests.RequestException as e:
+        # INPI no contestó ni con los reintentos (08/11/2026: tiempos de espera agotados con INPI
+        # saturado). No se sabe si existe: None, y el escaneo corta limpio sin mover el puntero.
+        print(f"  acta {acta}: INPI no contestó ({type(e).__name__})")
+        return None, ""
     if "Web Page Blocked" in r.text or "Attack ID" in r.text:
         return None, r.text
     # Un expediente real siempre trae al menos estas dos secciones.

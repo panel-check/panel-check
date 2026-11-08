@@ -31,6 +31,23 @@ from requests.adapters import HTTPAdapter
 
 HOSTS_INPI = {"portaltramites.inpi.gob.ar", "ws.inpi.gob.ar"}
 CABECERA_CLAVE = "X-Relay-Clave"
+# Espera mínima de lectura para los pedidos que pasan por el reenvío. Con INPI saturado (07-08/11/2026) el
+# expediente tardaba hasta 80 s; con 30 s se cortaban las corridas. El PHP espera hasta 90 s y Cloudflare
+# corta a los 100 s, así que 85 s deja que llegue la respuesta del INPI o el error del propio reenvío.
+LECTURA_MINIMA = 85
+
+
+def _timeout_ampliado(timeout):
+    """Devuelve el timeout con la lectura llevada a LECTURA_MINIMA (respeta uno mayor o sin límite)."""
+    if timeout is None:
+        return None
+    if isinstance(timeout, tuple):
+        conexion, lectura = timeout
+        return (conexion, None if lectura is None else max(lectura, LECTURA_MINIMA))
+    try:
+        return (timeout, max(float(timeout), LECTURA_MINIMA))
+    except (TypeError, ValueError):   # urllib3 Timeout u otro objeto: se deja como vino
+        return timeout
 
 _send_original = HTTPAdapter.send
 _activo = False
@@ -63,6 +80,8 @@ def _send(self, request, **kwargs):
     copia.prepare_url(url, {"b": base64.urlsafe_b64encode(request.url.encode()).decode().rstrip("=")})
     copia.headers[CABECERA_CLAVE] = clave
     copia.headers.pop("Host", None)
+    if "timeout" in kwargs:
+        kwargs["timeout"] = _timeout_ampliado(kwargs["timeout"])
     respuesta = _send_original(self, copia, **kwargs)
     error = respuesta.headers.get("X-Relay-Error")
     if error or (respuesta.status_code == 404 and not respuesta.headers.get("Content-Type", "").startswith("text/html")):

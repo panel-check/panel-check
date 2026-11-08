@@ -6,6 +6,9 @@ existe_expediente (scripts/validar_leads.py): un acta solo se da por inexistente
 """
 
 import unittest
+from unittest import mock
+
+import requests
 
 try:
     import validar_leads as vl
@@ -41,6 +44,26 @@ class ExisteExpediente(unittest.TestCase):
 
     def test_bloqueo_del_waf(self):
         self.assertIsNone(vl.existe_expediente(_Sesion("Web Page Blocked"), "1")[0])
+
+    def test_inpi_no_contesta_no_corta_la_corrida(self):
+        class _Caida:
+            def post(self, *a, **k):
+                raise requests.ReadTimeout("read timeout=30")
+        with mock.patch.object(vl.time, "sleep"):
+            self.assertEqual(vl.existe_expediente(_Caida(), "1"), (None, ""))
+
+
+@unittest.skipIf(vl is None, "faltan dependencias")
+class ConsultarExpediente(unittest.TestCase):
+    def test_tiempo_agotado_es_como_bloqueo(self):
+        import oposiciones_expediente as oe
+
+        class _Caida:
+            def post(self, *a, **k):
+                raise requests.ReadTimeout("read timeout=30")
+        with mock.patch.object(vl.time, "sleep"):
+            exp = oe.consultar_expediente(_Caida(), "1")
+        self.assertTrue(exp["bloqueado"])
 
 
 if __name__ == "__main__":
