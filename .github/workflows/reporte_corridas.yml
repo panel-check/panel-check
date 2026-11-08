@@ -1,0 +1,95 @@
+name: "Reporte de corridas (Telegram)"
+
+on:
+  # Se dispara cada vez que termina cualquier otro workflow del repo: los que programa el panel
+  # (panel/programador.py), los encadenados y los que se lanzan a mano. Analiza la corrida
+  # (scripts/reporte_corrida.py) y manda el reporte a Telegram. Si se agrega un workflow nuevo, sumarlo
+  # a esta lista con su `name:` exacto (lo controla scripts/test_reporte_corrida.py).
+  workflow_run:
+    types: [completed]
+    workflows:
+      - "Agregar marca manualmente (fuera del boletín)"
+      - "Agrupar marcas bajo un mismo nombre"
+      - "Avisos por mail de la mañana"
+      - "Corregir clase de marcas con oposición (manual)"
+      - "Contactado por acta: deshacer las marcas de rebote (una sola vez / manual)"
+      - "Completar datos faltantes - Sin nombre"
+      - "Backfill de detalle rico de oposiciones (una vez)"
+      - "Corregir fecha de presentación pre-boletín (manual)"
+      - "Backfill fecha_publicacion (una sola vez / manual)"
+      - "Deshacer gestor/apoderado en los mails de oposición de hoy (una sola vez / manual)"
+      - "Backfill de reparseo de marca oponente (una vez)"
+      - "Comparar extracción Apify vs local (diagnóstico)"
+      - "Corregir oposiciones viejas (una sola vez)"
+      - "Corregir titular de actas escaneadas"
+      - "Diagnosticar reenvío al INPI"
+      - "Solicitudes nuevas del día (escaneo de actas)"
+      - "Estimar demora hasta la publicación (manual)"
+      - "Feriados"
+      - "Importar marcas a la cartera de clientes"
+      - "Inspeccionar acta (diagnóstico puntual)"
+      - "Contactado por mismo nombre: aplicar ahora (manual)"
+      - "Boletín publicado (pipeline de boletines)"
+      - "Probar alarma de bloqueo (mail de prueba)"
+      - "Probar formularios con base"
+      - "Probar verificador de marca (manual)"
+      - "Revisar vistas en pre-boletín"
+      - "Completar datos faltantes - Sin email"
+      - "Completar datos faltantes - Sin verificar"
+      - "Repaso de vistas (miércoles)"
+      - "Seguimiento de la cartera"
+      - "Concesiones y vencimientos"
+      - "Oposiciones"
+      - "Unir dos clientes duplicados"
+      - "Panel actualizado (verificación del despliegue)"
+      - "Verificar orden de publicación (manual, solo lectura)"
+      - "Vigilancia marcaria"
+      - "Vistas: pasada de la madrugada del miércoles"
+  # A mano: reportar (o volver a reportar) una corrida puntual, o mandar un mensaje de prueba.
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: "Número de la corrida a reportar (vacío = mandar un mensaje de prueba)"
+        required: false
+        default: ""
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: reporte-corrida-${{ github.event.workflow_run.id || github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  reportar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL || secrets.DATABASE_PUBLIC_URL }}
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      PYTHONUNBUFFERED: "1"
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.11"
+
+      - name: Instalar dependencias
+        run: pip install -r requirements.txt
+
+      - name: Analizar la corrida y mandar el reporte
+        run: |
+          cd scripts
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            if [ -n "${{ inputs.run_id }}" ]; then
+              python3 reporte_corrida.py --run-id "${{ inputs.run_id }}"
+            else
+              python3 reporte_corrida.py --prueba
+            fi
+          else
+            python3 reporte_corrida.py
+          fi

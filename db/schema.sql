@@ -734,3 +734,28 @@ CREATE TABLE IF NOT EXISTS verificaciones_marca_cache (
     filas          JSONB NOT NULL,
     consultada_en  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- Reporte de corridas por Telegram (scripts/reporte_corrida.py, 08/11/2026): una fila por corrida e
+-- intento de cada workflow, con lo que se analizó y si se mandó. También la crea el script.
+CREATE TABLE IF NOT EXISTS reportes_corridas (
+    run_id        BIGINT NOT NULL,
+    intento       INTEGER NOT NULL DEFAULT 1,
+    workflow      TEXT NOT NULL,
+    nombre        TEXT,
+    conclusion    TEXT,
+    origen        TEXT,
+    creada        TIMESTAMPTZ,
+    inicio        TIMESTAMPTZ,
+    fin           TIMESTAMPTZ,
+    duracion_s    INTEGER,
+    espera_s      INTEGER,
+    metricas      JSONB NOT NULL DEFAULT '{}'::jsonb,
+    base          JSONB NOT NULL DEFAULT '{}'::jsonb,
+    alertas       JSONB NOT NULL DEFAULT '[]'::jsonb,
+    mensaje       TEXT,
+    enviado       BOOLEAN NOT NULL DEFAULT false,
+    creado_en     TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (run_id, intento)
+);
+CREATE INDEX IF NOT EXISTS idx_reportes_corridas_workflow ON reportes_corridas(workflow, fin DESC);
+CREATE TABLE IF NOT EXISTS reportes_config (clave TEXT PRIMARY KEY, valor TEXT);
