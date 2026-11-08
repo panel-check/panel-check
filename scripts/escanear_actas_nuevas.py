@@ -216,6 +216,32 @@ def main():
         numero = ultima_confirmada
         ultimo_confirmado = ultima_confirmada  # el puntero real a guardar -- solo avanza en un HIT
         inicio_corrida = time.time()
+        huecos = []        # números «no encontrados» desde la última acta que existe
+        recuperadas = 0
+
+        def _procesar(acta, _texto, leads_nuevos, leads_con_email):
+            info = revisar_acta(s, acta, html_previo=_texto)  # reusa la página ya pedida
+            _guardar_solicitud_escaneada(conn, acta, info)
+            if info["es_lead"] is True and info.get("email"):
+                score = calcular_lead_score({"matricula_agente": "", "es_lead": True, "email": info["email"]})
+                _guardar_lead(conn, acta, info, score)
+                leads_nuevos += 1
+                leads_con_email += 1
+                print(f"  acta {acta}: LEAD nuevo detectado antes del boletín (score {score})")
+            elif info["es_lead"] is True:
+                # Lead real pero sin email todavía -- se guarda igual (motivo
+                # queda en motivo_sin_email, igual que el flujo del boletín;
+                # reintentar_sin_email.py lo va a volver a probar solo).
+                score = calcular_lead_score({"matricula_agente": "", "es_lead": True, "email": ""})
+                _guardar_lead(conn, acta, info, score)
+                leads_nuevos += 1
+                print(f"  acta {acta}: LEAD nuevo, sin email por ahora ({info.get('motivo_sin_email')})")
+            else:
+                # Tiene agente/apoderado, o no se pudo confirmar (WAF puntual
+                # en GESTION DEL TRAMITE) -- no es un lead para nosotros; el
+                # boletín real la va a cargar de todas formas más adelante.
+                print(f"  acta {acta}: no es lead (caracter={info.get('caracter') or 'sin confirmar'})")
+            return leads_nuevos, leads_con_email
         while probadas < args.tope:
             if args.max_minutes and (time.time() - inicio_corrida) / 60 >= args.max_minutes:
                 print(f"Se llegó al tope de {args.max_minutes:g} minutos: se sigue desde el puntero en la próxima corrida.")
@@ -244,6 +270,7 @@ def main():
 
             if not existe:
                 consecutivos_sin_existir += 1
+                huecos.append(acta)
                 if consecutivos_sin_existir >= args.consecutivos_para_frenar:
                     print(f"  acta {acta}: no existe todavía ({consecutivos_sin_existir} seguidas) -- frenando")
                     break
@@ -256,35 +283,29 @@ def main():
             # Se guarda en cada acta encontrada (no solo al final): si la
             # corrida se corta a mitad, la próxima sigue desde acá.
             _guardar_puntero(conn, ultimo_confirmado)
+            leads_nuevos, leads_con_email = _procesar(acta, _texto, leads_nuevos, leads_con_email)
 
-            info = revisar_acta(s, acta, html_previo=_texto)  # reusa la página ya pedida
-            _guardar_solicitud_escaneada(conn, acta, info)
-            if info["es_lead"] is True and info.get("email"):
-                score = calcular_lead_score({"matricula_agente": "", "es_lead": True, "email": info["email"]})
-                _guardar_lead(conn, acta, info, score)
-                leads_nuevos += 1
-                leads_con_email += 1
-                print(f"  acta {acta}: LEAD nuevo detectado antes del boletín (score {score})")
-            elif info["es_lead"] is True:
-                # Lead real pero sin email todavía -- se guarda igual (motivo
-                # queda en motivo_sin_email, igual que el flujo del boletín;
-                # reintentar_sin_email.py lo va a volver a probar solo).
-                score = calcular_lead_score({"matricula_agente": "", "es_lead": True, "email": ""})
-                _guardar_lead(conn, acta, info, score)
-                leads_nuevos += 1
-                print(f"  acta {acta}: LEAD nuevo, sin email por ahora ({info.get('motivo_sin_email')})")
-            else:
-                # Tiene agente/apoderado, o no se pudo confirmar (WAF puntual
-                # en GESTION DEL TRAMITE) -- no es un lead para nosotros; el
-                # boletín real la va a cargar de todas formas más adelante.
-                print(f"  acta {acta}: no es lead (caracter={info.get('caracter') or 'sin confirmar'})")
-
+            # Huecos: números anteriores que INPI dio por «no encontrados» pero quedaron entre actas que
+            # existen. Con INPI saturado (07/11/2026) respondía «Marca no encontrada» para actas reales:
+            # se vuelven a pedir una vez antes de seguir.
+            for hueco in huecos:
+                time.sleep(args.delay)
+                existe_h, texto_h = existe_expediente(s, hueco)
+                if existe_h:
+                    encontradas += 1
+                    recuperadas += 1
+                    print(f"  acta {hueco}: estaba como no encontrada y sí existe (INPI la había dado mal)")
+                    leads_nuevos, leads_con_email = _procesar(hueco, texto_h, leads_nuevos, leads_con_email)
+                elif existe_h is None:
+                    print(f"  acta {hueco}: sigue sin poder confirmarse (queda para el boletín)")
+            huecos = []
             time.sleep(args.delay)
 
         _guardar_puntero(conn, ultimo_confirmado)
         resumen = (
             f"Probadas: {probadas}. Actas nuevas encontradas: {encontradas}. "
-            f"Leads nuevos guardados: {leads_nuevos}. Puntero quedó en acta {ultimo_confirmado}."
+            f"Leads nuevos guardados: {leads_nuevos}. Puntero quedó en acta {ultimo_confirmado}. "
+            f"Recuperadas de huecos: {recuperadas}."
         )
         print(f"::notice::{resumen}")
         print(f"\n{resumen}")

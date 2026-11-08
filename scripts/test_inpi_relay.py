@@ -138,6 +138,28 @@ class Reenvio(unittest.TestCase):
         self.assertFalse(self.relay.es_de_inpi("http://portaltramites.inpi.gob.ar/x"))   # solo https
         self.assertFalse(self.relay.es_de_inpi("https://inpi.gob.ar.evil.com/"))
 
+    def test_espera_de_lectura_ampliada_solo_por_el_reenvio(self):
+        f = self.relay._timeout_ampliado
+        m = self.relay.LECTURA_MINIMA
+        self.assertEqual(f(30), (30, m))
+        self.assertEqual(f((8, 30)), (8, m))
+        self.assertEqual(f((8, 120)), (8, 120))
+        self.assertEqual(f((8, None)), (8, None))
+        self.assertIsNone(f(None))
+        vistos = []
+        original = self.relay._send_original
+
+        def espia(adaptador, request, **kwargs):
+            vistos.append((request.url.split("?")[0].rsplit("/", 1)[-1], kwargs.get("timeout")))
+            return original(adaptador, request, **kwargs)
+        self.relay._send_original = espia
+        try:
+            requests.get("https://portaltramites.inpi.gob.ar/login", timeout=(5, 30))
+            requests.get(f"{self.base}/otra-cosa", timeout=(5, 30))
+        finally:
+            self.relay._send_original = original
+        self.assertEqual(vistos, [("inpi-relay.php", (5, m)), ("otra-cosa", (5, 30))])
+
 
 class SinConfigurar(unittest.TestCase):
     def test_sin_variables_no_se_activa(self):
