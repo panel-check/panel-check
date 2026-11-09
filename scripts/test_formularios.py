@@ -10,7 +10,7 @@ import formularios_core as fc  # noqa: E402
 BASE = {
     "email": "a@b.com", "nombre": "Gómez María", "nacionalidad": "Argentina", "dni": "30111222",
     "cuit": "27301112229", "domicilio": "Calle 1", "localidad": "CABA", "provincia": "Buenos Aires",
-    "codigo_postal": "1000", "estado_civil": "Soltero/a",
+    "codigo_postal": "1000", "estado_civil": "Soltero/a", "sexo": "Femenino",
 }
 NUEVA = {"servicio": fc.SERVICIO_NUEVA, "empresa_nombre": "Luna", "rubro": "Gastronomía",
          "actividad_descripcion": "Venta de café", "web_redes": "@luna", "nueva_tiene_logo": "NO"}

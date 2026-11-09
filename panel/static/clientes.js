@@ -409,7 +409,7 @@ function camposClienteHtml(c = {}) {
 
 // Datos que completa el cliente en el formulario web (también editables a mano).
 const CAMPOS_EXTRA = [
-  ["dni", "DNI"], ["nacionalidad", "Nacionalidad"], ["domicilio", "Domicilio"], ["localidad", "Localidad"],
+  ["dni", "DNI"], ["sexo", "Sexo (Masculino / Femenino / Otro)"], ["nacionalidad", "Nacionalidad"], ["domicilio", "Domicilio"], ["localidad", "Localidad"],
   ["provincia", "Provincia"], ["codigo_postal", "Código postal"], ["domicilio_comercial", "Domicilio comercial"],
   ["estado_civil", "Estado civil"], ["conyuge_nombre", "Cónyuge (nombre y apellido)"], ["conyuge_dni", "DNI del cónyuge"],
   ["firmante_nombre", "Firmante (persona jurídica)"], ["firmante_cargo", "Cargo del firmante"],
@@ -1160,8 +1160,8 @@ async function abrirGeneradorPoderSimple(clienteId) {
     <form class="cl-form" id="poder-simple-form" style="margin-top:0">
       <label>Firmante<select name="genero">
         <option value="neutro" ${p.genero === "neutro" ? "selected" : ""}>El/La (como el modelo)</option>
-        <option value="masculino">El (representarlo, del mandante)</option>
-        <option value="femenino">La (representarla, de la mandante)</option></select></label>
+        <option value="masculino" ${p.genero === "masculino" ? "selected" : ""}>El (representarlo, del mandante)</option>
+        <option value="femenino" ${p.genero === "femenino" ? "selected" : ""}>La (representarla, de la mandante)</option></select></label>
       <label>Lugar<input name="lugar" value="${esc(p.lugar)}"></label>
       <label>Fecha<input type="date" name="fecha" value="${esc(p.fecha)}"></label>
       <label class="ancho">El/La abajo firmante… (nombre, DNI y domicilio)<textarea name="otorgante" rows="3">${esc(p.otorgante)}</textarea></label>

@@ -306,9 +306,15 @@ def propuesta_simple(cliente: dict, hoy=None) -> dict:
     if dom:
         partes.append("con domicilio en " + ", ".join(dom))
     tipo = c.get("tipo_persona") or ("juridica" if _dig(c.get("cuit")).startswith("3") else "fisica")
-    return {"modelo": MODELO_SIMPLE, "tipo_persona": "fisica", "genero": "neutro",
+    return {"modelo": MODELO_SIMPLE, "tipo_persona": "fisica", "genero": genero_de_sexo(c.get("sexo")),
             "otorgante": ", ".join(partes), "lugar": lugar, "fecha": hoy.isoformat(),
             "cliente_juridica": tipo == "juridica"}
+
+
+def genero_de_sexo(sexo) -> str:
+    """Sexo del formulario → variante del poder: Masculino → El, Femenino → La, Otro o vacío → El/La."""
+    t = (sexo or "").strip().lower()
+    return "masculino" if t.startswith("masc") else "femenino" if t.startswith("fem") else "neutro"
 
 
 def _genero(d):

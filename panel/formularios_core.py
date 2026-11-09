@@ -83,6 +83,9 @@ FORMULARIOS = {
                       "de la marca en el INPI."},
             {"id": "email", "tipo": "email", "etiqueta": "Correo electrónico", "obligatorio": True, "cliente": "email"},
             {"id": "nombre", "tipo": "texto", "etiqueta": "Apellido y Nombre del titular", "obligatorio": True, "cliente": "nombre"},
+            # Para redactar el poder: Masculino → «El», Femenino → «La», Otro → «El/La» (ver poderes.propuesta_simple)
+            {"id": "sexo", "tipo": "opcion", "etiqueta": "Sexo", "obligatorio": True, "cliente": "sexo",
+             "opciones": ["Masculino", "Femenino", "Otro"]},
             {"id": "nacionalidad", "tipo": "texto", "etiqueta": "Nacionalidad", "obligatorio": True, "cliente": "nacionalidad"},
             {"id": "dni", "tipo": "texto", "etiqueta": "DNI", "obligatorio": True, "cliente": "dni", "formato": "dni"},
             {"id": "cuit", "tipo": "texto", "etiqueta": "CUIL/CUIT", "obligatorio": True, "cliente": "cuit", "formato": "cuit"},
@@ -165,7 +168,7 @@ TIPO_LEGIBLE = {"fisica": "Persona física", "juridica": "Persona jurídica"}
 
 # Columnas que se agregan a `clientes` para guardar lo que llega del formulario.
 COLUMNAS_CLIENTE_NUEVAS = [
-    "tipo_persona", "dni", "nacionalidad", "domicilio", "localidad", "provincia", "codigo_postal",
+    "tipo_persona", "dni", "sexo", "nacionalidad", "domicilio", "localidad", "provincia", "codigo_postal",
     "domicilio_comercial", "estado_civil", "conyuge_nombre", "conyuge_dni", "firmante_nombre", "firmante_cargo",
 ]
 
@@ -407,7 +410,7 @@ def datos_cliente(slug: str, datos: dict) -> dict:
 # ── Corrección de una respuesta (link personal) ───────────────────────────
 EDICION_DIAS = 30
 # Si cambia alguno de estos, el poder que ya se mandó quedó mal: se vuelve a mandar.
-CAMPOS_PODER = ("nombre", "dni", "cuit", "domicilio", "localidad", "provincia", "email")
+CAMPOS_PODER = ("nombre", "sexo", "dni", "cuit", "domicilio", "localidad", "provincia", "email")
 
 
 def nuevo_token() -> str:
