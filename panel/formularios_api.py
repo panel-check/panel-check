@@ -64,6 +64,8 @@ class DatosPoder(BaseModel):
     fecha: str
     aclaracion: Optional[str] = ""
     cargo: Optional[str] = ""
+    modelo: Optional[str] = ""  # "" = poder amplio del estudio; "simple_marcas" = Poder simple marcas
+    genero: Optional[str] = ""  # solo poder simple: neutro (El/La), masculino o femenino
 
 
 class DatosToma(BaseModel):
@@ -508,6 +510,15 @@ def crear_router(verificar_login, conexion) -> APIRouter:
 
     # ── Poder para firmar ─────────────────────────────────────────────
     def _archivo_poder(d: dict, apoderado: str, formato: str) -> Response:
+        if poderes.es_simple(d):
+            if formato == "docx":
+                contenido = poderes.generar_docx_simple(d)
+                mime = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            else:
+                formato, contenido, mime = "pdf", poderes.generar_pdf_simple(d), "application/pdf"
+            nombre = poderes.nombre_archivo_simple(d, formato)
+            return Response(content=contenido, media_type=mime,
+                            headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(nombre)}"})
         if formato == "docx":
             contenido = poderes.generar_docx(d, apoderado)
             mime = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
@@ -518,7 +529,7 @@ def crear_router(verificar_login, conexion) -> APIRouter:
                         headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(nombre)}"})
 
     @router.get("/api/clientes/{cliente_id}/poder")
-    def propuesta_poder(cliente_id: int, _: str = Depends(verificar_login)):
+    def propuesta_poder(cliente_id: int, modelo: str = "", _: str = Depends(verificar_login)):
         with conexion() as conn:
             with rcur(conn) as cur:
                 cur.execute("SELECT * FROM clientes WHERE id = %s", (cliente_id,))
@@ -526,12 +537,22 @@ def crear_router(verificar_login, conexion) -> APIRouter:
                 if not c:
                     raise HTTPException(status_code=404, detail="No existe ese cliente")
                 apoderado = leer_apoderado(cur)
-        return {"propuesta": poderes.propuesta(c, _dt.datetime.now(_dt.timezone(_dt.timedelta(hours=-3))).date()),
-                "apoderado": apoderado}
+        hoy = _dt.datetime.now(_dt.timezone(_dt.timedelta(hours=-3))).date()
+        if modelo == poderes.MODELO_SIMPLE:
+            return {"propuesta": poderes.propuesta_simple(c, hoy), "apoderado": poderes.APODERADO_SIMPLE}
+        return {"propuesta": poderes.propuesta(c, hoy), "apoderado": apoderado}
 
     @router.post("/api/clientes/{cliente_id}/poder")
     def generar_poder(cliente_id: int, body: DatosPoder, formato: str = "pdf", usuario: str = Depends(verificar_login)):
         d = {k: (getattr(body, k) or "").strip() for k in DatosPoder.model_fields}
+        if d["modelo"] not in ("", poderes.MODELO_SIMPLE):
+            raise HTTPException(status_code=400, detail="Modelo de poder inválido")
+        if d["modelo"] == poderes.MODELO_SIMPLE:
+            d["tipo_persona"] = "fisica"
+            if d["genero"] not in poderes.GENEROS:
+                d["genero"] = "neutro"
+        else:
+            d.pop("modelo"); d.pop("genero")
         if d["tipo_persona"] not in fc.TIPO_LEGIBLE:
             raise HTTPException(status_code=400, detail="Tipo de persona inválido")
         if not d["otorgante"] or not d["lugar"]:
@@ -547,7 +568,7 @@ def crear_router(verificar_login, conexion) -> APIRouter:
                 cur.execute("SELECT id FROM clientes WHERE id = %s", (cliente_id,))
                 if not cur.fetchone():
                     raise HTTPException(status_code=404, detail="No existe ese cliente")
-                apoderado = leer_apoderado(cur)
+                apoderado = poderes.APODERADO_SIMPLE if poderes.es_simple(d) else leer_apoderado(cur)
                 cur.execute("INSERT INTO poderes_generados (cliente_id, datos, apoderado, generado_por) VALUES (%s, %s, %s, %s)",
                             (cliente_id, json.dumps(d, ensure_ascii=False), apoderado, usuario))
             conn.commit()
