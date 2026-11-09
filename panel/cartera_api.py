@@ -45,6 +45,7 @@ class ClienteNuevo(BaseModel):
     vigilancia_contratada: Optional[bool] = False
     tipo_persona: Optional[str] = None
     dni: Optional[str] = None
+    sexo: Optional[str] = None
     nacionalidad: Optional[str] = None
     domicilio: Optional[str] = None
     localidad: Optional[str] = None
@@ -71,6 +72,7 @@ class ClienteCambios(BaseModel):
     activo: Optional[bool] = None
     tipo_persona: Optional[str] = None
     dni: Optional[str] = None
+    sexo: Optional[str] = None
     nacionalidad: Optional[str] = None
     domicilio: Optional[str] = None
     localidad: Optional[str] = None

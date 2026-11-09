@@ -243,6 +243,8 @@ def crear_router(verificar_login, conexion) -> APIRouter:
                 error = f"No se mandó: ya se enviaron {previos} poderes a este mail en las últimas 24 hs."
             else:
                 hoy = _dt.datetime.now(_dt.timezone(_dt.timedelta(hours=-3))).date()
+                if datos.get("sexo"):  # lo que eligió en el formulario manda (El / La / El/La)
+                    fila["sexo"] = datos["sexo"]
                 d = poderes.propuesta_simple(fila, hoy)
                 d.pop("cliente_juridica", None)
                 pdf = poderes.generar_pdf_simple(d)

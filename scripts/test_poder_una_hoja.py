@@ -81,6 +81,12 @@ class PoderSimpleMarcas(unittest.TestCase):
         self.assertIn("representarla", p[0])
         self.assertIn("de la mandante", p[1])
 
+    def test_sexo_del_formulario(self):
+        base = {"nombre": "Ana López", "dni": "28999111", "domicilio": "Corrientes 1234", "provincia": "CABA"}
+        for sexo, esperado in (("Masculino", "El abajo"), ("Femenino", "La abajo"), ("Otro", "El/La abajo"), ("", "El/La abajo")):
+            d = poderes.propuesta_simple(dict(base, sexo=sexo), dt.date(2026, 11, 9))
+            self.assertTrue(poderes._simple_parrafos(d)[0].startswith(esperado), sexo)
+
     def test_primer_dia_y_docx(self):
         d = self._datos(); d["fecha"] = "2026-12-01"
         self.assertIn("al 1 día del mes de diciembre", poderes._simple_lugar_fecha(d))
