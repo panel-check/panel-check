@@ -218,7 +218,8 @@ def crear_router(verificar_login, conexion) -> APIRouter:
             print(f"[formularios] aviso de la respuesta {respuesta_id} no enviado: {e}")
 
     def _enviar_poder(respuesta_id: int) -> bool:
-        """Persona física: arma el PDF del poder con los datos que acaba de completar y se lo manda por mail
+        """Persona física: arma el PDF del «Poder simple marcas» (desde el 09/11/2026; antes era el poder amplio)
+        con los datos que acaba de completar y se lo manda por mail
         (plantilla editable «poder_persona_fisica» de Mails). Nunca rompe el envío del formulario: si falla,
         el motivo queda en poder_error y devuelve False."""
         error = None
@@ -237,13 +238,14 @@ def crear_router(verificar_login, conexion) -> APIRouter:
                     previos = cur.fetchone()["n"]
                     cur.execute("SELECT * FROM mails_config WHERE clave = %s", (fc.CLAVE_MAIL_PODER,))
                     guardada = cur.fetchone() or {}
-                    apoderado = leer_apoderado(cur)
+            apoderado = poderes.APODERADO_SIMPLE
             if previos >= fc.PODER_MAX_24H:
                 error = f"No se mandó: ya se enviaron {previos} poderes a este mail en las últimas 24 hs."
             else:
                 hoy = _dt.datetime.now(_dt.timezone(_dt.timedelta(hours=-3))).date()
-                d = poderes.propuesta(fila, hoy)
-                pdf = poderes.generar_pdf(d, apoderado)
+                d = poderes.propuesta_simple(fila, hoy)
+                d.pop("cliente_juridica", None)
+                pdf = poderes.generar_pdf_simple(d)
                 cfg = mails_core.combinar(fc.CLAVE_MAIL_PODER, guardada)
                 asunto, cuerpo_html, texto = mails_core.render_prospecto(
                     cfg["asunto"], cfg["cuerpo"], fc.datos_mail_poder(datos), cfg.get("encabezado"),
@@ -251,7 +253,7 @@ def crear_router(verificar_login, conexion) -> APIRouter:
                 r = mails_cola.enviar_o_encolar(
                     conexion, cuenta=cfg["cuenta"], remitente=cfg["remitente"], responder_a=cfg["responder_a"], para=[email],
                     asunto=asunto, html=cuerpo_html, texto=texto,
-                    adjuntos=[{"filename": poderes.nombre_archivo(d, "pdf"), "content": pdf}],
+                    adjuntos=[{"filename": poderes.nombre_archivo_simple(d, "pdf"), "content": pdf}],
                     clave_mail=fc.CLAVE_MAIL_PODER, origen="formulario", al_enviar={"tabla": "formularios_respuestas", "id": respuesta_id})
                 if r["en_cola"]:   # cupo de Resend agotado: sale solo después de las 21:00 (ver mails_cola.py)
                     error = mails_cola.AVISO_EN_COLA
