@@ -540,8 +540,10 @@ async function abrirCliente(id) {
 
       <div data-cpanel="poderes" ${est.clienteTab === "poderes" ? "" : "hidden"}>
         <div class="cl-acciones" style="margin-top:12px"><button type="button" class="cl-btn" id="cli-poder-btn2">📄 Generar poder para firmar</button>
+          <button type="button" class="cl-btn" id="cli-poder-simple-btn" title="Poder acotado a marcas (INPI y negociaciones), para persona humana">📄 Poder simple marcas</button>
           <button type="button" class="cl-btn" id="cli-toma-btn">📑 Generar toma de intervención</button></div>
         <div class="cl-caja" id="cli-poder" hidden style="margin-top:10px"></div>
+        <div class="cl-caja" id="cli-poder-simple" hidden style="margin-top:10px"></div>
         <div class="cl-caja" id="cli-toma" hidden style="margin-top:10px"></div>
         <div id="cli-poderes-lista">${d.poderes && d.poderes.length ? "<h4>Poderes generados</h4>" + htmlPoderes(d.poderes) : '<p class="crm-gris">Todavía no se generó ningún poder.</p>'}</div>
       </div>
@@ -596,6 +598,7 @@ async function abrirCliente(id) {
   const abrirPoder = () => { irTab("poderes"); if ($("cli-poder").hidden) abrirGeneradorPoder(id); };
   $("cli-poder-btn").addEventListener("click", abrirPoder);
   $("cli-poder-btn2").addEventListener("click", abrirPoder);
+  $("cli-poder-simple-btn").addEventListener("click", () => abrirGeneradorPoderSimple(id));
   $("cli-toma-btn").addEventListener("click", () => abrirGeneradorToma(id));
   $("cli-inf-btn").addEventListener("click", () => abrirCajaInforme(id, "cliente"));
   $("cli-iai-btn").addEventListener("click", () => abrirCajaInforme(id, "interno"));
@@ -1087,7 +1090,7 @@ function htmlPoderes(lista) {
   if (!lista || !lista.length) return "";
   return `<ul class="cl-lista-simple">${lista.map(p => `<li data-poder="${p.id}">
       <span class="crm-gris">${fmtFechaHora(p.generado_en)}${p.generado_por ? " · " + esc(p.generado_por) : ""}</span> ·
-      ${esc((p.datos.otorgante || "").slice(0, 60))} · lugar y fecha: ${esc(p.datos.lugar)}, ${crmFecha(p.datos.fecha)}
+      ${p.datos.modelo === "simple_marcas" ? '<span class="cl-tag">Poder simple marcas</span> ' : ""}${esc((p.datos.otorgante || "").slice(0, 60))} · lugar y fecha: ${esc(p.datos.lugar)}, ${crmFecha(p.datos.fecha)}
       <button type="button" class="cl-btn sec mini" data-bajar-poder="pdf">PDF</button>
       <button type="button" class="cl-btn sec mini" data-bajar-poder="docx">Word</button>
       <button type="button" class="cl-btn peligro mini" data-borrar-poder title="Saca este poder de la lista">×</button></li>`).join("")}</ul>`;
@@ -1127,6 +1130,56 @@ async function abrirGeneradorPoder(clienteId) {
     try {
       await bajarArchivo(`/api/clientes/${clienteId}/poder?formato=${b.dataset.generar}`,
         { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(datos) }, `Poder.${b.dataset.generar}`);
+      e.textContent = "Listo: se descargó y quedó en «Poderes generados».";
+      const d = await api(`/api/clientes/${clienteId}`);
+      $("cli-poderes-lista").innerHTML = "<h4>Poderes generados</h4>" + htmlPoderes(d.poderes);
+      conectarPoderes(clienteId);
+    } catch (err) { e.textContent = err.message; e.className = "cl-estado mal"; }
+    b.disabled = false;
+  }));
+}
+
+// Poder simple marcas: modelo acotado a marcas (INPI y negociaciones/acuerdos), solo persona humana.
+async function abrirGeneradorPoderSimple(clienteId) {
+  const caja = $("cli-poder-simple");
+  if (!caja.hidden) { caja.hidden = true; return; }
+  caja.hidden = false;
+  caja.innerHTML = '<p class="crm-cargando">Preparando…</p>';
+  let r;
+  try { r = await api(`/api/clientes/${clienteId}/poder?modelo=simple_marcas`); }
+  catch (e) { caja.innerHTML = `<p class="crm-error">No se pudo preparar (${esc(e.message)}).</p>`; return; }
+  const p = r.propuesta;
+  const faltan = [];
+  if (!p.otorgante.match(/domicilio/)) faltan.push("domicilio");
+  if (!p.otorgante.match(/DNI/)) faltan.push("DNI");
+  caja.innerHTML = `
+    <h4 style="margin-top:0">Poder simple marcas</h4>
+    <p class="crm-gris" style="margin:0 0 8px">Poder acotado a marcas: trámites ante el INPI y negociaciones y acuerdos (oposiciones, coexistencia). Es para <strong>persona humana</strong> (con DNI). Firma, aclaración y DNI salen como líneas en blanco para completar a mano. Sale siempre en una sola hoja.</p>
+    ${p.cliente_juridica ? '<p class="crm-error" style="padding:0 0 8px">Ojo: este cliente figura como persona jurídica y este modelo es para persona humana. Usá el poder para firmar común o cargá acá los datos de quien firma.</p>' : ""}
+    ${faltan.length ? `<p class="crm-error" style="padding:0 0 8px">Ojo: falta ${faltan.join(", ")} en la ficha. Podés completarlo acá abajo o en «Datos para el trámite».</p>` : ""}
+    <form class="cl-form" id="poder-simple-form" style="margin-top:0">
+      <label>Firmante<select name="genero">
+        <option value="neutro" ${p.genero === "neutro" ? "selected" : ""}>El/La (como el modelo)</option>
+        <option value="masculino">El (representarlo, del mandante)</option>
+        <option value="femenino">La (representarla, de la mandante)</option></select></label>
+      <label>Lugar<input name="lugar" value="${esc(p.lugar)}"></label>
+      <label>Fecha<input type="date" name="fecha" value="${esc(p.fecha)}"></label>
+      <label class="ancho">El/La abajo firmante… (nombre, DNI y domicilio)<textarea name="otorgante" rows="3">${esc(p.otorgante)}</textarea></label>
+    </form>
+    <p class="crm-nota">Apoderado (fijo en este modelo): ${esc(r.apoderado)}</p>
+    <div class="cl-acciones"><button type="button" class="cl-btn" data-generar-simple="pdf">Descargar PDF</button>
+      <button type="button" class="cl-btn sec" data-generar-simple="docx">Descargar Word</button>
+      <span class="cl-estado" id="poder-simple-estado"></span></div>`;
+  const form = $("poder-simple-form");
+  caja.querySelectorAll("[data-generar-simple]").forEach(b => b.addEventListener("click", async () => {
+    const f = form.elements;
+    const datos = { modelo: "simple_marcas", tipo_persona: "fisica", genero: f.genero.value, otorgante: f.otorgante.value,
+                    lugar: f.lugar.value, fecha: f.fecha.value };
+    const e = $("poder-simple-estado"); e.className = "cl-estado"; e.textContent = "Generando…"; b.disabled = true;
+    try {
+      await bajarArchivo(`/api/clientes/${clienteId}/poder?formato=${b.dataset.generarSimple}`,
+        { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(datos) },
+        `Poder_simple_marcas.${b.dataset.generarSimple}`);
       e.textContent = "Listo: se descargó y quedó en «Poderes generados».";
       const d = await api(`/api/clientes/${clienteId}`);
       $("cli-poderes-lista").innerHTML = "<h4>Poderes generados</h4>" + htmlPoderes(d.poderes);

@@ -53,5 +53,39 @@ class PoderUnaHoja(unittest.TestCase):
             self.assertEqual(_hojas(poderes.generar_pdf(d, apoderado)), 1)
 
 
+@unittest.skipIf(pypdf is None, "falta reportlab o pypdf")
+class PoderSimpleMarcas(unittest.TestCase):
+    def _datos(self, extra="", genero="neutro"):
+        cliente = {"nombre": "Juan Carlos Pérez", "dni": "30123456",
+                   "domicilio": "Avenida Rivadavia 12345, piso 3, departamento B" + extra,
+                   "localidad": "Ramos Mejía", "provincia": "Buenos Aires"}
+        d = poderes.propuesta_simple(cliente, dt.date(2026, 11, 9))
+        d["genero"] = genero
+        return d
+
+    def test_una_hoja_normal_y_largo(self):
+        self.assertEqual(_hojas(poderes.generar_pdf_simple(self._datos())), 1)
+        largo = ", barrio Parque Los Robles, entre las calles San Martín y Belgrano" * 10
+        self.assertEqual(_hojas(poderes.generar_pdf_simple(self._datos(largo))), 1)
+
+    def test_texto_del_modelo(self):
+        d = self._datos()
+        txt = pypdf.PdfReader(io.BytesIO(poderes.generar_pdf_simple(d))).pages[0].extract_text()
+        for frase in ("El/La abajo firmante Juan Carlos Pérez", "Matrícula INPI N.º 2906", "representarlo/a",
+                      "del/de la mandante", "a los 9 días del mes de noviembre de 2026", "ACLARACIÓN:", "DNI:"):
+            self.assertIn(frase, " ".join(txt.split()))
+
+    def test_genero(self):
+        p = poderes._simple_parrafos(self._datos(genero="femenino"))
+        self.assertTrue(p[0].startswith("La abajo firmante"))
+        self.assertIn("representarla", p[0])
+        self.assertIn("de la mandante", p[1])
+
+    def test_primer_dia_y_docx(self):
+        d = self._datos(); d["fecha"] = "2026-12-01"
+        self.assertIn("al 1 día del mes de diciembre", poderes._simple_lugar_fecha(d))
+        self.assertTrue(poderes.generar_docx_simple(d).startswith(b"PK"))
+
+
 if __name__ == "__main__":
     unittest.main()
