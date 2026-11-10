@@ -666,11 +666,9 @@ _SQL_VISTAS_PENDIENTES = f"""
       AND (vista_revisada_en IS NULL
            OR {_SQL_VISTAS_REVISADA_EL} <= {_SQL_HOY_AR} - CASE
                 WHEN tuvo_vista IS TRUE AND vista_sirve IS TRUE THEN 1
-                -- domingo, lunes y martes (antes de la notificación de los miércoles): jóvenes 1, viejas 3
-                WHEN EXTRACT(ISODOW FROM {_SQL_HOY_AR}) IN (7, 1, 2)
-                     THEN CASE WHEN {_SQL_HOY_AR} - fecha_presentacion::date < 30 THEN 1 ELSE 3 END
-                WHEN {_SQL_HOY_AR} - fecha_presentacion::date < 30 THEN 2
-                ELSE 7 END)
+                -- todos los días (09/11/2026): jóvenes (menos de 30 días) cada 1, viejas cada 2
+                WHEN {_SQL_HOY_AR} - fecha_presentacion::date < 30 THEN 1
+                ELSE 2 END)
 """
 # Repaso de los miércoles: marcas con una vista abierta, contactadas o no (misma regla que --repaso).
 _SQL_VISTAS_REPASO_PENDIENTES = f"""
