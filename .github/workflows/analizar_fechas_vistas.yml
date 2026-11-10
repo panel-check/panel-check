@@ -1,0 +1,43 @@
+name: Analizar fechas de las vistas
+
+# Diagnóstico manual (scripts/analizar_fechas_vistas.py): para las marcas que alguna vez tuvieron vista, vuelve a
+# leer su Grilla en el INPI y resume qué día aparece la vista y cuánto tardó el panel en detectarla. Solo lectura.
+on:
+  workflow_dispatch:
+    inputs:
+      limite:
+        description: "Tope de marcas a revisar (las detectadas más recientemente primero)"
+        required: false
+        default: "600"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: inpi-lane
+  cancel-in-progress: false
+
+env:
+  # Pedidos al INPI por el hosting de la web en Argentina (panel/inpi_relay.py, wordpress/inpi-relay.php).
+  INPI_RELAY_URL: ${{ secrets.INPI_RELAY_URL }}
+  INPI_RELAY_CLAVE: ${{ secrets.INPI_RELAY_CLAVE }}
+  PYTHONPATH: ${{ github.workspace }}/panel/relay_site
+
+jobs:
+  analizar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.11"
+      - name: Instalar dependencias
+        run: pip install -r requirements.txt
+      - name: Analizar fechas de las vistas
+        run: |
+          cd scripts
+          python3 analizar_fechas_vistas.py --limite ${{ inputs.limite }}
+        env:
+          PYTHONUNBUFFERED: "1"
+          DATABASE_URL: ${{ secrets.DATABASE_URL || secrets.DATABASE_PUBLIC_URL }}
