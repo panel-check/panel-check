@@ -49,6 +49,7 @@ CARRIL_INPI = frozenset({
     "backfill_detalle_oposicion.yml", "backfill_fecha_presentacion.yml", "backfill_fecha_publicacion.yml",
     "backfill_reparsear_marca_oponente.yml", "corregir_oposiciones_viejas.yml", "corregir_titular_escaneo.yml",
     "diagnosticar_relay.yml",
+    "analizar_fechas_vistas.yml",
     "escanear_actas.yml", "estimar_demora_publicacion.yml", "importar_cartera.yml", "inspeccionar_acta.yml",
     "pipeline.yml", "probar_verificador.yml", "probar_vistas_preboletin.yml", "reintentar_sin_email.yml",
     "reintentar_sin_verificar.yml", "repasar_vistas.yml", "revisar_cartera.yml", "revisar_estado.yml",

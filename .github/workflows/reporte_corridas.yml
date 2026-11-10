@@ -23,6 +23,7 @@ on:
       - "Corregir oposiciones viejas (una sola vez)"
       - "Corregir titular de actas escaneadas"
       - "Diagnosticar reenvío al INPI"
+      - "Analizar fechas de las vistas"
       - "Solicitudes nuevas del día (escaneo de actas)"
       - "Estimar demora hasta la publicación (manual)"
       - "Feriados"
