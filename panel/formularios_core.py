@@ -508,8 +508,9 @@ def agregar_aviso_titulares(cuerpo: str, n: int) -> str:
     """Con más de un titular, el mail del poder avisa que lo tienen que firmar todos (antes del saludo)."""
     if n <= 1:
         return cuerpo
-    aviso = (f"Importante: como la marca tiene {n} titulares, el poder lo tienen que firmar todos, cada uno en su lugar "
-             "(firma, aclaración y DNI). Pueden firmar la misma hoja o cada uno una copia impresa; en ese caso, mandanos todas.")
+    aviso = (f"Importante: como la marca tiene {n} titulares, el poder lo tienen que firmar todos en la misma hoja: "
+             "impriman una sola copia y cada titular firma en su lugar, con su aclaración y DNI. "
+             "No sirve que cada uno firme una copia distinta. Después nos mandan esa hoja con todas las firmas.")
     m = re.search(r"\n\s*\n(?=Saludos)", cuerpo)
     return cuerpo[:m.start()] + "\n\n" + aviso + cuerpo[m.start():] if m else cuerpo.rstrip() + "\n\n" + aviso
 
