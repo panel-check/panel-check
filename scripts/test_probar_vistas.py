@@ -102,17 +102,18 @@ if __name__ == "__main__":
 
 
 class Cadencias(unittest.TestCase):
-    """Cada cuántos días se mira una marca sin vista según el día de la semana (05/11/2026)."""
+    """Cada cuántos días se mira una marca sin vista (09/11/2026: igual todos los días de la semana)."""
 
-    def test_domingo_lunes_y_martes_las_jovenes_todos_los_dias(self):
+    def test_todos_los_dias_jovenes_cada_1_y_viejas_cada_2(self):
         import datetime as dt
-        for d in (dt.date(2026, 11, 8), dt.date(2026, 11, 9), dt.date(2026, 11, 10)):  # dom, lun, mar
-            self.assertEqual(pv.cadencias(d), {"cada_joven": 1, "cada": 3}, d)
+        for n in range(7):   # 02/11 (lunes) a 08/11 (domingo)
+            d = dt.date(2026, 11, 2) + dt.timedelta(days=n)
+            self.assertEqual(pv.cadencias(d), {"cada_joven": 1, "cada": 2}, d)
 
-    def test_miercoles_a_sabado_cada_2_y_cada_7(self):
+    def test_dias_previos_con_otra_cadencia_si_se_pide(self):
         import datetime as dt
-        for d in (dt.date(2026, 11, 4), dt.date(2026, 11, 5), dt.date(2026, 11, 6), dt.date(2026, 11, 7)):
-            self.assertEqual(pv.cadencias(d), {"cada_joven": 2, "cada": 7}, d)
+        self.assertEqual(pv.cadencias(dt.date(2026, 11, 9), vieja_previo=3), {"cada_joven": 1, "cada": 3})
+        self.assertEqual(pv.cadencias(dt.date(2026, 11, 5), vieja_previo=3), {"cada_joven": 1, "cada": 2})
 
     def test_forzar_reemplaza_las_dos(self):
         import datetime as dt

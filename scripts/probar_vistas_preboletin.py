@@ -34,13 +34,14 @@ Qué marcas se revisan (sin --actas), en la corrida diaria:
     pasó el vencimiento de la vista hace más de --dias-despues-vencimiento días;
   - una marca NO se revisa dos veces el mismo día (fecha de Argentina): se mira de nuevo recién a los
     N días de la última revisión, contados por día calendario y no por horas. N es --dias-entre-revisiones-vista (1)
-    si tiene una vista sin contestar; para las demás depende del día de la semana (cadencias(), 05/11/2026):
-    INPI carga las vistas en la Grilla de miércoles a martes (la mayoría lunes y martes) y las notifica todas
-    juntas el miércoles siguiente, y en cuanto notifica las ven los demás estudios. Por eso los días
-    --dias-previos (domingo, lunes y martes) las presentadas hace menos de --dias-jovenes días (30) se miran
-    todos los días (--dias-entre-revisiones-jovenes-previo, 1) y las más viejas cada
-    --dias-entre-revisiones-previo (3); de miércoles a sábado, cada --dias-entre-revisiones-jovenes (2) y
-    cada --dias-entre-revisiones (7);
+    si tiene una vista sin contestar; para las demás (cadencias(), 09/11/2026): las presentadas hace menos de
+    --dias-jovenes días (30) se miran todos los días (--dias-entre-revisiones-jovenes, 1) y las más viejas cada
+    --dias-entre-revisiones (2), cualquier día de la semana. El análisis de las 320 vistas detectadas hasta el
+    09/11/2026 (analizar_fechas_vistas.py) mostró que INPI carga vistas de lunes a viernes casi parejo (jueves y
+    viernes tanto como lunes y martes), en horario de oficina, y las notifica en promedio 4 días después: con la
+    regla anterior (todos los días solo domingo a martes) el panel las veía 7,7 días después de cargadas, casi
+    siempre ya notificadas. --dias-entre-revisiones-jovenes-previo y --dias-entre-revisiones-previo siguen
+    existiendo para dar otra cadencia a los días --dias-previos, pero por defecto valen lo mismo;
   - orden: primero las que tienen una vista sin contestar y después las que hace más tiempo no se miran, así
     que si la corrida se corta (--max-minutes, --hasta-hora o bloqueo de INPI) la siguiente sigue por las que
     quedaron sin revisar y no vuelve a empezar por las mismas.
@@ -185,7 +186,7 @@ def sql_candidatas(repaso: bool) -> str:
 DIAS_PREVIOS = (7, 1, 2)
 
 
-def cadencias(hoy: datetime.date, previos=DIAS_PREVIOS, joven=2, joven_previo=1, vieja=7, vieja_previo=3,
+def cadencias(hoy: datetime.date, previos=DIAS_PREVIOS, joven=1, joven_previo=1, vieja=2, vieja_previo=2,
               forzar=None) -> dict:
     """Cada cuántos días se vuelve a mirar una marca sin vista, según el día de la semana de `hoy`
     (fecha de Argentina). panel/app.py (_SQL_VISTAS_PENDIENTES) repite la regla: si se cambia una, cambiar la otra."""
@@ -453,10 +454,10 @@ def main():
     ap.add_argument("--delay", type=float, default=1.5, help="segundos entre marcas (freno de mano)")
     ap.add_argument("--max-minutes", type=float, default=90, help="corta solo pasados estos minutos")
     ap.add_argument("--guardar", action="store_true", help="escribe el resultado en las columnas de vista de la marca (sin esto, solo lectura)")
-    ap.add_argument("--dias-entre-revisiones", type=int, default=7, help="días hasta volver a mirar una marca sin vista (presentada hace --dias-jovenes días o más), miércoles a sábado")
-    ap.add_argument("--dias-entre-revisiones-jovenes", type=int, default=2, help="días hasta volver a mirar una marca sin vista presentada hace menos de --dias-jovenes días (miércoles a sábado)")
+    ap.add_argument("--dias-entre-revisiones", type=int, default=2, help="días hasta volver a mirar una marca sin vista (presentada hace --dias-jovenes días o más)")
+    ap.add_argument("--dias-entre-revisiones-jovenes", type=int, default=1, help="días hasta volver a mirar una marca sin vista presentada hace menos de --dias-jovenes días")
     ap.add_argument("--dias-entre-revisiones-jovenes-previo", type=int, default=1, help="lo mismo, los días previos a la notificación (--dias-previos)")
-    ap.add_argument("--dias-entre-revisiones-previo", type=int, default=3, help="días hasta volver a mirar una marca sin vista más vieja, los días previos a la notificación")
+    ap.add_argument("--dias-entre-revisiones-previo", type=int, default=2, help="días hasta volver a mirar una marca sin vista más vieja, los días previos a la notificación")
     ap.add_argument("--dias-previos", default="7,1,2", help="días de la semana ISO (lunes = 1, domingo = 7) previos a la notificación de los miércoles")
     ap.add_argument("--forzar-cada", type=int, default=0, help="reemplaza la cadencia de las marcas sin vista (pasada de la madrugada del miércoles: 1)")
     ap.add_argument("--edad-maxima", type=int, default=0, help="solo marcas presentadas hace N días o menos (0 = sin tope)")
