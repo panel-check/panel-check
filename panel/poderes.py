@@ -79,16 +79,67 @@ def _es_caba(txt):
     return "autónoma" in t or "autonoma" in t or t.strip() in ("caba", "capital federal")
 
 
-def propuesta(cliente: dict, hoy=None) -> dict:
+MAX_FIRMANTES = 6
+
+
+def _sexo_amplio(sexo) -> str:
+    """Sexo → variante del poder completo. Sin dato queda como siempre fue el modelo («El…», «domiciliado»)."""
+    t = (sexo or "").strip().lower()
+    return "femenino" if t.startswith("fem") else "neutro" if t.startswith("otr") else "masculino"
+
+
+_DOMICILIADO = {"masculino": "domiciliado", "femenino": "domiciliada", "neutro": "domiciliado/a"}
+
+
+def _cotitulares_de(cliente: dict) -> list:
+    v = (cliente or {}).get("cotitulares")
+    if isinstance(v, str):
+        import json
+        try:
+            v = json.loads(v or "[]")
+        except ValueError:
+            v = []
+    return [t for t in (v or []) if isinstance(t, dict) and (t.get("nombre") or "").strip()]
+
+
+def _persona_fisica(c: dict) -> str:
+    """«Nombre, DNI x, domiciliado/a en …, República Argentina» de una persona humana."""
+    domicilio = str(c.get("domicilio") or "").strip().rstrip(".")
+    provincia = (c.get("provincia") or "").strip()
+    localidad = (c.get("localidad") or "").strip()
+    lugar_dom = [domicilio] if domicilio else []
+    if _es_caba(provincia):
+        lugar_dom.append(CABA)
+    else:
+        if localidad and localidad.lower() not in domicilio.lower():
+            lugar_dom.append(localidad)
+        if provincia:
+            lugar_dom.append(f"Provincia de {provincia}")
+    partes = [(c.get("nombre") or "").strip()]
+    if c.get("dni"):
+        partes.append(f"DNI {fmt_dni(c.get('dni'))}")
+    if lugar_dom:
+        partes.append(f"{_DOMICILIADO[_sexo_amplio(c.get('sexo'))]} en " + ", ".join(lugar_dom))
+    return ", ".join(partes) + ", República Argentina"
+
+
+def _unir(personas: list) -> str:
+    if len(personas) == 1:
+        return personas[0]
+    return "; ".join(personas[:-1]) + "; y " + personas[-1]
+
+
+def propuesta(cliente: dict, hoy=None, cotitulares=None) -> dict:
     """Valores sugeridos para el poder, a partir de la ficha del cliente.
-    Todos se pueden corregir en el panel antes de generar."""
+    Todos se pueden corregir en el panel antes de generar. Persona física con cotitulares (los demás titulares
+    de la marca, del formulario): el poder los nombra a todos y lleva un lugar de firma para cada uno."""
     hoy = hoy or _dt.date.today()
     c = cliente or {}
     tipo = c.get("tipo_persona") or ("juridica" if _dig(c.get("cuit")).startswith("3") else "fisica")
     nombre = (c.get("nombre") or "").strip()
     domicilio = str(c.get("domicilio") or "").strip().rstrip(".")
     provincia = (c.get("provincia") or "").strip()
-    localidad = (c.get("localidad") or "").strip()
+    firmantes, genero = 1, "masculino"
     if tipo == "juridica":
         partes = [f"{nombre}, CUIT {fmt_cuit(c.get('cuit'))}"]
         if domicilio:
@@ -98,32 +149,43 @@ def propuesta(cliente: dict, hoy=None) -> dict:
             partes.append(f"domiciliada en {dom}")
         otorgante = ", ".join(partes) + ", República Argentina."
     else:
-        lugar_dom = [domicilio] if domicilio else []
-        if _es_caba(provincia):
-            lugar_dom.append(CABA)
-        else:
-            if localidad and localidad.lower() not in domicilio.lower():
-                lugar_dom.append(localidad)
-            if provincia:
-                lugar_dom.append(f"Provincia de {provincia}")
-        partes = [nombre]
-        if c.get("dni"):
-            partes.append(f"DNI {fmt_dni(c.get('dni'))}")
-        if lugar_dom:
-            partes.append("domiciliado en " + ", ".join(lugar_dom))
-        otorgante = ", ".join(partes) + ", República Argentina."
+        otros = _cotitulares_de({"cotitulares": cotitulares}) if cotitulares is not None else _cotitulares_de(c)
+        personas = [c] + otros[:MAX_FIRMANTES - 1]
+        otorgante = _unir([_persona_fisica(x) for x in personas]) + "."
+        firmantes = len(personas)
+        sexos = {_sexo_amplio(x.get("sexo")) for x in personas}
+        genero = sexos.pop() if len(sexos) == 1 else "masculino"
     if _es_caba(provincia) or (tipo == "juridica" and _es_caba(domicilio)):
         lugar = CABA
     elif provincia:
         lugar = f"Provincia de {provincia}"
     else:
         lugar = CABA
-    return {"tipo_persona": tipo, "otorgante": otorgante, "lugar": lugar, "fecha": hoy.isoformat()}
+    return {"tipo_persona": tipo, "otorgante": otorgante, "lugar": lugar, "fecha": hoy.isoformat(),
+            "firmantes": firmantes, "genero": genero}
+
+
+def firmantes(d) -> int:
+    if (d or {}).get("tipo_persona") == "juridica":
+        return 1
+    try:
+        return max(1, min(MAX_FIRMANTES, int((d or {}).get("firmantes") or 1)))
+    except (TypeError, ValueError):
+        return 1
+
+
+# «El abajo firmante…» según el género y si firma uno o varios (el plural femenino solo si son todas mujeres).
+_ENCABEZADO = {("masculino", False): "El abajo firmante", ("femenino", False): "La abajo firmante",
+               ("neutro", False): "El/La abajo firmante", ("masculino", True): "Los abajo firmantes",
+               ("femenino", True): "Las abajo firmantes", ("neutro", True): "Los abajo firmantes"}
 
 
 def _parrafo_inicial(d, apoderado):
     otorgante = d["otorgante"].strip().rstrip(".")
-    return f"El abajo firmante {otorgante}. Por el presente otorgo a {apoderado.strip().rstrip('.')}. {CUERPO}"
+    varios = firmantes(d) > 1
+    genero = d.get("genero") if d.get("genero") in _DOMICILIADO else "masculino"
+    verbo = "otorgamos" if varios else "otorgo"
+    return f"{_ENCABEZADO[(genero, varios)]} {otorgante}. Por el presente {verbo} a {apoderado.strip().rstrip('.')}. {CUERPO}"
 
 
 def _lugar_fecha(d):
@@ -177,15 +239,48 @@ def _armar_pdf(d: dict, apoderado: str, letra, interlineado, esc, logo_cm):
           Paragraph(escape(_parrafo_inicial(d, apoderado)), cuerpo),
           Paragraph(escape(CONSTANCIA), cuerpo),
           esp(1.9),
-          Paragraph(escape(_lugar_fecha(d)), normal),
-          # el lugar para la firma nunca baja de ~1,2 cm, aunque se achique todo lo demás
-          Spacer(1, max(1.8 * esc, 1.2) * cm),
+          Paragraph(escape(_lugar_fecha(d)), normal)]
+    n = firmantes(d)
+    if n > 1:
+        h.append(_tabla_firmas(n, normal, letra, esc, doc.width))
+        doc.build(h)
+        return buf.getvalue(), doc.page
+    # el lugar para la firma nunca baja de ~1,2 cm, aunque se achique todo lo demás
+    h += [Spacer(1, max(1.8 * esc, 1.2) * cm),
           Paragraph("FIRMA", normal), Spacer(1, max(1.0 * esc, 0.6) * cm),
           Paragraph("ACLARACIÓN: " + LINEA_FIRMA, normal)]
     if d.get("tipo_persona") == "juridica":
         h += [Spacer(1, max(0.9 * esc, 0.6) * cm), Paragraph("CARGO: " + LINEA_FIRMA, normal)]
     doc.build(h)
     return buf.getvalue(), doc.page
+
+
+def _linea(rotulo, ancho_pt, letra):
+    """Rótulo + guiones bajos hasta ocupar el ancho de la columna."""
+    from reportlab.pdfbase.pdfmetrics import stringWidth
+    resto = ancho_pt - stringWidth(rotulo, "Times-Roman", letra) - 4
+    return rotulo + "_" * max(8, int(resto / stringWidth("_", "Times-Roman", letra)))
+
+
+def _tabla_firmas(n, estilo, letra, esc, ancho):
+    """Varios titulares: un bloque de firma por titular (FIRMA / ACLARACIÓN / DNI), de a dos por fila."""
+    from reportlab.lib.units import cm
+    from reportlab.platypus import Paragraph, Spacer, Table, TableStyle
+    col = ancho / 2
+    celdas = []
+    for i in range(n):
+        celdas.append([Spacer(1, max(1.6 * esc, 1.1) * cm), Paragraph(f"FIRMA (titular {i + 1})", estilo),
+                       Spacer(1, max(0.8 * esc, 0.5) * cm), Paragraph(_linea("ACLARACIÓN: ", col - 12, letra), estilo),
+                       Spacer(1, max(0.6 * esc, 0.4) * cm), Paragraph(_linea("DNI: ", col - 12, letra), estilo)])
+    if n % 2:
+        celdas.append("")
+    filas = [celdas[i:i + 2] for i in range(0, len(celdas), 2)]
+    t = Table(filas, colWidths=[col, col])
+    t.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP"), ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                           ("RIGHTPADDING", (0, 0), (-1, -1), 12), ("TOPPADDING", (0, 0), (-1, -1), 0),
+                           ("BOTTOMPADDING", (0, 0), (-1, -1), 0)]))
+    t.hAlign = "LEFT"
+    return t
 
 
 def generar_pdf(d: dict, apoderado: str) -> bytes:
@@ -229,9 +324,21 @@ def generar_docx(d: dict, apoderado: str) -> bytes:
     par("Poder", WD_ALIGN_PARAGRAPH.CENTER, antes=12, subrayado=True)
     par(_parrafo_inicial(d, apoderado), WD_ALIGN_PARAGRAPH.JUSTIFY, antes=14)
     par(CONSTANCIA, WD_ALIGN_PARAGRAPH.JUSTIFY)
-    par(_lugar_fecha(d), antes=54)
-    par("FIRMA", antes=50)
-    par("ACLARACIÓN: " + LINEA_FIRMA, antes=28)
+    n = firmantes(d)
+    par(_lugar_fecha(d), antes=54 if n == 1 else 30)
+    if n > 1:
+        tabla = doc.add_table(rows=(n + 1) // 2, cols=2)
+        for i in range(n):
+            celda = tabla.cell(i // 2, i % 2)
+            p = celda.paragraphs[0]
+            p.paragraph_format.space_before = Pt(40)
+            p.add_run(f"FIRMA (titular {i + 1})")
+            for rot in ("ACLARACIÓN: " + "_" * 22, "DNI: " + "_" * 28):
+                q = celda.add_paragraph(rot)
+                q.paragraph_format.space_before = Pt(16)
+    else:
+        par("FIRMA", antes=50)
+        par("ACLARACIÓN: " + LINEA_FIRMA, antes=28)
     if d.get("tipo_persona") == "juridica":
         par("CARGO: " + LINEA_FIRMA, antes=24)
     buf = io.BytesIO()

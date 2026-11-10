@@ -42,6 +42,43 @@ import archivos_seguros
 #        lista de condiciones: el campo se muestra solo si se cumplen todas.
 # "cliente": a qué columna de la tabla clientes va la respuesta.
 
+MAX_TITULARES = 4
+OPCIONES_TITULARES = [str(i) for i in range(1, MAX_TITULARES + 1)]
+# Datos que se piden de cada cotitular (titular 2, 3…): los mismos del titular 1 que van al poder y al INPI,
+# sin correo, teléfono ni domicilio comercial (el contacto es el titular 1). id del campo: t<N>_<clave>.
+CAMPOS_COTITULAR = ("nombre", "sexo", "nacionalidad", "dni", "cuit", "domicilio", "localidad", "provincia",
+                    "codigo_postal", "estado_civil", "conyuge_nombre", "conyuge_dni")
+
+
+def _campos_cotitular(n: int) -> list:
+    """Campos del titular n (2..MAX_TITULARES): se muestran si la marca tiene n titulares o más."""
+    si = {"campo": "cantidad_titulares", "valores": OPCIONES_TITULARES[n - 1:]}
+    casado = [si, {"campo": f"t{n}_estado_civil", "valor": "Casado/a"}]
+    t = f"t{n}_"
+    return [
+        {"id": f"{t}nota", "tipo": "nota", "etiqueta": f"Datos del titular {n}", "si": si,
+         "ayuda": f"Completá los datos de la persona número {n} que va a ser titular de la marca. "
+                  "Tienen que coincidir con su DNI (y, si la marca ya fue solicitada, con lo ingresado en el INPI)."},
+        {"id": f"{t}nombre", "tipo": "texto", "etiqueta": f"Titular {n}: Apellido y Nombre", "obligatorio": True, "si": si},
+        {"id": f"{t}sexo", "tipo": "opcion", "etiqueta": f"Titular {n}: Sexo", "obligatorio": True, "si": si,
+         "opciones": ["Masculino", "Femenino", "Otro"]},
+        {"id": f"{t}nacionalidad", "tipo": "texto", "etiqueta": f"Titular {n}: Nacionalidad", "obligatorio": True, "si": si},
+        {"id": f"{t}dni", "tipo": "texto", "etiqueta": f"Titular {n}: DNI", "obligatorio": True, "formato": "dni", "si": si},
+        {"id": f"{t}cuit", "tipo": "texto", "etiqueta": f"Titular {n}: CUIL/CUIT", "obligatorio": True, "formato": "cuit", "si": si},
+        {"id": f"{t}domicilio", "tipo": "texto", "etiqueta": f"Titular {n}: Domicilio particular", "obligatorio": True, "si": si},
+        {"id": f"{t}localidad", "tipo": "texto", "etiqueta": f"Titular {n}: Localidad", "obligatorio": True, "si": si},
+        {"id": f"{t}provincia", "tipo": "lista", "etiqueta": f"Titular {n}: Provincia", "obligatorio": True, "si": si,
+         "opciones": PROVINCIAS},
+        {"id": f"{t}codigo_postal", "tipo": "texto", "etiqueta": f"Titular {n}: Código Postal", "obligatorio": True, "si": si},
+        {"id": f"{t}estado_civil", "tipo": "opcion", "etiqueta": f"Titular {n}: Estado Civil", "obligatorio": True, "si": si,
+         "opciones": ["Casado/a", "Soltero/a", "Viudo/a", "Divorciado/a"]},
+        {"id": f"{t}conyuge_nombre", "tipo": "texto", "etiqueta": f"Titular {n}: Nombre y apellido del cónyuge",
+         "obligatorio": False, "si": casado},
+        {"id": f"{t}conyuge_dni", "tipo": "texto", "etiqueta": f"Titular {n}: DNI del cónyuge", "obligatorio": False,
+         "formato": "dni", "si": casado},
+    ]
+
+
 PROVINCIAS = [
     "Ciudad Autónoma de Buenos Aires", "Buenos Aires", "Catamarca", "Chaco", "Chubut", "Córdoba",
     "Corrientes", "Entre Ríos", "Formosa", "Jujuy", "La Pampa", "La Rioja", "Mendoza", "Misiones",
@@ -82,6 +119,12 @@ FORMULARIOS = {
                       "todos los datos personales tienen que coincidir con los ingresados a la hora de hacer la solicitud "
                       "de la marca en el INPI."},
             {"id": "email", "tipo": "email", "etiqueta": "Correo electrónico", "obligatorio": True, "cliente": "email"},
+            # Si la marca tiene más de un titular, se piden los datos de cada uno (t2_…, t4_…) y el poder los
+            # incluye a todos, con un lugar de firma para cada uno (ver poderes.propuesta).
+            {"id": "cantidad_titulares", "tipo": "opcion", "etiqueta": "¿Cuántos titulares tiene la marca?", "obligatorio": True,
+             "opciones": OPCIONES_TITULARES,
+             "ayuda": "Si la marca es (o va a ser) de más de una persona, más abajo te pedimos los datos de cada una. "
+                      "El poder lo tienen que firmar todos los titulares. Primero completá los datos del titular 1."},
             {"id": "nombre", "tipo": "texto", "etiqueta": "Apellido y Nombre del titular", "obligatorio": True, "cliente": "nombre"},
             # Para redactar el poder: Masculino → «El», Femenino → «La», Otro → «El/La» (ver poderes.propuesta_simple)
             {"id": "sexo", "tipo": "opcion", "etiqueta": "Sexo", "obligatorio": True, "cliente": "sexo",
@@ -105,6 +148,7 @@ FORMULARIOS = {
              "cliente": "conyuge_nombre", "si": {"campo": "estado_civil", "valor": "Casado/a"}},
             {"id": "conyuge_dni", "tipo": "texto", "etiqueta": "DNI del cónyuge", "obligatorio": False,
              "cliente": "conyuge_dni", "formato": "dni", "si": {"campo": "estado_civil", "valor": "Casado/a"}},
+            *[c for n in range(2, MAX_TITULARES + 1) for c in _campos_cotitular(n)],
             {"id": "servicio", "tipo": "opcion", "etiqueta": "¿Qué servicio solicitás?", "obligatorio": True,
              "opciones": [SERVICIO_NUEVA, SERVICIO_OPOSICION, SERVICIO_VISTAS]},
             # ── Opción 1: registro de una nueva marca ──
@@ -170,6 +214,7 @@ TIPO_LEGIBLE = {"fisica": "Persona física", "juridica": "Persona jurídica"}
 COLUMNAS_CLIENTE_NUEVAS = [
     "tipo_persona", "dni", "sexo", "nacionalidad", "domicilio", "localidad", "provincia", "codigo_postal",
     "domicilio_comercial", "estado_civil", "conyuge_nombre", "conyuge_dni", "firmante_nombre", "firmante_cargo",
+    "cotitulares",  # JSON con los demás titulares (titular 2, 3…) del formulario de persona física
 ]
 
 
@@ -402,6 +447,9 @@ def datos_cliente(slug: str, datos: dict) -> dict:
     form = FORMULARIOS[slug]
     campos = {c["cliente"]: datos[c["id"]] for c in form["campos"] if c.get("cliente") and datos.get(c["id"])}
     campos["tipo_persona"] = form["tipo_persona"]
+    if form["tipo_persona"] == "fisica":
+        cot = cotitulares(datos)  # lo último que mandó manda: con un solo titular, se borran los anteriores
+        campos["cotitulares"] = json.dumps(cot, ensure_ascii=False) if cot else None
     if campos.get("firmante_nombre"):
         campos.setdefault("contacto", campos["firmante_nombre"])
     return campos
@@ -434,7 +482,36 @@ def diferencias(slug: str, antes: dict, despues: dict, archivos_antes: dict = No
 
 
 def cambia_poder(antes: dict, despues: dict) -> bool:
-    return any((antes or {}).get(k, "") != (despues or {}).get(k, "") for k in CAMPOS_PODER)
+    claves = set(CAMPOS_PODER) | {"cantidad_titulares"} | {f"t{n}_{k}" for n in range(2, MAX_TITULARES + 1)
+                                                          for k in CAMPOS_COTITULAR}
+    return any((antes or {}).get(k, "") != (despues or {}).get(k, "") for k in claves)
+
+
+def cantidad_titulares(datos: dict) -> int:
+    try:
+        return max(1, min(MAX_TITULARES, int((datos or {}).get("cantidad_titulares") or 1)))
+    except ValueError:
+        return 1
+
+
+def cotitulares(datos: dict) -> list:
+    """Titulares 2, 3… de una respuesta, como dicts con las mismas claves que la ficha del cliente."""
+    out = []
+    for n in range(2, cantidad_titulares(datos) + 1):
+        t = {k: (datos.get(f"t{n}_{k}") or "") for k in CAMPOS_COTITULAR}
+        if t["nombre"]:
+            out.append(t)
+    return out
+
+
+def agregar_aviso_titulares(cuerpo: str, n: int) -> str:
+    """Con más de un titular, el mail del poder avisa que lo tienen que firmar todos (antes del saludo)."""
+    if n <= 1:
+        return cuerpo
+    aviso = (f"Importante: como la marca tiene {n} titulares, el poder lo tienen que firmar todos, cada uno en su lugar "
+             "(firma, aclaración y DNI). Pueden firmar la misma hoja o cada uno una copia impresa; en ese caso, mandanos todas.")
+    m = re.search(r"\n\s*\n(?=Saludos)", cuerpo)
+    return cuerpo[:m.start()] + "\n\n" + aviso + cuerpo[m.start():] if m else cuerpo.rstrip() + "\n\n" + aviso
 
 
 def respuesta_por_token(cur, token: str, bloquear: bool = False):

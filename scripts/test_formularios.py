@@ -10,7 +10,7 @@ import formularios_core as fc  # noqa: E402
 BASE = {
     "email": "a@b.com", "nombre": "Gómez María", "nacionalidad": "Argentina", "dni": "30111222",
     "cuit": "27301112229", "domicilio": "Calle 1", "localidad": "CABA", "provincia": "Buenos Aires",
-    "codigo_postal": "1000", "estado_civil": "Soltero/a", "sexo": "Femenino",
+    "codigo_postal": "1000", "estado_civil": "Soltero/a", "sexo": "Femenino", "cantidad_titulares": "1",
 }
 NUEVA = {"servicio": fc.SERVICIO_NUEVA, "empresa_nombre": "Luna", "rubro": "Gastronomía",
          "actividad_descripcion": "Venta de café", "web_redes": "@luna", "nueva_tiene_logo": "NO"}
@@ -133,6 +133,39 @@ class ServicioPersonaFisica(unittest.TestCase):
     def test_persona_juridica_no_cambia(self):
         ids = [c["id"] for c in fc.FORMULARIOS["persona-juridica"]["campos"]]
         self.assertNotIn("servicio", ids)
+
+
+class VariosTitulares(unittest.TestCase):
+    T2 = {"t2_nombre": "Ruiz Pedro", "t2_sexo": "Masculino", "t2_nacionalidad": "Argentina", "t2_dni": "29.888.777",
+          "t2_cuit": "20298887771", "t2_domicilio": "Mitre 50", "t2_localidad": "Quilmes", "t2_provincia": "Buenos Aires",
+          "t2_codigo_postal": "1878", "t2_estado_civil": "Soltero/a"}
+
+    def _slug(self):
+        return next(k for k, f in fc.FORMULARIOS.items() if f["tipo_persona"] == "fisica")
+
+    def test_pide_datos_del_segundo_titular(self):
+        with self.assertRaises(fc.ErrorFormulario) as e:
+            fc.validar(self._slug(), {**BASE, **NUEVA, "cantidad_titulares": "2"}, {})
+        self.assertIn("Titular 2: Apellido y Nombre", str(e.exception))
+        datos, _ = fc.validar(self._slug(), {**BASE, **NUEVA, **self.T2, "cantidad_titulares": "2"}, {})
+        self.assertEqual(datos["t2_dni"], "29888777")
+        cot = fc.cotitulares(datos)
+        self.assertEqual([c["nombre"] for c in cot], ["Ruiz Pedro"])
+        self.assertIn("Ruiz Pedro", fc.datos_cliente(self._slug(), datos)["cotitulares"])
+
+    def test_un_titular_ignora_los_demas(self):
+        datos, _ = fc.validar(self._slug(), {**BASE, **NUEVA, **self.T2, "cantidad_titulares": "1"}, {})
+        self.assertNotIn("t2_nombre", datos)
+        self.assertEqual(fc.cotitulares(datos), [])
+        self.assertIsNone(fc.datos_cliente(self._slug(), datos)["cotitulares"])
+
+    def test_cambia_poder_y_aviso(self):
+        self.assertTrue(fc.cambia_poder({"t2_dni": "1"}, {"t2_dni": "2"}))
+        self.assertTrue(fc.cambia_poder({"cantidad_titulares": "1"}, {"cantidad_titulares": "2"}))
+        cuerpo = "Hola,\n\nTe adjunto el poder.\n\nSaludos,\nEquipo"
+        self.assertEqual(fc.agregar_aviso_titulares(cuerpo, 1), cuerpo)
+        con = fc.agregar_aviso_titulares(cuerpo, 3)
+        self.assertLess(con.index("3 titulares"), con.index("Saludos"))
 
 
 if __name__ == "__main__":

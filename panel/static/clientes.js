@@ -1090,7 +1090,7 @@ function htmlPoderes(lista) {
   if (!lista || !lista.length) return "";
   return `<ul class="cl-lista-simple">${lista.map(p => `<li data-poder="${p.id}">
       <span class="crm-gris">${fmtFechaHora(p.generado_en)}${p.generado_por ? " · " + esc(p.generado_por) : ""}</span> ·
-      ${p.datos.modelo === "simple_marcas" ? '<span class="cl-tag">Poder simple marcas</span> ' : ""}${esc((p.datos.otorgante || "").slice(0, 60))} · lugar y fecha: ${esc(p.datos.lugar)}, ${crmFecha(p.datos.fecha)}
+      ${p.datos.modelo === "simple_marcas" ? '<span class="cl-tag">Poder simple marcas</span> ' : ""}${p.datos.firmantes > 1 ? `<span class="cl-tag">${p.datos.firmantes} titulares</span> ` : ""}${esc((p.datos.otorgante || "").slice(0, 60))} · lugar y fecha: ${esc(p.datos.lugar)}, ${crmFecha(p.datos.fecha)}
       <button type="button" class="cl-btn sec mini" data-bajar-poder="pdf">PDF</button>
       <button type="button" class="cl-btn sec mini" data-bajar-poder="docx">Word</button>
       <button type="button" class="cl-btn peligro mini" data-borrar-poder title="Saca este poder de la lista">×</button></li>`).join("")}</ul>`;
@@ -1110,12 +1110,18 @@ async function abrirGeneradorPoder(clienteId) {
   if (p.tipo_persona === "fisica" && !p.otorgante.match(/DNI/)) faltan.push("DNI");
   caja.innerHTML = `
     <p class="crm-gris" style="margin:0 0 8px">Se arma con el modelo del estudio y los datos del cliente. Revisá el texto (por ejemplo «domiciliado» / «domiciliada») y descargalo para mandárselo a firmar. La aclaración (y el cargo, si es empresa) salen en blanco: los completa a mano quien firma.</p>
+    ${p.firmantes > 1 ? `<p class="crm-nota" style="margin:0 0 8px">La marca tiene <strong>${p.firmantes} titulares</strong> (según el formulario): el poder los nombra a todos y lleva un lugar de firma, aclaración y DNI para cada uno.</p>` : ""}
     ${faltan.length ? `<p class="crm-error" style="padding:0 0 8px">Ojo: falta ${faltan.join(", ")} en la ficha. Podés completarlo acá abajo o en «Datos para el trámite».</p>` : ""}
     <form class="cl-form" id="poder-form" style="margin-top:0">
       <label>Tipo<select name="tipo_persona">${Object.entries(est.tiposPersona).map(([k, v]) => `<option value="${k}" ${k === p.tipo_persona ? "selected" : ""}>${esc(v)}</option>`).join("")}</select></label>
       <label>Lugar<input name="lugar" value="${esc(p.lugar)}"></label>
       <label>Fecha<input type="date" name="fecha" value="${esc(p.fecha)}"></label>
-      <label class="ancho">El abajo firmante…<textarea name="otorgante" rows="3">${esc(p.otorgante)}</textarea></label>
+      <label title="Persona física: cuántos titulares firman (cada uno tiene su lugar de firma)">Titulares que firman<input type="number" name="firmantes" min="1" max="6" value="${esc(p.firmantes || 1)}"></label>
+      <label>Encabezado<select name="genero">
+        <option value="masculino" ${p.genero === "masculino" ? "selected" : ""}>El abajo firmante / Los abajo firmantes</option>
+        <option value="femenino" ${p.genero === "femenino" ? "selected" : ""}>La abajo firmante / Las abajo firmantes</option>
+        <option value="neutro" ${p.genero === "neutro" ? "selected" : ""}>El/La abajo firmante</option></select></label>
+      <label class="ancho">Otorgante(s): nombre, DNI y domicilio de cada titular (si son varios, separados por «;»)<textarea name="otorgante" rows="${p.firmantes > 1 ? 6 : 3}">${esc(p.otorgante)}</textarea></label>
     </form>
     <p class="crm-nota">Apoderado: ${esc(r.apoderado)} <a href="/clientes?vista=ajustes" title="Se cambia en Ajustes">(cambiar)</a></p>
     <div class="cl-acciones"><button type="button" class="cl-btn" data-generar="pdf">Descargar PDF</button>
@@ -1125,7 +1131,7 @@ async function abrirGeneradorPoder(clienteId) {
   caja.querySelectorAll("[data-generar]").forEach(b => b.addEventListener("click", async () => {
     const f = form.elements;
     const datos = { tipo_persona: f.tipo_persona.value, otorgante: f.otorgante.value, lugar: f.lugar.value,
-                    fecha: f.fecha.value };
+                    fecha: f.fecha.value, firmantes: String(f.firmantes.value || 1), genero: f.genero.value };
     const e = $("poder-estado"); e.className = "cl-estado"; e.textContent = "Generando…"; b.disabled = true;
     try {
       await bajarArchivo(`/api/clientes/${clienteId}/poder?formato=${b.dataset.generar}`,
