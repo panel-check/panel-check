@@ -1,10 +1,10 @@
 """
-Informe preliminar de disponibilidad marcaria (antes «de viabilidad»: el
+Informe preliminar de viabilidad marcaria (entre el 28/10 y el 10/11/2026 se llamó «de disponibilidad»: el
 informe gratuito que se manda antes de que el cliente contrate el registro).
 
 El análisis lo hace la IA (skill «informe-viabilidad-marcaria») y entrega dos JSON:
   - el del CLIENTE: el texto del informe. Se pega en la ficha del cliente
-    (pestaña Informes → «Generar informe de disponibilidad marcaria») y el
+    (pestaña Informes → «Generar informe de viabilidad marcaria») y el
     panel arma el PDF.
   - el INTERNO: todo lo que encontró la IA (búsquedas, antecedentes, clases,
     revisión legal, observaciones para Pame). Se adjunta con «Adjuntar
@@ -12,7 +12,7 @@ El análisis lo hace la IA (skill «informe-viabilidad-marcaria») y entrega dos
 
 Formatos del JSON del cliente:
   - versión 2 (desde el 28/10/2026, criterios consolidados de Pame, modelo
-    ATELIER ASTRANITY INFPR-1847): «Informe preliminar de disponibilidad
+    ATELIER ASTRANITY INFPR-1847): «Informe preliminar de viabilidad
     marcaria», limitado a coincidencias exactas, con referencia INFPR, cuatro
     secciones con título, firma de cinco líneas, Calibri (Carlito, que tiene
     las mismas medidas), paleta del manual de Smarties y logo de trama arriba a
@@ -37,7 +37,17 @@ FUENTES = os.path.join(RECURSOS, "fuentes")
 MARCA_AGUA = os.path.join(RECURSOS, "marca-agua-smarties.png")
 LOGO_TRAMA = os.path.join(RECURSOS, "logo-trama-smarties.png")
 
-TITULO_V2 = "Informe preliminar de disponibilidad marcaria"
+TITULO_V2 = "Informe preliminar de viabilidad marcaria"
+
+
+def titulo_v2(titulo) -> str:
+    """El informe al cliente se llama «de viabilidad» (pedido de KOM del 10/11/2026). Entre el 28/10 y el
+    10/11/2026 se llamó «de disponibilidad»: esos títulos (guardados o en JSON viejos) se muestran con
+    «viabilidad»."""
+    t = _txt(titulo, 120) if titulo else ""
+    if not t:
+        return TITULO_V2
+    return re.sub(r"disponibilidad", lambda m: "Viabilidad" if m.group(0)[0] == "D" else "viabilidad", t, flags=re.I)
 FIRMA_V2 = {
     "nombre": "Pamela Guzzardi",
     "lineas": [
@@ -130,6 +140,9 @@ def crear_tablas(cur):
         cur.execute("ALTER TABLE informes_viabilidad DROP CONSTRAINT IF EXISTS informes_viabilidad_tipo_check")
         cur.execute("ALTER TABLE informes_viabilidad ADD CONSTRAINT informes_viabilidad_tipo_check "
                     "CHECK (tipo IN ('cliente', 'interno', 'oposicion'))")
+    # 10/11/2026: el informe al cliente vuelve a llamarse «de viabilidad»; se corrigen los ya guardados.
+    cur.execute("UPDATE informes_viabilidad SET datos = jsonb_set(datos, '{titulo}', to_jsonb(%s::text)) "
+                "WHERE tipo = 'cliente' AND datos->>'titulo' ILIKE %s", (TITULO_V2, "%disponibilidad%"))
 
 
 # ── Lectura y validación del JSON pegado ──────────────────────────────────
@@ -168,7 +181,7 @@ def _comillas(s: str) -> str:
 
 
 def es_v2(d: dict) -> bool:
-    """El JSON (pegado o ya guardado) es del formato de disponibilidad (versión 2)."""
+    """El JSON (pegado o ya guardado) es del formato 2 (modelo ATELIER ASTRANITY)."""
     enc = d.get("encabezado") if isinstance(d.get("encabezado"), dict) else {}
     firma = d.get("firma") if isinstance(d.get("firma"), dict) else {}
     try:
@@ -250,7 +263,7 @@ def _texto_visible(d: dict) -> str:
     return "\n".join(partes)
 
 
-# ── Formato 2: informe preliminar de disponibilidad marcaria ──────────────
+# ── Formato 2: informe preliminar de viabilidad marcaria ──────────────
 
 def fecha_en_letras(v=None, hoy: _dt.date = None) -> str:
     """«28 de octubre de 2026». Acepta ya en letras, DD/MM/AAAA, AAAA-MM-DD o vacío (= hoy)."""
@@ -366,7 +379,7 @@ def _normalizar_v2(d: dict, nombre_cliente: str = "", hoy: _dt.date = None) -> d
     out = {
         "tipo": "informe_viabilidad_cliente",
         "formato": 2,
-        "titulo": _txt(d.get("titulo"), 120) or TITULO_V2,
+        "titulo": titulo_v2(d.get("titulo")),
         "encabezado": encab,
         "secciones": out_sec,
         "firma": {"nombre": _txt(firma.get("nombre"), 120) or FIRMA_V2["nombre"],
@@ -463,7 +476,7 @@ def normalizar_interno(d: dict) -> dict:
     if d.get("tipo") == "informe_oposicion_ia":
         raise InformeInvalido("Ese es el JSON del informe de oposición: va en «Informe Oposición IA».")
     if d.get("tipo") == "informe_viabilidad_cliente" or ("secciones" in d and "encabezado" in d):
-        raise InformeInvalido("Ese es el JSON para el cliente: va en «Generar informe de disponibilidad marcaria».")
+        raise InformeInvalido("Ese es el JSON para el cliente: va en «Generar informe de viabilidad marcaria».")
     if not marca_interno(d):
         raise InformeInvalido("No encuentro la marca en el JSON interno (se espera «caso.marca_pretendida»).")
     return d
@@ -534,6 +547,7 @@ def _generar_pdf_v2(d: dict) -> bytes:
 
     normal, negrita = _fuentes()
     buf = io.BytesIO()
+    d = {**d, "titulo": titulo_v2(d.get("titulo"))}
     e = d["encabezado"]
     ancho, alto = letter
     doc = SimpleDocTemplate(buf, pagesize=letter, leftMargin=84, rightMargin=84, topMargin=91, bottomMargin=66,
@@ -586,6 +600,7 @@ def _generar_pdf_v1(d: dict) -> bytes:
 
     normal, negrita = _fuentes()
     buf = io.BytesIO()
+    d = {**d, "titulo": titulo_v2(d.get("titulo"))}
     e = d["encabezado"]
     doc = SimpleDocTemplate(buf, pagesize=letter, leftMargin=3 * cm, rightMargin=3 * cm, topMargin=2.5 * cm,
                             bottomMargin=2.5 * cm, title=f"Informe preliminar {e['marca_pretendida']}",

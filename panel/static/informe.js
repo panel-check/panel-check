@@ -60,7 +60,7 @@
   function barra(r, extra) {
     const fmt2 = r.tipo === "cliente" && r.datos && r.datos.formato === 2;
     const ref = fmt2 ? (r.datos.encabezado || {}).referencia : ((r.datos || {}).caso || {}).referencia;
-    const titulo = r.tipo === "cliente" ? (fmt2 ? "Informe preliminar de disponibilidad" : "Informe preliminar de viabilidad")
+    const titulo = r.tipo === "cliente" ? "Informe preliminar de viabilidad"
       : r.tipo === "oposicion" ? "Informe Oposición IA" : "Informe IA interno";
     document.title = `${titulo} — ${r.marca || ""}`;
     return `<div class="inf-barra">

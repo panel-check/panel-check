@@ -431,7 +431,7 @@ def textos_vista_previa(f: dict, cliente_nombre: str = "") -> tuple:
     d = f.get("datos") or {}
     marca = f.get("marca") or ""
     if f["tipo"] == "cliente":
-        nombre = "Informe preliminar de disponibilidad" if d.get("formato") == 2 else "Informe preliminar de viabilidad"
+        nombre = "Informe preliminar de viabilidad"
     else:
         nombre = NOMBRE_PAGINA.get(f["tipo"], "Informe")
     partes = []
