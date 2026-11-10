@@ -65,7 +65,8 @@ class DatosPoder(BaseModel):
     aclaracion: Optional[str] = ""
     cargo: Optional[str] = ""
     modelo: Optional[str] = ""  # "" = poder amplio del estudio; "simple_marcas" = Poder simple marcas
-    genero: Optional[str] = ""  # solo poder simple: neutro (El/La), masculino o femenino
+    genero: Optional[str] = ""  # neutro (El/La), masculino o femenino (en el poder completo, vacío = «El»)
+    firmantes: Optional[str] = ""  # poder completo de persona física: cuántos titulares lo firman (1 a 6)
 
 
 class DatosToma(BaseModel):
@@ -218,8 +219,8 @@ def crear_router(verificar_login, conexion) -> APIRouter:
             print(f"[formularios] aviso de la respuesta {respuesta_id} no enviado: {e}")
 
     def _enviar_poder(respuesta_id: int) -> bool:
-        """Persona física: arma el PDF del «Poder simple marcas» (desde el 09/11/2026; antes era el poder amplio)
-        con los datos que acaba de completar y se lo manda por mail
+        """Persona física: arma el PDF del poder completo del estudio (el «Poder simple marcas» se mandó solo
+        del 09 al 10/11/2026) con los datos que acaba de completar —de todos los titulares, si son varios— y se lo manda por mail
         (plantilla editable «poder_persona_fisica» de Mails). Nunca rompe el envío del formulario: si falla,
         el motivo queda en poder_error y devuelve False."""
         error = None
@@ -238,24 +239,27 @@ def crear_router(verificar_login, conexion) -> APIRouter:
                     previos = cur.fetchone()["n"]
                     cur.execute("SELECT * FROM mails_config WHERE clave = %s", (fc.CLAVE_MAIL_PODER,))
                     guardada = cur.fetchone() or {}
-            apoderado = poderes.APODERADO_SIMPLE
+                    apoderado = leer_apoderado(cur)
             if previos >= fc.PODER_MAX_24H:
                 error = f"No se mandó: ya se enviaron {previos} poderes a este mail en las últimas 24 hs."
             else:
                 hoy = _dt.datetime.now(_dt.timezone(_dt.timedelta(hours=-3))).date()
-                if datos.get("sexo"):  # lo que eligió en el formulario manda (El / La / El/La)
-                    fila["sexo"] = datos["sexo"]
-                d = poderes.propuesta_simple(fila, hoy)
-                d.pop("cliente_juridica", None)
-                pdf = poderes.generar_pdf_simple(d)
+                # lo que completó en el formulario manda: titular 1 (sexo → El / La / El/La) y los demás titulares
+                for k in ("nombre", "sexo", "dni", "domicilio", "localidad", "provincia"):
+                    if datos.get(k):
+                        fila[k] = datos[k]
+                fila["tipo_persona"] = "fisica"
+                d = poderes.propuesta(fila, hoy, fc.cotitulares(datos))
+                pdf = poderes.generar_pdf(d, apoderado)
                 cfg = mails_core.combinar(fc.CLAVE_MAIL_PODER, guardada)
+                cuerpo_mail = fc.agregar_aviso_titulares(cfg["cuerpo"], d["firmantes"])
                 asunto, cuerpo_html, texto = mails_core.render_prospecto(
-                    cfg["asunto"], cfg["cuerpo"], fc.datos_mail_poder(datos), cfg.get("encabezado"),
+                    cfg["asunto"], cuerpo_mail, fc.datos_mail_poder(datos), cfg.get("encabezado"),
                     simple=mails_core.es_simple(fc.CLAVE_MAIL_PODER))
                 r = mails_cola.enviar_o_encolar(
                     conexion, cuenta=cfg["cuenta"], remitente=cfg["remitente"], responder_a=cfg["responder_a"], para=[email],
                     asunto=asunto, html=cuerpo_html, texto=texto,
-                    adjuntos=[{"filename": poderes.nombre_archivo_simple(d, "pdf"), "content": pdf}],
+                    adjuntos=[{"filename": poderes.nombre_archivo(d, "pdf"), "content": pdf}],
                     clave_mail=fc.CLAVE_MAIL_PODER, origen="formulario", al_enviar={"tabla": "formularios_respuestas", "id": respuesta_id})
                 if r["en_cola"]:   # cupo de Resend agotado: sale solo después de las 21:00 (ver mails_cola.py)
                     error = mails_cola.AVISO_EN_COLA
@@ -555,13 +559,16 @@ def crear_router(verificar_login, conexion) -> APIRouter:
             d["tipo_persona"] = "fisica"
             if d["genero"] not in poderes.GENEROS:
                 d["genero"] = "neutro"
+            d.pop("firmantes")
         else:
-            d.pop("modelo"); d.pop("genero")
+            d.pop("modelo")
+            d["genero"] = d["genero"] if d["genero"] in poderes.GENEROS else "masculino"
+            d["firmantes"] = poderes.firmantes(d)
         if d["tipo_persona"] not in fc.TIPO_LEGIBLE:
             raise HTTPException(status_code=400, detail="Tipo de persona inválido")
         if not d["otorgante"] or not d["lugar"]:
             raise HTTPException(status_code=400, detail="Faltan los datos del otorgante o el lugar")
-        if len(d["otorgante"]) > 1500 or any(len(d[k]) > 200 for k in ("lugar", "aclaracion", "cargo")):
+        if len(d["otorgante"]) > 3000 or any(len(d[k]) > 200 for k in ("lugar", "aclaracion", "cargo")):
             raise HTTPException(status_code=400, detail="Algún dato es demasiado largo")
         try:
             _dt.date.fromisoformat(d["fecha"])

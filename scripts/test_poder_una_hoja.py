@@ -54,6 +54,46 @@ class PoderUnaHoja(unittest.TestCase):
 
 
 @unittest.skipIf(pypdf is None, "falta reportlab o pypdf")
+class PoderVariosTitulares(unittest.TestCase):
+    BASE = {"tipo_persona": "fisica", "nombre": "Pérez Juan", "sexo": "Masculino", "dni": "30123456",
+            "domicilio": "Avenida Rivadavia 12345, piso 3, departamento B", "localidad": "Ramos Mejía", "provincia": "Buenos Aires"}
+    CO = [{"nombre": f"Titular Nro {i}", "sexo": "Femenino", "dni": f"3{i}111222",
+           "domicilio": "Calle muy larga 1234, barrio Parque Los Robles, lote 45, entre San Martín y Belgrano",
+           "localidad": "Pilar", "provincia": "Buenos Aires"} for i in range(2, 7)]
+
+    def test_hasta_seis_en_una_hoja(self):
+        for n in range(1, 7):
+            d = poderes.propuesta(self.BASE, dt.date(2026, 11, 10), self.CO[:n - 1])
+            self.assertEqual(d["firmantes"], n)
+            pdf = poderes.generar_pdf(d, poderes.APODERADO_DEFAULT)
+            self.assertEqual(_hojas(pdf), 1, n)
+            txt = " ".join(pypdf.PdfReader(io.BytesIO(pdf)).pages[0].extract_text().split())
+            if n > 1:
+                self.assertIn("Los abajo firmantes", txt)
+                self.assertIn("otorgamos", txt)
+                self.assertIn(f"FIRMA (titular {n})", txt)
+            self.assertTrue(poderes.generar_docx(d, poderes.APODERADO_DEFAULT).startswith(b"PK"))
+
+    def test_textos(self):
+        d = poderes.propuesta({**self.BASE, "sexo": "Femenino"}, dt.date(2026, 11, 10), self.CO[:1])
+        self.assertTrue(poderes._parrafo_inicial(d, "X").startswith("Las abajo firmantes"))
+        self.assertIn("; y Titular Nro 2", d["otorgante"])
+        self.assertIn("domiciliada en", d["otorgante"])
+        sin_sexo = poderes.propuesta({**self.BASE, "sexo": ""})
+        self.assertTrue(poderes._parrafo_inicial(sin_sexo, "X").startswith("El abajo firmante Pérez Juan, DNI 30.123.456, domiciliado"))
+        self.assertIn("Por el presente otorgo a X.", poderes._parrafo_inicial(sin_sexo, "X"))
+        otro = poderes.propuesta({**self.BASE, "sexo": "Otro"})
+        self.assertTrue(poderes._parrafo_inicial(otro, "X").startswith("El/La abajo firmante"))
+        self.assertIn("domiciliado/a", otro["otorgante"])
+        # los cotitulares también pueden venir de la ficha (columna cotitulares, JSON)
+        import json
+        ficha = poderes.propuesta({**self.BASE, "cotitulares": json.dumps(self.CO[:2])})
+        self.assertEqual(ficha["firmantes"], 3)
+        self.assertEqual(poderes.propuesta({**self.BASE, "tipo_persona": "juridica", "cuit": "30111111118",
+                                            "cotitulares": json.dumps(self.CO[:2])})["firmantes"], 1)
+
+
+@unittest.skipIf(pypdf is None, "falta reportlab o pypdf")
 class PoderSimpleMarcas(unittest.TestCase):
     def _datos(self, extra="", genero="neutro"):
         cliente = {"nombre": "Juan Carlos Pérez", "dni": "30123456",
