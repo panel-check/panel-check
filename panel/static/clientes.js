@@ -549,7 +549,7 @@ async function abrirCliente(id) {
       </div>
 
       <div data-cpanel="informes" ${est.clienteTab === "informes" ? "" : "hidden"}>
-        <div class="cl-acciones" style="margin-top:12px"><button type="button" class="cl-btn" id="cli-inf-btn">📄 Generar informe de disponibilidad marcaria</button>
+        <div class="cl-acciones" style="margin-top:12px"><button type="button" class="cl-btn" id="cli-inf-btn">📄 Generar informe de viabilidad marcaria</button>
           <button type="button" class="cl-btn sec" id="cli-iai-btn">🧠 Adjuntar informe IA interno</button>
           <button type="button" class="cl-btn sec" id="cli-iop-btn" title="El JSON que entrega la skill revisador-de-oposiciones">⚖️ Cargar informe de oposición IA</button></div>
         <div class="cl-caja" id="cli-inf" hidden style="margin-top:10px"></div>
@@ -1328,7 +1328,7 @@ function previaInforme(texto, tipo) {
   if (tipo === "cliente") {
     if (d.tipo === "informe_viabilidad_interno") return { ok: false, html: '<span class="crm-error" style="padding:0">Ese es el JSON interno: va en «Adjuntar informe IA interno».</span>' };
     const e = d.encabezado || {}, sec = Array.isArray(d.secciones) ? d.secciones : [];
-    // Formato 2 (disponibilidad, desde el 28/10/2026): trae título, referencia INFPR y firma en líneas.
+    // Formato 2 (modelo ATELIER ASTRANITY, desde el 28/10/2026): trae título, referencia INFPR y firma en líneas.
     const v2 = Number(d.version || 0) >= 2 || "titulo" in d || "referencia" in e || typeof e.web === "object";
     const textos = JSON.stringify(v2 ? [d.titulo, sec] : [e.actividad, e.antecedentes, e.logo, d.introduccion, sec]);
     const clase = textos.match(/\bclases?\s*(n[°ºo.]*\s*)?\d+/i);
@@ -1342,7 +1342,7 @@ function previaInforme(texto, tipo) {
       (corchete ? `<br><span class="crm-error" style="padding:0">Quedó «${esc(corchete[0])}» sin reemplazar.</span>` : "") +
       (sinTitulo ? '<br><span class="crm-error" style="padding:0">Hay una sección sin título: en este formato todas llevan título.</span>' : "") };
   }
-  if (d.tipo === "informe_viabilidad_cliente" || (d.secciones && d.encabezado)) return { ok: false, html: '<span class="crm-error" style="padding:0">Ese es el JSON para el cliente: va en «Generar informe de disponibilidad marcaria».</span>' };
+  if (d.tipo === "informe_viabilidad_cliente" || (d.secciones && d.encabezado)) return { ok: false, html: '<span class="crm-error" style="padding:0">Ese es el JSON para el cliente: va en «Generar informe de viabilidad marcaria».</span>' };
   const marca = (d.caso || {}).marca_pretendida || d.marca_pretendida || "";
   const b = d.busqueda_inpi || {};
   const exactas = (b.coincidencias_exactas || b.identicas || []).length;
@@ -1356,7 +1356,7 @@ function abrirCajaInforme(clienteId, tipo) {
   if (!caja.hidden) { caja.hidden = true; return; }
   caja.hidden = false;
   caja.innerHTML = tipo === "cliente" ? `
-    <p class="crm-gris" style="margin:0 0 8px">Pegá el JSON <strong>para el cliente</strong> que generó la IA (skill «informe-viabilidad-marcaria», archivo <em>…_cliente.json</em>). El panel arma el PDF «Informe preliminar de disponibilidad marcaria» con el formato aprobado (modelo ATELIER ASTRANITY) y lo guarda acá. Si el JSON no trae la <strong>referencia INFPR</strong>, el panel asigna la siguiente; si es una corrección de la misma marca, conserva la que ya tenía. No deja generarlo si el texto menciona un número de clase o usa expresiones que los criterios no permiten.</p>
+    <p class="crm-gris" style="margin:0 0 8px">Pegá el JSON <strong>para el cliente</strong> que generó la IA (skill «informe-viabilidad-marcaria», archivo <em>…_cliente.json</em>). El panel arma el PDF «Informe preliminar de viabilidad marcaria» con el formato aprobado (modelo ATELIER ASTRANITY) y lo guarda acá. Si el JSON no trae la <strong>referencia INFPR</strong>, el panel asigna la siguiente; si es una corrección de la misma marca, conserva la que ya tenía. No deja generarlo si el texto menciona un número de clase o usa expresiones que los criterios no permiten.</p>
     <textarea id="inf-texto" rows="8" spellcheck="false" placeholder='{ "tipo": "informe_viabilidad_cliente", "encabezado": { … }, "secciones": [ … ] }' style="font-family:ui-monospace,monospace;font-size:12px"></textarea>
     <div class="crm-gris" id="inf-previa" style="margin-top:6px"></div>
     <div class="cl-acciones"><button type="button" class="cl-btn" id="inf-ir" disabled>Generar PDF</button>

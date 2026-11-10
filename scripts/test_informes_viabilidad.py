@@ -125,11 +125,11 @@ class TestInterno(unittest.TestCase):
             iv.normalizar_interno({"busqueda_inpi": {}})
 
 
-# ── Formato 2: informe preliminar de disponibilidad (modelo ATELIER ASTRANITY, 28/10/2026) ──
+# ── Formato 2: informe preliminar de viabilidad (modelo ATELIER ASTRANITY, 28/10/2026) ──
 
 ASTRANITY = {
     "tipo": "informe_viabilidad_cliente", "version": 2, "estado": "borrador_pendiente_revision",
-    "titulo": "Informe preliminar de disponibilidad marcaria",
+    "titulo": "Informe preliminar de disponibilidad marcaria",  # título viejo: se muestra como «de viabilidad»
     "encabezado": {
         "marca_pretendida": "ATELIER ASTRANITY", "cliente": "Carolina", "fecha": "28 de octubre de 2026",
         "referencia": "INFPR-1847",
@@ -171,11 +171,16 @@ class CursorFalso:
         return [{"cliente_id": c, "marca": m, "tipo": t, "ref": r} for c, m, t, r in self.filas]
 
 
-class TestDisponibilidad(unittest.TestCase):
+class TestDisponibilidad(unittest.TestCase):  # formato 2 (antes «de disponibilidad»)
+    def test_titulo_viejo_guardado_se_muestra_como_viabilidad(self):
+        self.assertEqual(iv.titulo_v2("Informe preliminar de disponibilidad marcaria"), "Informe preliminar de viabilidad marcaria")
+        self.assertEqual(iv.titulo_v2(""), iv.TITULO_V2)
+        self.assertEqual(iv.titulo_v2(None), "Informe preliminar de viabilidad marcaria")
+
     def test_normaliza_el_modelo(self):
         d = iv.normalizar_cliente(_copia(ASTRANITY))
         self.assertEqual(d["formato"], 2)
-        self.assertEqual(d["titulo"], "Informe preliminar de disponibilidad marcaria")
+        self.assertEqual(d["titulo"], "Informe preliminar de viabilidad marcaria")
         e = d["encabezado"]
         self.assertEqual((e["fecha"], e["referencia"], e["cliente"]), ("28 de octubre de 2026", "INFPR-1847", "Carolina"))
         self.assertEqual(e["instagram"]["texto"], "@atelier.astranity")
@@ -239,7 +244,7 @@ class TestDisponibilidad(unittest.TestCase):
         r = PdfReader(io.BytesIO(pdf))
         self.assertEqual(len(r.pages), 1)
         texto = r.pages[0].extract_text()
-        for esperado in ("Informe preliminar de disponibilidad marcaria", "Marca pretendida: ATELIER ASTRANITY",
+        for esperado in ("Informe preliminar de viabilidad marcaria", "Marca pretendida: ATELIER ASTRANITY",
                          "Referencia de consulta: INFPR-1847", "astranity.mitiendanube.com", "@atelier.astranity",
                          "Objeto y alcance", "Próximos pasos", "Pamela Guzzardi", "+54 9 11 5589-0784"):
             self.assertIn(esperado, texto)
