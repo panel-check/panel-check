@@ -108,6 +108,20 @@ def _fechas(archivos, contiene):
     return sorted(out)
 
 
+def _fechas_contestacion(archivos):
+    """Fechas ISO de las filas que contestan una vista. INPI no siempre lo pone en el Índice: la contestación
+    suele llegar como Índice «Recibo de Ingreso» con Referencia «Contestacion de vistas», y el escrito como
+    Índice «Otros» con Referencia «Respuesta vista NNNN» (acta 4819633, 04-05/11/2026). Se miran las dos columnas."""
+    out = []
+    for a in archivos:
+        indice, referencia = _norm(a.get("Indice") or ""), _norm(a.get("Referencia") or "")
+        if "CONTEST" in indice or "CONTEST" in referencia or "RESPUESTA VISTA" in referencia or "RESPUESTA A VISTA" in referencia:
+            f = _parsear_fecha_grilla(a.get("Fecha") or "")
+            if f:
+                out.append(f)
+    return sorted(out)
+
+
 def clasificar(archivos):
     """(categoria, fecha_ingreso, fecha_vista) a partir de las filas de la Grilla."""
     ingreso = next(iter(_fechas([a for a in archivos if "SOLICITUD DE MARCA" in _norm(a.get("Referencia") or "")],
@@ -116,7 +130,7 @@ def clasificar(archivos):
         return "publicada", ingreso, None
     vistas = _fechas(archivos, "VISTA")
     ordenes = _fechas(archivos, "ORDEN DE PUBLICACION")
-    contestaciones = _fechas(archivos, "CONTEST")
+    contestaciones = _fechas_contestacion(archivos)
     if vistas:
         ultima = vistas[-1]
         if any(o >= ultima for o in ordenes):

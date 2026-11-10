@@ -101,6 +101,29 @@ if __name__ == "__main__":
     unittest.main()
 
 
+class ContestacionEnReferencia(unittest.TestCase):
+    """Grilla real del acta 4819633: la contestación figura en la Referencia, no en el Índice."""
+
+    def test_contestacion_por_referencia(self):
+        archivos = [
+            {"Fecha": "05/11/2026", "Indice": "Otros", "Referencia": "Respuesta vista 4819633"},
+            {"Fecha": "05/11/2026", "Indice": "Formulario", "Referencia": "-"},
+            {"Fecha": "04/11/2026", "Indice": "Recibo de Ingreso", "Referencia": "Contestacion de vistas"},
+            {"Fecha": "04/11/2026", "Indice": "Cédula de Notificación", "Referencia": "-"},
+            {"Fecha": "03/11/2026", "Indice": "Vista de Marcas", "Referencia": "-"},
+            {"Fecha": "02/11/2026", "Indice": "Formulario", "Referencia": "-"},
+            {"Fecha": "01/11/2026", "Indice": "Recibo de Ingreso", "Referencia": "Solicitud de marcas"},
+        ]
+        self.assertEqual(pv.clasificar(archivos), ("vista_resuelta", "2026-11-01", "2026-11-03"))
+
+    def test_sin_contestacion_sigue_pendiente(self):
+        archivos = [
+            {"Fecha": "03/11/2026", "Indice": "Vista de Marcas", "Referencia": "-"},
+            {"Fecha": "01/11/2026", "Indice": "Recibo de Ingreso", "Referencia": "Solicitud de marcas"},
+        ]
+        self.assertEqual(pv.clasificar(archivos)[0], "vista_pendiente")
+
+
 class Cadencias(unittest.TestCase):
     """Cada cuántos días se mira una marca sin vista (09/11/2026: igual todos los días de la semana)."""
 
