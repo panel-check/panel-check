@@ -11,6 +11,7 @@ on:
       - "Agregar marca manualmente (fuera del boletín)"
       - "Agrupar marcas bajo un mismo nombre"
       - "Avisos por mail de la mañana"
+      - "Avisos por Telegram"
       - "Corregir clase de marcas con oposición (manual)"
       - "Contactado por acta: deshacer las marcas de rebote (una sola vez / manual)"
       - "Completar datos faltantes - Sin nombre"
