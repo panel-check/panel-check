@@ -19,6 +19,8 @@ Cada reporte queda en la tabla `reportes_corridas` (una fila por corrida e inten
 para comparar y evita mandar dos veces el mismo. «Panel actualizado» corre cada hora: solo se reporta si
 falla. El análisis es por reglas, sin IA.
 
+El mensaje va al tema «🔄 Corridas» del grupo de Telegram (ver telegram_avisos.py).
+
 Configuración (secrets de GitHub): TELEGRAM_BOT_TOKEN (el token que da @BotFather). TELEGRAM_CHAT_ID es
 opcional: si no está, el script toma el chat que le escribió /start al bot (puede ser un grupo) y lo
 guarda en `reportes_config`. Sin token no manda nada, pero guarda el reporte igual.
@@ -27,7 +29,7 @@ No imprime nombres ni datos de personas en el log (el repo es público): solo n�
 
 Uso: python3 reporte_corrida.py                   (lee el evento workflow_run de GITHUB_EVENT_PATH)
      python3 reporte_corrida.py --run-id 123456   (reporta esa corrida; para probar o repetir)
-     python3 reporte_corrida.py --prueba          (manda un mensaje de prueba al chat)
+     python3 reporte_corrida.py --prueba          (crea los temas del grupo y deja un mensaje en cada uno)
 """
 
 import argparse
@@ -43,6 +45,9 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import requests
+
+import telegram_avisos
+from telegram_avisos import chat_de_actualizaciones, limpiar_token  # noqa: F401 (las usan las pruebas)
 
 TZ = ZoneInfo("America/Argentina/Buenos_Aires")
 REPO = os.environ.get("GITHUB_REPOSITORY", "panel-check/panel-check")
@@ -580,88 +585,10 @@ def guardar(conn, d: dict, enviado: bool):
 
 
 # ── Telegram ───────────────────────────────────────────────────────────────────────────────────────
-
-def limpiar_token(token) -> str:
-    """El token tal como lo da @BotFather («123456:ABC…»), aunque lo hayan pegado con espacios, comillas,
-    «bot» adelante o la URL entera de la API."""
-    t = (token or "").strip().strip("'\"").strip()
-    m = re.search(r"(\d{6,}:[A-Za-z0-9_-]{20,})", t)
-    return m.group(1) if m else t
-
-
-def _tg(metodo, **datos):
-    token = limpiar_token(os.environ.get("TELEGRAM_BOT_TOKEN"))
-    r = requests.post(f"https://api.telegram.org/bot{token}/{metodo}", json=datos, timeout=30)
-    return r
-
-
-def chat_de_actualizaciones(actualizaciones: list):
-    """El chat más reciente que le habló al bot: un /start (o cualquier mensaje) en privado o en un grupo,
-    o el aviso de que lo sumaron a un grupo. Un /start gana sobre los demás."""
-    con_start = cualquiera = None
-    for u in actualizaciones:
-        msg = u.get("message") or u.get("channel_post") or u.get("edited_message") or {}
-        miembro = u.get("my_chat_member") or {}
-        chat = msg.get("chat") or miembro.get("chat")
-        if not chat or chat.get("id") is None:
-            continue
-        if miembro and (miembro.get("new_chat_member") or {}).get("status") in ("left", "kicked"):
-            continue
-        cualquiera = str(chat["id"])
-        if (msg.get("text") or "").strip().lower().startswith("/start"):
-            con_start = str(chat["id"])
-    return con_start or cualquiera
-
-
-def chat_id(conn):
-    """El chat al que se manda: el secret TELEGRAM_CHAT_ID, el guardado en la base, o el último chat que
-    le escribió /start al bot (se guarda para la próxima)."""
-    if os.environ.get("TELEGRAM_CHAT_ID"):
-        return os.environ["TELEGRAM_CHAT_ID"]
-    guardado = None
-    if conn is not None:
-        with conn.cursor() as cur:
-            cur.execute("SELECT valor FROM reportes_config WHERE clave = 'telegram_chat_id'")
-            fila = cur.fetchone()
-            guardado = fila[0] if fila else None
-    try:
-        yo = _tg("getMe").json()
-        print(f"Bot de Telegram: @{(yo.get('result') or {}).get('username') or '?'} ({'ok' if yo.get('ok') else yo.get('description')})")
-    except Exception:
-        pass
-    try:
-        resp = _tg("getUpdates").json()
-    except Exception as ex:
-        print(f"::warning::No se pudo leer el bot de Telegram ({type(ex).__name__})")
-        resp = {}
-    if not resp.get("ok", True):
-        print(f"::warning::Telegram respondió: {resp.get('description')}")
-    actualizaciones = resp.get("result", [])
-    nuevo = chat_de_actualizaciones(actualizaciones)
-    print(f"Telegram: {len(actualizaciones)} mensaje(s) pendientes en el bot; chat guardado: {'sí' if guardado else 'no'}.")
-    if nuevo and nuevo != guardado and conn is not None:
-        with conn.cursor() as cur:
-            cur.execute("""INSERT INTO reportes_config (clave, valor) VALUES ('telegram_chat_id', %s)
-                           ON CONFLICT (clave) DO UPDATE SET valor = EXCLUDED.valor""", (nuevo,))
-        print("Chat de Telegram detectado por /start y guardado.")
-    return nuevo or guardado
-
+# El envío y los temas del grupo están en telegram_avisos.py (lo usan también otros avisos).
 
 def enviar(conn, texto) -> bool:
-    if not os.environ.get("TELEGRAM_BOT_TOKEN"):
-        print("::warning::Falta el secret TELEGRAM_BOT_TOKEN: el reporte se guardó pero no se mandó.")
-        return False
-    destino = chat_id(conn)
-    if not destino:
-        print("::warning::No hay chat de Telegram: mandale /start al bot (o agregalo a un grupo y escribí /start).")
-        return False
-    r = _tg("sendMessage", chat_id=destino, text=texto, parse_mode="HTML", disable_web_page_preview=True)
-    if r.status_code != 200:
-        # Si el HTML no le gustó a Telegram, se manda en texto plano antes que perder el aviso.
-        plano = re.sub(r"<[^>]+>", "", texto)
-        r = _tg("sendMessage", chat_id=destino, text=html.unescape(plano), disable_web_page_preview=True)
-    print(f"Telegram: HTTP {r.status_code}")
-    return r.status_code == 200
+    return telegram_avisos.enviar(texto, tema="corridas", conn=conn)
 
 
 # ── Principal ──────────────────────────────────────────────────────────────────────────────────────
@@ -752,8 +679,7 @@ def main():
             conn = conectar()
         except Exception:
             pass
-        ok = enviar(conn, "✅ <b>Reporte de corridas</b> — prueba.\nDesde ahora llega acá un reporte cada vez "
-                          "que termina un proceso del panel.")
+        ok = telegram_avisos.preparar_temas(conn)
         return 0 if ok else 1
 
     if args.run_id:
