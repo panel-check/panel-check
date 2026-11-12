@@ -98,7 +98,7 @@ Veredictos posibles:
 Nivel de riesgo para el cliente: "alta", "media" o "baja".
 
 Respondé SOLO con un objeto JSON, sin texto antes ni después:
-{"veredicto": "identica|confundible|cercana|no_confundible", "nivel": "alta|media|baja", "dominante_cliente": "...", "dominante_nueva": "...", "razon": "una o dos oraciones en castellano, concretas, para el equipo del estudio"}"""
+{"veredicto": "identica|confundible|cercana|no_confundible", "nivel": "alta|media|baja", "dominante_cliente": "...", "dominante_nueva": "...", "razon": "una o dos oraciones cortas en castellano (máximo 50 palabras), concretas, para el equipo del estudio"}"""
 
 
 class ErrorJuez(Exception):
@@ -145,7 +145,7 @@ class Uso:
                 "tokens_salida": self.salida, "errores_ia": self.errores}
 
 
-def pedir(sistema: str, texto: str, modelo: str, max_tokens: int = 400, uso: Uso = None) -> str:
+def pedir(sistema: str, texto: str, modelo: str, max_tokens: int = 1200, uso: Uso = None) -> str:
     """Una llamada a la API de mensajes. Reintenta ante límites o caídas. Levanta ErrorJuez."""
     k = clave()
     if not k:
@@ -244,7 +244,7 @@ def _evaluar_con(par: dict, modelo: str, uso: Uso = None) -> dict:
     crudo = pedir(PROMPT, texto_par(par), modelo, uso=uso)
     d = _json_de(crudo)
     if d is None:
-        raise ErrorJuez("La IA devolvió una respuesta que no se entiende")
+        raise ErrorJuez(f"La IA devolvió una respuesta que no se entiende ({modelo}): {' '.join((crudo or '').split())[:160]!r}")
     return _normalizar_respuesta(d, modelo)
 
 
