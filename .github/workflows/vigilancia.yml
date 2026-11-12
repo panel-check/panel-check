@@ -55,4 +55,6 @@ jobs:
           python3 vigilancia.py
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL || secrets.DATABASE_PUBLIC_URL }}
+          # Juez con IA de las alertas (panel/juez_vigilancia.py). Sin el secret, solo reglas.
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           PYTHONUNBUFFERED: "1"

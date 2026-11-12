@@ -806,8 +806,25 @@ function conectarFichaCliente(cont, d) {
 }
 
 /* ── Alertas de vigilancia ──────────────────────────────────────── */
+// Sensibilidad por marca (juez con IA, 12/11/2026): qué veredictos se muestran como alerta.
+const SENSIBILIDADES = { identicas: "Solo idénticas", similares: "Similares", amplia: "Amplia" };
+const SENSIBILIDAD_AYUDA = {
+  identicas: "Solo avisa si la IA ve el mismo nombre (o casi).",
+  similares: "Avisa idénticas y confundibles (recomendado).",
+  amplia: "Avisa también las cercanas: más alertas, más para revisar.",
+};
+const VEREDICTOS = { identica: ["mal", "Idéntica"], confundible: ["mal", "Confundible"], cercana: ["aviso", "Cercana"], no_confundible: ["", "No confundible"] };
+
+function htmlActasCliente(a) {
+  const lista = Array.isArray(a.actas_cliente) && a.actas_cliente.length ? a.actas_cliente : [{ acta: a.acta_cliente, clase: a.clase_cliente }];
+  const clases = [...new Set(lista.map(x => x.clase).filter(x => x !== null && x !== undefined))];
+  return `${clases.length > 1 ? "clases" : "clase"} ${clases.length ? clases.map(esc).join(", ") : "?"} · ${lista.length > 1 ? "actas" : "acta"} `
+    + lista.map(x => `<a class="link-acta" href="javascript:void(0)" data-abrir="${esc(x.acta)}">${esc(x.acta)} ↗</a>`).join(", ");
+}
+
 function htmlAlerta(a, { sinCliente = false } = {}) {
   const abierta = ["nueva", "monitorear", "oponer"].includes(a.estado);
+  const descIA = a.estado === "descartada_ia";
   const otro = a.tipo === "otro_agente";
   const agente = a.agente_nuevo ? ` · ${esc(a.agente_nuevo)}` : "";
   const plazo = !otro && a.plazo_oposicion
@@ -834,15 +851,19 @@ function htmlAlerta(a, { sinCliente = false } = {}) {
           <div class="vg-motivos">Un cliente nuestro presentó una marca nueva por otro lado: es el momento de hablar con él (¿la gestiona otro estudio? ¿la presentó solo?).</div></div>`
       : `<div class="vg-cols">
         <div class="vg-col"><small>Marca del cliente</small><strong>${esc(a.denominacion_cliente || "")}</strong>
-          <div class="crm-gris">clase ${esc(a.clase_cliente ?? "?")} · acta <a class="link-acta" href="javascript:void(0)" data-abrir="${esc(a.acta_cliente)}">${esc(a.acta_cliente)} ↗</a></div></div>
+          <div class="crm-gris">${htmlActasCliente(a)}</div></div>
         <div class="vg-col"><small>Solicitud nueva</small><strong>${esc(a.denominacion_nueva || "(sin nombre)")}</strong>
           <div class="crm-gris">clase ${esc(a.clase_nueva ?? "?")} · acta <a class="link-acta" href="javascript:void(0)" data-abrir="${esc(a.acta_nueva)}">${esc(a.acta_nueva)} ↗</a>
             · ${esc(tipoLegible(a.tipo_nuevo))}<br>Titular: ${esc(a.titular_nuevo || "?")}${agente}<br>${esc(a.fuente_nueva || "")}${a.fecha_presentacion_nueva ? " · presentada " + crmFecha(a.fecha_presentacion_nueva) : ""}</div></div>
-      </div><div class="vg-motivos">${esc(a.motivos || "")}</div>`}
+      </div>${a.ia_veredicto ? `<div class="vg-ia"><span class="cl-tag ${(VEREDICTOS[a.ia_veredicto] || [""])[0]}" title="Veredicto del juez con IA (${esc(a.ia_modelo || "")})">🤖 ${esc((VEREDICTOS[a.ia_veredicto] || ["", a.ia_veredicto])[1])}</span>
+          ${esc(a.ia_razon || "")}${a.ia_dominantes ? ` <span class="crm-gris">(elemento dominante: ${esc(a.ia_dominantes)})</span>` : ""}${a.ia_desacuerdo ? ' <span class="cl-tag azul" title="Alguien la sacó de «Descartada por IA»">no de acuerdo con la IA</span>' : ""}</div>
+        <div class="vg-motivos">Motor: ${esc(a.motivos || "")}</div>`
+      : `<div class="vg-motivos">${esc(a.motivos || "")}${!otro && a.estado === "nueva" ? ' <span class="crm-gris">· todavía sin revisar por la IA</span>' : ""}</div>`}`}
       ${plazo}
       <div class="vg-acciones">
-        ${botones.filter(([e]) => e !== a.estado).map(([e, t]) => `<button type="button" class="cl-btn ${e === "descartada" ? "peligro" : "sec"} mini" data-estado="${e}">${t}</button>`).join("")}
-        ${a.estado !== "nueva" && abierta === false ? `<button type="button" class="cl-btn sec mini" data-estado="nueva">Reabrir</button>` : ""}
+        ${descIA ? `<button type="button" class="cl-btn sec mini" data-estado="nueva" title="Vuelve a las alertas abiertas y queda marcada para calibrar la IA">No estoy de acuerdo</button>`
+          : botones.filter(([e]) => e !== a.estado).map(([e, t]) => `<button type="button" class="cl-btn ${e === "descartada" ? "peligro" : "sec"} mini" data-estado="${e}">${t}</button>`).join("")}
+        ${!descIA && a.estado !== "nueva" && abierta === false ? `<button type="button" class="cl-btn sec mini" data-estado="nueva">Reabrir</button>` : ""}
         <input class="cl-inline-input" data-nota placeholder="nota (se guarda al salir del campo)" value="${esc(a.nota || "")}">
       </div>
       ${a.decidido_por ? `<div class="crm-gris" style="font-size:11px;margin-top:4px">Último cambio: ${esc(a.decidido_por)} ${fmtFechaHora(a.decidido_en)}</div>` : ""}
@@ -928,21 +949,35 @@ async function pintarVigilanciaMarcas() {
       : String(m[o.col] ?? "").toLowerCase();
     const marcas = [...r.marcas].sort((a, b) => (valor(a) > valor(b) ? 1 : valor(a) < valor(b) ? -1 : 0) * o.dir);
     const th = (col, t) => `<th class="vg-orden" data-orden="${col}">${t}${o.col === col ? (o.dir > 0 ? " ▲" : " ▼") : ""}</th>`;
-    cont.innerHTML = `<p class="crm-gris" style="margin:0 0 6px">Umbral general (Ajustes): <strong>${r.umbral_general}%</strong> · Última corrida: <strong>${r.ultima_vigilancia ? fmtFechaHora(r.ultima_vigilancia) : "todavía no corrió"}</strong> (la vigilancia corre todos los días).${r.conceptos_pendientes ? ` · <strong>${r.conceptos_pendientes}</strong> marca(s) todavía sin conceptos${r.ia_disponible ? " (la IA los arma sola, de a tandas cada 20 minutos)" : " (la IA no está configurada: falta IA_API_KEY)"}.` : ""}</p>
-      ${marcas.length ? `<div style="overflow-x:auto"><table class="cl-tabla"><thead><tr>${th("denominacion", "Marca")}${th("clase", "Clase")}${th("cliente_nombre", "Cliente")}${th("umbral", "Umbral")}<th>Otros nombres</th><th title="Traducciones y sinónimos: si una solicitud nueva nombra uno, se alerta como «mismo concepto». Se corrigen en la ficha de la marca.">Conceptos</th>${th("alertas_abiertas", "Alertas")}</tr></thead><tbody>
+    cont.innerHTML = `<p class="crm-gris" style="margin:0 0 6px">Juez con IA: <strong>${r.juez_activo ? "activo" : "apagado (falta ANTHROPIC_API_KEY en el servidor)"}</strong> <button type="button" class="cl-btn sec mini" id="vg-probar-juez">Probar conexión</button> <span id="vg-juez-res"></span> · Umbral general (Ajustes): <strong>${r.umbral_general}%</strong> · Última corrida: <strong>${r.ultima_vigilancia ? fmtFechaHora(r.ultima_vigilancia) : "todavía no corrió"}</strong> (la vigilancia corre todos los días).${r.conceptos_pendientes ? ` · <strong>${r.conceptos_pendientes}</strong> marca(s) todavía sin conceptos${r.ia_disponible ? " (la IA los arma sola, de a tandas cada 20 minutos)" : " (la IA no está configurada: falta IA_API_KEY)"}.` : ""}</p>
+      ${marcas.length ? `<div style="overflow-x:auto"><table class="cl-tabla"><thead><tr>${th("denominacion", "Marca")}${th("clase", "Clase")}${th("cliente_nombre", "Cliente")}<th title="Qué veredictos del juez con IA se muestran como alerta. Vale para toda la marca.">Sensibilidad</th>${th("umbral", "Umbral")}<th>Otros nombres</th><th title="Traducciones y sinónimos: si una solicitud nueva nombra uno, se alerta como «mismo concepto». Se corrigen en la ficha de la marca.">Conceptos</th>${th("alertas_abiertas", "Alertas")}</tr></thead><tbody>
       ${marcas.map(m => `<tr data-acta="${esc(m.acta)}"><td><a href="javascript:void(0)" data-ficha-acta="${esc(m.acta)}" data-nombre="${esc(m.denominacion || m.acta)}"><strong>${esc(m.denominacion || "(sin nombre)")}</strong></a><br><small class="crm-gris">acta ${esc(m.acta)}</small></td>
         <td>${esc(m.clase ?? "")}${m.vigilar_todas_clases ? ' <span class="cl-tag azul" title="Se compara contra todas las clases">todas</span>' : ""}</td>
         <td><a href="javascript:void(0)" data-cliente="${m.cliente_id}">${esc(m.cliente_nombre)}</a></td>
+        <td><select data-sens>${Object.entries(SENSIBILIDADES).map(([k, t]) => `<option value="${k}" ${(m.sensibilidad_vigilancia || r.sensibilidad_default) === k ? "selected" : ""}>${t}</option>`).join("")}</select></td>
         <td><input type="number" min="40" max="100" data-umbral value="${m.umbral_vigilancia ?? ""}" placeholder="${r.umbral_general}" style="width:72px" title="Vacío = el general (${r.umbral_general}%)"> %${m.umbral_vigilancia ? "" : ' <small class="crm-gris">general</small>'}</td>
         <td><small>${esc(m.terminos_vigilancia || "—")}</small></td>
         <td><small>${esc(m.conceptos_vigilancia || "—")}</small></td>
         <td>${m.alertas_abiertas ? `<span class="cl-tag mal">${m.alertas_abiertas}</span>` : "—"}</td></tr>`).join("")}</tbody></table></div>
-      <p class="cl-pie">${marcas.length} marca(s) vigilada(s). El umbral propio de una marca reemplaza al general; se aplica en la próxima corrida.</p>` : '<p class="vacio">No hay marcas vigiladas.</p>'}`;
+      <p class="cl-pie">${marcas.length} marca(s) vigilada(s). La <strong>sensibilidad</strong> decide qué veredictos del juez con IA se muestran (se aplica enseguida a las alertas ya juzgadas). El <strong>umbral</strong> es el filtro previo del motor: qué pares llegan al juez; el propio de una marca reemplaza al general y se aplica en la próxima corrida.</p>` : '<p class="vacio">No hay marcas vigiladas.</p>'}`;
     cont.querySelectorAll("[data-orden]").forEach(h => h.addEventListener("click", () => {
       o.dir = o.col === h.dataset.orden ? -o.dir : 1; o.col = h.dataset.orden; pintarVigilanciaMarcas();
     }));
     cont.querySelectorAll("[data-cliente]").forEach(a => a.addEventListener("click", () => abrirCliente(+a.dataset.cliente)));
     cont.querySelectorAll("[data-ficha-acta]").forEach(a => a.addEventListener("click", () => abrirFichaMarca(a.dataset.nombre, [a.dataset.fichaActa], "vigilancia")));
+    $("vg-probar-juez").addEventListener("click", async () => {
+      const res = $("vg-juez-res"); res.textContent = "Probando…";
+      try {
+        const j = await api("/api/cartera/vigilancia/juez");
+        res.innerHTML = `${j.ok ? "✅" : "⚠️"} ${esc(j.detalle)}${j.totales ? ` · ${j.totales.juzgadas} alertas juzgadas, ${j.totales.descartadas_ia} descartadas por IA, ${j.totales.desacuerdos} con «No estoy de acuerdo», ${j.totales.sin_juzgar} abiertas sin juzgar` : ""}`;
+      } catch (e) { res.textContent = e.message; }
+    });
+    cont.querySelectorAll("tr[data-acta] [data-sens]").forEach(sel => sel.addEventListener("change", async () => {
+      try {
+        await apiJson(`/api/cartera/marcas/${encodeURIComponent(sel.closest("tr").dataset.acta)}`, "PUT", { sensibilidad_vigilancia: sel.value });
+        cargarResumen(); pintarVigilanciaMarcas();
+      } catch (e) { alert(e.message); }
+    }));
     cont.querySelectorAll("tr[data-acta] [data-umbral]").forEach(inp => inp.addEventListener("change", async () => {
       const valor = inp.value.trim() === "" ? null : parseInt(inp.value, 10);
       try {

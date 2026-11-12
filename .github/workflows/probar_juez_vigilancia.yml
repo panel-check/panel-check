@@ -1,0 +1,48 @@
+name: Probar juez de vigilancia (manual)
+
+# Corre el juez con IA de la vigilancia (Claude) sobre casos reales de oposición y
+# sobre alertas que el equipo marcó como ruido (scripts/casos_vigilancia.py) y
+# muestra los aciertos. Solo lee la base (frecuencia de palabras por clase). El
+# resultado queda en la rama resultado-juez-vigilancia (resultado.md) y en el log.
+# Costo: unos centavos de dólar por corrida.
+on:
+  workflow_dispatch:
+  push:
+    branches: [claude/probar-juez]
+
+permissions:
+  contents: write
+
+jobs:
+  probar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.11"
+
+      - name: Instalar dependencias
+        run: pip install -r requirements.txt
+
+      - name: Probar el juez
+        run: |
+          cd scripts
+          python3 probar_juez_vigilancia.py --salida /tmp/resultado.md
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL || secrets.DATABASE_PUBLIC_URL }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          PYTHONUNBUFFERED: "1"
+
+      - name: Guardar el resultado en la rama resultado-juez-vigilancia
+        run: |
+          git config user.name "github-actions"
+          git config user.email "github-actions@users.noreply.github.com"
+          git checkout --orphan resultado-juez-vigilancia
+          git rm -rf --quiet . || true
+          cp /tmp/resultado.md resultado.md
+          git add resultado.md
+          git commit -m "Prueba del juez ${{ github.run_id }}"
+          git push -f origin resultado-juez-vigilancia

@@ -15,6 +15,9 @@ los que traen solicitudes nuevas:
      si un cliente (por CUIT) presentó una marca nueva con otro agente.
   3. Recompara las marcas de la cartera que cambiaron (nombre, términos extra,
      conceptos, clase) contra todo lo que sigue dentro del plazo de oposición.
+  4. (Desde el 12/11/2026) Cada alerta nueva pasa por el juez con IA
+     (panel/juez_vigilancia.py, Claude) si está ANTHROPIC_API_KEY; antes,
+     borra las alertas con el plazo vencido y une las duplicadas.
 
 Solo se alertan solicitudes cuyo plazo de oposición sigue abierto (todavía
 sin publicar o publicadas hace menos de ~33 días). Una misma pareja nunca se
@@ -46,12 +49,18 @@ def main():
         with conn.cursor() as cur:
             cartera.crear_tablas(cur)
         conn.commit()
+        man = vigilancia_core.mantenimiento(conn)
+        print(f"Mantenimiento: {man['vencidas_borradas']} alertas con el plazo vencido borradas, "
+              f"{man['duplicadas_unidas']} duplicadas unidas.")
         mat = vigilancia_core.sumar_por_matricula(conn)
         print(f"Por matrícula: {mat['sumadas']} sumadas solas a la cartera, {mat['propuestas']} propuestas pendientes.")
         st = vigilancia_core.comparar(conn)
         resumen = (f"Marcas vigiladas: {st['marcas_cartera']}. Solicitudes comparadas: {st['comparadas']}. "
                    f"Alertas nuevas de parecido: {st['alertas_similitud']}. Alertas de otro agente: {st['alertas_otro_agente']}. "
-                   f"Marcas de la cartera recomparadas: {st['recomparadas_cartera']}.")
+                   f"Marcas de la cartera recomparadas: {st['recomparadas_cartera']}. "
+                   f"Juez IA: {'activo' if st['juez_activo'] else 'apagado'}; pares juzgados {st['juzgadas']}, "
+                   f"descartados por IA {st['descartadas_ia']}, alertas viejas reevaluadas {st['reevaluadas']}, "
+                   f"llamadas {st['llamadas_ia']}, errores {st['errores_ia']}, costo máx. USD {st['costo_ia_usd_max']}.")
         print(f"::notice::{resumen}")
         print(f"\n{resumen}")
         registrar("vigilancia.yml", {
@@ -59,6 +68,10 @@ def main():
             "alertas_parecido": st["alertas_similitud"], "alertas_otro_agente": st["alertas_otro_agente"],
             "recomparadas": st["recomparadas_cartera"], "sumadas_por_matricula": mat["sumadas"],
             "propuestas_matricula": mat["propuestas"],
+            "juez_activo": st["juez_activo"], "juzgadas_ia": st["juzgadas"], "descartadas_ia": st["descartadas_ia"],
+            "reevaluadas_ia": st["reevaluadas"], "llamadas_ia": st["llamadas_ia"], "errores_ia": st["errores_ia"],
+            "costo_ia_usd_max": st["costo_ia_usd_max"], "vencidas_borradas": man["vencidas_borradas"],
+            "duplicadas_unidas": man["duplicadas_unidas"],
         }, conn)
     finally:
         conn.close()

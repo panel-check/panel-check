@@ -224,6 +224,9 @@ function fmVigilancia() {
   return `
     <p class="crm-gris" style="margin:0 0 8px">Cada expediente se compara contra las solicitudes nuevas de INPI (boletines y escaneo de actas) mientras corre el plazo de oposición.
       ${ult ? `Última corrida: <strong>${fmtFechaHora(ult)}</strong>.` : ""}</p>
+    <div class="cl-barra" style="padding:0 0 8px"><label title="Qué parecidos se muestran como alerta, según el veredicto del juez con IA. Vale para toda la marca (todas sus actas).">Sensibilidad de la vigilancia
+      <select id="fm-sensibilidad">${Object.entries(SENSIBILIDADES).map(([k, t]) => `<option value="${k}" ${(ms[0] && ms[0].sensibilidad_vigilancia || "similares") === k ? "selected" : ""}>${t}</option>`).join("")}</select></label>
+      <span class="crm-gris" style="align-self:center">${esc(SENSIBILIDAD_AYUDA[(ms[0] && ms[0].sensibilidad_vigilancia) || "similares"])}</span></div>
     <div style="overflow-x:auto"><table class="cl-tabla cl-marcas"><thead><tr><th>Acta</th><th>Clase</th><th>Vigilar</th><th>Umbral de parecido</th><th>Otros nombres a vigilar</th><th title="Traducciones, sinónimos y palabras del mismo campo: si una solicitud nueva nombra uno, se alerta como «mismo concepto»">Conceptos (mismo significado)</th></tr></thead><tbody>
     ${ms.map(m => `<tr data-acta="${esc(m.acta)}"><td>${esc(m.acta)}</td><td>${esc(m.clase ?? "")}</td>
       <td><label><input type="checkbox" data-campo="vigilar" ${m.vigilar ? "checked" : ""}> Vigilar</label><br>
@@ -285,6 +288,13 @@ function fmConectar(cont) {
   }
 
   if (fm.tab === "vigilancia") {
+    const sens = $("fm-sensibilidad");
+    if (sens) sens.addEventListener("change", async () => {
+      try {
+        await apiJson(`/api/cartera/marcas/${encodeURIComponent(fm.d.marcas[0].acta)}`, "PUT", { sensibilidad_vigilancia: sens.value });
+        fm.cambios = true; await fmCargar();
+      } catch (e) { alert(e.message); }
+    });
     cont.querySelectorAll(".cl-marcas tr[data-acta]").forEach(tr => {
       const acta = tr.dataset.acta;
       tr.querySelectorAll("[data-campo]").forEach(inp => inp.addEventListener("change", async () => {

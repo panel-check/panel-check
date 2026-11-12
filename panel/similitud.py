@@ -165,11 +165,14 @@ def _sim(a: str, b: str) -> float:
 
 # ── Puntaje ──────────────────────────────────────────────────────────────
 
-def _contiene(a: str, b: str) -> bool:
+def _contiene(a: str, b: str, comunes=frozenset()) -> bool:
     """¿Una contiene a la otra como palabra o como prefijo/sufijo de palabra
     (de al menos 4 letras)? Evita que "SOL" matchee dentro de "CONSOLA"."""
     corta, larga = (a, b) if len(a) <= len(b) else (b, a)
     if len(corta.replace(" ", "")) < 4:
+        return False
+    # Si la corta es solo palabras de uso común en el rubro (TURISMO, CAFE), no cuenta.
+    if comunes and set(corta.split()) <= comunes:
         return False
     if re.search(rf"(?:^| ){re.escape(corta)}(?: |$)", larga):
         return True
@@ -177,9 +180,14 @@ def _contiene(a: str, b: str) -> bool:
         larga.replace(" ", "").endswith(corta.replace(" ", ""))
 
 
-def puntaje_nombres(a: str, b: str, genericas=frozenset()) -> tuple:
+def puntaje_nombres(a: str, b: str, genericas=frozenset(), comunes=frozenset()) -> tuple:
     """(puntaje 0-100, [motivos]) entre dos nombres de marca, sin considerar
-    clases. Devuelve (0, []) si alguno está vacío."""
+    clases. Devuelve (0, []) si alguno está vacío.
+
+    `comunes`: palabras de uso común en el rubro (las calcula la vigilancia
+    con la frecuencia de cada palabra en la clase: TURISMO en la 39, CAFE en
+    la 43, TODO en la 35). Una palabra común compartida no alcanza para
+    alertar: no distingue una marca de otra."""
     na, nb = normalizar(a, genericas), normalizar(b, genericas)
     if not na or not nb:
         return 0, []
@@ -204,19 +212,21 @@ def puntaje_nombres(a: str, b: str, genericas=frozenset()) -> tuple:
             candidatos.append((fon * 100 * 0.98, "suenan parecido"))
 
     # Inclusión: la palabra distintiva de una está en la otra.
-    if _contiene(na, nb):
+    if _contiene(na, nb, comunes):
         corta, larga = (na, nb) if len(na) <= len(nb) else (nb, na)
         # Cuanto más de la larga cubre la corta, más fuerte.
         cobertura = len(corta.replace(" ", "")) / max(len(larga.replace(" ", "")), 1)
         candidatos.append((min(93, 80 + cobertura * 14), "una contiene a la otra"))
     else:
         ta, tb = set(na.split()), set(nb.split())
-        comunes = [t for t in ta & tb if len(t) >= 4]
-        if comunes and (len(ta) > 1 or len(tb) > 1):
-            candidatos.append((78, f"comparten «{max(comunes, key=len)}»"))
+        compartidas = [t for t in ta & tb if len(t) >= 4 and t not in comunes]
+        if compartidas and (len(ta) > 1 or len(tb) > 1):
+            candidatos.append((78, f"comparten «{max(compartidas, key=len)}»"))
         # Misma palabra con pequeñas diferencias (plural, género, errata).
         for x in ta:
             for y in tb:
+                if x == y or x in comunes or y in comunes:
+                    continue
                 if len(x) >= 5 and len(y) >= 5 and _sim_edicion(x, y) >= 0.8 and (len(ta) > 1 or len(tb) > 1):
                     candidatos.append((76, f"palabras parecidas («{x}» / «{y}»)"))
 
@@ -236,11 +246,11 @@ def relacion_clases(clase_a, clase_b, pares_relacionados: set) -> str:
 
 
 def puntaje_marcas(nombre_a, clase_a, nombre_b, clase_b, genericas=frozenset(),
-                   pares_relacionados=frozenset(), todas_las_clases=False) -> dict:
+                   pares_relacionados=frozenset(), todas_las_clases=False, comunes=frozenset()) -> dict:
     """Puntaje final entre la marca de un cliente (a) y una solicitud nueva
     (b). Devuelve {puntaje, motivos, relacion_clases} o None si no hay nada
     que alertar por clases."""
-    base, motivos = puntaje_nombres(nombre_a, nombre_b, genericas)
+    base, motivos = puntaje_nombres(nombre_a, nombre_b, genericas, comunes)
     return ajustar_por_clase(base, motivos, clase_a, clase_b, pares_relacionados, todas_las_clases)
 
 
@@ -287,28 +297,38 @@ def _mismo_termino(a: str, b: str) -> bool:
     return a == b or (len(a) >= 3 and fonetica(a) == fonetica(b))
 
 
-def puntaje_conceptos(conceptos, nombre_marca: str, nombre_nuevo: str, genericas=frozenset()) -> tuple:
+def puntaje_conceptos(conceptos, nombre_marca: str, nombre_nuevo: str, genericas=frozenset(),
+                      comunes=frozenset()) -> tuple:
     """(puntaje 0-100, [motivos]) de la solicitud nueva contra los conceptos de
     una marca de la cartera, sin considerar clases. (0, []) si no nombra
-    ninguno. `nombre_marca` es solo para el texto del motivo."""
+    ninguno. `nombre_marca` es solo para el texto del motivo.
+
+    Desde el 12/11/2026 el concepto solo cuenta si es toda la solicitud o su
+    parte principal: si el concepto ocupa menos de la mitad de las palabras distintivas
+    («TRIP» en «THE GOLDEN TRIP DESTINOS CON PROPÓSITOS») no alcanza, y un concepto
+    que es de uso común en el rubro (TRIP en la 39) tampoco."""
     nb = normalizar(nombre_nuevo, genericas)
     if not nb:
         return 0, []
     palabras = nb.split()
+    distintivas = [w for w in palabras if w not in comunes] or palabras
     mejor = (0, "")
     for crudo in conceptos or ():
         c = normalizar(crudo, genericas)
         # Un concepto que quedó vacío o que es solo una palabra genérica no sirve.
-        if len(c.replace(" ", "")) < 3 or set(c.split()) <= genericas:
+        if len(c.replace(" ", "")) < 3 or set(c.split()) <= genericas or set(c.split()) <= comunes:
             continue
         partes = c.split()
+        # Parte principal: el concepto ocupa al menos la mitad de las palabras distintivas de la solicitud.
+        parte_principal = len(partes) * 2 >= len(distintivas)
         if _mismo_termino(c, nb) or c.replace(" ", "") == nb.replace(" ", ""):
             p = CONCEPTO_NOMBRE
-        elif any(_mismo_termino(" ".join(palabras[i:i + len(partes)]), c) for i in range(len(palabras) - len(partes) + 1)):
+        elif parte_principal and any(_mismo_termino(" ".join(palabras[i:i + len(partes)]), c)
+                                     for i in range(len(palabras) - len(partes) + 1)):
             p = CONCEPTO_PALABRA
         elif len(c) >= 4 and _sim(c, nb) >= 0.88:
             p = CONCEPTO_CASI_NOMBRE
-        elif len(partes) == 1 and len(c) >= 4 and any(len(w) >= 4 and _sim(c, w) >= 0.88 for w in palabras):
+        elif parte_principal and len(partes) == 1 and len(c) >= 4 and any(len(w) >= 4 and _sim(c, w) >= 0.88 for w in palabras):
             p = CONCEPTO_CASI_PALABRA
         else:
             continue
@@ -365,6 +385,13 @@ def claves_indice(nombre: str, genericas=frozenset()) -> set:
     for t in fon:
         if len(t) >= 3:
             claves.add(f"fw:{t}")
+        # Comienzo de cada palabra (ESPARTANO / ESPARTANAS, SUSPENSYS / SUSPENCITY).
+        if len(t) >= 5:
+            claves.add(f"fp:{t[:4]}")
+    # Esqueleto de consonantes del sonido (NOXALAB / NEXA LABS → NXL).
+    cons = re.sub(r"[AEIOUY]", "", fon_pegado)
+    if len(cons) >= 3:
+        claves.add(f"c3:{cons[:3]}")
     return claves
 
 
