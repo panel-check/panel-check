@@ -6,8 +6,8 @@
 <title>Informes — Kom Marcas Inpi</title>
 <link rel="icon" type="image/png" href="/static/favicon.png" />
 <link rel="apple-touch-icon" href="/static/apple-touch-icon.png" />
-<link rel="stylesheet" href="/static/comun.css?v=mv3" />
-<link rel="stylesheet" href="/static/informes_comun.css?v=vista1" />
+<link rel="stylesheet" href="/static/comun.css?v=nc1" />
+<link rel="stylesheet" href="/static/informes_comun.css?v=arch1" />
 <script src="/static/sesion.js" defer></script>
 <script src="/static/menu.js?v=inf2" defer></script>
 </head>
@@ -58,13 +58,20 @@
       <button type="button" data-f="cliente">Sin PDF<span class="ix-n" data-n="cliente"></span></button>
       <button type="button" data-f="oposiciones">Oposiciones<span class="ix-n" data-n="oposiciones"></span></button>
       <button type="button" data-f="vistas">Vistas<span class="ix-n" data-n="vistas"></span></button>
+      <button type="button" data-f="archivados" title="Las marcas que se archivaron: no aparecen en las otras opciones">Archivados<span class="ix-n" data-n="archivados"></span></button>
     </div>
+  </div>
+  <div class="ix-barra" id="inf-barra" hidden>
+    <span class="ix-barra-info" id="inf-barra-info"></span>
+    <button type="button" class="ix-boton" id="inf-archivar">Archivar</button>
+    <button type="button" class="ix-boton sec" id="inf-desarchivar" hidden>Desarchivar</button>
+    <button type="button" class="ix-link" id="inf-quitar">Quitar selección ✕</button>
   </div>
   <div id="inf-lista"><p class="crm-cargando">Cargando…</p></div>
 </main>
 
-<script src="/static/comun.js?v=vp9"></script>
-<script src="/static/informes_comun.js?v=vista1"></script>
-<script src="/static/informes.js?v=vista1"></script>
+<script src="/static/comun.js?v=nc1"></script>
+<script src="/static/informes_comun.js?v=arch1"></script>
+<script src="/static/informes.js?v=arch1"></script>
 </body>
 </html>

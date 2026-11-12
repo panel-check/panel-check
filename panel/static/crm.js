@@ -184,9 +184,10 @@ function _crmHtmlCabecera(d, opciones = {}) {
   // Con una oposición/vista todavía sin gestor, lo primero que se hace es mirar el
   // expediente en INPI y mandar el mail de oposición: se dejan a mano acá. El mail
   // solo se ofrece donde la página sabe mandarlo (opciones.mailOposicion: ficha del titular).
-  const conOpo = m => m.tuvo_oposicion === true && m.es_lead === true && m.oposicion_atendida !== true && m.oposicion_sirve !== false;
+  // Las marcadas «No contactar» (12/11/2026) no cuentan como pendientes.
+  const conOpo = m => m.tuvo_oposicion === true && m.es_lead === true && m.oposicion_atendida !== true && m.oposicion_sirve !== false && !m.no_contactar_en;
   // Vista de INPI antes de publicar sin contestar: mismo atajo, pero con el mail «Recibió una vista».
-  const conVista = m => m.tuvo_vista === true && m.vista_sirve === true && m.es_lead === true;
+  const conVista = m => m.tuvo_vista === true && m.vista_sirve === true && m.es_lead === true && !m.no_contactar_en;
   // Con varias marcas con oposición o vista, el atajo va a la que falta contactar (03/11/2026): primero
   // las no contactadas con mail, después las no contactadas sin mail y recién después las ya contactadas.
   // Así, mandado el mail de una, el botón pasa solo a la siguiente pendiente del mismo titular.

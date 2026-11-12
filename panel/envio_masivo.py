@@ -59,6 +59,7 @@ MOTIVOS = {
     "no_existe": "No existe en la base",
     "sin_pendiente": "No tiene una oposición o vista pendiente para ofrecer ayuda",
     "no_lead": "No es lead (tiene gestor/apoderado)",
+    "no_contactar": "Está marcada «No contactar»",
     "cliente": "Ya es cliente",
     "sin_mail": "No tiene mail cargado",
     "mail_invalido": "El mail cargado no es válido",

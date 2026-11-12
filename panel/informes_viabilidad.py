@@ -142,6 +142,9 @@ def crear_tablas(cur):
         cur.execute("ALTER TABLE informes_viabilidad DROP CONSTRAINT IF EXISTS informes_viabilidad_tipo_check")
         cur.execute("ALTER TABLE informes_viabilidad ADD CONSTRAINT informes_viabilidad_tipo_check "
                     "CHECK (tipo IN ('cliente', 'interno', 'oposicion', 'vista'))")
+    # Archivar (12/11/2026, Más → Informes): sale de la lista y se ve con el filtro «Archivados».
+    cur.execute("ALTER TABLE informes_viabilidad ADD COLUMN IF NOT EXISTS archivado_en TIMESTAMPTZ")
+    cur.execute("ALTER TABLE informes_viabilidad ADD COLUMN IF NOT EXISTS archivado_por TEXT")
     # 10/11/2026: el informe al cliente vuelve a llamarse «de viabilidad»; se corrigen los ya guardados.
     cur.execute("UPDATE informes_viabilidad SET datos = jsonb_set(datos, '{titulo}', to_jsonb(%s::text)) "
                 "WHERE tipo = 'cliente' AND datos->>'titulo' ILIKE %s", (TITULO_V2, "%disponibilidad%"))

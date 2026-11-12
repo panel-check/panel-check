@@ -635,6 +635,13 @@ function fmtFechaSinCorte(f) {
 // dashboard compacto (index.html) no mostramos nada mientras está en
 // trámite (sería un badge gris en casi todas las filas, sin aportar nada);
 // en el detalle por titular sí conviene aclararlo (ver mostrarSinDato).
+// «No contactar» (12/11/2026): marcada desde la selección de Leads; ni contactada ni sin contactar.
+function badgeNoContactar(r) {
+  if (!r || !r.no_contactar_en) return "";
+  const cuando = fmtFecha(r.no_contactar_en);
+  return `<span class="badge no-contactar" title="Marcada «No contactar»${r.no_contactar_por ? " por " + _escapeHtml(r.no_contactar_por) : ""}${cuando ? " el " + _escapeHtml(cuando) : ""}. No figura como contactada ni como sin contactar; se quita desde la selección de Leads (Contactado ▾ → Quitar «No contactar»).">🚫 No contactar</span>`;
+}
+
 function badgeEstadoTramite(row, mostrarSinDato = false) {
   if (!row.estado_tramite) {
     return mostrarSinDato ? '<span class="badge sin-dato">en trámite</span>' : "";

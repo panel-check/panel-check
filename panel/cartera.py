@@ -167,6 +167,10 @@ def crear_tablas(cur):
         """
     )
     cur.execute("CREATE INDEX IF NOT EXISTS idx_cartera_marcas_cliente ON cartera_marcas(cliente_id)")
+    # UBICACIÓN DEL EXPEDIENTE (12/11/2026): sector del INPI donde está el expediente («División Notificaciones»)
+    # y desde qué fecha. Es lo que muestra Clientes → «Último movimiento INPI» (salvo concedida / denegada).
+    cur.execute("ALTER TABLE cartera_marcas ADD COLUMN IF NOT EXISTS ubicacion_actual TEXT")
+    cur.execute("ALTER TABLE cartera_marcas ADD COLUMN IF NOT EXISTS ubicacion_fecha DATE")
     # Grupo de marcas: nombre con el que se muestra esta marca en Clientes → Marcas cuando el equipo la
     # junta a mano con otras (por ejemplo «LA BONNE VIE» + «LBV BONVIELA»). Vacío = se agrupa sola por nombre.
     cur.execute("ALTER TABLE cartera_marcas ADD COLUMN IF NOT EXISTS grupo_marca TEXT")
@@ -544,7 +548,7 @@ CAMPOS_EXPEDIENTE = (
     "denominacion", "tipo", "clase", "titular", "cuit", "fecha_presentacion", "fecha_publicacion",
     "agente", "matricula_agente", "caracter", "estado_tramite", "fecha_concesion", "numero_disposicion",
     "fecha_vencimiento_marca", "tuvo_oposicion", "detalle_oposicion", "movimientos",
-    "ultimo_movimiento", "ultimo_movimiento_fecha",
+    "ultimo_movimiento", "ultimo_movimiento_fecha", "ubicacion_actual", "ubicacion_fecha",
 )
 
 
@@ -701,6 +705,11 @@ def aplicar_expediente(cur, acta: str, info: dict) -> list:
                                          f"hasta el {_fmt(pub + _dt.timedelta(days=30))}"))
     if v["titular"] and actual.get("titular") and v["titular"].strip().upper() != actual["titular"].strip().upper():
         novedades.append(("titular", f"Cambió el titular en INPI: «{actual['titular']}» → «{v['titular']}»"))
+
+    ub_nueva, ub_vieja = v["ubicacion_actual"], actual.get("ubicacion_actual")
+    if ub_nueva and ub_vieja and ub_nueva != ub_vieja and not primera:
+        novedades.append(("ubicacion", f"El expediente pasó de {ub_vieja} a {ub_nueva}"
+                                       + (f" (desde el {_fmt(v['ubicacion_fecha'])})" if v["ubicacion_fecha"] else "")))
 
     nuevos_claves = info.get("grilla_claves")
     if nuevos_claves is not None and not primera and actual.get("grilla_claves") is not None:

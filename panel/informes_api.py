@@ -52,6 +52,12 @@ class JsonCarga(BaseModel):
     tipo: Optional[str] = None  # "cliente" | "interno" | "oposicion" | "vista"; sin tipo se reconoce por el JSON
 
 
+class Archivar(BaseModel):
+    """Más → Informes, selección múltiple: los ids de todos los informes de las marcas elegidas."""
+    ids: list[int]
+    archivar: bool = True
+
+
 TIPOS = ("cliente", "interno", "oposicion", "vista")
 NOMBRE_TIPO = {"cliente": "Informe al cliente (PDF)", "interno": "Informe IA interno", "oposicion": "Informe Oposición IA",
                "vista": "Informe Vista IA"}
@@ -233,8 +239,12 @@ def crear_router(verificar_login, conexion, crm=None) -> APIRouter:
 
     @router.get("/api/informes")
     def todos(q: str = "", falta: str = "", cliente_id: Optional[int] = None, lead: str = "",
-              _: str = Depends(verificar_login)):
-        """Más → Informes (todos) o la solapa de la ficha del lead (lead=<clave>), agrupados por dueño y marca."""
+              archivados: str = "", _: str = Depends(verificar_login)):
+        """Más → Informes (todos) o la solapa de la ficha del lead (lead=<clave>), agrupados por dueño y marca.
+        `archivados`: "" = sin los archivados (Más → Informes), "solo" = solo los archivados, "todos" = todos.
+        La ficha del cliente o del lead muestra siempre todos."""
+        if cliente_id or lead:
+            archivados = "todos"
         donde, params = [], []
         if cliente_id:
             donde.append("i.cliente_id = %s"); params.append(cliente_id)
@@ -243,12 +253,31 @@ def crear_router(verificar_login, conexion, crm=None) -> APIRouter:
         with conexion() as conn:
             with rcur(conn) as cur:
                 cur.execute("SELECT i.id, i.tipo, i.marca, i.datos, i.generado_por, i.generado_en, i.cliente_id, "
-                            "i.lead_clave, i.lead_nombre, i.compartir, c.nombre AS cliente_nombre FROM informes_viabilidad i "
+                            "i.lead_clave, i.lead_nombre, i.compartir, i.archivado_en, i.archivado_por, "
+                            "c.nombre AS cliente_nombre FROM informes_viabilidad i "
                             "LEFT JOIN clientes c ON c.id = i.cliente_id "
                             + ("WHERE " + " AND ".join(donde) + " " if donde else "")
                             + "ORDER BY i.generado_en DESC LIMIT 3000", params)
                 filas = cur.fetchall()
-        return {"grupos": agrupar_informes(filas, q, falta)}
+        return {"grupos": agrupar_informes(filas, q, falta, archivados)}
+
+    @router.post("/api/informes/archivar")
+    def archivar(body: Archivar, usuario: str = Depends(verificar_login)):
+        """Archiva (o desarchiva) esos informes. El panel manda todos los de cada marca elegida."""
+        ids = sorted({int(i) for i in body.ids})[:5000]
+        if not ids:
+            raise HTTPException(status_code=400, detail="No hay informes seleccionados")
+        with conexion() as conn:
+            with conn.cursor() as cur:
+                if body.archivar:
+                    cur.execute("UPDATE informes_viabilidad SET archivado_en = now(), archivado_por = %s "
+                                "WHERE id = ANY(%s) AND archivado_en IS NULL", (usuario, ids))
+                else:
+                    cur.execute("UPDATE informes_viabilidad SET archivado_en = NULL, archivado_por = NULL "
+                                "WHERE id = ANY(%s) AND archivado_en IS NOT NULL", (ids,))
+                n = cur.rowcount
+            conn.commit()
+        return {"ok": True, "informes": n}
 
     @router.get("/api/informes/destinos")
     def destinos(q: str = Query(..., min_length=2), _: str = Depends(verificar_login)):
@@ -335,17 +364,6 @@ def crear_router(verificar_login, conexion, crm=None) -> APIRouter:
                         media_type="application/json",
                         headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(nombre)}"})
 
-    @router.get("/api/informes")
-    def todos(q: str = "", falta: str = "", _: str = Depends(verificar_login)):
-        """Sección Más → Informes: todos los informes de todos los clientes, agrupados por cliente y marca."""
-        with conexion() as conn:
-            with rcur(conn) as cur:
-                cur.execute("SELECT i.id, i.tipo, i.marca, i.datos, i.generado_por, i.generado_en, i.cliente_id, "
-                            "c.nombre AS cliente_nombre FROM informes_viabilidad i "
-                            "LEFT JOIN clientes c ON c.id = i.cliente_id ORDER BY i.generado_en DESC LIMIT 3000")
-                filas = cur.fetchall()
-        return {"grupos": agrupar_informes(filas, q, falta)}
-
     @router.delete("/api/informes/{iid}")
     def borrar(iid: int, _: str = Depends(verificar_login)):
         with conexion() as conn:
@@ -386,12 +404,14 @@ def _norm(s) -> str:
     return " ".join(t.replace("“", "").replace("”", "").replace('"', "").split())
 
 
-def agrupar_informes(filas: list, q: str = "", falta: str = "") -> list:
+def agrupar_informes(filas: list, q: str = "", falta: str = "", archivados: str = "todos") -> list:
     """Una entrada por dueño + marca + familia, con las versiones (la más nueva primero).
     Familia «preliminar»: informe al cliente + IA interno. Familia «oposicion»: los Informes Oposición IA,
     y familia «vista»: los Informes Vista IA, aparte porque son otros trámites. `falta`: "interno" o
     "cliente" deja los preliminares a los que les falta ese; "leads" los de leads; "oposiciones" solo
-    las oposiciones; "vistas" solo las vistas."""
+    las oposiciones; "vistas" solo las vistas. `archivados`: "" deja afuera las marcas archivadas, "solo"
+    deja solo esas y "todos" no filtra. Una marca está archivada cuando lo están todos sus informes: si
+    después se carga uno nuevo, vuelve sola a la lista."""
     grupos = {}
     for f in filas:  # vienen de la más nueva a la más vieja
         d = f.get("datos") or {}
@@ -403,9 +423,16 @@ def agrupar_informes(filas: list, q: str = "", falta: str = "") -> list:
                                  "lead_clave": None if f.get("cliente_id") else f.get("lead_clave"),
                                  "lead_nombre": "" if f.get("cliente_id") else (f.get("lead_nombre") or ""),
                                  "marca": f.get("marca") or "", "ultimo": f["generado_en"], "referencia": "",
-                                 "familia": familia, "cliente": [], "interno": [], "oposicion": [], "vista": [], "texto": ""}
+                                 "familia": familia, "cliente": [], "interno": [], "oposicion": [], "vista": [], "texto": "",
+                                 "ids": [], "archivado": True, "archivado_en": None, "archivado_por": ""}
         item = {"id": f["id"], "generado_en": f["generado_en"], "generado_por": f.get("generado_por") or "",
                 "c": f.get("compartir") or ""}
+        g["ids"].append(f["id"])
+        if f.get("archivado_en"):
+            if not g["archivado_en"] or f["archivado_en"] > g["archivado_en"]:
+                g["archivado_en"], g["archivado_por"] = f["archivado_en"], f.get("archivado_por") or ""
+        else:
+            g["archivado"] = False
         if f["tipo"] == "interno":
             r = iv.resumen_interno(d)
             item.update(referencia=r["referencia"] or "", identicas=r["identicas"], relevantes=len(r["relevantes"]))
@@ -423,6 +450,13 @@ def agrupar_informes(filas: list, q: str = "", falta: str = "") -> list:
         if not g["referencia"] and item.get("referencia"):
             g["referencia"] = item["referencia"]
     out = list(grupos.values())
+    for g in out:
+        if not g["archivado"]:
+            g["archivado_en"], g["archivado_por"] = None, ""
+    if archivados == "":
+        out = [g for g in out if not g["archivado"]]
+    elif archivados == "solo":
+        out = [g for g in out if g["archivado"]]
     nq = _norm(q)
     if nq:
         out = [g for g in out if nq in _norm(f'{g["marca"]} {g["cliente_nombre"]} {g["lead_nombre"]} {g["referencia"]} {g["texto"]}')]
