@@ -587,6 +587,24 @@ def _tg(metodo, **datos):
     return r
 
 
+def chat_de_actualizaciones(actualizaciones: list):
+    """El chat más reciente que le habló al bot: un /start (o cualquier mensaje) en privado o en un grupo,
+    o el aviso de que lo sumaron a un grupo. Un /start gana sobre los demás."""
+    con_start = cualquiera = None
+    for u in actualizaciones:
+        msg = u.get("message") or u.get("channel_post") or u.get("edited_message") or {}
+        miembro = u.get("my_chat_member") or {}
+        chat = msg.get("chat") or miembro.get("chat")
+        if not chat or chat.get("id") is None:
+            continue
+        if miembro and (miembro.get("new_chat_member") or {}).get("status") in ("left", "kicked"):
+            continue
+        cualquiera = str(chat["id"])
+        if (msg.get("text") or "").strip().lower().startswith("/start"):
+            con_start = str(chat["id"])
+    return con_start or cualquiera
+
+
 def chat_id(conn):
     """El chat al que se manda: el secret TELEGRAM_CHAT_ID, el guardado en la base, o el último chat que
     le escribió /start al bot (se guarda para la próxima)."""
@@ -599,14 +617,20 @@ def chat_id(conn):
             fila = cur.fetchone()
             guardado = fila[0] if fila else None
     try:
-        actualizaciones = _tg("getUpdates").json().get("result", [])
+        yo = _tg("getMe").json()
+        print(f"Bot de Telegram: @{(yo.get('result') or {}).get('username') or '?'} ({'ok' if yo.get('ok') else yo.get('description')})")
     except Exception:
-        actualizaciones = []
-    nuevo = None
-    for u in actualizaciones:
-        msg = u.get("message") or u.get("channel_post") or {}
-        if (msg.get("text") or "").strip().lower().startswith("/start"):
-            nuevo = str(msg["chat"]["id"])
+        pass
+    try:
+        resp = _tg("getUpdates").json()
+    except Exception as ex:
+        print(f"::warning::No se pudo leer el bot de Telegram ({type(ex).__name__})")
+        resp = {}
+    if not resp.get("ok", True):
+        print(f"::warning::Telegram respondió: {resp.get('description')}")
+    actualizaciones = resp.get("result", [])
+    nuevo = chat_de_actualizaciones(actualizaciones)
+    print(f"Telegram: {len(actualizaciones)} mensaje(s) pendientes en el bot; chat guardado: {'sí' if guardado else 'no'}.")
     if nuevo and nuevo != guardado and conn is not None:
         with conn.cursor() as cur:
             cur.execute("""INSERT INTO reportes_config (clave, valor) VALUES ('telegram_chat_id', %s)

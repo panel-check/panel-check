@@ -107,6 +107,23 @@ class TestOrigenYLog(unittest.TestCase):
         self.assertNotIn("linea 2", txt)
 
 
+class TestChatTelegram(unittest.TestCase):
+    def test_start_gana(self):
+        ups = [{"message": {"chat": {"id": 5}, "text": "/start"}},
+               {"message": {"chat": {"id": 9}, "text": "hola"}}]
+        self.assertEqual(rc.chat_de_actualizaciones(ups), "5")
+
+    def test_cualquier_mensaje_o_grupo(self):
+        self.assertEqual(rc.chat_de_actualizaciones([{"message": {"chat": {"id": 7}, "text": "hola"}}]), "7")
+        ups = [{"my_chat_member": {"chat": {"id": -100}, "new_chat_member": {"status": "member"}}}]
+        self.assertEqual(rc.chat_de_actualizaciones(ups), "-100")
+
+    def test_lo_sacaron_del_grupo(self):
+        ups = [{"my_chat_member": {"chat": {"id": -100}, "new_chat_member": {"status": "left"}}}]
+        self.assertIsNone(rc.chat_de_actualizaciones(ups))
+        self.assertIsNone(rc.chat_de_actualizaciones([]))
+
+
 class TestMensaje(unittest.TestCase):
     def test_arma_mensaje_html(self):
         ahora = dt.datetime.now(dt.timezone.utc)
