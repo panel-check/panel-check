@@ -82,7 +82,7 @@ PROMPT = """Sos un agente de la propiedad industrial de Argentina que hace vigil
 Juzgá como un examinador del INPI:
 1. Impresión de conjunto: compará las marcas completas, como las vería y oiría un consumidor argentino, no letra por letra.
 2. Elemento dominante: identificá la parte distintiva de cada marca. Las palabras descriptivas del rubro (TURISMO o VIAJES en la clase 39, CAFE en la 43, PADEL en deportes, LAB en farmacia), las genéricas o de uso común (TODO, CASA, CLUB, GRUPO, MAS) y las formas societarias no dan exclusividad: si lo único que comparten es una de esas, no son confundibles. El sistema te dice cuántas solicitudes de la clase usaron en los últimos 18 meses cada palabra compartida: muchas apariciones = palabra común.
-3. Parecido fonético en castellano rioplatense (C/S/Z, B/V, LL/Y suenan igual; H muda), gráfico y conceptual.
+3. Parecido fonético en castellano rioplatense (C/S/Z, B/V, LL/Y suenan igual; H muda), gráfico y conceptual. Pronunciá cada marca entera: si en su conjunto suenan casi igual (SUSPENSYS / SUSPENCITY, NEXALABS / NOXALAB), son confundibles aunque compartan una raíz descriptiva.
 4. Conceptual: una traducción o sinónimo cuenta solo si es evidente para el público argentino y afecta al elemento dominante (NET = RED, SUN = SOL sí). Asociaciones rebuscadas, juegos de palabras forzados o palabras que solo coinciden en otro idioma no cuentan (MANAR contra FLUX, TIMBEROS contra BOIS: no son confundibles).
 5. Clases: misma clase pesa más; clase relacionada, algo menos; clase sin relación, solo si las marcas son idénticas o la del cliente es muy conocida.
 6. Una marca corta e inventada (de fantasía) se confunde con menos diferencia que una formada por palabras comunes.
@@ -183,13 +183,18 @@ def pedir(sistema: str, texto: str, modelo: str, max_tokens: int = 1200, uso: Us
 
 
 def _json_de(texto: str):
-    m = re.search(r"\{.*\}", texto or "", re.S)
-    if not m:
-        return None
-    try:
-        return json.loads(m.group(0))
-    except ValueError:
-        return None
+    """El primer objeto JSON de la respuesta (tolera texto alrededor y saltos de línea dentro de las comillas)."""
+    texto = texto or ""
+    i = texto.find("{")
+    while i != -1:
+        try:
+            obj, _ = json.JSONDecoder(strict=False).raw_decode(texto[i:])
+            if isinstance(obj, dict):
+                return obj
+        except ValueError:
+            pass
+        i = texto.find("{", i + 1)
+    return None
 
 
 def _clase(c) -> str:
@@ -243,7 +248,11 @@ def _normalizar_respuesta(d: dict, modelo: str) -> dict:
 def _evaluar_con(par: dict, modelo: str, uso: Uso = None) -> dict:
     crudo = pedir(PROMPT, texto_par(par), modelo, uso=uso)
     d = _json_de(crudo)
-    if d is None:
+    if d is None or "veredicto" not in d:
+        # Un segundo intento antes de darlo por perdido (a veces la respuesta llega cortada).
+        crudo = pedir(PROMPT, texto_par(par), modelo, uso=uso)
+        d = _json_de(crudo)
+    if d is None or "veredicto" not in d:
         raise ErrorJuez(f"La IA devolvió una respuesta que no se entiende ({modelo}): {' '.join((crudo or '').split())[:160]!r}")
     return _normalizar_respuesta(d, modelo)
 
