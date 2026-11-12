@@ -411,6 +411,11 @@ def _correr_alters_panel(cur):
     cur.execute(
         "CREATE INDEX IF NOT EXISTS idx_marcas_contactado ON marcas(contactado)"
     )
+    # «No contactar» (12/11/2026): oposiciones o vistas que ya no tiene sentido contactar (por ejemplo,
+    # notificadas hace mucho). No es «contactado»: el acta sale de «Sin contactar» y de los pendientes
+    # (mail masivo, «Enviar mail de oposición» de la ficha, seguimiento diario), pero no figura como contactada.
+    cur.execute("ALTER TABLE marcas ADD COLUMN IF NOT EXISTS no_contactar_en TIMESTAMPTZ")
+    cur.execute("ALTER TABLE marcas ADD COLUMN IF NOT EXISTS no_contactar_por TEXT")
     cur.execute(
         "ALTER TABLE marcas ADD COLUMN IF NOT EXISTS motivo_sin_email TEXT"
     )
@@ -587,7 +592,7 @@ COLUMNAS_MARCA = """
     acta, boletin, clase, tipo, denominacion, denominacion_inpi,
     fecha_presentacion, fecha_publicacion, titular, pais, cuit, matricula_agente,
     caracter, es_lead, email, email_apoderado, lead_score, link,
-    contactado, contactado_en, motivo_sin_email,
+    contactado, contactado_en, no_contactar_en, no_contactar_por, motivo_sin_email,
     tuvo_oposicion, detalle_oposicion, revisado_oposicion_en, oposicion_detectada_en,
     opo_chequeos, opo_ultimo_chequeo_en,
     oponente_nombre, oponente_tipo_doc, oponente_numero_doc, oponente_cuit,
@@ -661,6 +666,7 @@ _SQL_VISTAS_PENDIENTES = f"""
     SELECT COUNT(*) FROM marcas
     WHERE {_SQL_VISTAS_ABIERTA.replace('%(venc)s', '7')}
       AND contactado IS NOT TRUE
+      AND no_contactar_en IS NULL
       AND fecha_presentacion IS NOT NULL
       AND fecha_presentacion::date <= {_SQL_HOY_AR} - 3
       AND (vista_revisada_en IS NULL
@@ -1357,6 +1363,9 @@ def filtros_marcas(
     clase: Optional[int] = None,
     es_lead: Optional[bool] = None,
     contactado: Optional[bool] = None,
+    # «No contactar» (12/11/2026): true = solo las descartadas; con contactado=false («Sin contactar»)
+    # las descartadas quedan afuera aunque no se pida nada.
+    no_contactar: Optional[bool] = None,
     tuvo_oposicion: Optional[bool] = None,
     tipo_oposicion: Optional[str] = None,  # "oposicion" | "vista" (implica tuvo_oposicion)
     # Vistas de INPI ANTES de publicar (pre-boletín): filtro aparte de la oposición.
@@ -1425,6 +1434,10 @@ def _consulta_marcas(f: dict) -> dict:
     if f["contactado"] is not None and not hay_busqueda:
         condiciones.append("contactado = %s")
         valores.append(f["contactado"])
+        if f["contactado"] is False and f.get("no_contactar") is None:
+            condiciones.append("no_contactar_en IS NULL")
+    if f.get("no_contactar") is not None and not hay_busqueda:
+        condiciones.append("no_contactar_en IS NOT NULL" if f["no_contactar"] else "no_contactar_en IS NULL")
     if f["tipo_oposicion"] == "oposicion":
         condiciones.append(f"({SQL_ES_OPOSICION_TERCERO} AND {SQL_OPOSICION_NO_ATENDIDA})")
     elif f["tipo_oposicion"] == "vista":
@@ -1585,7 +1598,7 @@ def actas_del_filtro(
 # ── Accesos rápidos: una búsqueda guardada es un querystring de filtros ─────
 # Los filtros que se pueden guardar son los de filtros_marcas() más el orden.
 CLAVES_ACCESO_RAPIDO = set(inspect.signature(filtros_marcas).parameters) | {"sort", "order"}
-_FILTROS_BOOL = {"es_lead", "contactado", "tuvo_oposicion", "tiene_email", "tiene_titular", "tiene_clase"}
+_FILTROS_BOOL = {"es_lead", "contactado", "no_contactar", "tuvo_oposicion", "tiene_email", "tiene_titular", "tiene_clase"}
 _FILTROS_INT = {"clase", "fecha_dias", "multiclase_min", "multiclase_a", "multiclase_b"}
 
 
@@ -2058,10 +2071,12 @@ def marcar_contactado(acta: str, valor: bool = True, usuario: str = Depends(veri
                 """
                 UPDATE marcas
                 SET contactado = %s,
-                    contactado_en = CASE WHEN %s THEN now() ELSE NULL END
+                    contactado_en = CASE WHEN %s THEN now() ELSE NULL END,
+                    no_contactar_en = CASE WHEN %s THEN NULL ELSE no_contactar_en END,
+                    no_contactar_por = CASE WHEN %s THEN NULL ELSE no_contactar_por END
                 WHERE acta = %s
                 """,
-                (valor, valor, acta),
+                (valor, valor, valor, valor, acta),
             )
             if cur.rowcount == 0:
                 raise HTTPException(status_code=404, detail=f"No existe el acta {acta}")
@@ -2116,6 +2131,10 @@ class ContactadoMasivo(SeleccionActas):
     contactado: bool = True
 
 
+class NoContactarMasivo(SeleccionActas):
+    no_contactar: bool = True
+
+
 class AsignarMasivo(SeleccionActas):
     asignado: Optional[str] = None  # None / "" = dejar sin asignar
 
@@ -2155,6 +2174,31 @@ def masivo_opciones(usuario: str = Depends(verificar_login)):
     return {"usuarios": _auth.usuarios_activos(), "usuario": usuario}
 
 
+@app.post("/api/masivo/no-contactar")
+def masivo_no_contactar(datos: NoContactarMasivo, usuario: str = Depends(verificar_login)):
+    """«No contactar» (12/11/2026): las actas salen de «Sin contactar» y de los pendientes de mail, sin
+    figurar como contactadas ni tocar la etapa del CRM. Con no_contactar=false vuelven a «Sin contactar».
+    Marcar contactada un acta descartada le saca el «No contactar» (ver masivo_contactado)."""
+    actas = _actas_masivo(datos.actas)
+    with conexion() as conn:
+        with conn.cursor() as cur:
+            if datos.no_contactar:
+                cur.execute("UPDATE marcas SET no_contactar_en = now(), no_contactar_por = %s "
+                            "WHERE acta = ANY(%s) AND no_contactar_en IS NULL AND contactado IS NOT TRUE",
+                            (usuario, actas))
+            else:
+                cur.execute("UPDATE marcas SET no_contactar_en = NULL, no_contactar_por = NULL "
+                            "WHERE acta = ANY(%s) AND no_contactar_en IS NOT NULL", (actas,))
+            marcas = cur.rowcount
+            saltadas = 0
+            if datos.no_contactar:
+                cur.execute("SELECT count(*) FROM marcas WHERE acta = ANY(%s) AND contactado IS TRUE", (actas,))
+                saltadas = cur.fetchone()[0]
+        conn.commit()
+    print(f"[masivo] {usuario}: no_contactar={datos.no_contactar} en {marcas} actas")
+    return {"ok": True, "marcas": marcas, "contactadas_saltadas": saltadas}
+
+
 @app.post("/api/masivo/contactado")
 def masivo_contactado(datos: ContactadoMasivo, usuario: str = Depends(verificar_login)):
     """Marca o desmarca como contactadas todas esas actas. Igual que de a una,
@@ -2169,10 +2213,12 @@ def masivo_contactado(datos: ContactadoMasivo, usuario: str = Depends(verificar_
                 """
                 UPDATE marcas
                 SET contactado = %s,
-                    contactado_en = CASE WHEN %s THEN COALESCE(contactado_en, now()) ELSE NULL END
+                    contactado_en = CASE WHEN %s THEN COALESCE(contactado_en, now()) ELSE NULL END,
+                    no_contactar_en = CASE WHEN %s THEN NULL ELSE no_contactar_en END,
+                    no_contactar_por = CASE WHEN %s THEN NULL ELSE no_contactar_por END
                 WHERE acta = ANY(%s)
                 """,
-                (valor, valor, actas),
+                (valor, valor, valor, valor, actas),
             )
             marcas = cur.rowcount
             _propagar_contactado_misma_marca(cur, actas, valor)
@@ -2220,6 +2266,7 @@ class MailMasivo(SeleccionActas):
 
 
 _SQL_CON_OPO_MAIL = "(m.tuvo_oposicion IS TRUE AND m.oposicion_atendida IS NOT TRUE AND m.oposicion_sirve IS NOT FALSE)"
+_SQL_NO_CONTACTAR = "(m.no_contactar_en IS NOT NULL)"
 _SQL_CON_VISTA_MAIL = "(m.tuvo_vista IS TRUE AND m.vista_sirve IS TRUE)"
 
 
@@ -2230,7 +2277,7 @@ def _clasificar_para_mail_masivo(cur, actas: list, incluir_contactadas: bool) ->
     _asegurar_claves(cur)
     cur.execute(
         f"""WITH {_cte_marcas_con_clave(filtrar_actas=True)}
-            SELECT m.acta, m.clase, m.email, m.es_lead, m.contactado, m.titular, m.clave,
+            SELECT m.acta, m.clase, m.email, m.es_lead, m.contactado, m.titular, m.clave, {_SQL_NO_CONTACTAR} AS no_contactar,
                    COALESCE(NULLIF(m.denominacion_inpi, ''), m.denominacion) AS marca,
                    {_SQL_CON_OPO_MAIL} AS con_opo, {_SQL_CON_VISTA_MAIL} AS con_vista
               FROM mk m
@@ -2258,6 +2305,9 @@ def _clasificar_para_mail_masivo(cur, actas: list, incluir_contactadas: bool) ->
             continue
         if f["es_lead"] is not True:
             excluir("no_lead", acta, f)
+            continue
+        if f["no_contactar"]:
+            excluir("no_contactar", acta, f)
             continue
         if f["clave"] not in clientes:
             try:
@@ -2359,7 +2409,8 @@ def _validar_mail_de_lote(cur, fila) -> Optional[str]:
         return None
     cur.execute(
         f"""WITH {_cte_marcas_con_clave(filtrar_actas=True)}
-            SELECT m.es_lead, m.clave, {_SQL_CON_OPO_MAIL} AS con_opo, {_SQL_CON_VISTA_MAIL} AS con_vista FROM mk m""",
+            SELECT m.es_lead, m.clave, {_SQL_NO_CONTACTAR} AS no_contactar,
+                   {_SQL_CON_OPO_MAIL} AS con_opo, {_SQL_CON_VISTA_MAIL} AS con_vista FROM mk m""",
         ([acta],),
     )
     f = cur.fetchone()
@@ -2367,6 +2418,8 @@ def _validar_mail_de_lote(cur, fila) -> Optional[str]:
         return "la marca ya no está en la base."
     if f["es_lead"] is not True:
         return "la marca dejó de ser lead (tiene gestor/apoderado)."
+    if f["no_contactar"]:
+        return "la marca se marcó como «No contactar»."
     if clave == "prospecto_oposicion" and not f["con_opo"]:
         return "la oposición ya no está pendiente (se marcó como contestada/atendida)."
     if clave == "prospecto_vista" and not f["con_vista"]:

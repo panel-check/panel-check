@@ -1459,6 +1459,11 @@ a.cl-logo-link { display: inline-block; line-height: 0; }
 .mk-grupo.abierto .mk-chev { transform: rotate(90deg); }
 .mk-nombre { font-weight: 600; }
 .mk-exp { color: #4b5563; }
+/* Clientes → «Último movimiento INPI» (12/11/2026): ubicación actual del expediente, CONCEDIDA / DENEGADA */
+.mk-sit { font-weight: 700; letter-spacing: .03em; }
+.mk-ubic { color: #344054; font-weight: 500; }
+.mk-eliminar { margin-left: 4px; opacity: .55; }
+tr.mk-grupo:hover .mk-eliminar, .mk-eliminar:focus-visible { opacity: 1; }
 /* El detalle expandido (tabla de actas, ancha) se desplaza solo, sin ensanchar la lista de marcas */
 .mk-sub-wrap { overflow-x: auto; }
 .mk-sub { min-width: 1080px; }
@@ -1942,6 +1947,7 @@ tr.seleccionada, tr.seleccionada.lead { background: var(--azul-claro); }
 .modal-mail-masivo .mm-lista table { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 4px; display: block; max-height: 240px; overflow: auto; }
 .modal-mail-masivo .mm-lista th, .modal-mail-masivo .mm-lista td { text-align: left; padding: 4px 6px; border-top: 1px solid #e5e7eb; vertical-align: top; }
 .badge.mail-programado { background: #eef4ff; color: #3538cd; border: 1px solid #c7d7fe; }
+.badge.no-contactar { background: #f2f4f7; color: #475467; border: 1px solid #d0d5dd; }
 @media (max-width: 640px) { .modal-mail-masivo .mm-grilla { grid-template-columns: 1fr; } }
 
 /* ── Búsqueda rápida (🔍 de la barra de arriba, ver menu.js) ─────────────

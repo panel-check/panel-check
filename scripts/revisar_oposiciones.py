@@ -136,6 +136,7 @@ SQL_PENDIENTES = f"""
         OR (
           tuvo_oposicion IS TRUE
           AND contactado IS NOT TRUE
+          AND no_contactar_en IS NULL  -- «No contactar» del panel (12/11/2026)
           AND representacion_posterior_oposicion IS NOT TRUE
           AND oposicion_atendida IS NOT TRUE
           AND COALESCE(estado_oposicion, '') NOT IN ({_CERRADOS_SQL})

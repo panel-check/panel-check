@@ -6,8 +6,8 @@
 <title>Detalle de titular — Kom Marcas Inpi</title>
 <link rel="icon" type="image/png" href="/static/favicon.png" />
 <link rel="apple-touch-icon" href="/static/apple-touch-icon.png" />
-<link rel="stylesheet" href="/static/comun.css?v=mv3" />
-<link rel="stylesheet" href="/static/informes_comun.css?v=vista1" />
+<link rel="stylesheet" href="/static/comun.css?v=nc1" />
+<link rel="stylesheet" href="/static/informes_comun.css?v=arch1" />
 <link rel="stylesheet" href="/static/calendario.css?v=6" />
 <script src="/static/sesion.js" defer></script>
 <script src="/static/menu.js?v=inf2" defer></script>
@@ -282,10 +282,10 @@
   </section>
 </div>
 
-<script src="/static/comun.js?v=vp9"></script>
+<script src="/static/comun.js?v=nc1"></script>
 <script src="/static/calendario_comun.js?v=9"></script>
-<script src="/static/crm.js"></script>
-<script src="/static/informes_comun.js?v=vista1"></script>
+<script src="/static/crm.js?v=nc1"></script>
+<script src="/static/informes_comun.js?v=arch1"></script>
 <script>
 // "Marcar contactado" también mueve la etapa del CRM: se recargan tabla y ficha.
 window.alRecargar = () => cargar({ conCRM: true });
@@ -307,7 +307,7 @@ function filaHtml(r) {
       <td>${_escapeHtml(r.clase ?? "")}</td>
       <td>${_escapeHtml(tipoLegible(r.tipo))}</td>
       <td class="denominacion" title="${_escapeHtml(r.denominacion_inpi || r.denominacion || "")}">${_escapeHtml(r.denominacion_inpi || r.denominacion || "") || `<em>${sinNombre(r.tipo)}</em>`}</td>
-      <td>${badgeLead(r)} ${badgeOposicion(r)} ${badgeVistaPre(r)} ${badgeRevisionOposicion(r)}</td>
+      <td>${badgeLead(r)} ${badgeOposicion(r)} ${badgeVistaPre(r)} ${badgeRevisionOposicion(r)} ${badgeNoContactar(r)}</td>
       <td>${celdaEmail(r)}</td>
       <td>${fechaPublicacionOFallback(r) || (!r.boletin && r.fecha_presentacion ? `${fmtFecha(r.fecha_presentacion)} <span class="nota">(present.)</span>` : "")}</td>
       <td>${fmtFecha(r.fecha_concesion) || "—"}</td>
@@ -492,7 +492,8 @@ function mlElegirMarcaPorDefecto() {
   const conMail = mlFilas.filter(r => r.email);
   let r = null;
   // Primero la que falta contactar (con varias marcas con oposición o vista del mismo titular).
-  const elegir = (cumple) => conMail.find(x => cumple(x) && x.contactado !== true) || mlFilas.find(x => cumple(x) && x.contactado !== true)
+  const pend = (x) => x.contactado !== true && !x.no_contactar_en;  // «No contactar» (12/11/2026) no es pendiente
+  const elegir = (cumple) => conMail.find(x => cumple(x) && pend(x)) || mlFilas.find(x => cumple(x) && pend(x))
     || conMail.find(cumple) || mlFilas.find(cumple);
   if (clave === "prospecto_oposicion") r = elegir(mlEsOposicion);
   else if (clave === "prospecto_vista") r = elegir(mlEsVista);

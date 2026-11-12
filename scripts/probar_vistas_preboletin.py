@@ -184,6 +184,7 @@ def sql_candidatas(repaso: bool) -> str:
         FROM marcas
         WHERE {_SQL_ABIERTA}
           AND contactado IS NOT TRUE
+          AND no_contactar_en IS NULL  -- «No contactar» del panel (12/11/2026)
           AND fecha_presentacion IS NOT NULL
           AND fecha_presentacion::date <= %(hoy)s::date - %(dias_min)s
           AND (%(edad_max)s::int IS NULL OR fecha_presentacion::date >= %(hoy)s::date - %(edad_max)s::int)

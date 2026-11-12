@@ -6,7 +6,7 @@
 <title>Panel de leads — Kom Marcas Inpi</title>
 <link rel="icon" type="image/png" href="/static/favicon.png" />
 <link rel="apple-touch-icon" href="/static/apple-touch-icon.png" />
-<link rel="stylesheet" href="/static/comun.css?v=mv3" />
+<link rel="stylesheet" href="/static/comun.css?v=nc1" />
 <script src="/static/sesion.js" defer></script>
 <script src="/static/menu.js?v=inf2" defer></script>
 </head>
@@ -61,6 +61,7 @@
       <option value="">Todos</option>
       <option value="false" selected>Sin contactar</option>
       <option value="true">Ya contactados</option>
+      <option value="no" title="Las que se marcaron «No contactar» desde la selección: no figuran como contactadas ni como sin contactar">No contactar</option>
     </select>
   </label>
   <label>Oposición
@@ -191,6 +192,8 @@
       <div class="menu-sel-lista" id="m-contactado">
         <button type="button" onclick="accionContactado(true)">Marcar como contactadas</button>
         <button type="button" onclick="accionContactado(false)">Marcar como sin contactar</button>
+        <button type="button" onclick="accionNoContactar(true)" title="Ya no tiene sentido contactarlas (por ejemplo, notificadas hace mucho): salen de «Sin contactar» y de los pendientes de mail, pero no figuran como contactadas">No contactar</button>
+        <button type="button" onclick="accionNoContactar(false)">Quitar «No contactar»</button>
       </div>
     </span>
     <span class="menu-sel">
@@ -240,8 +243,8 @@
   <button onclick="pagina(1)">Siguiente &rarr;</button>
 </div>
 
-<script src="/static/comun.js?v=vp9"></script>
-<script src="/static/crm.js"></script>
+<script src="/static/comun.js?v=nc1"></script>
+<script src="/static/crm.js?v=nc1"></script>
 <script>
 const LIMIT = 100;
 let estado = { offset: 0, total: 0, sort: "lead_score", order: "desc" };
@@ -464,7 +467,9 @@ function filtrosActuales() {
     boletin: document.getElementById("f-boletin").value,
     clase: document.getElementById("f-clase").value,
     es_lead: document.getElementById("f-lead").value,
-    contactado: document.getElementById("f-contactado").value,
+    // «No contactar» (12/11/2026) es una tercera opción del mismo desplegable: al servidor le llega no_contactar=true.
+    contactado: document.getElementById("f-contactado").value === "no" ? "" : document.getElementById("f-contactado").value,
+    no_contactar: document.getElementById("f-contactado").value === "no" ? "true" : "",
     // El desplegable "Oposición" es uno solo; al servidor le llegan dos datos:
     // si tuvo oposición/vista (o no) y, si se eligió, de qué tipo.
     tuvo_oposicion: opcionOposicion() === "sin" ? "false" : (opcionOposicion() ? "true" : ""),
@@ -690,7 +695,7 @@ function filtrosDesdeURL() {
   document.getElementById("f-boletin").value = leer("boletin");
   document.getElementById("f-clase").value = leer("clase");
   document.getElementById("f-lead").value = leer("es_lead", "true");
-  document.getElementById("f-contactado").value = leer("contactado", "false");
+  document.getElementById("f-contactado").value = p.get("no_contactar") === "true" ? "no" : leer("contactado", "false");
   // Oposición: los links viejos traen solo tuvo_oposicion=true|false.
   const tipoOpo = p.get("tipo_oposicion");
   const tuvoOpo = p.get("tuvo_oposicion");
@@ -793,7 +798,7 @@ function filaHtml(r, { flecha = false, oculta = false, idGrupo = null, cantidadR
       <td>${_escapeHtml(r.clase ?? "")}${celdaOtrasClases(r)}</td>
       <td class="denominacion" title="${_escapeHtml(r.denominacion_inpi || r.denominacion || "")}">${_escapeHtml(r.denominacion_inpi || r.denominacion || "") || `<em>${sinNombre(r.tipo)}</em>`}</td>
       <td class="titular" title="${_escapeHtml(r.titular || "")}">${celdaTitular}</td>
-      <td>${badgeLead(r)} ${crmSlot(claveTitular(r))} ${badgePreBoletin(r)} ${badgeOposicion(r)} ${badgeVistaPre(r)} ${badgeRevisionOposicion(r)} ${badgeEstadoTramite(r)} ${badgeMailProgramado(r)}</td>
+      <td>${badgeLead(r)} ${crmSlot(claveTitular(r))} ${badgePreBoletin(r)} ${badgeOposicion(r)} ${badgeVistaPre(r)} ${badgeRevisionOposicion(r)} ${badgeEstadoTramite(r)} ${badgeMailProgramado(r)} ${badgeNoContactar(r)}</td>
       <td class="celda-email">${celdaEmailIcono(r)}</td>
       <td class="col-boletin">${fechaPublicacionOFallback(r)}</td>
       <td class="col-present">${fmtFecha(r.fecha_presentacion) || "—"}</td>
@@ -952,6 +957,15 @@ function accionContactado(valor) {
   ejecutarMasivo("/api/masivo/contactado", { contactado: valor }, r =>
     `${plural(r.marcas, "marca marcada", "marcas marcadas")} como ${valor ? "contactadas" : "sin contactar"}` +
     (r.titulares_crm ? ` · ${plural(r.titulares_crm, "titular cambió", "titulares cambiaron")} de etapa en el CRM` : ""));
+}
+
+// «No contactar» (12/11/2026): ni contactada ni sin contactar. Las ya contactadas no se tocan.
+function accionNoContactar(valor) {
+  ejecutarMasivo("/api/masivo/no-contactar", { no_contactar: valor }, r => {
+    if (!r.marcas) return { texto: valor ? "Ninguna cambió: ya estaban marcadas «No contactar» o están contactadas." : "Ninguna de las seleccionadas estaba marcada «No contactar».", tipo: "aviso" };
+    return `${plural(r.marcas, "marca", "marcas")} ${valor ? "marcadas «No contactar»" : "volvieron a «Sin contactar»"}` +
+      (r.contactadas_saltadas ? ` · ${plural(r.contactadas_saltadas, "ya contactada quedó", "ya contactadas quedaron")} como estaba${r.contactadas_saltadas === 1 ? "" : "n"}` : "");
+  });
 }
 
 function accionAsignar(usuario) {

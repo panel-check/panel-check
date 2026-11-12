@@ -124,13 +124,19 @@ function ixDocVista(lista) {
     </div>${ixVersiones(lista)}</div>`;
 }
 
-/* La lista. `mostrarDueno` en false para la ficha del lead (ya se sabe de quién es). */
-function ixListaHtml(grupos, { mostrarDueno = true } = {}) {
+/* La lista. `mostrarDueno` en false para la ficha del lead (ya se sabe de quién es). `seleccion` (Más →
+ * Informes) agrega una casilla por marca para archivar varias juntas; `elegidos` = Set de claves ixClave(g). */
+const ixClave = (g) => `${g.familia}|${g.cliente_id || "lead:" + (g.lead_clave || "")}|${(g.ids || []).join(",")}`;
+function ixListaHtml(grupos, { mostrarDueno = true, seleccion = false, elegidos = null } = {}) {
   return `<div class="ix-lista">${grupos.map((g, i) => {
     const ref = /^INFPR-\d+$/i.test(g.referencia || "") ? `<span class="ix-ref">${ixEsc(g.referencia.toUpperCase())}</span>` : "";
     const opo = g.familia === "oposicion", vis = g.familia === "vista";
-    return `<div class="ix-fila${opo || vis ? " es-opo" : ""}" data-ix="${i}">
-      <div class="ix-marca"><div><span class="ix-marca-nombre">${ixEsc(g.marca || "—")}</span>${ref}${opo ? '<span class="ix-ref opo">OPOSICIÓN</span>' : ""}${vis ? '<span class="ix-ref vista">VISTA</span>' : ""}</div>
+    const marcado = seleccion && elegidos && elegidos.has(ixClave(g));
+    const arch = g.archivado && g.archivado_en
+      ? `<span class="ix-ref archivado" title="Archivado${g.archivado_por ? " por " + ixEsc(g.archivado_por) : ""} el ${ixEsc(ixFechaCorta(g.archivado_en))}">ARCHIVADO</span>` : "";
+    return `<div class="ix-fila${opo || vis ? " es-opo" : ""}${seleccion ? " con-sel" : ""}${marcado ? " elegida" : ""}" data-ix="${i}">
+      ${seleccion ? `<label class="ix-sel" title="Seleccionar"><input type="checkbox" data-ix-sel="${i}"${marcado ? " checked" : ""} aria-label="Seleccionar ${ixEsc(g.marca || "la marca")}" /></label>` : ""}
+      <div class="ix-marca"><div><span class="ix-marca-nombre">${ixEsc(g.marca || "—")}</span>${ref}${opo ? '<span class="ix-ref opo">OPOSICIÓN</span>' : ""}${vis ? '<span class="ix-ref vista">VISTA</span>' : ""}${arch}</div>
         ${mostrarDueno ? `<div class="ix-dueno">${ixDueno(g)}</div>` : ""}</div>
       ${opo ? ixDocOposicion(g.oposicion) : vis ? ixDocVista(g.vista || []) : ixDocPdf(g.cliente, g) + ixDocIa(g.interno, g)}
       <div class="ix-fecha" title="Último informe cargado"><strong>${ixEsc(ixFechaCorta(g.ultimo))}</strong>último</div>

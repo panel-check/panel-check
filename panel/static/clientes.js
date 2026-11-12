@@ -56,6 +56,32 @@ function estadoMarca(m) {
   return { clave: "en_tramite", texto: "En trámite", clase: "" };
 }
 
+/* «Último movimiento INPI» (12/11/2026, pedido con Pame): lo que dice UBICACIÓN ACTUAL del expediente
+ * (sector del INPI y desde qué fecha). Si la marca ya se concedió, CONCEDIDA en verde; si se denegó, DENEGADA
+ * en rojo. Mientras la revisión diaria no lea la ubicación, queda el último movimiento de la Grilla. */
+function ubicacionInpiHtml(m) {
+  if (m.estado_tramite === "Concedida") return `<span class="cl-tag ok mk-sit">CONCEDIDA</span>${m.fecha_concesion ? `<br><small class="crm-gris">el ${crmFecha(m.fecha_concesion)}</small>` : ""}`;
+  if (m.estado_tramite === "Denegada") return `<span class="cl-tag mal mk-sit">DENEGADA</span>${m.fecha_concesion ? `<br><small class="crm-gris">el ${crmFecha(m.fecha_concesion)}</small>` : ""}`;
+  if (m.ubicacion_actual) return `${m.ubicacion_fecha ? crmFecha(m.ubicacion_fecha) : ""}<br><small class="mk-ubic" title="UBICACIÓN ACTUAL del expediente en INPI">${esc(m.ubicacion_actual)}</small>`;
+  if (m.ultimo_movimiento_fecha) return `${crmFecha(m.ultimo_movimiento_fecha)}<br><small class="crm-gris" title="Todavía sin la ubicación del expediente: se completa en la próxima revisión de la cartera">${esc(m.ultimo_movimiento || "")}</small>`;
+  return '<span class="crm-gris">—</span>';
+}
+
+/* Lo mismo para una marca agrupada (varias actas): la ubicación más reciente de las que siguen en trámite y,
+ * si hay, cuántas ya están concedidas o denegadas. */
+function ubicacionGrupoHtml(ms) {
+  if (ms.length === 1) return ubicacionInpiHtml(ms[0]);
+  const conc = ms.filter(m => m.estado_tramite === "Concedida").length;
+  const den = ms.filter(m => m.estado_tramite === "Denegada").length;
+  const fecha = m => String(m.ubicacion_fecha || m.ultimo_movimiento_fecha || "");
+  const tramite = ms.filter(m => !["Concedida", "Denegada"].includes(m.estado_tramite)).sort((a, b) => fecha(b).localeCompare(fecha(a)));
+  const tags = [conc && `<span class="cl-tag ok mk-sit">CONCEDIDA${conc < ms.length ? " ×" + conc : ""}</span>`,
+    den && `<span class="cl-tag mal mk-sit">DENEGADA${den < ms.length ? " ×" + den : ""}</span>`].filter(Boolean).join(" ");
+  if (!tramite.length) return tags;
+  const u = ubicacionInpiHtml(tramite[0]);
+  return tags ? `${u}<br>${tags}` : u;
+}
+
 function tagEstadoMarca(m) {
   const e = estadoMarca(m);
   return `<span class="cl-tag${e.clase ? " " + e.clase : ""}"${e.ayuda ? ` title="${esc(e.ayuda)}"` : ""}>${e.texto}</span>`;
@@ -134,7 +160,7 @@ async function pintarClientes() {
       return;
     }
     tabla.innerHTML = `<table class="cl-tabla"><thead><tr>
-        <th>Cliente</th><th>CUIT</th><th>Marcas</th><th>Vigilancia</th><th>Alertas</th><th>Próx. vencimiento</th><th>Origen</th></tr></thead><tbody>
+        <th>Cliente</th><th>CUIT</th><th>Marcas</th><th>Vigilancia</th><th>Alertas</th><th>Próx. vencimiento</th><th>Origen</th><th></th></tr></thead><tbody>
       ${r.clientes.map(c => `<tr class="cl-click ${c.activo ? "" : "cl-inactivo"}" data-id="${c.id}">
         <td><strong>${esc(c.nombre)}</strong>${c.activo ? "" : ' <span class="cl-tag">inactivo</span>'}${c.referido ? " " + tagReferido(c.referido) : ""}<br><small class="crm-gris">${esc(c.email || "")}</small></td>
         <td>${esc(c.cuit || "—")}</td>
@@ -142,9 +168,18 @@ async function pintarClientes() {
         <td>${c.vigilancia_contratada ? '<span class="cl-tag ok">Contratada</span>' : '<span class="cl-tag">Interna</span>'}</td>
         <td>${c.alertas_abiertas ? `<span class="cl-tag mal">${c.alertas_abiertas}</span>` : "—"}</td>
         <td>${c.proximo_vencimiento ? crmFecha(c.proximo_vencimiento) : "—"}</td>
-        <td>${esc(est.origenes[c.origen] || c.origen)}</td></tr>`).join("")}
+        <td>${esc(est.origenes[c.origen] || c.origen)}</td>
+        <td><button type="button" class="cl-btn peligro mini" data-eliminar-cliente="${c.id}" title="Borrar el cliente y sus marcas de la cartera" aria-label="Eliminar cliente">🗑</button></td></tr>`).join("")}
       </tbody></table><p class="cl-pie">${r.clientes.length} cliente(s). La vigilancia interna corre igual para todos: «Contratada» solo marca a quién se le cobra y se le manda el informe.</p>`;
     tabla.querySelectorAll("tr[data-id]").forEach(tr => tr.addEventListener("click", () => abrirCliente(+tr.dataset.id)));
+    // Eliminar desde la lista (12/11/2026): mismo borrado que «Borrar cliente» de la ficha.
+    tabla.querySelectorAll("[data-eliminar-cliente]").forEach(b => b.addEventListener("click", async ev => {
+      ev.stopPropagation();
+      const c = r.clientes.find(x => x.id === +b.dataset.eliminarCliente);
+      if (!c || !confirm(`¿Borrar a ${c.nombre} y sus ${c.marcas} marca(s) de la cartera? No se puede deshacer (para dejar de vigilarlo sin borrar nada, desmarcá «Cliente activo» en su ficha).`)) return;
+      try { await apiJson(`/api/clientes/${c.id}`, "DELETE"); est.resumen = null; cargarResumen(); pintarClientes(); }
+      catch (e) { alert(e.message || e); }
+    }));
   } catch (e) {
     tabla.innerHTML = `<p class="crm-error">No se pudo cargar (${esc(e.message)}).</p>`;
   }
@@ -210,6 +245,23 @@ async function pintarMarcas() {
       try { await apiJson(`/api/cartera/marcas/${encodeURIComponent(a.dataset.agrupar)}`, "PUT", { grupo_marca: n.trim() }); pintarMarcas(); }
       catch (e) { alert(e.message || e); }
     }));
+    // Eliminar desde la lista (12/11/2026): saca el acta (o todas las de la marca agrupada) de la cartera; el cliente queda.
+    const eliminarActas = async (actas, nombre, cliente) => {
+      const n = actas.length;
+      if (!confirm(`¿Sacar ${n === 1 ? `el acta ${actas[0]}` : `las ${n} actas`} de «${nombre}»${cliente ? ` (cliente ${cliente})` : ""} de la cartera?\nSe deja de seguir en INPI y de vigilar. El cliente no se borra. No se puede deshacer.`)) return;
+      try {
+        for (const a of actas) await apiJson(`/api/cartera/marcas/${encodeURIComponent(a)}`, "DELETE");
+      } catch (e) { alert(e.message || e); }
+      est.resumen = null; cargarResumen(); pintarMarcas();
+    };
+    tabla.querySelectorAll("[data-eliminar-acta]").forEach(b => b.addEventListener("click", ev => {
+      ev.stopPropagation(); eliminarActas([b.dataset.eliminarActa], b.dataset.nombre || b.dataset.eliminarActa, "");
+    }));
+    tabla.querySelectorAll("[data-eliminar-grupo]").forEach(b => b.addEventListener("click", ev => {
+      ev.stopPropagation();
+      const f = est.fichasGrupos[+b.dataset.eliminarGrupo];
+      eliminarActas(f.actas, f.nombre, f.cliente);
+    }));
     tabla.querySelectorAll("tr[data-cliente], [data-ver-cliente]").forEach(el => el.addEventListener("click", ev => {
       ev.stopPropagation(); abrirCliente(+(el.dataset.cliente || el.dataset.verCliente));
     }));
@@ -244,7 +296,7 @@ function pintarKpisMarcas() {
 function marcasPlanasHtml(marcas) {
   const r = { marcas };
   return `<div style="overflow-x:auto"><table class="cl-tabla"><thead><tr>
-        <th>Marca</th><th>Clase</th><th>Acta</th><th>Cliente</th><th>Estado</th><th>Vence</th><th>Agente</th><th>Vigilancia</th></tr></thead><tbody>
+        <th>Marca</th><th>Clase</th><th>Acta</th><th>Cliente</th><th>Estado</th><th>Último movimiento INPI</th><th>Vence</th><th>Agente</th><th>Vigilancia</th><th></th></tr></thead><tbody>
       ${r.marcas.map(m => `<tr class="cl-click" data-cliente="${m.cliente_id}">
         <td><strong>${esc(m.denominacion || (m.tipo === "F" ? "(figurativa, sin texto)" : "(pendiente)"))}</strong>
           <br><small class="crm-gris">${esc(tipoLegible(m.tipo))}${m.fecha_presentacion ? " · presentada " + crmFecha(m.fecha_presentacion) : ""}</small>
@@ -253,9 +305,11 @@ function marcasPlanasHtml(marcas) {
         <td><a class="link-acta" href="javascript:void(0)" data-abrir="${esc(m.acta)}">${esc(m.acta)} ↗</a></td>
         <td>${esc(m.cliente_nombre)}${m.cliente_referido ? "<br>" + tagReferido(m.cliente_referido) : ""}</td>
         <td>${tagEstadoMarca(m)}</td>
+        <td>${ubicacionInpiHtml(m)}</td>
         <td>${m.fecha_vencimiento_marca ? crmFecha(m.fecha_vencimiento_marca) : "—"}</td>
         <td><small>${esc(m.agente || (m.matricula_agente ? "matrícula " + m.matricula_agente : "—"))}</small></td>
-        <td>${m.vigilar ? '<span class="cl-tag ok">Vigilada</span>' : '<span class="cl-tag">No</span>'}${m.vigilar_todas_clases ? ' <span class="cl-tag azul">todas las clases</span>' : ""}${m.alertas_abiertas ? ` <span class="cl-tag mal">${m.alertas_abiertas} alerta(s)</span>` : ""}</td></tr>`).join("")}
+        <td>${m.vigilar ? '<span class="cl-tag ok">Vigilada</span>' : '<span class="cl-tag">No</span>'}${m.vigilar_todas_clases ? ' <span class="cl-tag azul">todas las clases</span>' : ""}${m.alertas_abiertas ? ` <span class="cl-tag mal">${m.alertas_abiertas} alerta(s)</span>` : ""}</td>
+        <td><button type="button" class="cl-btn peligro mini" data-eliminar-acta="${esc(m.acta)}" data-nombre="${esc(m.denominacion || "")}" title="Sacar esta acta de la cartera (el cliente queda)" aria-label="Eliminar">🗑</button></td></tr>`).join("")}
       </tbody></table></div><p class="cl-pie">${marcas.length} marca(s). Un click en la fila abre la ficha del cliente.</p>`;
 }
 
@@ -315,34 +369,34 @@ function marcasAgrupadasHtml(marcas) {
   if (!est.gruposAbiertos) est.gruposAbiertos = new Set();
   const { grupos, nombreDe } = gruposDeMarcas(marcas);
   est.clavesGrupos = [...grupos.keys()];
-  est.fichasGrupos = [...grupos].map(([k, ms]) => ({ nombre: nombreDe.get(k), actas: ms.map(m => m.acta) }));
+  est.fichasGrupos = [...grupos].map(([k, ms]) => ({ nombre: nombreDe.get(k), actas: ms.map(m => m.acta), cliente: ms[0].cliente_nombre }));
   const filas = [...grupos].map(([k, ms], i) => {
     const abierto = est.gruposAbiertos.has(k);
     const nombre = nombreDe.get(k);
     const clases = [...new Set(ms.map(m => m.clase).filter(c => c != null))].sort((a, b) => a - b).join(", ");
-    const ultimo = ms.filter(m => m.ultimo_movimiento_fecha).sort((a, b) => String(b.ultimo_movimiento_fecha).localeCompare(String(a.ultimo_movimiento_fecha)))[0];
     const conOpo = ms.filter(m => m.tuvo_oposicion && !["Concedida", "Denegada"].includes(m.estado_tramite)).length;
     const alertas = ms.reduce((t, m) => t + (Number(m.alertas_abiertas) || 0), 0);
     const cab = `<tr class="mk-grupo${abierto ? " abierto" : ""}" data-grupo="${i}">
       <td class="mk-chev-td"><span class="mk-chev" aria-hidden="true">›</span></td>
       <td><span class="mk-nombre">${esc(nombre)}</span>
         ${conOpo ? ` <span class="cl-tag aviso" title="Tiene oposición o vista sin resolver">⚖ ${conOpo}</span>` : ""}${alertas ? ` <span class="cl-tag mal" title="Alertas de vigilancia abiertas">${alertas} alerta(s)</span>` : ""}
-        <button type="button" class="cl-btn sec mini" data-ficha="${i}" title="Abrir la ficha de la marca: expedientes, clases, plazos, vigilancia e historial">Abrir ficha</button></td>
+        <button type="button" class="cl-btn sec mini" data-ficha="${i}" title="Abrir la ficha de la marca: expedientes, clases, plazos, vigilancia e historial">Abrir ficha</button>
+        <button type="button" class="cl-btn peligro mini mk-eliminar" data-eliminar-grupo="${i}" title="Sacar de la cartera ${ms.length === 1 ? "esta acta" : "las " + ms.length + " actas de esta marca"} (el cliente queda)" aria-label="Eliminar marca">🗑</button></td>
       <td class="mk-exp">📄 <strong>${ms.length}</strong> expediente${ms.length === 1 ? "" : "s"}</td>
       <td>${esc(clases || "—")}</td>
       <td>${esc(ms[0].cliente_nombre)}${ms[0].cliente_referido ? "<br>" + tagReferido(ms[0].cliente_referido) : ""}</td>
-      <td>${ultimo ? `${crmFecha(ultimo.ultimo_movimiento_fecha)}<br><small class="crm-gris">${esc(ultimo.ultimo_movimiento || "")}</small>` : '<span class="crm-gris">—</span>'}</td></tr>`;
+      <td>${ubicacionGrupoHtml(ms)}</td></tr>`;
     const filasActas = ms.map(m => `<tr>
         <td><a class="link-acta mk-acta" href="javascript:void(0)" data-abrir="${esc(m.acta)}" title="Abrir el expediente completo en INPI">${esc(m.acta)} ↗</a></td>
         <td class="mk-den">${logoMarca(m)}${esc(m.denominacion || (m.tipo === "F" ? "(figurativa, sin texto)" : "(pendiente)"))}</td>
         <td><strong>${esc(m.clase ?? "")}</strong></td>
         <td>${esc(tipoLegible(m.tipo))}</td>
-        <td>${tagEstadoMarca(m)}${m.tuvo_oposicion && !["Concedida", "Denegada"].includes(m.estado_tramite) ? ' <span class="cl-tag aviso">⚖ oposición / vista</span>' : ""}</td>
+        <td>${tagEstadoMarca(m)}${m.tuvo_oposicion && !["Concedida", "Denegada"].includes(m.estado_tramite) ? ' <span class="cl-tag aviso">⚖ oposición / vista</span>' : ""}${m.ubicacion_actual && !["Concedida", "Denegada"].includes(m.estado_tramite) ? `<br><small class="mk-ubic" title="UBICACIÓN ACTUAL del expediente en INPI${m.ubicacion_fecha ? " desde el " + crmFecha(m.ubicacion_fecha) : ""}">📍 ${esc(m.ubicacion_actual)}</small>` : ""}</td>
         <td>${m.fecha_presentacion ? crmFecha(m.fecha_presentacion) : "—"}</td>
         <td>${m.fecha_vencimiento_marca ? crmFecha(m.fecha_vencimiento_marca) : "—"}</td>
         <td><small>${esc(m.agente || (m.matricula_agente ? "matrícula " + m.matricula_agente : "—"))}</small></td>
         <td>${m.vigilar ? '<span class="cl-tag ok">Vigilada</span>' : '<span class="cl-tag">No</span>'}</td>
-        <td><a class="link-acta" href="javascript:void(0)" data-ver-cliente="${m.cliente_id}">Ver cliente →</a><br><a class="link-acta" href="javascript:void(0)" data-agrupar="${esc(m.acta)}" data-nombre="${esc(m.grupo_marca || nombre)}" title="Elegir a qué grupo de marcas pertenece esta acta">Agrupar…</a></td></tr>`).join("");
+        <td><a class="link-acta" href="javascript:void(0)" data-ver-cliente="${m.cliente_id}">Ver cliente →</a><br><a class="link-acta" href="javascript:void(0)" data-agrupar="${esc(m.acta)}" data-nombre="${esc(m.grupo_marca || nombre)}" title="Elegir a qué grupo de marcas pertenece esta acta">Agrupar…</a><br><a class="link-acta mk-eliminar-acta" href="javascript:void(0)" data-eliminar-acta="${esc(m.acta)}" data-nombre="${esc(m.denominacion || nombre)}" title="Sacar esta acta de la cartera (el cliente queda)">Eliminar</a></td></tr>`).join("");
     const det = `<tr class="mk-detalle" ${abierto ? "" : "hidden"}><td colspan="6">
       <div class="mk-sub-wrap"><table class="mk-sub"><colgroup><col style="width:104px"><col><col style="width:50px"><col style="width:104px"><col style="width:150px"><col style="width:96px"><col style="width:96px"><col style="width:120px"><col style="width:84px"><col style="width:96px"></colgroup><thead><tr><th>Acta</th><th>Denominación</th><th>Clase</th><th>Tipo</th><th>Estado</th><th>Presentación</th><th>Vencimiento</th><th>Agente</th><th>Vigilancia</th><th></th></tr></thead>
       <tbody>${filasActas}</tbody></table></div></td></tr>`;
@@ -490,7 +544,7 @@ async function abrirCliente(id) {
     ${d.marcas.map(m => `<tr data-acta="${esc(m.acta)}">
       <td><a class="link-acta" href="javascript:void(0)" data-abrir="${esc(m.acta)}">${esc(m.acta)} ↗</a></td>
       <td>${logoMarca(m)}<strong>${esc(m.denominacion || (m.tipo === "F" ? "(figurativa, sin texto)" : "(pendiente)"))}</strong><br><small class="crm-gris">${esc(tipoLegible(m.tipo))}${m.fecha_presentacion ? " · presentada " + crmFecha(m.fecha_presentacion) : ""}${m.fecha_vencimiento_marca ? " · vence " + crmFecha(m.fecha_vencimiento_marca) : ""}</small>
-        ${c.referido ? "<br>" + tagReferido(c.referido) : ""}${m.tuvo_oposicion ? '<br><span class="cl-tag aviso">⚖ oposición / vista</span>' : ""}${m.ultimo_movimiento ? `<br><small class="crm-gris">Últ. mov.: ${esc(m.ultimo_movimiento)}${m.ultimo_movimiento_fecha ? " (" + crmFecha(m.ultimo_movimiento_fecha) + ")" : ""}</small>` : ""}
+        ${c.referido ? "<br>" + tagReferido(c.referido) : ""}${m.tuvo_oposicion ? '<br><span class="cl-tag aviso">⚖ oposición / vista</span>' : ""}${m.ubicacion_actual && !["Concedida", "Denegada"].includes(m.estado_tramite) ? `<br><small class="mk-ubic" title="UBICACIÓN ACTUAL del expediente en INPI">📍 ${esc(m.ubicacion_actual)}${m.ubicacion_fecha ? " (desde el " + crmFecha(m.ubicacion_fecha) + ")" : ""}</small>` : m.ultimo_movimiento ? `<br><small class="crm-gris">Últ. mov.: ${esc(m.ultimo_movimiento)}${m.ultimo_movimiento_fecha ? " (" + crmFecha(m.ultimo_movimiento_fecha) + ")" : ""}</small>` : ""}
         ${m.error_consulta ? `<br><small class="crm-error" style="padding:0">${esc(m.error_consulta)}</small>` : ""}</td>
       <td>${esc(m.clase ?? "")}</td>
       <td>${tagEstadoMarca(m)}</td>

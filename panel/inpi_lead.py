@@ -605,6 +605,33 @@ def _datos_generales(pagina: str) -> dict:
     return out
 
 
+# UBICACIÓN DEL EXPEDIENTE → «UBICACIÓN ACTUAL: <span class="text-danger">2026-09-30 Divisi&#243;n Notificaciones</span>»
+# (visto en el portal el 12/11/2026). Es el sector del INPI donde está el expediente ahora y desde qué fecha.
+RE_UBICACION = re.compile(r"UBICACI(?:Ó|O|&#211;|&#xD3;|&Oacute;)N\s+ACTUAL\s*:?\s*(?:<span[^>]*>)?(.*?)(?:</span>|</label>|<)", re.I | re.S)
+
+
+def ubicacion_expediente(pagina: str) -> dict:
+    """{ubicacion_actual, ubicacion_fecha}: el sector («División Notificaciones») y la fecha ISO
+    desde la que está ahí. Vacío si la página no trae la sección."""
+    out = {"ubicacion_actual": None, "ubicacion_fecha": None}
+    m = RE_UBICACION.search(pagina or "")
+    if not m:
+        return out
+    texto = _texto_sin_tags(m.group(1))
+    mf = re.match(r"^(\d{4})-(\d{2})-(\d{2})\s*(.*)$", texto)
+    if mf:
+        out["ubicacion_fecha"] = f"{mf.group(1)}-{mf.group(2)}-{mf.group(3)}"
+        texto = mf.group(4)
+    else:
+        mf = re.match(r"^(\d{1,2}/\d{1,2}/\d{4})\s*(.*)$", texto)
+        if mf:
+            out["ubicacion_fecha"] = _fecha_ddmmyyyy_a_iso(mf.group(1))
+            texto = mf.group(2)
+    texto = re.sub(r"\s+", " ", texto).strip(" -:;,")
+    out["ubicacion_actual"] = texto[:200] or None
+    return out
+
+
 def _agente_de_bloque(bloque_gestion: str) -> dict:
     """AGENTE / matrícula desde GESTION DEL TRAMITE. El texto exacto del campo
     AGENTE no está confirmado para todos los casos (los particulares dicen
@@ -648,6 +675,7 @@ def datos_de_expediente(texto: str) -> dict:
     out["titular"] = _titulares_de_pagina(texto)
     out.update(_datos_generales(texto))
     out.update(_parsear_resolucion(texto))
+    out.update(ubicacion_expediente(texto))
     return out
 
 
@@ -659,7 +687,8 @@ def consultar_expediente(acta: str, s=None, timeout: int = 30, con_grilla: bool 
       estado_tramite, fecha_concesion, numero_disposicion,
       fecha_vencimiento_marca, tuvo_oposicion, detalle_oposicion,
       grilla_claves (lista de "fecha|indice|referencia"), movimientos,
-      ultimo_movimiento, ultimo_movimiento_fecha, logo ((bytes, mime) o None).
+      ultimo_movimiento, ultimo_movimiento_fecha, ubicacion_actual, ubicacion_fecha
+      (UBICACIÓN DEL EXPEDIENTE), logo ((bytes, mime) o None).
     La grilla falla por separado (WAF): en ese caso grilla_claves queda None
     y el resto de los datos igual se devuelve."""
     s = s or _crear_sesion()

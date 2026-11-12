@@ -256,7 +256,7 @@ def crear_router(verificar_login, conexion, crm) -> APIRouter:
                            cm.titular, cm.estado_tramite, cm.fecha_presentacion, cm.fecha_concesion,
                            cm.fecha_vencimiento_marca, cm.tuvo_oposicion, cm.agente, cm.matricula_agente,
                            cm.vigilar, cm.vigilar_todas_clases, cm.terminos_vigilancia, cm.umbral_vigilancia, cm.consultado_en,
-                           cm.ultimo_movimiento, cm.ultimo_movimiento_fecha,
+                           cm.ultimo_movimiento, cm.ultimo_movimiento_fecha, cm.ubicacion_actual, cm.ubicacion_fecha,
                            EXISTS (SELECT 1 FROM analisis_marca am WHERE am.acta = cm.acta AND am.logo IS NOT NULL) AS tiene_logo,
                            (SELECT COUNT(*) FROM vigilancia_alertas a WHERE a.acta_cliente = cm.acta
                               AND a.estado IN ('nueva','monitorear','oponer')) AS alertas_abiertas

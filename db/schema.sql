@@ -36,6 +36,9 @@ CREATE TABLE IF NOT EXISTS marcas (
 -- Agregado para el panel propio (marcar leads como gestionados).
 ALTER TABLE marcas ADD COLUMN IF NOT EXISTS contactado BOOLEAN DEFAULT false;
 ALTER TABLE marcas ADD COLUMN IF NOT EXISTS contactado_en TIMESTAMPTZ;
+-- «No contactar» (12/11/2026): sale de «Sin contactar» y de los pendientes sin figurar como contactada.
+ALTER TABLE marcas ADD COLUMN IF NOT EXISTS no_contactar_en TIMESTAMPTZ;
+ALTER TABLE marcas ADD COLUMN IF NOT EXISTS no_contactar_por TEXT;
 
 -- Agregado para explicar por qué no se pudo recuperar el email de un lead
 -- (se completa en validar_leads.py y también se puede reintentar a mano
@@ -533,6 +536,9 @@ CREATE INDEX IF NOT EXISTS idx_informes_cliente ON informes_viabilidad(cliente_i
 ALTER TABLE informes_viabilidad ADD COLUMN IF NOT EXISTS lead_clave TEXT;
 ALTER TABLE informes_viabilidad ADD COLUMN IF NOT EXISTS lead_nombre TEXT;
 CREATE INDEX IF NOT EXISTS idx_informes_lead ON informes_viabilidad(lead_clave) WHERE lead_clave IS NOT NULL;
+-- Archivar (12/11/2026): sale de Más → Informes y se ve con el filtro «Archivados».
+ALTER TABLE informes_viabilidad ADD COLUMN IF NOT EXISTS archivado_en TIMESTAMPTZ;
+ALTER TABLE informes_viabilidad ADD COLUMN IF NOT EXISTS archivado_por TEXT;
 
 -- ── Configuración de mails (pestaña Mails del panel) ────────────────────
 -- Las crea el panel al arrancar (panel/mails_core.py: crear_tablas). Las API
