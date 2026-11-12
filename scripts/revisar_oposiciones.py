@@ -168,7 +168,9 @@ SQL_DE_BOLETIN = """
     WHERE es_lead = true
       AND fecha_publicacion IS NOT NULL
       AND boletin = %s
-    ORDER BY acta
+    -- Primero los que hace más tiempo no se miran (12/11/2026): si una corrida se corta por la hora,
+    -- la siguiente sigue por los que quedaron sin revisar en vez de empezar otra vez por los mismos.
+    ORDER BY opo_ultimo_chequeo_en NULLS FIRST, acta
 """
 
 CARACTER_APODERADO = "Apoderado/gestor (se sumó tras la oposición)"

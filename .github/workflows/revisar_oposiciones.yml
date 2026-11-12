@@ -70,6 +70,7 @@ jobs:
     outputs:
       lista: ${{ steps.elegir.outputs.lista }}
       hay: ${{ steps.elegir.outputs.hay }}
+      fin: ${{ steps.elegir.outputs.fin }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
@@ -90,6 +91,13 @@ jobs:
           echo "lista=$lista" >> "$GITHUB_OUTPUT"
           echo "hay=$hay" >> "$GITHUB_OUTPUT"
           echo "Boletines elegidos: $lista"
+          # Hora de corte de toda la rotación (12/11/2026): con INPI lento cada boletín llegó a tardar 4 h y los 5
+          # seguidos pasaron las 12 h, tapando el carril de INPI de la mañana. Si arranca antes de las 06:30 ART
+          # (09:30 UTC) termina a las 07:00 ART (10:00 UTC), el fin de la ventana libre de la noche; si se lanza
+          # a mano de día, tiene 8 horas en total.
+          fin=$(python3 -c "import datetime as d; a=d.datetime.now(d.timezone.utc); c=a.replace(hour=10,minute=0,second=0,microsecond=0); print(int((c if a<c-d.timedelta(minutes=30) else a+d.timedelta(hours=8)).timestamp()))")
+          echo "fin=$fin" >> "$GITHUB_OUTPUT"
+          echo "Hora de corte de la rotación: $(TZ=America/Argentina/Buenos_Aires date -d @$fin '+%d/%m %H:%M') (hora Argentina)"
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL || secrets.DATABASE_PUBLIC_URL }}
           PYTHONUNBUFFERED: "1"
@@ -126,7 +134,15 @@ jobs:
       - name: Revisar todos los leads de este boletín
         run: |
           cd scripts
-          python3 revisar_oposiciones.py --boletin "${{ matrix.numero }}" --max-minutes 330
+          # Minutos que le quedan a la rotación hasta su hora de corte (como mucho 330 por boletín).
+          resta=$(( ( ${{ needs.planificar.outputs.fin }} - $(date +%s) ) / 60 - 3 ))
+          if [ "$resta" -lt 10 ]; then
+            echo "::notice::Boletín ${{ matrix.numero }}: la rotación llegó a su hora de corte, queda para la próxima noche."
+            exit 0
+          fi
+          if [ "$resta" -gt 330 ]; then resta=330; fi
+          echo "Minutos para este boletín: $resta"
+          python3 revisar_oposiciones.py --boletin "${{ matrix.numero }}" --max-minutes "$resta"
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL || secrets.DATABASE_PUBLIC_URL }}
           PYTHONUNBUFFERED: "1"
