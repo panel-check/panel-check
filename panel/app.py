@@ -174,6 +174,17 @@ def migrar_columnas_panel():
     except Exception as e:
         print(f"[startup] tablas de clientes/vigilancia salteadas (no bloqueante): {e}")
 
+    # Vigilancia: borra las alertas con el plazo de oposición vencido y une las duplicadas
+    # (una por marca del cliente). Idempotente; también lo hace cada corrida de vigilancia.
+    try:
+        import vigilancia_core
+        with conexion() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SET lock_timeout = '3s'")
+            vigilancia_core.mantenimiento(conn, log=lambda t: print(t, flush=True))
+    except Exception as e:
+        print(f"[startup] mantenimiento de la vigilancia salteado (no bloqueante): {e}")
+
     # Consultas de la web (verificador de marca, sección /consultas-web): no toca `marcas`.
     try:
         with conexion() as conn:
