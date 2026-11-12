@@ -91,6 +91,8 @@ def normalizar(d: dict) -> dict:
     """Controla lo mínimo para que el informe se pueda listar y leer. Devuelve el mismo dict."""
     if d.get("tipo") in ("informe_viabilidad_cliente", "informe_viabilidad_interno"):
         raise OposicionInvalida("Ese es un JSON del informe preliminar, no el de oposición.")
+    if d.get("tipo") == "informe_vista_ia":
+        raise OposicionInvalida("Ese es el JSON del informe de vista: va en «Informe Vista IA».")
     if not es_oposicion(d):
         raise OposicionInvalida("No es un informe de oposición (se espera «tipo»: «informe_oposicion_ia»).")
     if not marca(d):

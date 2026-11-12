@@ -153,6 +153,10 @@
 .ix-urgente { color: var(--rojo); font-weight: 600; }
 .ix-camino { margin-top: 2px; color: #374151; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ix-previa .tipo.opo { background: #fdecea; color: #b3261e; }
+/* Informe Vista IA (vistas de fondo del INPI: otro trámite que las oposiciones) */
+.ix-doc.vista .ix-doc-ico, .ix-caja-cab .ix-doc-ico.vista { background: #fff4e5; color: #b54708; }
+.ix-ref.vista { background: #fff4e5; color: #b54708; }
+.ix-previa .tipo.vista { background: #fff4e5; color: #b54708; }
 .ix-modo { display: flex; width: 100%; }
 .ix-modo button { flex: 1; text-align: center; padding: 8px 10px; }
 .ix-modo button .ix-n { display: block; font-weight: 400; margin: 1px 0 0; font-size: 11.5px; }

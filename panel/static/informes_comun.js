@@ -1,7 +1,8 @@
 /* Informes, compartido entre Más → Informes (informes.js), la solapa Informes de la ficha del lead
  * (titular.html) y la del cliente (clientes.js): la lista agrupada por marca y el diálogo «Nuevo
  * informe», que carga el JSON a un cliente o a un lead que todavía no es cliente. Tipos: el informe
- * preliminar (al cliente en PDF + IA interno) y el Informe Oposición IA (skill revisador-de-oposiciones).
+ * preliminar (al cliente en PDF + IA interno), el Informe Oposición IA (skill revisador-de-oposiciones)
+ * y el Informe Vista IA (skill respondervistas, vistas de fondo del INPI).
  * Depende de comun.js (api, apiJson). Estilos en informes_comun.css.
  * Todo texto que viene de la base pasa por ixEsc() antes de ir al HTML. */
 
@@ -15,6 +16,7 @@ const IX_ICO = {
   bajar: '<svg viewBox="0 0 24 24"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg>',
   buscar: '<svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>',
   opo: '<svg viewBox="0 0 24 24"><path d="M12 3v18M5 21h14M5 7h14"/><path d="M5 7l-3 7a3 3 0 0 0 6 0zM19 7l-3 7a3 3 0 0 0 6 0z"/></svg>',
+  vista: '<svg viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>',
 };
 
 /* Chances del informe de oposición → color del puntito. */
@@ -108,15 +110,29 @@ function ixDocOposicion(lista) {
     </div>${ixVersiones(lista)}</div>`;
 }
 
+/* Informe Vista IA: una tarjeta ancha con las chances, el artículo invocado y el vencimiento de la vista. */
+function ixDocVista(lista) {
+  const u = lista[0];
+  const dias = ixDiasHasta(u.vencimiento);
+  const vto = u.vencimiento ? `vence ${ixFechaIso(u.vencimiento)}${dias != null ? (dias < 0 ? " (vencida)" : dias <= 30 ? ` (faltan ${dias} días)` : "") : ""}` : "";
+  return `<div class="ix-opo-celda"><div class="ix-doc vista">
+      <a class="ix-doc-abrir" href="${ixLink(u)}" target="_blank" rel="noopener" title="Abrir el informe de vista">
+        <span class="ix-doc-ico">${IX_ICO.vista}</span>
+        <span class="ix-doc-txt"><span class="ix-doc-titulo">Informe Vista IA${u.articulos && u.articulos.length ? ` · ${ixEsc(u.articulos.join(", "))}` : ""}</span>
+          <span class="ix-doc-meta">${u.chances ? `<span class="ix-punto ${ixColorChances(u.chances)}"></span>Chances ${ixEsc(u.chances)}` : "Sin chances"}${u.vistas ? ` · ${ixPlural(u.vistas, "vista", "vistas")}` : ""}${u.actas && u.actas.length ? ` · acta${u.actas.length > 1 ? "s" : ""} ${ixEsc(u.actas.join(", "))}` : ""}${vto ? ` · <span class="${dias != null && dias <= 30 ? "ix-urgente" : ""}">${ixEsc(vto)}</span>` : ""}</span>
+          ${u.camino ? `<span class="ix-doc-meta ix-camino">→ ${ixEsc(u.camino)}</span>` : ""}</span></a>
+    </div>${ixVersiones(lista)}</div>`;
+}
+
 /* La lista. `mostrarDueno` en false para la ficha del lead (ya se sabe de quién es). */
 function ixListaHtml(grupos, { mostrarDueno = true } = {}) {
   return `<div class="ix-lista">${grupos.map((g, i) => {
     const ref = /^INFPR-\d+$/i.test(g.referencia || "") ? `<span class="ix-ref">${ixEsc(g.referencia.toUpperCase())}</span>` : "";
-    const opo = g.familia === "oposicion";
-    return `<div class="ix-fila${opo ? " es-opo" : ""}" data-ix="${i}">
-      <div class="ix-marca"><div><span class="ix-marca-nombre">${ixEsc(g.marca || "—")}</span>${ref}${opo ? '<span class="ix-ref opo">OPOSICIÓN</span>' : ""}</div>
+    const opo = g.familia === "oposicion", vis = g.familia === "vista";
+    return `<div class="ix-fila${opo || vis ? " es-opo" : ""}" data-ix="${i}">
+      <div class="ix-marca"><div><span class="ix-marca-nombre">${ixEsc(g.marca || "—")}</span>${ref}${opo ? '<span class="ix-ref opo">OPOSICIÓN</span>' : ""}${vis ? '<span class="ix-ref vista">VISTA</span>' : ""}</div>
         ${mostrarDueno ? `<div class="ix-dueno">${ixDueno(g)}</div>` : ""}</div>
-      ${opo ? ixDocOposicion(g.oposicion) : ixDocPdf(g.cliente, g) + ixDocIa(g.interno, g)}
+      ${opo ? ixDocOposicion(g.oposicion) : vis ? ixDocVista(g.vista || []) : ixDocPdf(g.cliente, g) + ixDocIa(g.interno, g)}
       <div class="ix-fecha" title="Último informe cargado"><strong>${ixEsc(ixFechaCorta(g.ultimo))}</strong>último</div>
     </div>`;
   }).join("")}</div>`;
@@ -150,6 +166,18 @@ function ixPrevia(texto) {
       · ${ixPlural(ops.length, "oposición", "oposiciones")}${oponentes.length ? " de " + ixEsc(oponentes.join(", ")) : ""}${ch ? " · chances " + ixEsc(ch) : ""}` +
       (faltas.length ? `<br><span class="mal">Falta ${ixEsc(faltas.join(", "))}.</span>` : "") };
   }
+  if (d.tipo === "informe_vista_ia" || (!d.tipo && d.vistas && d.marca_cliente && !d.oposiciones)) {
+    const marca = (d.marca_cliente || {}).denominacion || "";
+    const vs = Array.isArray(d.vistas) ? d.vistas : [];
+    const arts = [...new Set(vs.flatMap((v) => (v && Array.isArray(v.articulos)) ? v.articulos : v && v.articulos ? [v.articulos] : []).filter(Boolean))];
+    const ch = typeof d.chances === "string" ? d.chances : (d.chances || {}).nivel || "";
+    const rx = d.resumen_express && typeof d.resumen_express === "object" && Object.values(d.resumen_express).some((v) => String(v || "").trim());
+    const sinActa = vs.some((v) => !v || !String(v.acta_cliente || "").trim());
+    const faltas = [!marca && "marca_cliente.denominacion", !rx && "resumen_express", !vs.length && "vistas", vs.length && sinActa && "vistas[].acta_cliente"].filter(Boolean);
+    return { ok: !faltas.length, tipo: "vista", marca, html: `<span class="tipo vista">Informe Vista IA</span><strong>${ixEsc(marca || "— falta la marca —")}</strong>
+      · ${ixPlural(vs.length, "vista", "vistas")}${arts.length ? " · " + ixEsc(arts.join(", ")) : ""}${ch ? " · chances " + ixEsc(ch) : ""}` +
+      (faltas.length ? `<br><span class="mal">Falta ${ixEsc(faltas.join(", "))}.</span>` : "") };
+  }
   const interno = d.tipo === "informe_viabilidad_interno" || (!(d.secciones && d.encabezado) && d.tipo !== "informe_viabilidad_cliente" && ("busqueda_inpi" in d || "caso" in d));
   if (interno) {
     const marca = (d.caso || {}).marca_pretendida || d.marca_pretendida || "";
@@ -176,12 +204,12 @@ function ixPrevia(texto) {
 /* ── Diálogo «Nuevo informe» ──
  * Arriba se elige qué se carga: el informe preliminar (dos cuadros separados: el JSON del informe al
  * cliente, que arma el PDF, y el del IA interno; uno o los dos, y si van los dos primero el del cliente
- * para que el interno tome su INFPR) o el Informe Oposición IA (un cuadro, el JSON de la skill
- * revisador-de-oposiciones).
+ * para que el interno tome su INFPR), el Informe Oposición IA (un cuadro, el JSON de la skill
+ * revisador-de-oposiciones) o el Informe Vista IA (un cuadro, el JSON de la skill respondervistas).
  * destino: {cliente_id, nombre, tipo:"cliente"} | {lead_clave, nombre, tipo:"lead"} | null (se elige buscando)
  * fijo: el destino no se puede cambiar (ficha del lead o del cliente).
- * solo: "cliente" | "interno" | "oposicion" muestra un solo cuadro y no deja cambiar de tipo.
- * modo: "preliminar" | "oposicion": con qué tipo abre (se puede cambiar). */
+ * solo: "cliente" | "interno" | "oposicion" | "vista" muestra un solo cuadro y no deja cambiar de tipo.
+ * modo: "preliminar" | "oposicion" | "vista": con qué tipo abre (se puede cambiar). */
 const IX_CAJAS = {
   cliente: { titulo: "Informe al cliente (PDF)", ico: "pdf",
     ayuda: "Pegá el <strong>…_cliente.json</strong>. El panel arma el PDF del informe preliminar que se le manda a la persona.",
@@ -195,8 +223,14 @@ const IX_CAJAS = {
     ayuda: "Pegá el JSON que entrega la skill <strong>revisador-de-oposiciones</strong> junto con el análisis. Es de uso interno: queda guardado para el estudio, no se manda al cliente.",
     placeholder: '{ "tipo": "informe_oposicion_ia", "resumen_express": { … }, "oposiciones": [ … ] }',
     otro: "Ese no es el JSON de oposición: es el del informe preliminar (elegí «Informe preliminar» arriba)." },
+  vista: { titulo: "Informe Vista IA", ico: "vista",
+    ayuda: "Pegá el JSON que entrega la skill <strong>respondervistas</strong> con el análisis de una vista de fondo del INPI. Es de uso interno: queda guardado para el estudio, no se manda al cliente.",
+    placeholder: '{ "tipo": "informe_vista_ia", "resumen_express": { … }, "vistas": [ … ] }',
+    otro: "Ese no es el JSON de vista: es el de otro informe (elegí el tipo que corresponde arriba)." },
 };
-const IX_NOMBRE = { cliente: "Informe al cliente (PDF)", interno: "Informe IA interno", oposicion: "Informe Oposición IA" };
+const IX_NOMBRE = { cliente: "Informe al cliente (PDF)", interno: "Informe IA interno", oposicion: "Informe Oposición IA", vista: "Informe Vista IA" };
+const IX_MODOS = ["preliminar", "oposicion", "vista"];
+const ixModoDe = (tipo) => tipo === "oposicion" || tipo === "vista" ? tipo : "preliminar";
 
 /* Link «abrir en el panel» que arman las skills de Claude: /informes#cargar=<JSON comprimido>.
  * Formato: «z.» + base64url(deflate-raw(JSON en UTF-8)), o «j.» + base64url(JSON) sin comprimir.
@@ -220,7 +254,7 @@ async function ixAbrirLinkCarga({ alTerminar = null } = {}) {
   if (location.hash) history.replaceState(null, "", location.pathname + location.search);
   if (!texto) return false;
   const p = ixPrevia(texto);
-  ixNuevoInforme({ modo: p.tipo === "oposicion" ? "oposicion" : "preliminar", texto, alTerminar });
+  ixNuevoInforme({ modo: ixModoDe(p.tipo), texto, alTerminar });
   return true;
 }
 
@@ -244,11 +278,11 @@ function ixNuevoInforme({ destino = null, fijo = false, marca = "", solo = "", e
     document.addEventListener("keydown", (ev) => { if (ev.key === "Escape" && modal.classList.contains("abierto")) cerrar(); });
   }
   const $m = (id) => modal.querySelector("#" + id);
-  modo = solo === "oposicion" || modo === "oposicion" ? "oposicion" : "preliminar";
+  modo = solo === "oposicion" || solo === "vista" ? solo : IX_MODOS.includes(modo) ? modo : "preliminar";
   let tipos = [];
   let elegido = destino;
   const nuevoEst = () => ({ previa: { ok: false }, hecho: null });
-  const est = { cliente: nuevoEst(), interno: nuevoEst(), oposicion: nuevoEst() };
+  const est = { cliente: nuevoEst(), interno: nuevoEst(), oposicion: nuevoEst(), vista: nuevoEst() };
   const cuerpo = $m("ix-cuerpo"), estado = $m("ix-estado"), guardar = $m("ix-guardar");
   $m("ix-titulo").textContent = solo ? `Cargar ${IX_NOMBRE[solo].replace(" (PDF)", "")}` : "Nuevo informe";
   cuerpo.innerHTML = `
@@ -258,13 +292,14 @@ function ixNuevoInforme({ destino = null, fijo = false, marca = "", solo = "", e
     <div class="ix-segmentos ix-modo" id="ix-modo" role="group" aria-label="Tipo de informe">
       <button type="button" data-modo="preliminar">Informe preliminar <span class="ix-n">PDF al cliente + IA interno</span></button>
       <button type="button" data-modo="oposicion">Informe Oposición IA</button>
+      <button type="button" data-modo="vista">Informe Vista IA</button>
     </div>`}
     <div id="ix-cajas"></div>`;
   estado.textContent = ""; estado.className = "ix-estado";
   $m("ix-cancelar").textContent = "Cancelar";
 
   function pintarCajas() {
-    tipos = solo ? [solo] : modo === "oposicion" ? ["oposicion"] : ["cliente", "interno"];
+    tipos = solo ? [solo] : modo === "preliminar" ? ["cliente", "interno"] : [modo];
     tipos.forEach((t) => { est[t] = nuevoEst(); });
     if (!solo) cuerpo.querySelectorAll("#ix-modo [data-modo]").forEach((b) => b.classList.toggle("activo", b.dataset.modo === modo));
     const varias = tipos.length > 1;
@@ -282,8 +317,8 @@ function ixNuevoInforme({ destino = null, fijo = false, marca = "", solo = "", e
       ta.addEventListener("input", () => {
         let p = ixPrevia(ta.value);
         if (p.tipo && p.tipo !== t) {
-          const msg = t === "oposicion" ? IX_CAJAS.oposicion.otro
-            : p.tipo === "oposicion" ? "Ese es el JSON del Informe Oposición IA: elegí «Informe Oposición IA» arriba."
+          const msg = p.tipo === "oposicion" || p.tipo === "vista"
+            ? `Ese es el JSON del ${IX_NOMBRE[p.tipo]}: ${solo ? "este cuadro es para otro informe" : `elegí «${IX_NOMBRE[p.tipo]}» arriba`}.`
             : IX_CAJAS[t].otro;
           p = { ok: false, html: `<span class="mal">${msg}</span>` };
         }
@@ -305,7 +340,7 @@ function ixNuevoInforme({ destino = null, fijo = false, marca = "", solo = "", e
     guardar.disabled = !elegido || !l.length || malos.length > 0;
     guardar.textContent = l.includes("cliente") && l.includes("interno") ? "Generar PDF y guardar los dos"
       : l.includes("cliente") ? "Generar PDF" : l.includes("interno") ? "Guardar informe interno"
-      : l.includes("oposicion") ? "Guardar informe de oposición" : "Guardar";
+      : l.includes("oposicion") ? "Guardar informe de oposición" : l.includes("vista") ? "Guardar informe de vista" : "Guardar";
   };
 
   function pintarDestino() {
@@ -396,10 +431,11 @@ function ixNuevoInforme({ destino = null, fijo = false, marca = "", solo = "", e
   guardar.onclick = async () => {
     if (guardar.disabled) return;
     guardar.disabled = true; estado.className = "ix-estado";
-    const orden = ["cliente", "interno", "oposicion"].filter((t) => listos().includes(t));  // el del cliente primero: el interno hereda su INFPR
+    const orden = ["cliente", "interno", "oposicion", "vista"].filter((t) => listos().includes(t));  // el del cliente primero: el interno hereda su INFPR
     let alguno = false;
     for (const t of orden) {
-      estado.textContent = t === "cliente" ? "Generando el PDF…" : t === "interno" ? "Guardando el informe interno…" : "Guardando el informe de oposición…";
+      estado.textContent = t === "cliente" ? "Generando el PDF…" : t === "interno" ? "Guardando el informe interno…"
+        : t === "vista" ? "Guardando el informe de vista…" : "Guardando el informe de oposición…";
       try {
         const body = { texto: $m("ix-texto-" + t).value, tipo: t,
           ...(elegido.cliente_id ? { cliente_id: elegido.cliente_id } : { lead_clave: elegido.lead_clave }) };

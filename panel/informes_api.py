@@ -11,11 +11,12 @@ Rutas (todas con sesión):
   POST   /api/clientes/{id}/informes/interno   pegar el JSON INTERNO de la IA: se guarda tal cual
   GET    /api/informes                         todos los informes (Más → Informes), agrupados por dueño y marca;
                                                filtros q (marca, cliente/lead, INFPR, oponente o acta), falta
-                                               (interno|cliente|leads|oposiciones),
+                                               (interno|cliente|leads|oposiciones|vistas),
                                                cliente_id y lead (clave del CRM: la solapa Informes de la ficha del lead)
   GET    /api/informes/destinos?q=             «Nuevo informe»: clientes y leads de los boletines que coinciden
   POST   /api/clientes/{id}/informes/oposicion pegar el JSON del Informe Oposición IA (informes_oposicion.py)
-  POST   /api/informes/cargar                  pegar un JSON (cliente, interno u oposición; se reconoce solo) para un
+  POST   /api/clientes/{id}/informes/vista     pegar el JSON del Informe Vista IA (informes_vista.py)
+  POST   /api/informes/cargar                  pegar un JSON (cliente, interno, oposición o vista; se reconoce solo) para un
                                                cliente (cliente_id) o un lead que no es cliente (lead_clave)
   GET    /api/informes/{iid}                   el JSON guardado
   GET    /api/informes/{iid}/pdf               el PDF (solo los del cliente); con ver=1 se abre en el navegador
@@ -35,6 +36,7 @@ from fastapi.responses import Response
 from pydantic import BaseModel
 
 import informes_oposicion as io_
+import informes_vista as ivi
 import informes_viabilidad as iv
 
 
@@ -47,17 +49,20 @@ class JsonCarga(BaseModel):
     texto: str
     cliente_id: Optional[int] = None
     lead_clave: Optional[str] = None
-    tipo: Optional[str] = None  # "cliente" | "interno" | "oposicion"; sin tipo se reconoce por el JSON
+    tipo: Optional[str] = None  # "cliente" | "interno" | "oposicion" | "vista"; sin tipo se reconoce por el JSON
 
 
-TIPOS = ("cliente", "interno", "oposicion")
-NOMBRE_TIPO = {"cliente": "Informe al cliente (PDF)", "interno": "Informe IA interno", "oposicion": "Informe Oposición IA"}
+TIPOS = ("cliente", "interno", "oposicion", "vista")
+NOMBRE_TIPO = {"cliente": "Informe al cliente (PDF)", "interno": "Informe IA interno", "oposicion": "Informe Oposición IA",
+               "vista": "Informe Vista IA"}
 
 
 def tipo_de_json(d: dict) -> str:
-    """Qué informe es el JSON pegado: el de oposición, el interno o el del cliente."""
+    """Qué informe es el JSON pegado: el de oposición, el de vista, el interno o el del cliente."""
     if io_.es_oposicion(d):
         return "oposicion"
+    if ivi.es_vista(d):
+        return "vista"
     return "interno" if es_json_interno(d) else "cliente"
 
 
@@ -165,6 +170,12 @@ def crear_router(verificar_login, conexion, crm=None) -> APIRouter:
                         except io_.OposicionInvalida as e:
                             raise iv.InformeInvalido(str(e))
                         marca = io_.marca(d)
+                    elif tipo == "vista":
+                        try:
+                            d = ivi.normalizar(crudo)
+                        except ivi.VistaInvalida as e:
+                            raise iv.InformeInvalido(str(e))
+                        marca = ivi.marca(d)
                     else:
                         d = iv.normalizar_interno(crudo)
                         marca = iv.marca_interno(d)
@@ -183,6 +194,8 @@ def crear_router(verificar_login, conexion, crm=None) -> APIRouter:
                "compartir": codigo}
         if tipo == "oposicion":
             out["resumen"] = io_.resumen(d)
+        if tipo == "vista":
+            out["resumen"] = ivi.resumen(d)
         if tipo == "cliente":
             out.update(archivo=iv.nombre_archivo(d), referencia=d["encabezado"].get("referencia", ""))
         return out
@@ -201,6 +214,10 @@ def crear_router(verificar_login, conexion, crm=None) -> APIRouter:
     @router.post("/api/clientes/{cliente_id}/informes/oposicion")
     def guardar_oposicion(cliente_id: int, body: JsonPegado, usuario: str = Depends(verificar_login)):
         return _cargar("oposicion", body.texto, usuario, cliente_id=cliente_id)
+
+    @router.post("/api/clientes/{cliente_id}/informes/vista")
+    def guardar_vista(cliente_id: int, body: JsonPegado, usuario: str = Depends(verificar_login)):
+        return _cargar("vista", body.texto, usuario, cliente_id=cliente_id)
 
     @router.post("/api/clientes/{cliente_id}/informes/interno")
     def guardar_interno(cliente_id: int, body: JsonPegado, usuario: str = Depends(verificar_login)):
@@ -313,7 +330,7 @@ def crear_router(verificar_login, conexion, crm=None) -> APIRouter:
             with rcur(conn) as cur:
                 f = _informe(cur, iid)
         base = iv.nombre_archivo({"encabezado": {"marca_pretendida": f["marca"] or ""}}, "json")
-        nombre = base.replace("Informe_Preliminar_", {"interno": "Informe_IA_interno_", "oposicion": "Informe_Oposicion_IA_"}.get(f["tipo"], "Informe_cliente_"))
+        nombre = base.replace("Informe_Preliminar_", {"interno": "Informe_IA_interno_", "oposicion": "Informe_Oposicion_IA_", "vista": "Informe_Vista_IA_"}.get(f["tipo"], "Informe_cliente_"))
         return Response(content=json.dumps(f["datos"], ensure_ascii=False, indent=2).encode("utf-8"),
                         media_type="application/json",
                         headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(nombre)}"})
@@ -351,6 +368,8 @@ def listar_informes(cur, cliente_id: int) -> list:
             f["resumen"] = iv.resumen_interno(d)
         elif f["tipo"] == "oposicion":
             f["resumen"] = io_.resumen(d)
+        elif f["tipo"] == "vista":
+            f["resumen"] = ivi.resumen(d)
         else:
             enc = d.get("encabezado") or {}
             f["fecha_informe"] = enc.get("fecha") or enc.get("fecha_informe", "")
@@ -370,12 +389,13 @@ def _norm(s) -> str:
 def agrupar_informes(filas: list, q: str = "", falta: str = "") -> list:
     """Una entrada por dueño + marca + familia, con las versiones (la más nueva primero).
     Familia «preliminar»: informe al cliente + IA interno. Familia «oposicion»: los Informes Oposición IA,
-    aparte porque son otro trámite. `falta`: "interno" o "cliente" deja los preliminares a los que les
-    falta ese; "leads" los de leads; "oposiciones" solo las oposiciones."""
+    y familia «vista»: los Informes Vista IA, aparte porque son otros trámites. `falta`: "interno" o
+    "cliente" deja los preliminares a los que les falta ese; "leads" los de leads; "oposiciones" solo
+    las oposiciones; "vistas" solo las vistas."""
     grupos = {}
     for f in filas:  # vienen de la más nueva a la más vieja
         d = f.get("datos") or {}
-        familia = "oposicion" if f["tipo"] == "oposicion" else "preliminar"
+        familia = f["tipo"] if f["tipo"] in ("oposicion", "vista") else "preliminar"
         clave = (f.get("cliente_id") or "lead:" + (f.get("lead_clave") or ""), _norm(f.get("marca")), familia)
         g = grupos.get(clave)
         if g is None:
@@ -383,7 +403,7 @@ def agrupar_informes(filas: list, q: str = "", falta: str = "") -> list:
                                  "lead_clave": None if f.get("cliente_id") else f.get("lead_clave"),
                                  "lead_nombre": "" if f.get("cliente_id") else (f.get("lead_nombre") or ""),
                                  "marca": f.get("marca") or "", "ultimo": f["generado_en"], "referencia": "",
-                                 "familia": familia, "cliente": [], "interno": [], "oposicion": [], "texto": ""}
+                                 "familia": familia, "cliente": [], "interno": [], "oposicion": [], "vista": [], "texto": ""}
         item = {"id": f["id"], "generado_en": f["generado_en"], "generado_por": f.get("generado_por") or "",
                 "c": f.get("compartir") or ""}
         if f["tipo"] == "interno":
@@ -392,6 +412,9 @@ def agrupar_informes(filas: list, q: str = "", falta: str = "") -> list:
         elif f["tipo"] == "oposicion":
             item.update(io_.resumen(d))
             g["texto"] += " " + " ".join(item["oponentes"] + item["actas"])
+        elif f["tipo"] == "vista":
+            item.update(ivi.resumen(d))
+            g["texto"] += " " + " ".join(item["articulos"] + item["actas"])
         else:
             enc = d.get("encabezado") or {}
             item.update(referencia=enc.get("referencia", "") or "", fecha_informe=enc.get("fecha") or enc.get("fecha_informe", ""),
@@ -407,13 +430,15 @@ def agrupar_informes(filas: list, q: str = "", falta: str = "") -> list:
         out = [g for g in out if g["familia"] == "preliminar" and not g[falta]]
     elif falta == "oposiciones":
         out = [g for g in out if g["familia"] == "oposicion"]
+    elif falta == "vistas":
+        out = [g for g in out if g["familia"] == "vista"]
     elif falta == "leads":  # solo los de leads que todavía no son clientes
         out = [g for g in out if g["lead_clave"]]
     return out
 
 
 # ── Vista previa para WhatsApp (y otros que muestran la tarjeta de un link) ──
-NOMBRE_PAGINA = {"interno": "Informe IA interno", "oposicion": "Informe Oposición IA"}
+NOMBRE_PAGINA = {"interno": "Informe IA interno", "oposicion": "Informe Oposición IA", "vista": "Informe Vista IA"}
 
 
 def _fecha_ar(v) -> str:
@@ -459,6 +484,15 @@ def textos_vista_previa(f: dict, cliente_nombre: str = "") -> tuple:
         if r["vencimiento"]:
             a, m, dd = r["vencimiento"].split("-")
             partes.append(f"vencen los 3 meses el {dd}/{m}/{a}")
+    elif f["tipo"] == "vista":
+        r = ivi.resumen(d)
+        if r["articulos"]:
+            partes.append(", ".join(r["articulos"]))
+        if r["chances"]:
+            partes.append(f"chances {r['chances']}")
+        if r["vencimiento"]:
+            a, m, dd = r["vencimiento"].split("-")
+            partes.append(f"vence la vista el {dd}/{m}/{a}")
     fecha = _fecha_ar(f.get("generado_en"))
     if fecha:
         partes.append(f"cargado el {fecha}" + (f" por {f['generado_por']}" if f.get("generado_por") else ""))
