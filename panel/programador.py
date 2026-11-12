@@ -89,6 +89,8 @@ PROGRAMADOS = [
     {"workflow": "avisos_manana.yml", "cron": "30 10 * * *", "gracia": 240},
     # 14:00 miércoles  Repaso de vistas
     {"workflow": "repasar_vistas.yml", "cron": "0 17 * * 3", "gracia": 360},
+    # Cada 15 minutos  Avisos por Telegram (no usa el carril de INPI; si una pasada no sale, la siguiente se pone al día)
+    {"workflow": "avisos_telegram.yml", "cron": "*/15 * * * *", "gracia": 10},
 ]
 
 

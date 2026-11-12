@@ -1,0 +1,48 @@
+name: "Avisos por Telegram"
+
+on:
+  # Lo lanza el programador del panel cada 15 minutos (panel/programador.py, cron UTC «*/15 * * * *»).
+  # Mira la base (no consulta INPI) y manda lo nuevo a cada tema del grupo de Telegram: oposiciones y vistas
+  # nuevas en leads, boletín publicado/cargado, problemas del sistema y el resumen diario (scripts/avisos_telegram.py).
+  # Se puede lanzar a mano; con «resumen» manda el resumen del día ahora.
+  workflow_dispatch:
+    inputs:
+      resumen:
+        description: "Mandar el resumen del día ahora (true/false)"
+        required: false
+        default: "false"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: avisos-telegram
+  cancel-in-progress: false
+
+jobs:
+  avisar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL || secrets.DATABASE_PUBLIC_URL }}
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+      PYTHONUNBUFFERED: "1"
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.11"
+
+      - name: Instalar dependencias
+        run: pip install -r requirements.txt
+
+      - name: Mandar los avisos nuevos
+        run: |
+          cd scripts
+          if [ "${{ inputs.resumen }}" = "true" ]; then
+            python3 avisos_telegram.py --resumen
+          else
+            python3 avisos_telegram.py
+          fi

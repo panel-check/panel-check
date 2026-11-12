@@ -55,7 +55,7 @@ API = os.environ.get("GITHUB_API_URL", "https://api.github.com")
 RAIZ = Path(__file__).resolve().parent.parent
 
 # Corren muy seguido: solo se reportan si no terminan bien.
-SOLO_SI_FALLA = {"verificar_despliegue.yml"}
+SOLO_SI_FALLA = {"verificar_despliegue.yml", "avisos_telegram.yml"}
 # Este mismo workflow (nunca se reporta a sí mismo).
 PROPIO = "reporte_corridas.yml"
 
@@ -364,6 +364,26 @@ def armar_mensaje(d: dict) -> str:
     return texto
 
 
+def aviso_sistema(d: dict) -> str | None:
+    """Aviso corto para el tema «🚨 Sistema» cuando una corrida no termina bien (el detalle queda en
+    «🔄 Corridas»). El bloqueo masivo de INPI (monitor_bloqueo.py deja la corrida en rojo) va destacado."""
+    if d["conclusion"] in ("success", "skipped", None):
+        return None
+    texto_error = f"{d.get('falla') or ''}\n{d.get('error') or ''}"
+    url = html.escape(d.get("url") or "")
+    if "BLOQUEO MASIVO" in texto_error.upper():
+        m = re.search(r"BLOQUEO MASIVO DE INPI[^:]*:\s*(.+)", texto_error)
+        detalle = f"\n{html.escape(m.group(1).strip()[:200])}" if m else ""
+        return (f"🛑 <b>INPI está bloqueando las consultas en forma masiva</b>\n"
+                f"Proceso: {html.escape(d['nombre'])}{detalle}\n"
+                f"Lo ya hecho quedó guardado; el resto se reintenta en la próxima corrida.\n"
+                f'<a href="{url}">Ver la corrida</a>')
+    icono, estado = ESTADOS.get(d["conclusion"], ("❔", d["conclusion"]))
+    donde = f"\nDónde: {html.escape(d['falla'])}" if d.get("falla") else ""
+    return (f"{icono} <b>{html.escape(d['nombre'])}</b> {estado}{donde}\n"
+            f'El detalle está en 🔄 Corridas · <a href="{url}">ver la corrida</a>')
+
+
 # ── GitHub ─────────────────────────────────────────────────────────────────────────────────────────
 
 def _gh(ruta, **params):
@@ -661,6 +681,9 @@ def reportar(run: dict, forzar=False) -> int:
     print(f"Reporte de {workflow} (corrida {run_id}, intento {intento}): {conclusion}, "
           f"{duracion_txt(duracion)}, {len(d['alertas'])} alerta(s).")
     enviado = enviar(conn, d["mensaje"])
+    aviso = aviso_sistema(d)
+    if aviso:
+        telegram_avisos.enviar(aviso, tema="sistema", conn=conn)
     guardar(conn, d, enviado)
     if conn is not None:
         conn.close()

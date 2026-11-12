@@ -954,6 +954,22 @@ GRUPOS_AUTOMATIZACIONES = [
                     {"workflow_file": "avisos_manana.yml", "cron": programador.cron_de("avisos_manana.yml")},
                 ],
             },
+            {
+                "nombre": "Avisos por Telegram",
+                "descripcion": "Cada 15 minutos mira la base y manda lo nuevo a cada tema del grupo de Telegram: "
+                               "oposiciones y vistas nuevas en leads, boletín publicado por INPI y boletín cargado, "
+                               "procesos que el programador no pudo lanzar, mails esperando cupo de Resend y el "
+                               "resumen diario (7:30; los lunes también el semanal). No consulta INPI. El reporte "
+                               "de cada corrida lo manda «Reporte de corridas» al terminar cada proceso.",
+                "horario": "Cada 15 minutos",
+                "metricas": [
+                    {"sql": "SELECT COUNT(*) FROM reportes_corridas WHERE enviado AND fin >= now() - interval '24 hours'",
+                     "etiqueta": "reportes de corridas mandados (24 h)", "destacada": True},
+                ],
+                "procesos": [
+                    {"workflow_file": "avisos_telegram.yml", "cron": programador.cron_de("avisos_telegram.yml")},
+                ],
+            },
         ],
     },
 ]
