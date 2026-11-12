@@ -1,5 +1,5 @@
 /* Informes (/informes, menú Más): todos los informes —preliminares (PDF al cliente + IA interno) e
- * Informes Oposición IA—, de clientes y de leads que todavía no son clientes, agrupados por marca, y
+ * Informes Oposición IA e Informes Vista IA—, de clientes y de leads que todavía no son clientes, agrupados por marca, y
  * «Nuevo informe» para cargar uno buscando la marca o el titular entre los clientes y los leads.
  * La lista y el diálogo están en informes_comun.js. Depende de comun.js (api). */
 
@@ -10,9 +10,10 @@
   const FILTROS = {
     "": () => true,
     leads: (g) => !!g.lead_clave,
-    interno: (g) => g.familia !== "oposicion" && !g.interno.length,
-    cliente: (g) => g.familia !== "oposicion" && !g.cliente.length,
+    interno: (g) => g.familia === "preliminar" && !g.interno.length,
+    cliente: (g) => g.familia === "preliminar" && !g.cliente.length,
     oposiciones: (g) => g.familia === "oposicion",
+    vistas: (g) => g.familia === "vista",
   };
 
   function pintar() {
@@ -46,7 +47,7 @@
     }
   }
 
-  const nuevo = () => ixNuevoInforme({ modo: filtro === "oposiciones" ? "oposicion" : "", alTerminar: cargar });
+  const nuevo = () => ixNuevoInforme({ modo: filtro === "oposiciones" ? "oposicion" : filtro === "vistas" ? "vista" : "", alTerminar: cargar });
 
   $("inf-nuevo").addEventListener("click", nuevo);
   $("inf-falta").addEventListener("click", (ev) => {

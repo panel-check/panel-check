@@ -22,7 +22,8 @@ Formatos del JSON del cliente:
 
 Los dos se guardan en la tabla informes_viabilidad (uno por fila, tipo
 'cliente' o 'interno'). En la misma tabla va el Informe Oposición IA (tipo
-'oposicion', ver informes_oposicion.py). Este módulo no abre conexiones: recibe cursores.
+'oposicion', ver informes_oposicion.py) y el Informe Vista IA (tipo 'vista', ver
+informes_vista.py). Este módulo no abre conexiones: recibe cursores.
 """
 
 import datetime as _dt
@@ -110,7 +111,7 @@ def crear_tablas(cur):
         CREATE TABLE IF NOT EXISTS informes_viabilidad (
             id            SERIAL PRIMARY KEY,
             cliente_id    INTEGER REFERENCES clientes(id) ON DELETE CASCADE,
-            tipo          TEXT NOT NULL CHECK (tipo IN ('cliente', 'interno', 'oposicion')),
+            tipo          TEXT NOT NULL CHECK (tipo IN ('cliente', 'interno', 'oposicion', 'vista')),
             marca         TEXT,
             datos         JSONB NOT NULL,
             generado_por  TEXT,
@@ -132,14 +133,15 @@ def crear_tablas(cur):
         cur.execute("UPDATE informes_viabilidad SET compartir = %s WHERE id = %s",
                     (codigo_compartir(), f["id"] if isinstance(f, dict) else f[0]))
     # Tercer tipo: 'oposicion' (Informe Oposición IA de la skill revisador-de-oposiciones, informes_oposicion.py).
+    # Cuarto tipo (12/11/2026): 'vista' (Informe Vista IA de la skill respondervistas, informes_vista.py).
     cur.execute("SELECT pg_get_constraintdef(oid) AS d FROM pg_constraint "
                 "WHERE conrelid = 'informes_viabilidad'::regclass AND conname = 'informes_viabilidad_tipo_check'")
     f = cur.fetchone()
     definicion = (f["d"] if isinstance(f, dict) else f[0]) if f else ""
-    if "oposicion" not in definicion:
+    if "oposicion" not in definicion or "vista" not in definicion:
         cur.execute("ALTER TABLE informes_viabilidad DROP CONSTRAINT IF EXISTS informes_viabilidad_tipo_check")
         cur.execute("ALTER TABLE informes_viabilidad ADD CONSTRAINT informes_viabilidad_tipo_check "
-                    "CHECK (tipo IN ('cliente', 'interno', 'oposicion'))")
+                    "CHECK (tipo IN ('cliente', 'interno', 'oposicion', 'vista'))")
     # 10/11/2026: el informe al cliente vuelve a llamarse «de viabilidad»; se corrigen los ya guardados.
     cur.execute("UPDATE informes_viabilidad SET datos = jsonb_set(datos, '{titulo}', to_jsonb(%s::text)) "
                 "WHERE tipo = 'cliente' AND datos->>'titulo' ILIKE %s", (TITULO_V2, "%disponibilidad%"))
@@ -475,6 +477,8 @@ def referencia_de_marca(cur, cliente_id, marca: str) -> str:
 def normalizar_interno(d: dict) -> dict:
     if d.get("tipo") == "informe_oposicion_ia":
         raise InformeInvalido("Ese es el JSON del informe de oposición: va en «Informe Oposición IA».")
+    if d.get("tipo") == "informe_vista_ia":
+        raise InformeInvalido("Ese es el JSON del informe de vista: va en «Informe Vista IA».")
     if d.get("tipo") == "informe_viabilidad_cliente" or ("secciones" in d and "encabezado" in d):
         raise InformeInvalido("Ese es el JSON para el cliente: va en «Generar informe de viabilidad marcaria».")
     if not marca_interno(d):
