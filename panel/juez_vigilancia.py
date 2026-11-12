@@ -150,7 +150,8 @@ def pedir(sistema: str, texto: str, modelo: str, max_tokens: int = 400, uso: Uso
     k = clave()
     if not k:
         raise ErrorJuez("Falta ANTHROPIC_API_KEY")
-    cuerpo = {"model": modelo, "max_tokens": max_tokens, "temperature": 0,
+    # Sin «temperature»: los modelos 5.x no la aceptan (HTTP 400 «temperature is deprecated»).
+    cuerpo = {"model": modelo, "max_tokens": max_tokens,
               "system": [{"type": "text", "text": sistema, "cache_control": {"type": "ephemeral"}}],
               "messages": [{"role": "user", "content": texto}]}
     cab = {"x-api-key": k, "anthropic-version": VERSION_API, "content-type": "application/json"}
