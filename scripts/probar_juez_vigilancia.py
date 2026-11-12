@@ -61,7 +61,9 @@ def main():
     uso = juez.Uso()
     casos = [("conflicto", a, ca, b, cb, f) for a, ca, b, cb, f in CONFLICTO] + \
             [("sin_conflicto", a, ca, b, cb, False) for a, ca, b, cb in SIN_CONFLICTO]
-    veredictos = juez.evaluar_lote([par(a, ca, b, cb, aj) for _, a, ca, b, cb, _ in casos], uso=uso)
+    errores = []
+    veredictos = juez.evaluar_lote([par(a, ca, b, cb, aj) for _, a, ca, b, cb, _ in casos], uso=uso,
+                                   log=lambda t: (print(t), errores.append(t)))
     filas, ok = [], {"conflicto": 0, "fuerte": 0, "sin_conflicto": 0}
     tot = {"conflicto": len(CONFLICTO), "fuerte": sum(1 for c in CONFLICTO if c[4]), "sin_conflicto": len(SIN_CONFLICTO)}
     for (tipo, a, ca, b, cb, fuerte), v in zip(casos, veredictos):
@@ -81,7 +83,8 @@ def main():
            f"- Oposiciones reales detectadas (cercana o más): **{ok['conflicto']} de {tot['conflicto']}**",
            f"- Oposiciones fuertes como idéntica/confundible (sensibilidad «Similares»): **{ok['fuerte']} de {tot['fuerte']}**",
            f"- Ruido marcado por el equipo descartado: **{ok['sin_conflicto']} de {tot['sin_conflicto']}**",
-           f"- Uso: {uso.resumen()} · costo máx. USD {juez.costo_estimado(uso)}", "",
+           f"- Uso: {uso.resumen()} · costo máx. USD {juez.costo_estimado(uso)}",
+           *([f"- Errores (primeros 3): " + " | ".join(sorted(set(errores))[:3])] if errores else []), "",
            "| | Tipo | Marca anterior / del cliente | Solicitud nueva | Veredicto | Razón |", "|---|---|---|---|---|---|"] + filas
     txt = "\n".join(rep) + "\n"
     print(txt)
