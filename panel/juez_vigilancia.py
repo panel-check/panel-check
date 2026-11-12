@@ -40,7 +40,7 @@ URL = "https://api.anthropic.com/v1/messages"
 VERSION_API = "2023-06-01"
 MODELO_RAPIDO = "claude-haiku-5-5"
 MODELO_FINO = "claude-sonnet-5-5"
-HILOS = 4
+HILOS = 8
 TIMEOUT = 60
 
 VEREDICTOS = ("identica", "confundible", "cercana", "no_confundible")

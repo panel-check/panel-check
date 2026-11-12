@@ -49,7 +49,10 @@ FIRMA_VERSION = "v2"
 COMUN_MIN_CLASE = 15         # apariciones en la clase
 COMUN_MIN_CLASE_CHICA = 8    # o esta cantidad si además es el 1 % de la clase
 COMUN_MIN_GLOBAL = 60        # o esta cantidad sumando todas las clases
-LIMITE_REEVALUAR = 1000      # alertas viejas sin veredicto que se evalúan por corrida
+LIMITE_REEVALUAR = 300       # alertas viejas sin veredicto que se evalúan por corrida
+LIMITE_JUZGAR = 400          # pares nuevos que pasan por el juez en una corrida (los de mayor puntaje);
+                             # el resto se guarda sin veredicto y lo juzga reevaluar_pendientes después
+TANDA_JUEZ = 50              # se juzga y se guarda de a tandas: si la corrida se corta, lo hecho queda
 
 
 def ventana_abierta(publicacion, hoy) -> bool:
@@ -365,19 +368,30 @@ def _limpias(a: dict) -> dict:
 
 
 def juzgar_e_insertar(cur, alertas: list, stats: dict, log=print, uso=None) -> None:
-    """Las alertas nuevas de parecido pasan por el juez (si hay clave) y se guardan."""
-    nuevas = [a for a in alertas if not ya_alertada(cur, a)]
+    """Las alertas nuevas de parecido pasan por el juez (si hay clave) y se guardan, de a tandas
+    (cada tanda queda guardada aunque la corrida se corte). Se juzgan primero las de mayor
+    puntaje y, como mucho, LIMITE_JUZGAR por corrida: las demás se guardan sin veredicto
+    («todavía sin revisar por la IA») y las juzga reevaluar_pendientes en las próximas."""
+    nuevas = sorted((a for a in alertas if not ya_alertada(cur, a)), key=lambda a: -(a.get("puntaje") or 0))
     if not nuevas:
         return
-    veredictos = juez.evaluar_lote([a["_par"] for a in nuevas], uso=uso, log=log) if juez.configurado() else [None] * len(nuevas)
-    for a, v in zip(nuevas, veredictos):
-        if v:
-            aplicar_veredicto(a, v, a.get("_sensibilidad"))
-            stats["juzgadas"] += 1
-        if _insertar_alerta(cur, _limpias(a)):
-            stats["alertas_similitud"] += 1
-            if a.get("estado") == "descartada_ia":
-                stats["descartadas_ia"] += 1
+    a_juzgar = {id(a) for a in nuevas[:LIMITE_JUZGAR]} if juez.configurado() else set()
+    for i in range(0, len(nuevas), TANDA_JUEZ):
+        tanda = nuevas[i:i + TANDA_JUEZ]
+        con_juez = [a for a in tanda if id(a) in a_juzgar]
+        veredictos = juez.evaluar_lote([a["_par"] for a in con_juez], uso=uso, log=log) if con_juez else []
+        for a, v in zip(con_juez, veredictos):
+            if v:
+                aplicar_veredicto(a, v, a.get("_sensibilidad"))
+                stats["juzgadas"] += 1
+        for a in tanda:
+            if _insertar_alerta(cur, _limpias(a)):
+                stats["alertas_similitud"] += 1
+                if a.get("estado") == "descartada_ia":
+                    stats["descartadas_ia"] += 1
+        cur.connection.commit()
+        if con_juez:
+            log(f"[juez] {min(i + TANDA_JUEZ, len(nuevas))} de {len(nuevas)} pares nuevos guardados")
 
 
 def comparar(conn, hoy=None, log=print, limite_filas=None) -> dict:
@@ -531,6 +545,14 @@ def reevaluar_pendientes(cur, ajustes, marcas=None, log=print, uso=None, limite=
         pares.append(par_para_juez(m, grupo_actas, fila, {"relacion_clases": rel, "motivos": (f["motivos"] or "").split(" · ")}, ajustes))
         f["_sens"] = f.get("sensibilidad_vigilancia") or sens_grupo.get(clave_grupo(f))
     log(f"[juez] reevaluando {len(filas)} alerta(s) abiertas sin veredicto")
+    hechas = 0
+    for i in range(0, len(filas), TANDA_JUEZ):
+        hechas += _reevaluar_tanda(cur, filas[i:i + TANDA_JUEZ], pares[i:i + TANDA_JUEZ], uso, log)
+        cur.connection.commit()
+    return hechas
+
+
+def _reevaluar_tanda(cur, filas, pares, uso, log) -> int:
     veredictos = juez.evaluar_lote(pares, uso=uso, log=log)
     hechas = 0
     for f, v in zip(filas, veredictos):
@@ -543,9 +565,6 @@ def reevaluar_pendientes(cur, ajustes, marcas=None, log=print, uso=None, limite=
             "WHERE id = %s AND estado = 'nueva'",
             (a["ia_veredicto"], a["ia_nivel"], a["ia_razon"], a["ia_modelo"], a["ia_dominantes"], a["nivel"], a["estado"], f["id"]))
         hechas += 1
-        if hechas % 50 == 0:
-            cur.connection.commit()
-    cur.connection.commit()
     return hechas
 
 
