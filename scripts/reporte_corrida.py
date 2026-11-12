@@ -581,8 +581,16 @@ def guardar(conn, d: dict, enviado: bool):
 
 # ── Telegram ───────────────────────────────────────────────────────────────────────────────────────
 
+def limpiar_token(token) -> str:
+    """El token tal como lo da @BotFather («123456:ABC…»), aunque lo hayan pegado con espacios, comillas,
+    «bot» adelante o la URL entera de la API."""
+    t = (token or "").strip().strip("'\"").strip()
+    m = re.search(r"(\d{6,}:[A-Za-z0-9_-]{20,})", t)
+    return m.group(1) if m else t
+
+
 def _tg(metodo, **datos):
-    token = os.environ.get("TELEGRAM_BOT_TOKEN")
+    token = limpiar_token(os.environ.get("TELEGRAM_BOT_TOKEN"))
     r = requests.post(f"https://api.telegram.org/bot{token}/{metodo}", json=datos, timeout=30)
     return r
 

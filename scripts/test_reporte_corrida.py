@@ -108,6 +108,12 @@ class TestOrigenYLog(unittest.TestCase):
 
 
 class TestChatTelegram(unittest.TestCase):
+    def test_limpiar_token(self):
+        bueno = "1234567890:AAH" + "x" * 30
+        for pegado in (bueno, f" {bueno}\n", f'"{bueno}"', f"bot{bueno}",
+                       f"https://api.telegram.org/bot{bueno}/getMe", f"Token: {bueno}"):
+            self.assertEqual(rc.limpiar_token(pegado), bueno)
+
     def test_start_gana(self):
         ups = [{"message": {"chat": {"id": 5}, "text": "/start"}},
                {"message": {"chat": {"id": 9}, "text": "hola"}}]
