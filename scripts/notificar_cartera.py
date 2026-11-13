@@ -63,7 +63,7 @@ SQL_ALERTAS = """
     LEFT JOIN clientes c ON c.id = a.cliente_id
     LEFT JOIN cartera_marcas cm ON cm.acta = a.acta_cliente
     WHERE a.notificada_en IS NULL AND a.estado = 'nueva'
-      AND (a.tipo = 'otro_agente' OR a.nivel IN ('alta', 'media'))
+      AND a.tipo = 'similitud' AND a.nivel IN ('alta', 'media')
       AND COALESCE(c.activo, true)
     ORDER BY CASE a.nivel WHEN 'alta' THEN 0 ELSE 1 END, a.puntaje DESC, a.creada_en
 """

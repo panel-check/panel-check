@@ -116,7 +116,6 @@ async function cargarResumen() {
       `<span class="crm-chip"><strong>${fmtNum(r.alertas_abiertas)}</strong> alertas abiertas</span>`,
     ];
     if (r.alertas_sin_contratar) chips.push(`<span class="crm-chip" title="Alertas de clientes que no pagan la vigilancia: oportunidad para ofrecerla">💡 <strong>${fmtNum(r.alertas_sin_contratar)}</strong> alertas de clientes sin vigilancia contratada</span>`);
-    if (r.otro_agente_nuevas) chips.push(`<span class="crm-chip">🔀 <strong>${fmtNum(r.otro_agente_nuevas)}</strong> clientes presentaron marcas con otro agente</span>`);
     if (r.sin_consultar) chips.push(`<span class="crm-chip">⏳ <strong>${fmtNum(r.sin_consultar)}</strong> marcas pendientes de consultar en INPI</span>`);
     chips.push(`<span class="crm-chip crm-gris">Última vigilancia: ${r.ultima_vigilancia ? fmtFechaHora(r.ultima_vigilancia) : "todavía no corrió"}</span>`);
     $("resumen").innerHTML = chips.join("");
@@ -917,7 +916,7 @@ async function pintarVigilancia() {
         <div class="cl-barra">
           <label>Estado<select id="vg-estado"></select></label>
           <label>Nivel<select id="vg-nivel"><option value="">Todos</option><option value="alta">Alta</option><option value="media">Media</option><option value="baja">Baja</option></select></label>
-          <label>Tipo<select id="vg-tipo"><option value="">Todos</option><option value="similitud">Parecidos</option><option value="otro_agente">Otro agente</option></select></label>
+          <label>Tipo<select id="vg-tipo"><option value="">Todos</option><option value="similitud">Parecidos</option></select></label>
           <label>Cliente<select id="vg-cliente"><option value="">Todos</option></select></label>
           <label class="check" style="flex-direction:row;align-items:center;gap:6px"><input type="checkbox" id="vg-sc"> Solo clientes sin vigilancia contratada</label>
         </div>

@@ -473,17 +473,7 @@ def comparar(conn, hoy=None, log=print, limite_filas=None) -> dict:
             nombre = fila.get("nombre")
             firma = firma_solicitud(fila, gen)
 
-            # Otro agente: el cliente presentó algo que no maneja el estudio.
-            cuit_fila = _solo_digitos(fila.get("cuit"))
-            if cuit_fila in mis_cuits and (hoy - (fila.get("fecha_presentacion") or hoy)).days <= 180 \
-                    and fila.get("matricula_agente") not in ajustes["matriculas"] \
-                    and comparadas_por_acta.get(fila["acta"] + "#agente") is None:
-                for cid in mis_cuits[cuit_fila]:
-                    base = _alerta_base(fila, "otro_agente", cid, None, 100, "media",
-                                        [f"el cliente presentó una marca nueva con {_agente_legible(fila)}"])
-                    if _insertar_alerta(cur, base):
-                        stats["alertas_otro_agente"] += 1
-                nuevas_comparadas.append((fila["acta"] + "#agente", "1"))
+            # «Otro agente» (un cliente presentó una marca por otro lado): se sacó el 13/11/2026, no servía.
 
             if not nombre:
                 continue  # sin nombre todavía: se compara cuando se recupere
@@ -670,6 +660,9 @@ def mantenimiento(conn, hoy=None, log=print) -> dict:
             st["pasadas_a_pendiente"] = cur.rowcount
         # Las que nadie trabajó y no llegan al umbral según la clase (ver EXTRA_UMBRAL_CLASE) se borran.
         st["fuera_de_umbral"] = _borrar_fuera_de_umbral(cur)
+        # Las alertas «otro agente» se dejaron de generar (13/11/2026): se borran las que nadie trabajó.
+        cur.execute("DELETE FROM vigilancia_alertas WHERE tipo = 'otro_agente' AND estado = 'nueva'")
+        st["otro_agente_borradas"] = cur.rowcount
         cur.execute(
             f"""DELETE FROM vigilancia_alertas a
                 WHERE a.tipo = 'similitud' AND a.estado IN ('nueva', 'monitorear', 'oponer', 'descartada_ia', 'pendiente_ia')
