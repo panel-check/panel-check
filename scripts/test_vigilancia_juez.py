@@ -85,6 +85,32 @@ class ReglasCorregidas(unittest.TestCase):
         self.assertGreaterEqual(hits, 21)
 
 
+class UmbralPorClase(unittest.TestCase):
+    """13/11/2026: el 65 vale para la misma clase; en otra clase hace falta mucho más parecido."""
+    def _aj(self):
+        aj = ajustes()
+        aj["config"] = {**aj["config"], "umbral": 65}
+        return aj
+
+    def test_concepto_en_otra_clase_no_alerta_aunque_vigile_todas(self):
+        m = marca("SILVIO SIERRA", 25, conceptos="CIMA, TREES", vigilar_todas_clases=True)
+        self.assertEqual(vig._evaluar_fila(fila("CIMA", 41), [m], self._aj(), {}, set()), [])
+
+    def test_identica_en_otra_clase_alerta_si_vigila_todas(self):
+        m = marca("KOMUNIKA", 35, vigilar_todas_clases=True)
+        self.assertEqual(len(vig._evaluar_fila(fila("KOMUNIKA", 9), [m], self._aj(), {}, set())), 1)
+
+    def test_umbral_para(self):
+        self.assertEqual(vig.umbral_para(65, "misma"), 65)
+        self.assertEqual(vig.umbral_para(65, "relacionada"), 72)
+        self.assertEqual(vig.umbral_para(65, "distinta"), 77)
+
+    def test_relacion_de_motivos(self):
+        self.assertEqual(vig.relacion_de_motivos("suenan parecido · otra clase (41)"), "distinta")
+        self.assertEqual(vig.relacion_de_motivos("clase vinculada (35 ↔ 41)"), "relacionada")
+        self.assertEqual(vig.relacion_de_motivos("misma clase (35)"), "misma")
+
+
 class UnaAlertaPorMarca(unittest.TestCase):
     def test_dos_actas_de_la_misma_marca_dan_una_alerta_con_las_dos_clases(self):
         m1 = marca("KOMUNIKA", 35, acta="100")

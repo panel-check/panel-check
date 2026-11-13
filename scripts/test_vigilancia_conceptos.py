@@ -19,7 +19,7 @@ import vigilancia_core as vig  # noqa: E402
 GEN = frozenset({"GROUP", "STORE", "SA"})
 AJUSTES = {
     "genericas": GEN, "pares": {(25, 35)}, "matriculas": set(),
-    "config": {"umbral": 75, "nivel_alta": 90, "nivel_media": 82, "meses_universo": 18},
+    "config": {"umbral": 65, "nivel_alta": 90, "nivel_media": 82, "meses_universo": 18},
 }
 
 

@@ -69,7 +69,8 @@ def main():
         conn.commit()
         man = vigilancia_core.mantenimiento(conn)
         print(f"Mantenimiento: {man['vencidas_borradas']} alertas con el plazo vencido borradas, "
-              f"{man['duplicadas_unidas']} duplicadas unidas.")
+              f"{man['duplicadas_unidas']} duplicadas unidas, {man.get('pasadas_a_pendiente', 0)} ocultas hasta que las revise la IA, "
+              f"{man.get('fuera_de_umbral', 0)} borradas por no llegar al umbral según la clase.")
         mat = vigilancia_core.sumar_por_matricula(conn)
         print(f"Por matrícula: {mat['sumadas']} sumadas solas a la cartera, {mat['propuestas']} propuestas pendientes.")
         st = vigilancia_core.comparar(conn)
@@ -77,7 +78,7 @@ def main():
                    f"Alertas nuevas de parecido: {st['alertas_similitud']}. Alertas de otro agente: {st['alertas_otro_agente']}. "
                    f"Marcas de la cartera recomparadas: {st['recomparadas_cartera']}. "
                    f"Juez IA: {'activo' if st['juez_activo'] else 'apagado'}; pares juzgados {st['juzgadas']}, "
-                   f"descartados por IA {st['descartadas_ia']}, alertas viejas reevaluadas {st['reevaluadas']}, "
+                   f"descartados por IA {st['descartadas_ia']}, quedan sin revisar (ocultas) {st.get('pendientes_ia', 0)}, "
                    f"llamadas {st['llamadas_ia']}, errores {st['errores_ia']}, costo máx. USD {st['costo_ia_usd_max']}. "
                    f"Expedientes leídos para productos y servicios: {st.get('consultas_productos_inpi', 0)}.")
         print(f"::notice::{resumen}")
@@ -90,7 +91,8 @@ def main():
             "juez_activo": st["juez_activo"], "juzgadas_ia": st["juzgadas"], "descartadas_ia": st["descartadas_ia"],
             "reevaluadas_ia": st["reevaluadas"], "llamadas_ia": st["llamadas_ia"], "errores_ia": st["errores_ia"],
             "costo_ia_usd_max": st["costo_ia_usd_max"], "vencidas_borradas": man["vencidas_borradas"],
-            "duplicadas_unidas": man["duplicadas_unidas"],
+            "duplicadas_unidas": man["duplicadas_unidas"], "pendientes_ia": st.get("pendientes_ia", 0),
+            "fuera_de_umbral": man.get("fuera_de_umbral", 0),
             "consultas_productos_inpi": st.get("consultas_productos_inpi", 0),
         }, conn)
         avisar_altas_por_telegram(conn)

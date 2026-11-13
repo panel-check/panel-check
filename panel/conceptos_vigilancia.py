@@ -77,7 +77,11 @@ PROMPT_CLAUDE = (
     "(GIGANET, SUNSEA).\n"
     "5. No incluyas el nombre tal cual, ni variantes de escritura, ni palabras genéricas o descriptivas del rubro (VIAJES, "
     "TURISMO, TRIP, CAFE, SHOP, STORE, GROUP, ESTUDIO, SOLUCIONES…), ni artículos o preposiciones.\n"
-    "6. Máximo 8 términos, cada uno de 1 a 3 palabras, en mayúsculas.\n"
+    "6. Si la marca es (o empieza con) el nombre y/o apellido de una persona (SILVIO SIERRA, FRANCESCA INNOCENTI, "
+    "JUAN PEREZ DISEÑOS) o un apellido usado como marca, NO traduzcas el nombre ni el apellido aunque coincida con una "
+    "palabra (SIERRA no es MOUNTAIN, INNOCENTI no es SOFT): devolvé la lista vacía, o solo los términos de las otras "
+    "palabras con significado propio. Lo mismo con abreviaturas o palabras cortadas (DELI no es DELICIOSO).\n"
+    "7. Máximo 8 términos, cada uno de 1 a 3 palabras, en mayúsculas.\n"
     "Respondé SOLO con un objeto JSON, sin explicaciones: {\"conceptos\": [\"...\", \"...\"]}"
 )
 
@@ -219,6 +223,26 @@ def rearmar_con_claude_una_vez(conexion, log=print) -> int:
     return n
 
 
+def rearmar_nombres_propios_una_vez(conexion, log=print) -> int:
+    """13/11/2026: se sumó la regla de nombres de persona al pedido. Las listas que armó Claude
+    (no las cargadas a mano) se rearman una vez; la lista vieja queda en conceptos_previos."""
+    if not juez.configurado():
+        return 0
+    with conexion() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT 1 FROM vigilancia_config WHERE clave = 'conceptos_rearmados_nombres'")
+            if cur.fetchone():
+                return 0
+            cur.execute("UPDATE cartera_marcas SET conceptos_previos = conceptos_vigilancia, conceptos_para = NULL "
+                        "WHERE conceptos_en IS NOT NULL AND conceptos_origen = 'claude'")
+            n = cur.rowcount
+            cur.execute("INSERT INTO vigilancia_config (clave, valor) VALUES ('conceptos_rearmados_nombres', now()::text) "
+                        "ON CONFLICT (clave) DO NOTHING")
+        conn.commit()
+    log(f"[conceptos] {n} lista(s) de Claude se van a rearmar (regla de nombres de persona)")
+    return n
+
+
 def iniciar(conexion):
     """Prende el hilo que arma las listas que faltan. Sin IA no hace nada."""
     if not disponible():
@@ -226,6 +250,7 @@ def iniciar(conexion):
         return None
     try:
         rearmar_con_claude_una_vez(conexion, log=lambda t: print(t, flush=True))
+        rearmar_nombres_propios_una_vez(conexion, log=lambda t: print(t, flush=True))
     except Exception as e:  # noqa: BLE001
         print(f"[conceptos] no se pudo marcar el rearmado con Claude: {e}", flush=True)
 

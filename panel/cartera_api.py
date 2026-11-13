@@ -760,6 +760,9 @@ def crear_router(verificar_login, conexion, crm) -> APIRouter:
             cond.append("a.estado IN ('nueva','monitorear','oponer')")
         elif filtros.get("estado"):
             cond.append("a.estado = %s"); val.append(filtros["estado"])
+        else:
+            # Lo que la IA todavía no revisó no se muestra (salvo que se filtre a propósito por ese estado).
+            cond.append("a.estado <> 'pendiente_ia'")
         if filtros.get("cliente_id"):
             cond.append("a.cliente_id = %s"); val.append(filtros["cliente_id"])
         if filtros.get("nivel"):
@@ -918,7 +921,7 @@ def crear_router(verificar_login, conexion, crm) -> APIRouter:
                 cur.execute("""SELECT COUNT(*) FILTER (WHERE ia_veredicto IS NOT NULL) AS juzgadas,
                                       COUNT(*) FILTER (WHERE estado = 'descartada_ia') AS descartadas_ia,
                                       COUNT(*) FILTER (WHERE COALESCE(ia_desacuerdo, false)) AS desacuerdos,
-                                      COUNT(*) FILTER (WHERE estado = 'nueva' AND ia_veredicto IS NULL AND tipo = 'similitud') AS sin_juzgar
+                                      COUNT(*) FILTER (WHERE estado IN ('nueva', 'pendiente_ia') AND ia_veredicto IS NULL AND tipo = 'similitud') AS sin_juzgar
                                FROM vigilancia_alertas""")
                 r["totales"] = cur.fetchone()
         return r

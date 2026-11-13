@@ -31,7 +31,9 @@ Reglas para no llenar el panel de ruido:
 import collections
 import datetime as _dt
 import json
+import os
 import re
+import time
 
 import similitud as sim
 import cartera
@@ -50,9 +52,15 @@ FIRMA_VERSION = "v3"  # v3 (13/11/2026): umbral 65 y reglas puntuales (raíz, mi
 COMUN_MIN_CLASE = 15         # apariciones en la clase
 COMUN_MIN_CLASE_CHICA = 8    # o esta cantidad si además es el 1 % de la clase
 COMUN_MIN_GLOBAL = 60        # o esta cantidad sumando todas las clases
+# Umbral según la clase (13/11/2026): el umbral de Ajustes (o el de la marca) vale para la MISMA clase;
+# para otra clase hace falta más parecido. El puntaje ya viene rebajado por la clase (similitud.ajustar_por_clase),
+# así que con 65: misma clase 65, vinculada 72 (nombre ≥80), sin confirmar 70, distinta 77 (nombre ≥92):
+# un parecido solo de concepto en otra clase ya no alcanza.
+EXTRA_UMBRAL_CLASE = {"misma": 0, "relacionada": 7, "desconocida": 5, "distinta": 12}
 LIMITE_REEVALUAR = 300       # alertas viejas sin veredicto que se evalúan por corrida
-LIMITE_JUZGAR = 400          # pares nuevos que pasan por el juez en una corrida (los de mayor puntaje);
-                             # el resto se guarda sin veredicto y lo juzga reevaluar_pendientes después
+LIMITE_JUZGAR = 600          # alertas que pasan por el juez en una corrida (las de mayor puntaje primero);
+                             # el resto queda oculto como «pendiente_ia» para la próxima
+MINUTOS_JUEZ = int(os.environ.get("VIGILANCIA_MINUTOS_JUEZ") or 50)  # tope de tiempo para juzgar en una corrida
 TANDA_JUEZ = 50              # se juzga y se guarda de a tandas: si la corrida se corta, lo hecho queda
 
 
@@ -318,7 +326,7 @@ def _evaluar_fila(fila, candidatas, ajustes, mis_cuits, acta_en_cartera):
             continue
         r = _mejor_contra(fila["nombre"], fila.get("clase"), m, ajustes)
         # Cada marca puede tener su propio umbral (Clientes → ficha de la marca); si no, el de Ajustes.
-        if not r or r["puntaje"] < (m.get("umbral_vigilancia") or umbral):
+        if not r or r["puntaje"] < umbral_para(m.get("umbral_vigilancia") or umbral, r.get("relacion_clases")):
             continue
         niv = sim.nivel(r["puntaje"], ajustes["config"]["nivel_alta"], ajustes["config"]["nivel_media"])
         grupo_actas = m.get("grupo_actas") or [{"acta": m["acta"], "clase": m.get("clase")}]
@@ -336,6 +344,11 @@ def _evaluar_fila(fila, candidatas, ajustes, mis_cuits, acta_en_cartera):
         if g not in por_grupo or a["puntaje"] > por_grupo[g]["puntaje"]:
             por_grupo[g] = a
     return list(por_grupo.values())
+
+
+def umbral_para(umbral, relacion) -> int:
+    """Puntaje mínimo según la relación de clases (ver EXTRA_UMBRAL_CLASE)."""
+    return int(umbral) + EXTRA_UMBRAL_CLASE.get(relacion or "misma", 0)
 
 
 def par_para_juez(m, grupo_actas, fila, r, ajustes) -> dict:
@@ -396,31 +409,18 @@ def sumar_productos(cur, items, consultor, log=print) -> None:
 
 
 def juzgar_e_insertar(cur, alertas: list, stats: dict, log=print, uso=None, consultor=None) -> None:
-    """Las alertas nuevas de parecido pasan por el juez (si hay clave) y se guardan, de a tandas
-    (cada tanda queda guardada aunque la corrida se corte). Se juzgan primero las de mayor
-    puntaje y, como mucho, LIMITE_JUZGAR por corrida: las demás se guardan sin veredicto
-    («todavía sin revisar por la IA») y las juzga reevaluar_pendientes en las próximas."""
-    nuevas = sorted((a for a in alertas if not ya_alertada(cur, a)), key=lambda a: -(a.get("puntaje") or 0))
-    if not nuevas:
-        return
-    a_juzgar = {id(a) for a in nuevas[:LIMITE_JUZGAR]} if juez.configurado() else set()
-    for i in range(0, len(nuevas), TANDA_JUEZ):
-        tanda = nuevas[i:i + TANDA_JUEZ]
-        con_juez = [a for a in tanda if id(a) in a_juzgar]
-        sumar_productos(cur, [(a, a["_par"]) for a in con_juez], consultor, log)
-        veredictos = juez.evaluar_lote([a["_par"] for a in con_juez], uso=uso, log=log) if con_juez else []
-        for a, v in zip(con_juez, veredictos):
-            if v:
-                aplicar_veredicto(a, v, a.get("_sensibilidad"))
-                stats["juzgadas"] += 1
-        for a in tanda:
-            if _insertar_alerta(cur, _limpias(a)):
-                stats["alertas_similitud"] += 1
-                if a.get("estado") == "descartada_ia":
-                    stats["descartadas_ia"] += 1
-        cur.connection.commit()
-        if con_juez:
-            log(f"[juez] {min(i + TANDA_JUEZ, len(nuevas))} de {len(nuevas)} pares nuevos guardados")
+    """Guarda las alertas nuevas de parecido. Desde el 13/11/2026, si el juez está activo se guardan
+    TODAS primero, ocultas como «pendiente_ia», y se confirma enseguida: así una corrida cortada no
+    pierde lo comparado. Después reevaluar_pendientes las juzga (las de mayor puntaje primero, con
+    tope de cantidad y de tiempo) y las muestra o descarta. Nada se muestra sin que la IA lo mire."""
+    nuevas = [a for a in alertas if not ya_alertada(cur, a)]
+    activo = juez.configurado()
+    for a in nuevas:
+        if activo and not a.get("ia_veredicto"):
+            a["estado"] = "pendiente_ia"
+        if _insertar_alerta(cur, _limpias(a)):
+            stats["alertas_similitud"] += 1
+    cur.connection.commit()
 
 
 def comparar(conn, hoy=None, log=print, limite_filas=None) -> dict:
@@ -530,8 +530,14 @@ def comparar(conn, hoy=None, log=print, limite_filas=None) -> dict:
 
         # Alertas abiertas que todavía no pasaron por el juez (las de antes del 12/11/2026 o las
         # que fallaron en una corrida anterior): se evalúan ahora.
+        # (desde el 13/11/2026 también las nuevas de esta corrida, que se guardaron como «pendiente_ia»).
         if stats["juez_activo"]:
-            stats["reevaluadas"] = reevaluar_pendientes(cur, ajustes, marcas, log=log, uso=uso, consultor=consultor)
+            hasta = time.monotonic() + MINUTOS_JUEZ * 60
+            stats["reevaluadas"] = reevaluar_pendientes(cur, ajustes, marcas, log=log, uso=uso, consultor=consultor,
+                                                        limite=LIMITE_JUZGAR, hasta=hasta, stats=stats)
+            cur.execute("SELECT COUNT(*) FROM vigilancia_alertas WHERE estado = 'pendiente_ia'")
+            r = cur.fetchone()
+            stats["pendientes_ia"] = r[0] if not isinstance(r, dict) else list(r.values())[0]
     stats["consultas_productos_inpi"] = consultor.pedidos
     conn.commit()
     stats.update(uso.resumen())
@@ -550,14 +556,15 @@ SQL_SIN_VEREDICTO = """
     SELECT a.id, a.acta_cliente, a.acta_nueva, a.denominacion_nueva, a.clase_nueva, a.tipo_nuevo, a.motivos, a.actas_cliente,
            cm.denominacion, cm.tipo, cm.clase, cm.terminos_vigilancia, cm.cliente_id, cm.grupo_marca, cm.sensibilidad_vigilancia
     FROM vigilancia_alertas a JOIN cartera_marcas cm ON cm.acta = a.acta_cliente
-    WHERE a.tipo = 'similitud' AND a.estado = 'nueva'
+    WHERE a.tipo = 'similitud' AND a.estado IN ('nueva', 'pendiente_ia')
       AND (a.ia_veredicto IS NULL OR NOT COALESCE(a.ia_productos, false))
-    ORDER BY (a.ia_veredicto IS NULL) DESC, a.creada_en DESC
+    ORDER BY (a.ia_veredicto IS NULL) DESC, a.puntaje DESC NULLS LAST, a.creada_en DESC
     LIMIT %s
 """
 
 
-def reevaluar_pendientes(cur, ajustes, marcas=None, log=print, uso=None, limite=LIMITE_REEVALUAR, consultor=None) -> int:
+def reevaluar_pendientes(cur, ajustes, marcas=None, log=print, uso=None, limite=LIMITE_REEVALUAR, consultor=None,
+                         hasta=None, stats=None) -> int:
     """Pasa por el juez las alertas «nuevas» que no tienen veredicto, o que se juzgaron sin comparar
     productos y servicios (antes del 13/11/2026 o porque el INPI no respondió). Las que no alcanzan
     la sensibilidad de la marca quedan «Descartada por IA». No toca las que ya decidió una persona."""
@@ -581,17 +588,21 @@ def reevaluar_pendientes(cur, ajustes, marcas=None, log=print, uso=None, limite=
     log(f"[juez] reevaluando {len(filas)} alerta(s) abiertas sin veredicto")
     hechas = 0
     for i in range(0, len(filas), TANDA_JUEZ):
+        if hasta and time.monotonic() > hasta:
+            log(f"[juez] se acabó el tiempo de la corrida: {len(filas) - i} quedan para la próxima")
+            break
         tanda = filas[i:i + TANDA_JUEZ]
         sumar_productos(cur, [({**f, "actas_cliente": f["actas_cliente"]}, p) for f, p in zip(tanda, pares[i:i + TANDA_JUEZ])],
                         consultor, log)
         for f, p in zip(tanda, pares[i:i + TANDA_JUEZ]):
             f["_productos"] = bool(p.get("productos_nueva"))
-        hechas += _reevaluar_tanda(cur, tanda, pares[i:i + TANDA_JUEZ], uso, log)
+        hechas += _reevaluar_tanda(cur, tanda, pares[i:i + TANDA_JUEZ], uso, log, stats)
         cur.connection.commit()
+        log(f"[juez] {min(i + TANDA_JUEZ, len(filas))} de {len(filas)} juzgadas")
     return hechas
 
 
-def _reevaluar_tanda(cur, filas, pares, uso, log) -> int:
+def _reevaluar_tanda(cur, filas, pares, uso, log, stats=None) -> int:
     veredictos = juez.evaluar_lote(pares, uso=uso, log=log)
     hechas = 0
     for f, v in zip(filas, veredictos):
@@ -601,10 +612,14 @@ def _reevaluar_tanda(cur, filas, pares, uso, log) -> int:
         cur.execute(
             "UPDATE vigilancia_alertas SET ia_veredicto = %s, ia_nivel = %s, ia_razon = %s, ia_modelo = %s, ia_dominantes = %s, "
             "ia_en = now(), nivel_motor = COALESCE(nivel_motor, nivel), nivel = %s, estado = %s, ia_productos = %s "
-            "WHERE id = %s AND estado = 'nueva'",
+            "WHERE id = %s AND estado IN ('nueva', 'pendiente_ia')",
             (a["ia_veredicto"], a["ia_nivel"], a["ia_razon"], a["ia_modelo"], a["ia_dominantes"], a["nivel"], a["estado"],
              f.get("_productos", False), f["id"]))
         hechas += 1
+        if stats is not None:
+            stats["juzgadas"] = stats.get("juzgadas", 0) + 1
+            if a["estado"] == "descartada_ia":
+                stats["descartadas_ia"] = stats.get("descartadas_ia", 0) + 1
     return hechas
 
 
@@ -645,18 +660,26 @@ def mantenimiento(conn, hoy=None, log=print) -> dict:
          las actas y clases de esa marca (actas_cliente). Se queda la que alguien ya trabajó o,
          si ninguna, la de mayor puntaje."""
     hoy = hoy or cartera.hoy_ar()
-    st = {"vencidas_borradas": 0, "duplicadas_unidas": 0, "huerfanas_borradas": 0}
+    st = {"vencidas_borradas": 0, "duplicadas_unidas": 0, "huerfanas_borradas": 0, "pasadas_a_pendiente": 0,
+          "fuera_de_umbral": 0}
     with conn.cursor() as cur:
+        if juez.configurado():
+            # Nada se muestra sin que la IA lo haya mirado: las abiertas sin veredicto quedan ocultas hasta tenerlo.
+            cur.execute("""UPDATE vigilancia_alertas SET estado = 'pendiente_ia'
+                           WHERE tipo = 'similitud' AND estado = 'nueva' AND ia_veredicto IS NULL""")
+            st["pasadas_a_pendiente"] = cur.rowcount
+        # Las que nadie trabajó y no llegan al umbral según la clase (ver EXTRA_UMBRAL_CLASE) se borran.
+        st["fuera_de_umbral"] = _borrar_fuera_de_umbral(cur)
         cur.execute(
             f"""DELETE FROM vigilancia_alertas a
-                WHERE a.tipo = 'similitud' AND a.estado IN ('nueva', 'monitorear', 'oponer', 'descartada_ia')
+                WHERE a.tipo = 'similitud' AND a.estado IN ('nueva', 'monitorear', 'oponer', 'descartada_ia', 'pendiente_ia')
                   AND {SQL_PUBLICACION} IS NOT NULL
                   AND {SQL_PUBLICACION} + %s < %s""", (VENTANA_OPOSICION_DIAS, hoy))
         st["vencidas_borradas"] = cur.rowcount
         # Alertas de una marca que ya no está en la cartera (la sacaron o la borraron con el cliente):
         # ya no hay nada que vigilar. Las que alguien trabajó (oponer, opuesta, descartada) quedan.
         cur.execute("""DELETE FROM vigilancia_alertas a
-                       WHERE a.tipo = 'similitud' AND a.estado IN ('nueva', 'monitorear', 'descartada_ia')
+                       WHERE a.tipo = 'similitud' AND a.estado IN ('nueva', 'monitorear', 'descartada_ia', 'pendiente_ia')
                          AND NOT EXISTS (SELECT 1 FROM cartera_marcas cm WHERE cm.acta = a.acta_cliente)""")
         st["huerfanas_borradas"] = cur.rowcount
 
@@ -672,7 +695,7 @@ def mantenimiento(conn, hoy=None, log=print) -> dict:
         por_par = {}
         for a in alertas:
             por_par.setdefault((clave_grupo(a), a["acta_nueva"]), []).append(a)
-        prioridad = {"opuesta": 0, "oponer": 1, "monitorear": 2, "descartada": 3, "nueva": 4, "descartada_ia": 5}
+        prioridad = {"opuesta": 0, "oponer": 1, "monitorear": 2, "descartada": 3, "nueva": 4, "descartada_ia": 5, "pendiente_ia": 6}
         for (g, _), lista in por_par.items():
             actas_g = json.dumps(sorted(grupos.get(g, []), key=lambda d: d["acta"]))
             lista.sort(key=lambda a: (prioridad.get(a["estado"], 9), -(a["puntaje"] or 0)))
@@ -684,10 +707,42 @@ def mantenimiento(conn, hoy=None, log=print) -> dict:
             if json.dumps(sorted(actual or [], key=lambda d: d["acta"])) != actas_g:
                 cur.execute("UPDATE vigilancia_alertas SET actas_cliente = %s WHERE id = %s", (actas_g, guardar["id"]))
     conn.commit()
-    if st["vencidas_borradas"] or st["duplicadas_unidas"] or st["huerfanas_borradas"]:
+    if any(st.values()):
         log(f"[vigilancia] mantenimiento: {st['vencidas_borradas']} alerta(s) vencidas borradas, "
-            f"{st['duplicadas_unidas']} duplicada(s) unidas, {st['huerfanas_borradas']} de marcas que ya no están en la cartera")
+            f"{st['duplicadas_unidas']} duplicada(s) unidas, {st['huerfanas_borradas']} de marcas que ya no están en la cartera, "
+            f"{st['pasadas_a_pendiente']} ocultas hasta que las revise la IA, {st['fuera_de_umbral']} debajo del umbral por clase")
     return st
+
+
+def _borrar_fuera_de_umbral(cur) -> int:
+    """Alertas de parecido que nadie trabajó (nueva / pendiente_ia / descartada_ia) y que con el umbral
+    por clase ya no saldrían: se borran. Las que la IA dio por idénticas o confundibles quedan siempre."""
+    umbral = cartera.leer_config(cur)["umbral"]
+    cur.execute("""SELECT a.id, a.puntaje, a.motivos, cm.umbral_vigilancia
+                   FROM vigilancia_alertas a JOIN cartera_marcas cm ON cm.acta = a.acta_cliente
+                   WHERE a.tipo = 'similitud' AND a.estado IN ('nueva', 'pendiente_ia', 'descartada_ia')
+                     AND COALESCE(a.ia_veredicto, '') NOT IN ('identica', 'confundible')
+                     AND NOT COALESCE(a.ia_desacuerdo, false)""")
+    borrar = []
+    for a in _dict_rows(cur):
+        rel = relacion_de_motivos(a["motivos"])
+        if (a["puntaje"] or 0) < umbral_para(a["umbral_vigilancia"] or umbral, rel):
+            borrar.append(a["id"])
+    if borrar:
+        cur.execute("DELETE FROM vigilancia_alertas WHERE id = ANY(%s)", (borrar,))
+    return len(borrar)
+
+
+def relacion_de_motivos(motivos) -> str:
+    """La relación de clases tal como quedó escrita en los motivos de la alerta."""
+    t = motivos or ""
+    if "clase vinculada" in t:
+        return "relacionada"
+    if "otra clase" in t:
+        return "distinta"
+    if "clase sin confirmar" in t:
+        return "desconocida"
+    return "misma"
 
 
 def _guardar_comparadas(cur, pares):

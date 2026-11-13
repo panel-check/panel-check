@@ -59,6 +59,9 @@ ESTADOS_ALERTA = {
     # Desde el 12/11/2026: el juez con IA (juez_vigilancia.py) la evaluó y no alcanza la
     # sensibilidad de la marca. No se borra: queda para revisar («No estoy de acuerdo»).
     "descartada_ia": "Descartada por IA",
+    # Desde el 13/11/2026: el motor la encontró pero el juez con IA todavía no la miró (pasó el
+    # tope de la corrida o la corrida se cortó). No se muestra ni se avisa hasta tener veredicto.
+    "pendiente_ia": "Pendiente de IA",
 }
 ESTADOS_ALERTA_ABIERTOS = ("nueva", "monitorear", "oponer")
 
