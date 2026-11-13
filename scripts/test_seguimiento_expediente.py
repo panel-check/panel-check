@@ -15,6 +15,9 @@ class TestSector(unittest.TestCase):
         self.assertEqual(se.sector_de("División Publicación"), "publicacion")
         self.assertEqual(se.sector_de("División Notificaciones"), "notificaciones")
         self.assertEqual(se.sector_de("División Resoluciones"), "resoluciones")
+        self.assertEqual(se.sector_de("Sector Estudio Forma"), "estudio_forma")
+        self.assertEqual(se.sector_de("Sector Estudio Forma IA"), "estudio_forma")
+        self.assertEqual(se.sector_de("División Análisis de Fondo"), "analisis_fondo")
 
     def test_sin_tildes_ni_mayusculas(self):
         self.assertEqual(se.sector_de("DIVISION PUBLICACION"), "publicacion")
@@ -22,7 +25,8 @@ class TestSector(unittest.TestCase):
 
     def test_desconocido(self):
         self.assertIsNone(se.sector_de("Mesa de Entradas"))
-        self.assertIsNone(se.sector_de("Estudio de Forma"))  # «estudio» sin «fondo» no alcanza
+        self.assertIsNone(se.sector_de("División Renovaciones"))
+        self.assertIsNone(se.sector_de("Dirección de Coordinación Operativa Dpto Operativo Archivo"))
         self.assertIsNone(se.sector_de(""))
         self.assertIsNone(se.sector_de(None))
 
@@ -31,6 +35,7 @@ class TestSector(unittest.TestCase):
             c = se.CATALOGO[clave]
             self.assertTrue(c["nombre"] and c["que_es"] and c["que_sigue"])
         self.assertFalse(se.CATALOGO["notificaciones"]["mail"])
+        self.assertFalse(se.CATALOGO["analisis_fondo"]["mail"])  # sin texto validado todavía
 
 
 class TestCambio(unittest.TestCase):

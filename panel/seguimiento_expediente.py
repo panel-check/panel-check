@@ -15,17 +15,38 @@ import re
 import unicodedata
 
 # Orden en que suelen pasar las marcas sin problemas (para la línea de tiempo).
-ORDEN = ["estudio_fondo", "publicacion", "notificaciones", "resoluciones"]
+# Lista real sacada del «Diagnóstico de ubicaciones» del 13/11/2026 (cartera + 120 marcas al azar).
+# Después de la concesión la ubicación queda en «División Resoluciones»: la concesión se detecta por el
+# estado del trámite («Concedida»), no por el sector.
+ORDEN = ["estudio_forma", "estudio_fondo", "analisis_fondo", "publicacion", "notificaciones", "resoluciones"]
 
 # Cada regla: (clave del catálogo, palabras que tienen que estar TODAS en el texto limpio).
 REGLAS = [
-    ("estudio_fondo", ("estudio", "fondo")),
+    ("estudio_forma", ("estudio", "forma")),      # «Sector Estudio Forma», «Sector Estudio Forma IA»
+    ("estudio_fondo", ("estudio", "fondo")),      # «Sector Estudio Fondo 583/25», «Sector Estudio Fondo IA»
+    ("analisis_fondo", ("analisis", "fondo")),    # «División Análisis de Fondo»
     ("publicacion", ("publicacion",)),
     ("notificaciones", ("notificacion",)),
     ("resoluciones", ("resolucion",)),
 ]
 
 CATALOGO = {
+    "estudio_forma": {
+        "nombre": "Estudio de forma",
+        "que_es": "El INPI está revisando que la solicitud esté completa y bien presentada: los datos, "
+                  "la clase y, si tiene, el logo.",
+        "que_sigue": "Si está todo en orden, pasa al estudio de fondo. Si falta algo, el INPI lo pide con "
+                     "una vista formal, que hay que contestar en un plazo corto.",
+        "mail": True,
+    },
+    "analisis_fondo": {
+        # Visto en marcas de la cartera con mucho tiempo ahí (mediana 156 días): falta confirmar con Pame
+        # qué significa. Hasta tener el texto validado no sale mail.
+        "nombre": "Análisis de fondo",
+        "que_es": "El INPI está analizando en detalle tu marca.",
+        "que_sigue": "Te avisamos apenas haya una novedad.",
+        "mail": False,
+    },
     "estudio_fondo": {
         "nombre": "Estudio de fondo",
         "que_es": "El INPI está analizando tu marca: revisa que se pueda registrar y que no choque con "
