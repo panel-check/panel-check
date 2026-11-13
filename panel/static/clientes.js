@@ -822,14 +822,26 @@ function htmlActasCliente(a) {
     + lista.map(x => `<a class="link-acta" href="javascript:void(0)" data-abrir="${esc(x.acta)}">${esc(x.acta)} ↗</a>`).join(", ");
 }
 
+// Ventaja de la detección temprana: cuántos días antes de salir en el boletín la vio el sistema.
+function htmlDiasGanados(a) {
+  const n = a.dias_antes_publicacion;
+  if (n === null || n === undefined) {
+    const d = a.dias_desde_deteccion;
+    return d === null || d === undefined ? "" : ` <span class="vg-ganados" title="Cuándo la vio el sistema (escaneo diario de actas)">🕐 Detectada ${d === 0 ? "hoy" : d === 1 ? "ayer" : `hace ${d} días`}</span>`;
+  }
+  if (n > 0) return ` <span class="vg-ganados" title="Días entre que la vio el sistema (escaneo diario de actas) y su publicación en el boletín">🕐 Detectada <strong>${n} ${n === 1 ? "día" : "días"} antes</strong> de la publicación</span>`;
+  if (n === 0) return ' <span class="vg-ganados">🕐 Detectada el día de la publicación</span>';
+  return ` <span class="vg-ganados">🕐 Detectada ${-n} ${n === -1 ? "día" : "días"} después de la publicación</span>`;
+}
+
 function htmlAlerta(a, { sinCliente = false } = {}) {
   const abierta = ["nueva", "monitorear", "oponer"].includes(a.estado);
   const descIA = a.estado === "descartada_ia";
   const otro = a.tipo === "otro_agente";
   const agente = a.agente_nuevo ? ` · ${esc(a.agente_nuevo)}` : "";
   const plazo = !otro && a.plazo_oposicion
-    ? `<div class="vg-plazo ${a.dias_oposicion !== null && a.dias_oposicion <= 7 ? "urgente" : ""}">⚠ ${a.dias_oposicion >= 0 ? "Posible oposición: tenés 30 días corridos desde la publicación (Art. 13, Ley 22.362), hasta el" : "El plazo de oposición (30 días corridos desde la publicación, Art. 13, Ley 22.362) cerró el"} <strong>${crmFecha(a.plazo_oposicion)}</strong> (${crmUrgencia({ dias: a.dias_oposicion })})</div>`
-    : (!otro && abierta ? '<div class="vg-plazo vg-temprana">ℹ Detección temprana: todavía no fue publicada en el boletín, no corre plazo. Los 30 días corridos para oponerse (Art. 13, Ley 22.362) empiezan cuando se publique.</div>' : "");
+    ? `<div class="vg-plazo ${a.dias_oposicion !== null && a.dias_oposicion <= 7 ? "urgente" : ""}">⚠ ${a.dias_oposicion >= 0 ? "Posible oposición: tenés 30 días corridos desde la publicación (Art. 13, Ley 22.362), hasta el" : "El plazo de oposición (30 días corridos desde la publicación, Art. 13, Ley 22.362) cerró el"} <strong>${crmFecha(a.plazo_oposicion)}</strong> (${crmUrgencia({ dias: a.dias_oposicion })})${htmlDiasGanados(a)}</div>`
+    : (!otro && abierta ? `<div class="vg-plazo vg-temprana">ℹ Detección temprana: todavía no fue publicada en el boletín, no corre plazo. Los 30 días corridos para oponerse (Art. 13, Ley 22.362) empiezan cuando se publique.${htmlDiasGanados(a)}</div>` : "");
   const REL = { misma: ["mal", "Misma clase", "La marca nueva está en la misma clase que la del cliente"],
     relacionada: ["aviso", "Clase conexa", "Clase distinta pero relacionada (tabla de Ajustes → Clases relacionadas)"],
     distinta: ["", "Clase distinta", "Clases sin relación: alerta porque el nombre es casi idéntico o la marca se vigila en todas las clases"] };

@@ -40,6 +40,24 @@ import vigilancia_core  # noqa: E402
 from registro import registrar  # noqa: E402
 
 
+def avisar_altas_por_telegram(conn):
+    """Alertas ALTAS nuevas al tema «Vigilancia marcaria» del grupo de Telegram, apenas termina la corrida
+    (el aviso de cada 15 minutos usa la misma marca de hasta dónde avisó: nunca se repiten). No rompe la corrida."""
+    if not os.environ.get("TELEGRAM_BOT_TOKEN"):
+        print("Telegram: sin TELEGRAM_BOT_TOKEN, las alertas ALTAS salen en la próxima pasada de avisos.")
+        return
+    try:
+        import avisos_telegram
+        import telegram_avisos
+        with conn.cursor() as cur:
+            cur.execute(telegram_avisos.CREAR_TABLA)
+        conn.commit()
+        n = avisos_telegram.bloque_vigilancia(conn)
+        print(f"Telegram: {n} alerta(s) ALTA avisada(s).")
+    except Exception as ex:  # noqa: BLE001
+        print(f"::warning::Telegram: no se pudieron avisar las alertas ALTAS ({type(ex).__name__}: {ex})")
+
+
 def main():
     dsn = os.environ.get("DATABASE_URL") or os.environ.get("DATABASE_PUBLIC_URL")
     if not dsn:
@@ -73,6 +91,7 @@ def main():
             "costo_ia_usd_max": st["costo_ia_usd_max"], "vencidas_borradas": man["vencidas_borradas"],
             "duplicadas_unidas": man["duplicadas_unidas"],
         }, conn)
+        avisar_altas_por_telegram(conn)
     finally:
         conn.close()
 

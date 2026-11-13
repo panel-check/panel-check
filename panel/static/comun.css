@@ -1513,6 +1513,7 @@ a.mk-acta { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-si
 .vg-col small { display: block; color: var(--gris); font-size: 11px; text-transform: uppercase; letter-spacing: .04em; }
 .vg-col strong { font-size: 15px; }
 .vg-motivos { color: var(--gris); font-size: 12px; margin: 6px 0; }
+.vg-ganados { display: inline-block; margin-left: 6px; color: var(--gris); white-space: nowrap; }
 .vg-ia { margin: 8px 0 2px; padding: 6px 8px; border-left: 3px solid var(--azul, #1f4e79); background: rgba(31, 78, 121, .05); font-size: 13px; line-height: 1.4; }
 .vg-plazo { font-size: 12.5px; margin: 6px 0; padding: 4px 8px; border-radius: 6px; background: #fff8e1; display: inline-block; }
 .vg-plazo.urgente { background: #fdecea; color: var(--rojo); font-weight: 600; }

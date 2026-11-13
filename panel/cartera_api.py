@@ -778,7 +778,9 @@ def crear_router(verificar_login, conexion, crm) -> APIRouter:
                    -- fecha de publicación de la marca nueva: se calcula al momento (puede haberse publicado después)
                    (SELECT CASE WHEN m.boletin IS NULL THEN m.fecha_publicacion
                                 ELSE COALESCE(m.fecha_publicacion, b.fecha, b.procesado_en::date) END
-                      FROM marcas m LEFT JOIN boletines b ON b.numero = m.boletin WHERE m.acta = a.acta_nueva) AS publicacion_nueva
+                      FROM marcas m LEFT JOIN boletines b ON b.numero = m.boletin WHERE m.acta = a.acta_nueva) AS publicacion_nueva,
+                   -- cuándo se enteró el sistema de la solicitud nueva: el escaneo diario de actas o la alerta, lo primero
+                   LEAST(a.creada_en, (SELECT s.creado_en FROM solicitudes_escaneadas s WHERE s.acta = a.acta_nueva)) AS detectada_en
             FROM vigilancia_alertas a
             LEFT JOIN clientes c ON c.id = a.cliente_id
             LEFT JOIN cartera_marcas cm ON cm.acta = a.acta_cliente
@@ -800,6 +802,9 @@ def crear_router(verificar_login, conexion, crm) -> APIRouter:
             f["plazo_oposicion"] = p["fecha"] if p else None
             f["dias_oposicion"] = p["dias"] if p else None
             f["urgencia"] = p["urgencia"] if p else None
+            d = cartera.dias_deteccion(f.get("detectada_en"), f.get("publicacion_nueva"), hoy) if f["tipo"] == "similitud" else {}
+            f["dias_antes_publicacion"] = d.get("antes")
+            f["dias_desde_deteccion"] = d.get("desde")
         return filas
 
     @router.get("/api/cartera/alertas")

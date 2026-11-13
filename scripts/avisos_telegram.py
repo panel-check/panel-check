@@ -15,6 +15,10 @@ INPI— y manda lo nuevo desde la pasada anterior al tema que corresponde (ver t
      - el programador no pudo lanzar un proceso (programador_disparos con error, agotados los reintentos);
      - hay mails a prospectos esperando cupo de Resend (una vez por día).
      (Las corridas que fallan y el bloqueo masivo de INPI los manda reporte_corrida.py al terminar cada una.)
+  🔎 Vigilancia marcaria (13/11/2026)
+     - alertas de parecido de nivel ALTA, apenas aparecen: las manda la vigilancia al terminar cada corrida
+       (scripts/vigilancia.py) y, por las dudas, esta pasada cada 15 minutos (la misma marca: nunca se repiten).
+       Cuenta también las que pasaron a ALTA cuando las revisó el juez con IA.
   📊 Resumen
      - todos los días después de las 7:30: lo de las últimas 24 horas y lo que está pendiente;
      - los lunes, además, el de la semana.
@@ -169,6 +173,88 @@ def armar_vista(f) -> str:
     return "• " + " · ".join(partes)
 
 
+# ── Vigilancia marcaria ───────────────────────────────────────────────────────────────────────────
+
+def alertas_altas(cur, d, ahora):
+    """Alertas de parecido abiertas de nivel ALTA, creadas (o juzgadas por la IA) desde la última pasada."""
+    return _filas(cur, """
+        SELECT a.id, a.acta_cliente, a.acta_nueva, a.denominacion_nueva, a.clase_nueva, a.titular_nuevo, a.agente_nuevo,
+               a.puntaje, a.motivos, a.ia_veredicto, a.ia_razon, a.actas_cliente, a.creada_en,
+               cm.denominacion AS denominacion_cliente, cm.clase AS clase_cliente, c.nombre AS cliente,
+               COALESCE(c.vigilancia_contratada, false) AS contratada,
+               (SELECT CASE WHEN m.boletin IS NULL THEN m.fecha_publicacion
+                            ELSE COALESCE(m.fecha_publicacion, b.fecha, b.procesado_en::date) END
+                  FROM marcas m LEFT JOIN boletines b ON b.numero = m.boletin WHERE m.acta = a.acta_nueva) AS publicacion,
+               LEAST(a.creada_en, (SELECT s.creado_en FROM solicitudes_escaneadas s WHERE s.acta = a.acta_nueva)) AS detectada_en
+        FROM vigilancia_alertas a
+        LEFT JOIN cartera_marcas cm ON cm.acta = a.acta_cliente
+        LEFT JOIN clientes c ON c.id = a.cliente_id
+        WHERE a.tipo = 'similitud' AND a.estado = 'nueva' AND a.nivel = 'alta'
+          AND GREATEST(a.creada_en, COALESCE(a.ia_en, a.creada_en)) > %s
+          AND GREATEST(a.creada_en, COALESCE(a.ia_en, a.creada_en)) <= %s
+        ORDER BY a.creada_en""", (d, ahora))
+
+
+VEREDICTOS = {"identica": "Idéntica", "confundible": "Confundible", "cercana": "Cercana", "no_confundible": "No confundible"}
+
+
+def _clases(f) -> str:
+    lista = f.get("actas_cliente") or []
+    clases = sorted({x.get("clase") for x in lista if isinstance(x, dict) and x.get("clase") is not None})
+    if not clases and f.get("clase_cliente") is not None:
+        clases = [f["clase_cliente"]]
+    return ", ".join(str(c) for c in clases) or "?"
+
+
+def armar_alerta_alta(f) -> str:
+    hoy = _dt.datetime.now(TZ).date()
+    pub = f.get("publicacion")
+    det = f.get("detectada_en")
+    det = det.astimezone(TZ).date() if isinstance(det, _dt.datetime) else det
+    lineas = [f"🔴 <b>{e(f.get('denominacion_cliente') or '?')}</b> (clase {_clases(f)}) · cliente {e(f.get('cliente') or '?')}"
+              + ("" if f.get("contratada") else " · <i>sin vigilancia contratada</i>"),
+              f"   ↳ <b>{e(f.get('denominacion_nueva') or '(sin nombre)')}</b> · clase {f.get('clase_nueva') or '?'} · "
+              f'acta <a href="https://portaltramites.inpi.gob.ar/MarcasConsultas/Resultado?acta={quote(str(f["acta_nueva"]))}">{e(str(f["acta_nueva"]))}</a>'
+              + (f" · {e(f['titular_nuevo'])}" if f.get("titular_nuevo") else "")]
+    if f.get("ia_veredicto"):
+        lineas.append(f"   🤖 {VEREDICTOS.get(f['ia_veredicto'], f['ia_veredicto'])}: {e((f.get('ia_razon') or '')[:300])}")
+    else:
+        lineas.append(f"   Motor: {e((f.get('motivos') or '')[:200])} (todavía sin revisar por la IA)")
+    if pub:
+        cierre = pub + _dt.timedelta(days=30)
+        txt = f"   ⏳ Plazo para oponerse hasta el <b>{cierre:%d/%m/%Y}</b> ({(cierre - hoy).days} días)"
+        if det and (pub - det).days > 0:
+            txt += f" · detectada {(pub - det).days} días antes de la publicación"
+        lineas.append(txt)
+    else:
+        lineas.append("   ⏳ Todavía no se publicó: el plazo de 30 días empieza con el boletín"
+                      + (f" · detectada {'hoy' if (hoy - det).days == 0 else f'hace {(hoy - det).days} días'}" if det else ""))
+    return "\n".join(lineas)
+
+
+def bloque_vigilancia(conn, ahora=None, mandar=None) -> int:
+    """Manda las alertas ALTAS nuevas al tema «Vigilancia marcaria». Devuelve cuántas mandó."""
+    ahora = ahora or _dt.datetime.now(_dt.timezone.utc)
+    with conn.cursor() as cur:
+        d = desde(cur, "vigilancia_altas", ahora)
+        if d is None:
+            conn.commit()
+            return 0
+        filas = alertas_altas(cur, d, ahora)
+    print(f"vigilancia_altas: {len(filas)} nueva(s)")
+    if filas:
+        texto = lista(filas, armar_alerta_alta,
+                      f"🔎 <b>{len(filas)} alerta(s) ALTA de vigilancia</b>\n"
+                      f'<a href="{PANEL}/clientes">Abrir Clientes → Vigilancia</a>')
+        enviar = mandar or (lambda t, tema: telegram_avisos.enviar(t, tema=tema, conn=conn))
+        if not enviar(texto, "vigilancia"):
+            return 0
+    with conn.cursor() as cur:
+        marcar(cur, "vigilancia_altas", ahora)
+    conn.commit()
+    return len(filas)
+
+
 # ── Boletines ─────────────────────────────────────────────────────────────────────────────────────
 
 def boletines_publicados(cur):
@@ -319,6 +405,9 @@ def pasada(conn, forzar_resumen=False):
         fs, armar_oposicion, f"⚠️ <b>{len(fs)} oposición(es) nueva(s) en leads</b>"))
     bloque("vistas", vistas_nuevas, "oposiciones", lambda fs: lista(
         fs, armar_vista, f"👁 <b>{len(fs)} vista(s) nueva(s) en leads</b>"))
+    bloque("vigilancia_altas", alertas_altas, "vigilancia", lambda fs: lista(
+        fs, armar_alerta_alta, f"🔎 <b>{len(fs)} alerta(s) ALTA de vigilancia</b>\n"
+                               f'<a href="{PANEL}/clientes">Abrir Clientes → Vigilancia</a>'))
 
     # Boletín publicado por INPI
     try:

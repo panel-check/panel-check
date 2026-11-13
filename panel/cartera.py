@@ -525,6 +525,21 @@ def plazos_marca_cartera(r, hoy=None) -> list:
     return plazos
 
 
+def dias_deteccion(detectada_en, publicacion, hoy=None) -> dict:
+    """Ventaja de la detección temprana de una solicitud nueva.
+    antes: días entre que el sistema la vio (escaneo diario o alerta, lo primero) y su publicación en el
+           boletín (negativo = se vio después de publicarse); None si todavía no se publicó.
+    desde: días desde que se detectó (para las que todavía no se publicaron)."""
+    hoy = hoy or hoy_ar()
+    if not detectada_en:
+        return {"antes": None, "desde": None}
+    if isinstance(detectada_en, _dt.datetime):
+        ar = _dt.timezone(_dt.timedelta(hours=-3))
+        detectada_en = detectada_en.astimezone(ar).date() if detectada_en.tzinfo else detectada_en.date()
+    pub = _a_fecha(publicacion)
+    return {"antes": (pub - detectada_en).days if pub else None, "desde": (hoy - detectada_en).days}
+
+
 def plazo_oposicion_alerta(a, hoy=None):
     """Para una alerta de vigilancia: hasta cuándo se puede presentar una
     oposición a la marca nueva (30 días corridos desde su publicación).

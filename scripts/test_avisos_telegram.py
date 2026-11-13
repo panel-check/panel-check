@@ -63,5 +63,44 @@ class TestAvisoSistema(unittest.TestCase):
         self.assertIn("12 consultas seguidas", txt)
 
 
+class VigilanciaAltas(unittest.TestCase):
+    """Alertas ALTAS de la vigilancia al tema «Vigilancia marcaria» (13/11/2026)."""
+
+    def fila(self, **k):
+        import datetime as dt
+        base = {"id": 1, "acta_cliente": "100", "acta_nueva": "4810369", "denominacion_nueva": "APEX PERFORMANCE",
+                "clase_nueva": 5, "titular_nuevo": "COOPERATIVA X", "puntaje": 78, "motivos": "comparten «APEX»",
+                "ia_veredicto": "confundible", "ia_razon": "APEX es dominante en ambas.",
+                "actas_cliente": [{"acta": "100", "clase": 5}, {"acta": "101", "clase": 32}],
+                "denominacion_cliente": "APEX LAB", "clase_cliente": 5, "cliente": "Cliente <SA>", "contratada": False,
+                "publicacion": None, "detectada_en": dt.datetime.now(dt.timezone.utc)}
+        base.update(k)
+        return base
+
+    def test_mensaje_con_veredicto_clases_y_deteccion_temprana(self):
+        t = at.armar_alerta_alta(self.fila())
+        self.assertIn("APEX LAB", t)
+        self.assertIn("clase 5, 32", t)
+        self.assertIn("Confundible", t)
+        self.assertIn("Cliente &lt;SA&gt;", t)  # escapado para HTML
+        self.assertIn("sin vigilancia contratada", t)
+        self.assertIn("Todavía no se publicó", t)
+        self.assertIn("detectada hoy", t)
+
+    def test_publicada_muestra_plazo_y_dias_ganados(self):
+        import datetime as dt
+        hoy = dt.datetime.now(at.TZ).date()
+        f = self.fila(publicacion=hoy - dt.timedelta(days=2),
+                      detectada_en=dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=12))
+        t = at.armar_alerta_alta(f)
+        self.assertIn("Plazo para oponerse hasta el", t)
+        self.assertIn("(28 días)", t)
+        self.assertIn("detectada 10 días antes de la publicación", t)
+
+    def test_sin_veredicto_dice_que_falta_la_ia(self):
+        t = at.armar_alerta_alta(self.fila(ia_veredicto=None))
+        self.assertIn("todavía sin revisar por la IA", t)
+
+
 if __name__ == "__main__":
     unittest.main()

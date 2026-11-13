@@ -57,4 +57,8 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL || secrets.DATABASE_PUBLIC_URL }}
           # Juez con IA de las alertas (panel/juez_vigilancia.py). Sin el secret, solo reglas.
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          # Alertas ALTAS al tema «Vigilancia marcaria» del grupo de Telegram al terminar.
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          PANEL_URL: ${{ secrets.PANEL_URL }}
           PYTHONUNBUFFERED: "1"
