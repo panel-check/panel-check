@@ -1120,35 +1120,16 @@ def _proxima_ejecucion(expresion_cron) -> str:
 
 
 def _proxima_cron_unico(expresion_cron: str) -> str:
-    """Próxima vez que corre ese cron (UTC, ISO 8601) a partir de ahora.
-
-    Implementado a mano (sin librería) porque solo necesitamos soportar los
-    crons fijos de este repo: "minuto hora * * dias_semana", con listas
-    separadas por coma o "*". Búsqueda por fuerza bruta, minuto a minuto,
-    hasta 8 días adelante — de sobra para cualquier cron real de este repo.
-    """
+    """Próxima vez que corre ese cron (UTC, ISO 8601) a partir de ahora. Usa el mismo lector de crons que el
+    programador (listas, rangos, «*» y «*/n», como el «cada 15 minutos» de los avisos por Telegram); nunca
+    tira una excepción hacia la pantalla."""
     import datetime as _dt
-
-    minuto_s, hora_s, dia_mes_s, mes_s, dia_semana_s = expresion_cron.split()
-
-    def _set_o_none(valor: str):
-        return None if valor == "*" else {int(x) for x in valor.split(",")}
-
-    minutos = _set_o_none(minuto_s)
-    horas = _set_o_none(hora_s)
-    dias_semana = _set_o_none(dia_semana_s)  # cron: domingo=0 ... sábado=6
-
-    candidato = _dt.datetime.now(_dt.timezone.utc).replace(second=0, microsecond=0) \
-        + _dt.timedelta(minutes=1)
-    limite = candidato + _dt.timedelta(days=8)
-    while candidato < limite:
-        dia_semana_cron = (candidato.weekday() + 1) % 7  # lunes=0 -> domingo=0
-        if (minutos is None or candidato.minute in minutos) \
-                and (horas is None or candidato.hour in horas) \
-                and (dias_semana is None or dia_semana_cron in dias_semana):
-            return candidato.isoformat()
-        candidato += _dt.timedelta(minutes=1)
-    return None  # no debería pasar con los crons de este repo
+    try:
+        t = programador.proxima(expresion_cron, _dt.datetime.now(_dt.timezone.utc))
+    except Exception as ex:  # noqa: BLE001 — un cron raro no puede tirar abajo Automatizaciones
+        print(f"[crons] no se pudo calcular la próxima ejecución de «{expresion_cron}»: {ex}")
+        return None
+    return t.isoformat() if t else None
 
 
 def _ultima_corrida_workflow(workflow_file: str) -> dict:
