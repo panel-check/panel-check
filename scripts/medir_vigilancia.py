@@ -119,6 +119,15 @@ def main():
     cur.execute("SELECT estado, COUNT(*) FROM vigilancia_alertas WHERE tipo='similitud' GROUP BY 1 ORDER BY 2 DESC")
     rep.append("- Total histórico por estado: " + ", ".join(f"{e} {n}" for e, n in cur.fetchall()))
 
+    cur.execute("SELECT estado, COALESCE(ia_veredicto, '(sin juzgar)'), COUNT(*) FROM vigilancia_alertas WHERE tipo='similitud' GROUP BY 1,2 ORDER BY 1,2")
+    rep.append(tabla("Estado y veredicto de la IA (todas las alertas)", cur.fetchall(), ["Estado", "Veredicto IA", "Alertas"]))
+    cur.execute("SELECT COUNT(*) FROM vigilancia_alertas WHERE tipo='similitud' AND estado IN ('nueva','monitorear','oponer')")
+    rep.append(f"- Alertas abiertas hoy (lo que se ve en «Abiertas»): **{cur.fetchone()[0]}**")
+    cur.execute("SELECT COUNT(*) FROM vigilancia_alertas WHERE tipo='similitud' AND jsonb_array_length(COALESCE(actas_cliente,'[]'::jsonb)) > 1")
+    rep.append(f"- Alertas que juntan varias actas/clases de la misma marca: **{cur.fetchone()[0]}**")
+    cur.execute("SELECT metricas FROM registro_corridas WHERE proceso = 'vigilancia.yml' ORDER BY creado_en DESC LIMIT 1")
+    f = cur.fetchone()
+    rep.append(f"- Última corrida de la vigilancia: {f[0] if f else 'sin datos'}")
     txt = "\n".join(rep) + "\n"
     print(txt)
     if a.salida:
