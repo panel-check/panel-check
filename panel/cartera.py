@@ -64,7 +64,7 @@ ESTADOS_ALERTA_ABIERTOS = ("nueva", "monitorear", "oponer")
 
 # Ajustes por defecto de la vigilancia (editables en Clientes → Ajustes).
 CONFIG_DEFAULT = {
-    "umbral": "75",          # puntaje mínimo para crear una alerta (0-100)
+    "umbral": "65",          # puntaje mínimo para que un par llegue al juez con IA (0-100; era 75 hasta el 13/11/2026)
     "nivel_alta": "90",      # desde acá la alerta es "alta"
     "nivel_media": "82",     # desde acá "media"; debajo, "baja"
     "meses_universo": "18",  # contra qué antigüedad de solicitudes se compara
@@ -336,6 +336,13 @@ def crear_tablas(cur):
         for k, v in CONFIG_DEFAULT.items():
             cur.execute("INSERT INTO vigilancia_config (clave, valor) VALUES (%s, %s) ON CONFLICT DO NOTHING", (k, v))
         cur.execute("INSERT INTO vigilancia_config (clave, valor) VALUES ('semilla_aplicada', '1')")
+    # 13/11/2026: el umbral general pasa de 75 a 65 (ahora el juez con IA filtra el ruido). Una sola vez;
+    # si alguien lo había cambiado a mano (otro valor que 75), se respeta.
+    cur.execute("SELECT 1 FROM vigilancia_config WHERE clave = 'umbral_65_aplicado'")
+    if not cur.fetchone():
+        cur.execute("UPDATE vigilancia_config SET valor = '65' WHERE clave = 'umbral' AND valor = '75'")
+        cur.execute("INSERT INTO vigilancia_config (clave, valor) VALUES ('umbral_65_aplicado', now()::text) "
+                    "ON CONFLICT (clave) DO NOTHING")
 
 
 # ── Unir clientes duplicados ──────────────────────────────────────────────

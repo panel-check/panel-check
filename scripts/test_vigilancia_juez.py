@@ -59,18 +59,30 @@ class ReglasCorregidas(unittest.TestCase):
                              ("APEX PADEL", 5, "APEX LAB", 5)):
             self.assertEqual(len(vig._evaluar_fila(fila(b, cb), [marca(a, ca)], aj, {}, set())), 1, f"{a} / {b}")
 
+    def test_reglas_puntuales(self):
+        r = sim.puntaje_nombres("SKYPEAK", "PEAKS")
+        self.assertGreaterEqual(r[0], 70)
+        self.assertTrue(any("raíz" in m for m in r[1]))
+        self.assertGreaterEqual(sim.puntaje_nombres("CYLGEM", "SILEG")[0], 65)  # mismo sonido al empezar
+        self.assertTrue(sim.claves_indice("ZAHE") & sim.claves_indice("Z ZAFE"))  # una letra distinta
+        self.assertEqual(sim.fonetica_palabra("CYLGEM"), "SILJEM")
+        # Una palabra común en la clase no cuenta como raíz.
+        self.assertLess(sim.puntaje_nombres("CAFE", "CAFETERIA LUNA", comunes=frozenset({"CAFE"}))[0], 70)
+
     def test_no_compara_una_palabra_consigo_misma(self):
         _, motivos = sim.puntaje_nombres("NUBE 9", "NUBE RECORDS")
         self.assertFalse(any("palabras parecidas" in m for m in motivos))
 
     def test_recall_de_casos_reales_no_baja(self):
-        # Con las claves nuevas del índice el motor encuentra 18 de 24 oposiciones reales (antes 15).
+        # Con umbral 65, las reglas puntuales y las claves nuevas del índice el motor encuentra 21 de 24
+        # oposiciones reales (antes del 12/11/2026: 15). Las 3 que faltan son casos débiles o de concepto.
         aj, hits = ajustes(), 0
+        aj["config"] = {**aj["config"], "umbral": 65}
         for a, ca, b, cb, _ in CONFLICTO:
             if vig._evaluar_fila(fila(b, cb), [marca(a, ca)], aj, {}, set()) and \
                     sim.claves_indice(a, GEN) & sim.claves_indice(b, GEN):
                 hits += 1
-        self.assertGreaterEqual(hits, 18)
+        self.assertGreaterEqual(hits, 21)
 
 
 class UnaAlertaPorMarca(unittest.TestCase):

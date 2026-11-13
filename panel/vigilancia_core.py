@@ -42,7 +42,7 @@ GRACIA_DIAS = 3
 # Versión de la firma de cada solicitud comparada: al cambiar las reglas (12/11/2026: palabras
 # comunes por clase, índice más amplio, juez con IA) todo el universo se vuelve a comparar una vez.
 # La «P» final hace el doble chequeo: cada solicitud se vuelve a mirar cuando sale en el boletín.
-FIRMA_VERSION = "v2"
+FIRMA_VERSION = "v3"  # v3 (13/11/2026): umbral 65 y reglas puntuales (raíz, mismo sonido al empezar)
 
 # Palabra «de uso común» en una clase (calibrado el 12/11/2026 con 74.678 solicitudes de 18 meses:
 # TURISMO 83 en la 39, TODO 45 en la 35, CAFE 148 en la 43; NUBE, LABO, APEX, OLIVIA 1 o 2).

@@ -73,9 +73,11 @@ PROMPT_CLAUDE = (
     "rebuscadas o de verbos poco comunes (MANAR no es FLUX).\n"
     "3. Si la marca es una palabra inventada sin significado, devolvé la lista vacía; si evoca claramente una palabra real "
     "(KOMUNIKA → comunicar), usá esa palabra y sus traducciones.\n"
-    "4. No incluyas el nombre tal cual, ni variantes de escritura, ni palabras genéricas o descriptivas del rubro (VIAJES, "
+    "4. Si la marca une palabras (GIGARED = GIGA + RED, SOLMAR = SOL + MAR), incluí también la versión traducida unida "
+    "(GIGANET, SUNSEA).\n"
+    "5. No incluyas el nombre tal cual, ni variantes de escritura, ni palabras genéricas o descriptivas del rubro (VIAJES, "
     "TURISMO, TRIP, CAFE, SHOP, STORE, GROUP, ESTUDIO, SOLUCIONES…), ni artículos o preposiciones.\n"
-    "5. Máximo 8 términos, cada uno de 1 a 3 palabras, en mayúsculas.\n"
+    "6. Máximo 8 términos, cada uno de 1 a 3 palabras, en mayúsculas.\n"
     "Respondé SOLO con un objeto JSON, sin explicaciones: {\"conceptos\": [\"...\", \"...\"]}"
 )
 

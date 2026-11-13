@@ -79,12 +79,14 @@ def fonetica_palabra(w: str) -> str:
     # Una H inicial o entre vocales es muda; después de C ya se resolvió (CH).
     w = re.sub(r"H", "", w)
     # C suave (e, i) suena S en el Río de la Plata; C dura suena K. Z suena S.
-    w = re.sub(r"C(?=[EI])", "S", w)
+    w = re.sub(r"C(?=[EIY])", "S", w)
     w = w.replace("C", "K").replace("Z", "S")
     # G suave (e, i) y J suenan igual.
     w = re.sub(r"G(?=[EI])", "J", w)
     # B/V y W (como "u") igualan.
     w = w.replace("V", "B").replace("W", "B")
+    # Y entre consonantes o al final después de consonante suena I (CYLGEM = SILJEM, LYNX = LINX).
+    w = re.sub(r"(?<=[^AEIOU])Y(?=[^AEIOU]|$)", "I", w)
     # Y vocal/semiconsonante: se deja; la "I" final o sola queda como Y.
     w = re.sub(r"I(?=[AEOU])", "Y", w)
     w = re.sub(r"(?<=[AEIOU])I$", "Y", w)
@@ -230,9 +232,42 @@ def puntaje_nombres(a: str, b: str, genericas=frozenset(), comunes=frozenset()) 
                 if len(x) >= 5 and len(y) >= 5 and _sim_edicion(x, y) >= 0.8 and (len(ta) > 1 or len(tb) > 1):
                     candidatos.append((76, f"palabras parecidas («{x}» / «{y}»)"))
 
+    # Reglas puntuales (13/11/2026), para casos reales de oposición que el motor no veía.
+    ta, tb = set(na.split()), set(nb.split())
+    # 1) Raíz dentro de una palabra: PEAKS / SKYPEAK, NUBE / NUBEVIA. La palabra (sin la S del plural)
+    #    es el comienzo o el final de una palabra más larga de la otra marca.
+    raiz = _raiz_contenida(ta, tb, comunes) or _raiz_contenida(tb, ta, comunes)
+    if raiz:
+        cortas = len(ta - comunes) <= 2 and len(tb - comunes) <= 2
+        candidatos.append((76 if cortas else 70, f"una tiene la raíz «{raiz}» de la otra"))
+    # 2) Palabras de fantasía cortas que empiezan con el mismo sonido: CYLGEM / SILEG, ZAHE / ZAFE.
+    if len(ta) <= 2 and len(tb) <= 2 and fa and fb:
+        pa, pb = fa.replace(" ", ""), fb.replace(" ", "")
+        if 4 <= len(pa) <= 9 and 4 <= len(pb) <= 9 and pa[:3] == pb[:3] and not (ta & comunes) and not (tb & comunes):
+            candidatos.append((68, f"empiezan con el mismo sonido («{pa[:3]}-»)"))
+
     mejor = max(candidatos, key=lambda c: c[0])
     motivos = [m for p, m in sorted(candidatos, key=lambda c: -c[0]) if p >= mejor[0] - 6][:2]
     return int(round(min(100, mejor[0]))), motivos
+
+
+def _sin_plural(t: str) -> str:
+    return t[:-1] if len(t) >= 5 and t.endswith("S") else t
+
+
+def _raiz_contenida(ta, tb, comunes=frozenset()):
+    """Una palabra de ta (4 letras o más, sin plural) que es el comienzo o el final de una palabra de tb
+    al menos 2 letras más larga (PEAK en SKYPEAK). Devuelve la raíz o None."""
+    for x in ta:
+        r = _sin_plural(x)
+        if len(r) < 4 or x in comunes or r in comunes:
+            continue
+        for y in tb:
+            if y == x or len(y) < len(r) + 2:
+                continue
+            if y.startswith(r) or y.endswith(r):
+                return r
+    return None
 
 
 def relacion_clases(clase_a, clase_b, pares_relacionados: set) -> str:
@@ -388,6 +423,19 @@ def claves_indice(nombre: str, genericas=frozenset()) -> set:
         # Comienzo de cada palabra (ESPARTANO / ESPARTANAS, SUSPENSYS / SUSPENCITY).
         if len(t) >= 5:
             claves.add(f"fp:{t[:4]}")
+    # Raíz sin plural y comienzo/final de 4 letras de cada palabra (PEAKS / SKYPEAK → «PEAK»).
+    for t in toks:
+        r = t[:-1] if len(t) >= 5 and t.endswith("S") else t
+        if len(r) == 4:
+            claves.add(f"r4:{r}")
+        elif len(r) >= 6:
+            claves.add(f"r4:{r[:4]}")
+            claves.add(f"r4:{r[-4:]}")
+    # Palabras cortas con una letra distinta (ZAHE / ZAFE): la palabra sin cada una de sus letras.
+    for t in toks:
+        if 4 <= len(t) <= 6:
+            for i in range(len(t)):
+                claves.add(f"d1:{t[:i] + t[i + 1:]}")
     # Esqueleto de consonantes del sonido (NOXALAB / NEXA LABS → NXL).
     cons = re.sub(r"[AEIOUY]", "", fon_pegado)
     if len(cons) >= 3:
