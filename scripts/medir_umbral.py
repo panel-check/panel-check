@@ -13,24 +13,25 @@ uni = vig._dict_rows(cur); aj.update(vig.calcular_comunes(uni, gen))
 desde = dt.date.today() - dt.timedelta(days=30)
 recientes = [f for f in uni if (f.get("fecha_presentacion") or desde) >= desde and f.get("nombre")]
 en_cartera = {m["acta"] for m in marcas}
-bandas = collections.Counter(); bandas_todas = collections.Counter()
+bandas = collections.Counter(); ejemplos = collections.defaultdict(list)
 for f in recientes:
     if f["acta"] in en_cartera: continue
     grupos = {}
     for m in vig._candidatas(indice, f["nombre"], gen):
         r = vig._mejor_contra(f["nombre"], f.get("clase"), m, aj)
-        if r: grupos[m["grupo"]] = max(grupos.get(m["grupo"], 0), r["puntaje"])
-    for p in grupos.values():
+        if r and r["puntaje"] > grupos.get(m["grupo"], (0,))[0]:
+            grupos[m["grupo"]] = (r["puntaje"], m["denominacion"], m.get("clase"), f["nombre"], f.get("clase"), r["motivos"][0] if r["motivos"] else "")
+    for g in grupos.values():
+        p = g[0]
         for u in (75, 70, 65, 60, 55, 50):
             if p >= u: bandas[u] += 1
-    # Sin índice (todas las marcas): cuántos pares aparecerían si el índice no filtrara
-    for m in marcas:
-        r = vig._mejor_contra(f["nombre"], f.get("clase"), m, aj)
-        if r:
-            for u in (75, 70, 65, 60, 55, 50):
-                if r["puntaje"] >= u: bandas_todas[u] += 1
+        if 60 <= p < 75 and len(ejemplos[p // 5 * 5]) < 12:
+            ejemplos[p // 5 * 5].append(g)
 out = [f"Solicitudes de los últimos 30 días: {len(recientes)}; marcas vigiladas: {len(marcas)}", "",
-       "| Umbral | Pares en 30 días (con índice) | Por día | Pares sin índice (todas contra todas) | Por día |", "|---|---|---|---|---|"]
+       "| Umbral | Pares en 30 días | Por día |", "|---|---|---|"]
 for u in (75, 70, 65, 60, 55, 50):
-    out.append(f"| {u} | {bandas[u]} | {round(bandas[u]/30,1)} | {bandas_todas[u]} | {round(bandas_todas[u]/30,1)} |")
+    out.append(f"| {u} | {bandas[u]} | {round(bandas[u]/30,1)} |")
+for b in sorted(ejemplos, reverse=True):
+    out.append(f"\nEjemplos con puntaje {b}-{b+4}:")
+    out += [f"- {g[1]} ({g[2]}) / {g[3]} ({g[4]}): {g[0]} · {g[5]}" for g in ejemplos[b]]
 open("/tmp/medicion.md", "w").write("\n".join(out) + "\n"); print("\n".join(out))
