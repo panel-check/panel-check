@@ -58,5 +58,58 @@ class TestCambio(unittest.TestCase):
         self.assertTrue(se.hubo_cambio(("Mesa de Entradas", "2026-11-01"), ("Otro Sector", "2026-11-05")))
 
 
+class TestEvaluar(unittest.TestCase):
+    def exp(self, ub="Sector Estudio Fondo 583/25", fecha="2026-11-12", estado=None, caracter="", matricula=""):
+        return {"ubicacion_actual": ub, "ubicacion_fecha": fecha, "estado_tramite": estado,
+                "caracter": caracter, "matricula_agente": matricula}
+
+    def test_primera_lectura(self):
+        cambios, ev = se.evaluar({}, self.exp())
+        self.assertEqual(cambios["sector"], "estudio_fondo")
+        self.assertEqual([(e["tipo"], e["aviso"]) for e in ev], [("ubicacion_inicial", "no_corresponde")])
+
+    def test_sin_cambios(self):
+        g = {"ubicacion_actual": "Sector Estudio Fondo 583/25", "ubicacion_fecha": "2026-11-12"}
+        self.assertEqual(se.evaluar(g, self.exp())[1], [])
+
+    def test_cambio_a_publicacion_queda_para_mail(self):
+        g = {"ubicacion_actual": "Sector Estudio Fondo 583/25", "ubicacion_fecha": "2026-11-12"}
+        _, ev = se.evaluar(g, self.exp("División Publicación", "2026-12-01"))
+        self.assertEqual([(e["tipo"], e["aviso"], e["sector"]) for e in ev], [("ubicacion", "pendiente", "publicacion")])
+
+    def test_notificaciones_no_manda_mail(self):
+        g = {"ubicacion_actual": "División Publicación", "ubicacion_fecha": "2026-12-01"}
+        _, ev = se.evaluar(g, self.exp("División Notificaciones", "2027-01-05"))
+        self.assertEqual(ev[0]["aviso"], "no_corresponde")
+
+    def test_sector_desconocido_es_alerta(self):
+        g = {"ubicacion_actual": "Sector Estudio Fondo 583/25", "ubicacion_fecha": "2026-11-12"}
+        _, ev = se.evaluar(g, self.exp("Sector Nuevo Raro", "2026-11-20"))
+        self.assertEqual(ev[0]["aviso"], "alerta")
+
+    def test_concedida_corta_y_queda_mail(self):
+        g = {"ubicacion_actual": "División Resoluciones", "ubicacion_fecha": "2027-01-10"}
+        cambios, ev = se.evaluar(g, self.exp("División Resoluciones", "2027-01-10", estado="Concedida"))
+        self.assertEqual((cambios["activo"], cambios["motivo_fin"]), (False, "concedida"))
+        self.assertEqual([(e["tipo"], e["aviso"]) for e in ev], [("concedida", "pendiente")])
+
+    def test_apoderado_corta_sin_mails(self):
+        g = {"ubicacion_actual": "Sector Estudio Fondo 583/25", "ubicacion_fecha": "2026-11-12"}
+        cambios, ev = se.evaluar(g, self.exp("División Publicación", "2026-12-01", caracter="Apoderado"))
+        self.assertEqual(cambios["motivo_fin"], "apoderado")
+        self.assertTrue(all(e["aviso"] == "no_corresponde" for e in ev))
+
+    def test_denegada_es_alerta(self):
+        cambios, ev = se.evaluar({"ubicacion_actual": "x", "ubicacion_fecha": "2026-11-01"},
+                                 self.exp("x", "2026-11-01", estado="Denegada"))
+        self.assertEqual(cambios["motivo_fin"], "denegada")
+        self.assertEqual([(e["tipo"], e["aviso"]) for e in ev], [("denegada", "alerta")])
+
+    def test_prueba_nunca_deja_mails_ni_alertas(self):
+        g = {"ubicacion_actual": "Sector Estudio Fondo 583/25", "ubicacion_fecha": "2026-11-12"}
+        _, ev = se.evaluar(g, self.exp("División Publicación", "2026-12-01"), prueba=True)
+        self.assertEqual(ev[0]["aviso"], "no_corresponde")
+
+
 if __name__ == "__main__":
     unittest.main()

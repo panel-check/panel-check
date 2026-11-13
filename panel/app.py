@@ -74,6 +74,7 @@ import calendario_api
 import calendario_core
 import conceptos_vigilancia
 import programador
+import seguimiento_expediente
 import cartera
 import seguridad
 import cartera_api
@@ -205,6 +206,15 @@ def migrar_columnas_panel():
             conn.commit()
     except Exception as e:
         print(f"[startup] tablas de comentarios salteadas (no bloqueante): {e}")
+
+    # Vigilancia de expediente (13/11/2026): tablas propias, no tocan `marcas`.
+    try:
+        with conexion() as conn:
+            with conn.cursor() as cur:
+                seguimiento_expediente.asegurar_tablas(cur)
+            conn.commit()
+    except Exception as e:
+        print(f"[startup] tablas de vigilancia de expediente salteadas (no bloqueante): {e}")
 
     # Tablas del CRM de leads (sección /crm): tampoco tocan `marcas`.
     try:
@@ -933,6 +943,26 @@ GRUPOS_AUTOMATIZACIONES = [
                 "procesos": [
                     {"workflow_file": "revisar_cartera.yml", "cron": programador.cron_de("revisar_cartera.yml"),
                      "pendientes_sql": "SELECT COUNT(*) FROM cartera_marcas WHERE consultado_en IS NULL"},
+                ],
+            },
+            {
+                "nombre": "Vigilancia de expediente",
+                "descripcion": "Lee el expediente de las actas con seguimiento (por ahora solo las de prueba), guarda "
+                               "en qué sector del INPI está y si cambió, y corta el seguimiento si se concedió, se "
+                               "denegó o se sumó un apoderado. Todavía no manda mails.",
+                "horario": "Todos los días, 06:30 hs",
+                "metricas": [
+                    {"sql": "SELECT COUNT(*) FROM seguimiento_actas WHERE activo",
+                     "etiqueta": "actas con seguimiento activo", "destacada": True},
+                    {"sql": "SELECT COUNT(*) FROM seguimiento_eventos WHERE tipo = 'ubicacion' "
+                            "AND detectado_en >= now() - interval '7 days'",
+                     "etiqueta": "cambios de ubicación en los últimos 7 días"},
+                    {"sql": "SELECT COUNT(*) FROM seguimiento_eventos WHERE aviso = 'alerta'",
+                     "etiqueta": "alertas para revisar"},
+                ],
+                "procesos": [
+                    {"workflow_file": "seguimiento_expediente.yml",
+                     "cron": programador.cron_de("seguimiento_expediente.yml")},
                 ],
             },
         ],

@@ -27,6 +27,8 @@ on:
       - "Analizar fechas de las vistas"
       - "Solicitudes nuevas del día (escaneo de actas)"
       - "Estimar demora hasta la publicación (manual)"
+      - "Diagnóstico de ubicaciones del expediente (manual)"
+      - "Vigilancia de expediente (seguimiento diario)"
       - "Probar juez de vigilancia (manual)"
       - "Feriados"
       - "Importar marcas a la cartera de clientes"

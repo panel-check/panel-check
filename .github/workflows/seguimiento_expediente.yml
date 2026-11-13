@@ -1,0 +1,62 @@
+name: Vigilancia de expediente (seguimiento diario)
+
+# Vigilancia de expediente gratuita (13/11/2026): lee el expediente de las actas con seguimiento activo,
+# guarda la ubicación (sector + fecha) y corta el seguimiento si se concedió, se denegó o se sumó un
+# apoderado. Todavía NO manda mails. Lo lanza el panel (panel/programador.py, cron UTC «30 9 * * *» = 06:30 ART).
+
+on:
+  workflow_dispatch:
+    inputs:
+      inscribir_prueba:
+        description: "Sumar N titulares de prueba (leads pre-boletín recientes; nunca reciben mails)"
+        required: false
+        default: "0"
+      limite:
+        description: "Máximo de actas a revisar"
+        required: false
+        default: "500"
+      max_minutes:
+        description: "Minutos máximos de la corrida"
+        required: false
+        default: "25"
+
+permissions:
+  contents: read
+
+# Un solo carril contra INPI: si hay otro proceso de INPI corriendo, este espera su turno.
+concurrency:
+  group: inpi-lane
+  cancel-in-progress: false
+
+env:
+  # Pedidos al INPI por el hosting de la web en Argentina (panel/inpi_relay.py, wordpress/inpi-relay.php).
+  INPI_RELAY_URL: ${{ secrets.INPI_RELAY_URL }}
+  INPI_RELAY_CLAVE: ${{ secrets.INPI_RELAY_CLAVE }}
+  PYTHONPATH: ${{ github.workspace }}/panel/relay_site
+
+jobs:
+  seguimiento:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+      RESEND_FROM: ${{ secrets.RESEND_FROM }}
+      NOTIFICAR_A: ${{ secrets.NOTIFICAR_A }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.11"
+
+      - name: Instalar dependencias
+        run: pip install -r requirements.txt
+
+      - name: Revisar los expedientes con seguimiento
+        run: |
+          cd scripts
+          python3 seguimiento_barrido.py --inscribir-prueba "${{ inputs.inscribir_prueba || '0' }}" \
+            --limite "${{ inputs.limite || '500' }}" --max-minutes "${{ inputs.max_minutes || '25' }}"
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL || secrets.DATABASE_PUBLIC_URL }}
+          PYTHONUNBUFFERED: "1"

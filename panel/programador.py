@@ -54,6 +54,7 @@ CARRIL_INPI = frozenset({
     "pipeline.yml", "probar_verificador.yml", "probar_vistas_preboletin.yml", "reintentar_sin_email.yml",
     "reintentar_sin_verificar.yml", "repasar_vistas.yml", "revisar_cartera.yml", "revisar_estado.yml",
     "revisar_oposiciones.yml", "verificar_orden_publicacion.yml", "vistas_madrugada.yml", "diagnostico_ubicaciones.yml",
+    "seguimiento_expediente.yml",
 })
 
 # Qué corre y cuándo. `cron`: 5 campos en UTC (minuto hora * * días-de-la-semana, 0 = domingo), como en GitHub.
@@ -83,6 +84,8 @@ PROGRAMADOS = [
     # 05:50  Sin nombre; la corrida programada hace un tope de 150 marcas
     {"workflow": "backfill_denominacion.yml", "cron": "50 8 * * 0,1,2,4,5,6", "gracia": 480,
      "inputs": {"limit": "150"}},
+    # 06:30  Vigilancia de expediente: expedientes con seguimiento (todavía sin mails)
+    {"workflow": "seguimiento_expediente.yml", "cron": "30 9 * * *", "gracia": 60},
     # 06:15  Feriados
     {"workflow": "feriados.yml", "cron": "15 9 * * *", "gracia": 240},
     # 07:30  Avisos por mail de la mañana
