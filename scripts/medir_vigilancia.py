@@ -125,6 +125,10 @@ def main():
     rep.append(f"- Alertas abiertas hoy (lo que se ve en «Abiertas»): **{cur.fetchone()[0]}**")
     cur.execute("SELECT COUNT(*) FROM vigilancia_alertas WHERE tipo='similitud' AND jsonb_array_length(COALESCE(actas_cliente,'[]'::jsonb)) > 1")
     rep.append(f"- Alertas que juntan varias actas/clases de la misma marca: **{cur.fetchone()[0]}**")
+    cur.execute("""SELECT (cm.acta IS NOT NULL) AS en_cartera, COALESCE(cm.vigilar, false), COALESCE(c.activo, false), COUNT(*)
+                   FROM vigilancia_alertas a LEFT JOIN cartera_marcas cm ON cm.acta = a.acta_cliente LEFT JOIN clientes c ON c.id = a.cliente_id
+                   WHERE a.tipo='similitud' AND a.estado='nueva' AND a.ia_veredicto IS NULL GROUP BY 1,2,3""")
+    rep.append(tabla("Nuevas sin juzgar: ¿la marca del cliente sigue en la cartera?", cur.fetchall(), ["En cartera", "Vigilar", "Cliente activo", "Alertas"]))
     cur.execute("SELECT metricas FROM registro_corridas WHERE proceso = 'vigilancia.yml' ORDER BY creado_en DESC LIMIT 1")
     f = cur.fetchone()
     rep.append(f"- Última corrida de la vigilancia: {f[0] if f else 'sin datos'}")
