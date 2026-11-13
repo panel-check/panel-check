@@ -53,7 +53,7 @@ CARRIL_INPI = frozenset({
     "escanear_actas.yml", "estimar_demora_publicacion.yml", "importar_cartera.yml", "inspeccionar_acta.yml",
     "pipeline.yml", "probar_verificador.yml", "probar_vistas_preboletin.yml", "reintentar_sin_email.yml",
     "reintentar_sin_verificar.yml", "repasar_vistas.yml", "revisar_cartera.yml", "revisar_estado.yml",
-    "revisar_oposiciones.yml", "verificar_orden_publicacion.yml", "vistas_madrugada.yml",
+    "revisar_oposiciones.yml", "verificar_orden_publicacion.yml", "vistas_madrugada.yml", "diagnostico_ubicaciones.yml",
 })
 
 # Qué corre y cuándo. `cron`: 5 campos en UTC (minuto hora * * días-de-la-semana, 0 = domingo), como en GitHub.
