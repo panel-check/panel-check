@@ -33,7 +33,7 @@ jobs:
       - name: Medir
         run: |
           cd scripts
-          python3 medir_umbral.py
+          python3 medir_vigilancia.py --dias 30 --salida /tmp/medicion.md
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL || secrets.DATABASE_PUBLIC_URL }}
           PYTHONUNBUFFERED: "1"
