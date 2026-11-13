@@ -224,3 +224,97 @@ def evaluar(guardado: dict, exp: dict, prueba: bool = False) -> tuple[dict, list
         else:
             ev(fin, "alerta", "Contacto personalizado")
     return cambios, eventos
+
+
+# ── Página pública del titular (smartiesconsultora.com.ar/seguimiento/?t=TOKEN) ─────────────
+# Solo se muestra lo de sus marcas: denominación, clase, acta, sector y línea de tiempo. Nunca CUIT, mail ni
+# domicilio. El token es largo y al azar (secrets.token_urlsafe), así nadie recorre titulares cambiando un número.
+MOTIVOS_FIN = {"concedida": "Concedida", "denegada": "Denegada", "desistida": "Desistida",
+               "apoderado": "Finalizado", "cliente": "Seguimiento en curso con Smarties", "baja": "Finalizado"}
+
+
+def token_valido(token: str) -> bool:
+    return bool(re.fullmatch(r"[A-Za-z0-9_-]{16,64}", token or ""))
+
+
+def _sector_publico(clave: str | None) -> dict | None:
+    if not clave or clave not in CATALOGO:
+        return None
+    c = CATALOGO[clave]
+    return {"clave": clave, "nombre": c["nombre"], "que_es": c["que_es"], "que_sigue": c["que_sigue"]}
+
+
+def _fecha(v) -> str | None:
+    return str(v)[:10] if v else None
+
+
+def armar_marcas(actas: list[dict], eventos: list[dict]) -> list[dict]:
+    """Lo que ve el titular, una tarjeta por acta. Las de la misma denominación quedan juntas (orden por
+    denominación y clase). La línea de tiempo son las ubicaciones con sector conocido, sin repetir."""
+    por_acta = {}
+    for e in eventos:
+        if e["tipo"] in ("ubicacion_inicial", "ubicacion") and e.get("sector") in CATALOGO:
+            linea = por_acta.setdefault(e["acta"], [])
+            paso = {"fecha": _fecha(e.get("ubicacion_fecha")), "sector": CATALOGO[e["sector"]]["nombre"]}
+            if not linea or linea[-1] != paso:
+                linea.append(paso)
+    out = []
+    for a in sorted(actas, key=lambda a: ((a.get("denominacion") or "").upper(), a.get("clase") or 0, a["acta"])):
+        if a.get("activo"):
+            estado = "en_curso"
+        else:
+            estado = a.get("motivo_fin") or "finalizada"
+        out.append({
+            "acta": a["acta"],
+            "denominacion": a.get("denominacion") or "(marca con logo)",
+            "clase": a.get("clase"),
+            "estado": estado,
+            "estado_texto": "En trámite" if estado == "en_curso" else MOTIVOS_FIN.get(estado, "Finalizado"),
+            "sector": _sector_publico(a.get("sector")) if estado == "en_curso" else None,
+            "ubicacion_fecha": _fecha(a.get("ubicacion_fecha")),
+            "linea": por_acta.get(a["acta"], []),
+            "revisado": _fecha(a.get("revisado_en")),
+        })
+    return out
+
+
+def datos_pagina(cur, token: str) -> dict | None:
+    """Lo que necesita la página: estado del seguimiento y las marcas. None si el token no existe."""
+    cur.execute("SELECT id, estado FROM seguimiento_titulares WHERE token = %s", (token,))
+    t = cur.fetchone()
+    if not t:
+        return None
+    tid, estado = (t["id"], t["estado"]) if isinstance(t, dict) else t
+    cur.execute("""SELECT s.acta, s.activo, s.motivo_fin, s.sector, s.ubicacion_fecha, s.revisado_en,
+                          m.denominacion, m.clase
+                   FROM seguimiento_actas s LEFT JOIN marcas m ON m.acta = s.acta
+                   WHERE s.titular_id = %s""", (tid,))
+    cols = ["acta", "activo", "motivo_fin", "sector", "ubicacion_fecha", "revisado_en", "denominacion", "clase"]
+    actas = [r if isinstance(r, dict) else dict(zip(cols, r)) for r in cur.fetchall()]
+    eventos = []
+    if actas:
+        cur.execute("""SELECT acta, tipo, sector, ubicacion_fecha FROM seguimiento_eventos
+                       WHERE acta = ANY(%s) ORDER BY detectado_en, id""", ([a["acta"] for a in actas],))
+        eventos = [r if isinstance(r, dict) else dict(zip(["acta", "tipo", "sector", "ubicacion_fecha"], r))
+                   for r in cur.fetchall()]
+    revisados = [a["revisado_en"] for a in actas if a.get("revisado_en")]
+    return {
+        "activo": estado in ("activo", "prueba"),
+        "baja": estado == "baja",
+        "marcas": armar_marcas(actas, eventos),
+        "actualizado": _fecha(max(revisados)) if revisados else None,
+    }
+
+
+def activar(cur, token: str) -> bool:
+    """El titular aceptó (entró con su link y tocó «Activar»). Un titular de prueba queda como estaba."""
+    cur.execute("""UPDATE seguimiento_titulares
+                   SET estado = 'activo', aceptado_en = COALESCE(aceptado_en, now()), baja_en = NULL
+                   WHERE token = %s AND estado IN ('pendiente', 'invitado', 'baja')""", (token,))
+    return cur.rowcount > 0
+
+
+def dar_baja(cur, token: str) -> bool:
+    cur.execute("""UPDATE seguimiento_titulares SET estado = 'baja', baja_en = now()
+                   WHERE token = %s AND estado IN ('pendiente', 'invitado', 'activo')""", (token,))
+    return cur.rowcount > 0

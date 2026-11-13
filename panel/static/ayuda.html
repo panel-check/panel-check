@@ -880,6 +880,24 @@ Las etiquetas «sin notificar», «ya notificada» y «recién ingresada» no de
               El plazo para oponerse (30 días) y el plazo para responder (3 meses desde la notificación) los indicó el usuario; el texto de «qué pasa si no hago nada» (marcado «REVISAR» en el archivo) tiene que ser validado por la agente antes de publicar la página.</p>
           </div>
         </li>
+        <li class="paso">
+          <div class="num verde">11b</div>
+          <div class="cuerpo">
+            <h3>Página «Seguimiento de tus marcas» de la web (borrador, sin publicar)</h3>
+            <p>Parte de la <em>vigilancia de expediente gratuita</em>. Es la página a la que va a llevar el mail de invitación:
+              <code>https://smartiesconsultora.com.ar/seguimiento/?t=&lt;token&gt;</code>, <strong>un link por titular</strong> con todas sus marcas.
+              Es un widget HTML de Elementor con el código de <code>wordpress/seguimiento-expediente.html</code> (todavía no se publica: los textos de
+              aceptación y aviso legal, marcados «REVISAR», los tiene que aprobar Pame). Le pide al panel, en
+              <code>GET /api/publico/seguimiento/&lt;token&gt;</code>, lo que ya guardó el proceso <em>Vigilancia de expediente</em> de las 06:30:
+              <strong>nunca consulta al INPI</strong>, así carga al instante. Muestra cada marca (denominación, clase y acta) con una barra del recorrido
+              (Forma → Fondo → Publicación → Resolución → Concedida), la etapa actual con qué significa y qué sigue (textos del catálogo de
+              <code>panel/seguimiento_expediente.py</code>), el recorrido con fechas y la fecha de la última revisión. Nunca muestra CUIT, mail ni domicilio.
+              Si el seguimiento no está activo, muestra el texto de aceptación y el botón <em>Activar seguimiento</em>
+              (<code>POST …/activar</code>: el titular pasa a «activo»); abajo está <em>Dejar de recibir avisos</em> (<code>POST …/baja</code>) y los
+              botones de WhatsApp y mail. El token es largo y al azar. Hasta 120 pedidos por hora por IP. Para probarla, con la sesión del panel
+              abierta, <code>/api/seguimiento/links-prueba</code> da el link de 10 titulares de prueba (nunca reciben mails).</p>
+          </div>
+        </li>
         <li>
           <div class="num verde">12</div>
           <div class="cuerpo">

@@ -111,5 +111,38 @@ class TestEvaluar(unittest.TestCase):
         self.assertEqual(ev[0]["aviso"], "no_corresponde")
 
 
+class TestPagina(unittest.TestCase):
+    def test_token(self):
+        self.assertTrue(se.token_valido("abcDEF123_-xyz789Q"))
+        self.assertFalse(se.token_valido("123"))
+        self.assertFalse(se.token_valido("abc'; DROP TABLE x;--aaaaaa"))
+
+    def test_marcas_agrupadas_y_linea_de_tiempo(self):
+        actas = [
+            {"acta": "2", "activo": True, "sector": "publicacion", "ubicacion_fecha": "2026-12-01",
+             "denominacion": "LUNA", "clase": 35, "revisado_en": "2026-12-02T09:30:00"},
+            {"acta": "1", "activo": True, "sector": "estudio_fondo", "ubicacion_fecha": "2026-11-12",
+             "denominacion": "LUNA", "clase": 9, "revisado_en": "2026-12-02T09:30:00"},
+            {"acta": "3", "activo": False, "motivo_fin": "concedida", "sector": "resoluciones",
+             "denominacion": "ANDES", "clase": 3},
+        ]
+        eventos = [
+            {"acta": "2", "tipo": "ubicacion_inicial", "sector": "estudio_fondo", "ubicacion_fecha": "2026-11-12"},
+            {"acta": "2", "tipo": "ubicacion", "sector": "publicacion", "ubicacion_fecha": "2026-12-01"},
+            {"acta": "2", "tipo": "apoderado", "sector": "publicacion", "ubicacion_fecha": "2026-12-01"},
+        ]
+        m = se.armar_marcas(actas, eventos)
+        self.assertEqual([x["acta"] for x in m], ["3", "1", "2"])   # ANDES, luego LUNA clase 9 y 35
+        self.assertEqual(m[0]["estado_texto"], "Concedida")
+        self.assertIsNone(m[0]["sector"])
+        self.assertEqual(m[2]["sector"]["nombre"], "Publicación")
+        self.assertEqual([p["sector"] for p in m[2]["linea"]], ["Estudio de fondo", "Publicación"])
+
+    def test_sin_denominacion(self):
+        m = se.armar_marcas([{"acta": "9", "activo": True, "sector": None}], [])
+        self.assertEqual(m[0]["denominacion"], "(marca con logo)")
+        self.assertIsNone(m[0]["sector"])
+
+
 if __name__ == "__main__":
     unittest.main()
