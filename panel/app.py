@@ -102,6 +102,59 @@ if not DATABASE_URL:
 app = FastAPI(title="Panel de leads", docs_url=None, redoc_url=None, openapi_url=None)
 
 
+# ── Versión de los archivos de /static en el HTML ─────────────────────────
+# Cloudflare (delante de Railway) les pone a los .js y .css «Cache-Control: max-age=14400»
+# aunque el panel mande «no-cache»: el navegador se queda hasta 4 horas con la versión vieja
+# si la dirección no cambia (pasó el 13/11/2026 con «🔎 Vigilancia» en el ⚡). Por eso, en cada
+# página HTML que sale del panel, los /static/*.js y *.css llevan ?v=<commit de este deploy>:
+# cada deploy cambia la dirección y el navegador baja la versión nueva.
+VERSION_ESTATICOS = (os.environ.get("RAILWAY_GIT_COMMIT_SHA") or "")[:8] or str(int(__import__("time").time()))
+_RE_ESTATICO = re.compile(rb'(/static/[\w./-]+\.(?:js|css))(?:\?v=[\w.-]*)?(?=["\'])')
+
+
+def versionar_estaticos(html: bytes, version: str = None) -> bytes:
+    v = (version or VERSION_ESTATICOS).encode()
+    return _RE_ESTATICO.sub(lambda m: m.group(1) + b"?v=" + v, html)
+
+
+class VersionEstaticos:
+    """Middleware ASGI: reescribe las páginas HTML (solo text/html; lo demás pasa tal cual)."""
+
+    def __init__(self, app_):
+        self.app = app_
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            return await self.app(scope, receive, send)
+        estado = {"inicio": None, "html": False, "cuerpo": []}
+
+        async def enviar(msg):
+            if msg["type"] == "http.response.start":
+                cab = dict((k.lower(), v) for k, v in msg.get("headers", []))
+                estado["html"] = cab.get(b"content-type", b"").startswith(b"text/html")
+                if not estado["html"]:
+                    return await send(msg)
+                estado["inicio"] = msg
+                return
+            if msg["type"] == "http.response.body" and estado["html"]:
+                estado["cuerpo"].append(msg.get("body", b""))
+                if msg.get("more_body"):
+                    return
+                cuerpo = versionar_estaticos(b"".join(estado["cuerpo"]))
+                inicio = estado["inicio"]
+                cabeceras = [(k, v) for k, v in inicio.get("headers", [])
+                             if k.lower() not in (b"content-length", b"etag")]
+                cabeceras.append((b"content-length", str(len(cuerpo)).encode()))
+                await send({**inicio, "headers": cabeceras})
+                return await send({"type": "http.response.body", "body": cuerpo})
+            return await send(msg)
+
+        return await self.app(scope, receive, enviar)
+
+
+app.add_middleware(VersionEstaticos)
+
+
 @app.on_event("startup")
 def migrar_columnas_panel():
     """Asegura que existan las columnas que usa el panel (contactado/contactado_en).
