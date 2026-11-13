@@ -150,6 +150,19 @@ def _normalizar_vista(v: dict) -> dict:
     }
 
 
+# UBICACIÓN ACTUAL: «2026-11-12 Sector Estudio Fondo 583/25» (misma página del expediente; ver panel/inpi_lead.py).
+RE_UBICACION_ACTUAL = re.compile(
+    r"UBICACI(?:Ó|O|&#211;|&#xD3;|&Oacute;)N\s+ACTUAL\s*:?\s*(?:<span[^>]*>)?(.*?)(?:</span>|</label>|<)", re.I | re.S)
+
+
+def _ubicacion(html: str) -> str | None:
+    m = RE_UBICACION_ACTUAL.search(html or "")
+    if not m:
+        return None
+    texto = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", m.group(1))).strip(" -:;,")
+    return texto[:200] or None
+
+
 def parsear_expediente(html: str) -> dict:
     """Extrae de la página del expediente: oposiciones, vistas y la
     representación ACTUAL del titular (GESTION DEL TRAMITE)."""
@@ -166,6 +179,8 @@ def parsear_expediente(html: str) -> dict:
         "oposiciones": [_normalizar_oposicion(o) for o in (opos_raw or []) if isinstance(o, dict)],
         "vistas": [_normalizar_vista(v) for v in (vistas_raw or []) if isinstance(v, dict)],
         "titular_caracter": caracter,
+        # Texto de UBICACIÓN ACTUAL (sector del INPI), o None si la página no lo trae
+        "ubicacion": _ubicacion(html),
         "titular_agente": ag["agente"],
         "titular_matricula": ag["matricula_agente"],
         "error_lectura": err1 or err2,

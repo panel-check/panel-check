@@ -163,3 +163,106 @@ class MomentoDeCorte(unittest.TestCase):
     def test_madrugada_del_miercoles(self):
         import datetime as dt
         self.assertEqual(pv.momento_de_corte(self._t(3, 30), dt.time(5, 45)), self._t(5, 45))
+
+
+class ExpedientePrimero(unittest.TestCase):
+    """13/11/2026: el INPI carga la vista en la tabla «Vistas y notificaciones» del expediente el día que la firma
+    (acta 4808442: 04/11) y en la Grilla recién cuando la notifica (11/11). Se lee primero el expediente."""
+
+    def vista(self, fecha, notif=None, contestacion=None):
+        return {"fecha": fecha, "notificacion": notif, "vencimiento": None, "contestacion": contestacion,
+                "tipo": "Administrativas"}
+
+    def exp(self, vistas=(), ubicacion="2026-10-20 Sector Estudio Fondo 583/25", **kw):
+        base = {"bloqueado": False, "error_lectura": False, "estado_tramite": None, "oposiciones": [],
+                "vistas": list(vistas), "ubicacion": ubicacion, "titular_caracter": "", "titular_agente": "",
+                "titular_matricula": ""}
+        base.update(kw)
+        return base
+
+    def test_estudio_de_fondo_por_palabras(self):
+        for u in ("2026-11-12 Sector Estudio Fondo 583/25", "ESTUDIO DE FONDO IA", "sector estudio  de fondo"):
+            self.assertTrue(pv.en_estudio_de_fondo(u), u)
+        for u in ("2026-11-11 División Publicación", "División Notificaciones", None, ""):
+            self.assertFalse(pv.en_estudio_de_fondo(u), u)
+
+    def test_vistas_abiertas(self):
+        e = self.exp([self.vista("2026-11-04"), self.vista("2026-09-01", contestacion="2026-09-10")])
+        self.assertEqual(pv.vistas_abiertas_expediente(e), ["2026-11-04"])
+
+    def test_cuando_hace_falta_la_grilla(self):
+        self.assertFalse(pv.necesita_grilla(self.exp()))  # en estudio de fondo y sin vistas: alcanza con el expediente
+        self.assertTrue(pv.necesita_grilla(self.exp([self.vista("2026-11-04")])))
+        self.assertTrue(pv.necesita_grilla(self.exp(ubicacion="2026-11-11 División Publicación")))
+        self.assertTrue(pv.necesita_grilla(self.exp(ubicacion=None)))
+        self.assertTrue(pv.necesita_grilla(self.exp(estado_tramite="Denegada")))
+        self.assertTrue(pv.necesita_grilla(self.exp(bloqueado=True)))
+        self.assertTrue(pv.necesita_grilla(None))
+
+    def _correr(self, exp, archivos):
+        """Corre main() con --actas 4808442 contra INPI y base simulados. Devuelve (salida, llamadas a la Grilla)."""
+        import contextlib
+        import io
+
+        class Cur:
+            def __init__(self):
+                self.filas = []
+            def __enter__(self):
+                return self
+            def __exit__(self, *a):
+                return False
+            def execute(self, sql, params=None):
+                if "information_schema" in sql:
+                    self.filas = [(1,)]
+                elif "FROM marcas WHERE acta = ANY" in sql:
+                    import datetime as dt
+                    self.filas = [{"acta": "4808442", "denominacion": "X", "titular": "Y",
+                                   "presentada": dt.date(2026, 10, 15)}]
+                else:
+                    self.filas = []
+            def fetchone(self):
+                return self.filas[0] if self.filas else None
+            def fetchall(self):
+                return self.filas
+
+        class Conn:
+            def cursor(self, cursor_factory=None):
+                return Cur()
+            def close(self):
+                pass
+            def commit(self):
+                pass
+
+        llamadas_grilla = []
+
+        def grilla(s, acta):
+            llamadas_grilla.append(acta)
+            return archivos
+
+        out = io.StringIO()
+        with mock.patch.dict(os.environ, {"DATABASE_URL": "x"}), \
+                mock.patch.object(sys, "argv", ["probar_vistas_preboletin.py", "--actas", "4808442", "--delay", "0"]), \
+                mock.patch.object(pv.psycopg2, "connect", return_value=Conn()), \
+                mock.patch("feriados.cargar_feriados", return_value=frozenset()), \
+                mock.patch.object(pv, "consultar_expediente", return_value=exp), \
+                mock.patch.object(pv, "buscar_archivos_grilla", side_effect=grilla), \
+                mock.patch.object(pv, "crear_sesion", return_value=object()), \
+                mock.patch.object(pv, "hoy_argentina", return_value="2026-11-06"), \
+                contextlib.redirect_stdout(out):
+            pv.main()
+        return out.getvalue(), llamadas_grilla
+
+    def test_vista_en_el_expediente_antes_que_en_la_grilla(self):
+        # Como el acta 4808442 entre el 04/11 y el 10/11: la Grilla solo trae el ingreso.
+        archivos = [fila("Recibo de Ingreso", "15/10/2026", "Solicitud de marcas"), fila("Formulario", "15/10/2026")]
+        salida, grilla = self._correr(self.exp([self.vista("2026-11-04")]), archivos)
+        self.assertIn("vista_pendiente", salida)
+        self.assertIn("sin_notificar", salida)
+        self.assertIn("todavía no está en la Grilla", salida)
+        self.assertNotIn("LECTOR", salida)  # no es un problema del lector: el PDF todavía no existe
+        self.assertEqual(grilla, ["4808442"])
+
+    def test_sin_vista_en_estudio_de_fondo_no_consulta_la_grilla(self):
+        salida, grilla = self._correr(self.exp(), [])
+        self.assertEqual(grilla, [])
+        self.assertIn("en_examen", salida)

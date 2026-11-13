@@ -75,6 +75,7 @@ Uso:
 import argparse
 import datetime
 import os
+import re
 import statistics
 import sys
 import time
@@ -88,7 +89,7 @@ from misma_marca import marcar_por_misma_marca
 from feriados import ahora_argentina, hoy_argentina
 from oposiciones_expediente import clasificar_estado_oposicion, consultar_expediente
 from validar_leads import _parsear_fecha_grilla, buscar_archivos_grilla, crear_sesion
-from vistas_pdf import leer_vista, plazo_legible, problemas_de_lectura
+from vistas_pdf import filas_de_vista, leer_vista, plazo_legible, problemas_de_lectura
 
 
 def _norm(texto: str) -> str:
@@ -237,6 +238,31 @@ def resumen_notificadas(conn, hoy_iso: str) -> tuple[int, int]:
         )
         antes, total = cur.fetchone()
     return int(antes or 0), int(total or 0)
+
+
+def en_estudio_de_fondo(ubicacion: str | None) -> bool:
+    """True si UBICACIÓN ACTUAL es el sector de estudio de fondo («Sector Estudio Fondo 583/25», antes «ESTUDIO DE
+    FONDO IA»). Se compara por palabras porque el INPI cambia los nombres (panel/seguimiento_expediente.py)."""
+    t = _norm(re.sub(r"[^A-Za-zÁÉÍÓÚáéíóúÑñ]+", " ", ubicacion or ""))
+    return "ESTUDIO" in t.split() and "FONDO" in t.split()
+
+
+def vistas_abiertas_expediente(exp: dict) -> list[str]:
+    """Fechas (ISO) de las vistas del expediente sin contestar. El INPI las carga en la tabla «Vistas y
+    notificaciones» el día que las firma (acta 4808442: 04/11/2026) y recién las pone en la Grilla cuando
+    las notifica (11/11/2026): esta tabla es la que permite verlas antes que los demás estudios."""
+    return sorted(v["fecha"] for v in (exp or {}).get("vistas", []) if v.get("fecha") and not v.get("contestacion"))
+
+
+def necesita_grilla(exp: dict | None) -> bool:
+    """La Grilla (2 consultas) solo hace falta si el expediente no alcanza: no se pudo leer, tiene vistas (para
+    el PDF y las contestaciones), tiene resolución o el expediente ya salió de estudio de fondo (puede estar
+    publicado u ordenada la publicación, que es lo que la Grilla distingue)."""
+    if not exp or exp.get("bloqueado") or exp.get("error_lectura"):
+        return True
+    if exp.get("vistas") or exp.get("estado_tramite"):
+        return True
+    return not en_estudio_de_fondo(exp.get("ubicacion"))
 
 
 def cerrar_denegadas_conocidas(conn):
@@ -480,6 +506,8 @@ def main():
     ap.add_argument("--dias-entre-revisiones-vista", type=int, default=1, help="días hasta volver a mirar una marca con vista sin contestar")
     ap.add_argument("--dias-despues-vencimiento", type=int, default=7, help="días después del vencimiento de la vista en que se deja de revisar")
     ap.add_argument("--hasta-hora", default="", help="hora de Argentina (HH:MM) a la que se corta la corrida, para no pisar los procesos de la noche")
+    ap.add_argument("--solo-grilla", action="store_true",
+                    help="como antes del 13/11/2026: mirar solo la Grilla y leer el expediente únicamente si la Grilla trae una vista")
     ap.add_argument("--repaso", action="store_true",
                     help="repaso semanal: solo marcas que alguna vez tuvieron una vista y siguen abiertas (contactadas o no)")
     ap.add_argument("--reinterpretar", action="store_true",
@@ -574,19 +602,40 @@ def main():
             corte = "INPI bloqueó consultas seguidas"
             break
         t0 = time.time()
-        try:
-            archivos = buscar_archivos_grilla(s, m["acta"])
-        except Exception as e:  # noqa: BLE001
-            print(f"  [{n}/{len(marcas)}] acta {m['acta']}: error {e}", flush=True)
+        # 1) Expediente primero (13/11/2026): su tabla «Vistas y notificaciones» trae la vista desde el día que
+        #    INPI la firma; la Grilla recién la muestra el miércoles que la notifica.
+        exp_previo, abiertas = None, []
+        if not args.solo_grilla:
+            try:
+                exp_previo = consultar_expediente(s, m["acta"])
+            except Exception as e:  # noqa: BLE001
+                print(f"  [{n}/{len(marcas)}] acta {m['acta']}: expediente con error {e}", flush=True)
+            abiertas = vistas_abiertas_expediente(exp_previo) if exp_previo and not exp_previo.get("bloqueado") else []
+        # 2) Grilla solo si hace falta (vistas, resolución, fuera de estudio de fondo o expediente ilegible)
+        if args.solo_grilla or necesita_grilla(exp_previo):
+            if exp_previo is not None:
+                time.sleep(args.delay)
+            try:
+                archivos = buscar_archivos_grilla(s, m["acta"])
+            except Exception as e:  # noqa: BLE001
+                print(f"  [{n}/{len(marcas)}] acta {m['acta']}: error {e}", flush=True)
+                archivos = []
+            if not archivos:
+                categoria, ingreso, vista = "sin_datos", None, None
+            else:
+                categoria, ingreso, vista = clasificar(archivos)
+        else:
             archivos = []
+            categoria, ingreso, vista = "en_examen", (str(m["presentada"]) if m.get("presentada") else None), None
+            conteo["sin_grilla"] = conteo.get("sin_grilla", 0) + 1
+        # 3) La Grilla todavía no la muestra pero el expediente sí: vista sin notificar
+        if abiertas and categoria in ("en_examen", "sin_datos") and not any(
+                o >= abiertas[-1] for o in _fechas(archivos, "ORDEN DE PUBLICACION")):
+            categoria, vista = "vista_pendiente", abiertas[-1]
+            conteo["vista_solo_expediente"] = conteo.get("vista_solo_expediente", 0) + 1
         dt_grilla = time.time() - t0
         duraciones.append(dt_grilla)
         consultadas += 1
-
-        if not archivos:
-            categoria, ingreso, vista = "sin_datos", None, None
-        else:
-            categoria, ingreso, vista = clasificar(archivos)
 
         extra = ""
         datos_vista = None  # lo que se guarda en las columnas de vista (None = nada que guardar)
@@ -595,7 +644,10 @@ def main():
         if leer_pdf:
             t1 = time.time()
             try:
-                exp = consultar_expediente(s, m["acta"])
+                if exp_previo is not None and not exp_previo.get("bloqueado"):
+                    exp = exp_previo  # ya se leyó al principio: no se pide dos veces
+                else:
+                    exp = consultar_expediente(s, m["acta"])
                 if exp.get("bloqueado"):
                     categoria, guardable = "vista_sin_expediente", False
                     extra = " | expediente: bloqueado por el WAF, se reintenta"
@@ -611,7 +663,12 @@ def main():
                     time.sleep(args.delay)
                     # PDF de la vista: tipo, artículo, antecedente y plazo que dice el texto
                     pdf = {}
-                    if est["estado"] in ("vista_pendiente", "con_apoderado") or actas_pedidas:
+                    # Sin fila de vista en la Grilla todavía no hay PDF: se lee cuando INPI la notifique (la vista
+                    # pendiente se vuelve a mirar todos los días). No es un problema del lector.
+                    sin_pdf_aun = not filas_de_vista(archivos, ingreso)
+                    if sin_pdf_aun:
+                        extra += " | PDF: todavía no está en la Grilla (se lee cuando INPI la notifique)"
+                    elif est["estado"] in ("vista_pendiente", "con_apoderado") or actas_pedidas:
                         t2 = time.time()
                         try:
                             pdf = leer_vista(s, archivos, ingreso, est["notificacion"], feriados)
@@ -629,9 +686,9 @@ def main():
                             extra += (f" | PDF: {pdf['tipo']}, {', '.join(pdf['articulos']) or 'sin artículo'}"
                                       f"{', parecida a ' + '; '.join(pdf['antecedentes']) if pdf['antecedentes'] else ''}"
                                       f", plazo {plazo_legible(pdf) or 'no encontrado'}, vence según texto {pdf.get('vencimiento_texto') or '—'}")
-                        elif est["estado"] in ("vista_pendiente", "con_apoderado"):
+                        elif est["estado"] in ("vista_pendiente", "con_apoderado") and not sin_pdf_aun:
                             extra += " | PDF: no se pudo leer"
-                        if est["estado"] in ("vista_pendiente", "con_apoderado") or actas_pedidas:
+                        if (est["estado"] in ("vista_pendiente", "con_apoderado") or actas_pedidas) and not sin_pdf_aun:
                             problemas = problemas_de_lectura(pdf or None)
                             # el mismo texto ya avisado en una corrida anterior no se repite
                             if problemas and args.guardar and pdf.get("texto") and _texto_guardado(conn, m["acta"]) == pdf["texto"]:

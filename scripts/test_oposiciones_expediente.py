@@ -231,3 +231,14 @@ class Estados(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class UbicacionActual(unittest.TestCase):
+    def test_lee_la_ubicacion(self):
+        from oposiciones_expediente import parsear_expediente
+        html = '<label>UBICACI&#211;N ACTUAL: <span class="text-danger">2026-11-12 Sector Estudio Fondo 583/25</span></label>'
+        self.assertEqual(parsear_expediente(html)["ubicacion"], "2026-11-12 Sector Estudio Fondo 583/25")
+
+    def test_sin_ubicacion(self):
+        from oposiciones_expediente import parsear_expediente
+        self.assertIsNone(parsear_expediente("<html></html>")["ubicacion"])
