@@ -36,6 +36,7 @@ import re
 import similitud as sim
 import cartera
 import juez_vigilancia as juez
+import productos_vigilancia as prod
 
 VENTANA_OPOSICION_DIAS = 30
 GRACIA_DIAS = 3
@@ -239,7 +240,8 @@ def _solo_digitos(v):
     return re.sub(r"\D", "", v or "")
 
 
-_CAMPOS_IA = ("estado", "actas_cliente", "ia_veredicto", "ia_nivel", "ia_razon", "ia_modelo", "ia_dominantes", "nivel_motor")
+_CAMPOS_IA = ("estado", "actas_cliente", "ia_veredicto", "ia_nivel", "ia_razon", "ia_modelo", "ia_dominantes", "nivel_motor",
+              "ia_productos")
 
 
 def ya_alertada(cur, a: dict) -> bool:
@@ -267,11 +269,11 @@ def _insertar_alerta(cur, a: dict) -> bool:
         INSERT INTO vigilancia_alertas (tipo, acta_cliente, cliente_id, acta_nueva, denominacion_nueva, clase_nueva,
             tipo_nuevo, titular_nuevo, cuit_nuevo, agente_nuevo, fecha_presentacion_nueva, fuente_nueva,
             puntaje, nivel, motivos, estado, actas_cliente, ia_veredicto, ia_nivel, ia_razon, ia_modelo, ia_dominantes,
-            nivel_motor, ia_en)
+            nivel_motor, ia_productos, ia_en)
         VALUES (%(tipo)s, %(acta_cliente)s, %(cliente_id)s, %(acta_nueva)s, %(denominacion_nueva)s, %(clase_nueva)s,
             %(tipo_nuevo)s, %(titular_nuevo)s, %(cuit_nuevo)s, %(agente_nuevo)s, %(fecha_presentacion_nueva)s,
             %(fuente_nueva)s, %(puntaje)s, %(nivel)s, %(motivos)s, %(estado)s, %(actas_cliente)s, %(ia_veredicto)s,
-            %(ia_nivel)s, %(ia_razon)s, %(ia_modelo)s, %(ia_dominantes)s, %(nivel_motor)s,
+            %(ia_nivel)s, %(ia_razon)s, %(ia_modelo)s, %(ia_dominantes)s, %(nivel_motor)s, %(ia_productos)s,
             CASE WHEN %(ia_veredicto)s IS NULL THEN NULL ELSE now() END)
         ON CONFLICT (tipo, COALESCE(acta_cliente, ''), acta_nueva) DO NOTHING
         """,
@@ -367,7 +369,33 @@ def _limpias(a: dict) -> dict:
     return {k: v for k, v in a.items() if not k.startswith("_")}
 
 
-def juzgar_e_insertar(cur, alertas: list, stats: dict, log=print, uso=None) -> None:
+def _acta_cliente_para(a) -> str:
+    """De las actas de la marca del cliente, la de la misma clase que la solicitud nueva (si hay)."""
+    lista = a.get("actas_cliente")
+    lista = json.loads(lista) if isinstance(lista, str) else (lista or [])
+    for x in lista:
+        if x.get("clase") is not None and str(x.get("clase")) == str(a.get("clase_nueva")):
+            return x["acta"]
+    return a.get("acta_cliente")
+
+
+def sumar_productos(cur, items, consultor, log=print) -> None:
+    """Completa el par de cada alerta con la protección/limitación de las dos marcas (ver productos_vigilancia.py).
+    items: [(alerta, par)]. Marca en la alerta si el juez las tuvo (ia_productos)."""
+    if not items:
+        return
+    actas = set()
+    for a, _ in items:
+        actas.add(_acta_cliente_para(a))
+        actas.add(a.get("acta_nueva"))
+    datos = consultor.asegurar(cur, actas) if consultor else prod.leer(cur, actas)
+    for a, par in items:
+        par["productos_cliente"] = prod.texto(datos.get(str(_acta_cliente_para(a))))
+        par["productos_nueva"] = prod.texto(datos.get(str(a.get("acta_nueva"))))
+        a["ia_productos"] = bool(par["productos_nueva"])
+
+
+def juzgar_e_insertar(cur, alertas: list, stats: dict, log=print, uso=None, consultor=None) -> None:
     """Las alertas nuevas de parecido pasan por el juez (si hay clave) y se guardan, de a tandas
     (cada tanda queda guardada aunque la corrida se corte). Se juzgan primero las de mayor
     puntaje y, como mucho, LIMITE_JUZGAR por corrida: las demás se guardan sin veredicto
@@ -379,6 +407,7 @@ def juzgar_e_insertar(cur, alertas: list, stats: dict, log=print, uso=None) -> N
     for i in range(0, len(nuevas), TANDA_JUEZ):
         tanda = nuevas[i:i + TANDA_JUEZ]
         con_juez = [a for a in tanda if id(a) in a_juzgar]
+        sumar_productos(cur, [(a, a["_par"]) for a in con_juez], consultor, log)
         veredictos = juez.evaluar_lote([a["_par"] for a in con_juez], uso=uso, log=log) if con_juez else []
         for a, v in zip(con_juez, veredictos):
             if v:
@@ -406,7 +435,9 @@ def comparar(conn, hoy=None, log=print, limite_filas=None) -> dict:
              "recomparadas_cartera": 0, "saltadas_ventana": 0, "juzgadas": 0, "descartadas_ia": 0,
              "reevaluadas": 0, "juez_activo": juez.configurado()}
     uso = juez.Uso()
+    consultor = prod.Consultor(log=log)
     with conn.cursor() as cur:
+        prod.crear_tabla(cur)
         ajustes = cargar_ajustes(cur)
         marcas, indice = _cartera_en_memoria(cur, ajustes)
         stats["marcas_cartera"] = len(marcas)
@@ -491,7 +522,7 @@ def comparar(conn, hoy=None, log=print, limite_filas=None) -> dict:
             if k not in unicas or a["puntaje"] > unicas[k]["puntaje"]:
                 unicas[k] = a
         log(f"Pares candidatos para alertar: {len(unicas)}")
-        juzgar_e_insertar(cur, list(unicas.values()), stats, log=log, uso=uso)
+        juzgar_e_insertar(cur, list(unicas.values()), stats, log=log, uso=uso, consultor=consultor if stats["juez_activo"] else None)
         _guardar_comparadas(cur, nuevas_comparadas)
         for m in obsoletas:
             cur.execute("UPDATE cartera_marcas SET vigilancia_firma = %s WHERE acta = %s", (m["firma"], m["acta"]))
@@ -500,7 +531,8 @@ def comparar(conn, hoy=None, log=print, limite_filas=None) -> dict:
         # Alertas abiertas que todavía no pasaron por el juez (las de antes del 12/11/2026 o las
         # que fallaron en una corrida anterior): se evalúan ahora.
         if stats["juez_activo"]:
-            stats["reevaluadas"] = reevaluar_pendientes(cur, ajustes, marcas, log=log, uso=uso)
+            stats["reevaluadas"] = reevaluar_pendientes(cur, ajustes, marcas, log=log, uso=uso, consultor=consultor)
+    stats["consultas_productos_inpi"] = consultor.pedidos
     conn.commit()
     stats.update(uso.resumen())
     stats["costo_ia_usd_max"] = juez.costo_estimado(uso)
@@ -518,14 +550,16 @@ SQL_SIN_VEREDICTO = """
     SELECT a.id, a.acta_cliente, a.acta_nueva, a.denominacion_nueva, a.clase_nueva, a.tipo_nuevo, a.motivos, a.actas_cliente,
            cm.denominacion, cm.tipo, cm.clase, cm.terminos_vigilancia, cm.cliente_id, cm.grupo_marca, cm.sensibilidad_vigilancia
     FROM vigilancia_alertas a JOIN cartera_marcas cm ON cm.acta = a.acta_cliente
-    WHERE a.tipo = 'similitud' AND a.estado = 'nueva' AND a.ia_veredicto IS NULL
-    ORDER BY a.creada_en DESC
+    WHERE a.tipo = 'similitud' AND a.estado = 'nueva'
+      AND (a.ia_veredicto IS NULL OR NOT COALESCE(a.ia_productos, false))
+    ORDER BY (a.ia_veredicto IS NULL) DESC, a.creada_en DESC
     LIMIT %s
 """
 
 
-def reevaluar_pendientes(cur, ajustes, marcas=None, log=print, uso=None, limite=LIMITE_REEVALUAR) -> int:
-    """Pasa por el juez las alertas «nuevas» que no tienen veredicto. Las que no alcanzan
+def reevaluar_pendientes(cur, ajustes, marcas=None, log=print, uso=None, limite=LIMITE_REEVALUAR, consultor=None) -> int:
+    """Pasa por el juez las alertas «nuevas» que no tienen veredicto, o que se juzgaron sin comparar
+    productos y servicios (antes del 13/11/2026 o porque el INPI no respondió). Las que no alcanzan
     la sensibilidad de la marca quedan «Descartada por IA». No toca las que ya decidió una persona."""
     cur.execute(SQL_SIN_VEREDICTO, (limite,))
     filas = _dict_rows(cur)
@@ -547,7 +581,12 @@ def reevaluar_pendientes(cur, ajustes, marcas=None, log=print, uso=None, limite=
     log(f"[juez] reevaluando {len(filas)} alerta(s) abiertas sin veredicto")
     hechas = 0
     for i in range(0, len(filas), TANDA_JUEZ):
-        hechas += _reevaluar_tanda(cur, filas[i:i + TANDA_JUEZ], pares[i:i + TANDA_JUEZ], uso, log)
+        tanda = filas[i:i + TANDA_JUEZ]
+        sumar_productos(cur, [({**f, "actas_cliente": f["actas_cliente"]}, p) for f, p in zip(tanda, pares[i:i + TANDA_JUEZ])],
+                        consultor, log)
+        for f, p in zip(tanda, pares[i:i + TANDA_JUEZ]):
+            f["_productos"] = bool(p.get("productos_nueva"))
+        hechas += _reevaluar_tanda(cur, tanda, pares[i:i + TANDA_JUEZ], uso, log)
         cur.connection.commit()
     return hechas
 
@@ -561,9 +600,10 @@ def _reevaluar_tanda(cur, filas, pares, uso, log) -> int:
         a = aplicar_veredicto({}, v, f["_sens"])
         cur.execute(
             "UPDATE vigilancia_alertas SET ia_veredicto = %s, ia_nivel = %s, ia_razon = %s, ia_modelo = %s, ia_dominantes = %s, "
-            "ia_en = now(), nivel_motor = COALESCE(nivel_motor, nivel), nivel = %s, estado = %s "
+            "ia_en = now(), nivel_motor = COALESCE(nivel_motor, nivel), nivel = %s, estado = %s, ia_productos = %s "
             "WHERE id = %s AND estado = 'nueva'",
-            (a["ia_veredicto"], a["ia_nivel"], a["ia_razon"], a["ia_modelo"], a["ia_dominantes"], a["nivel"], a["estado"], f["id"]))
+            (a["ia_veredicto"], a["ia_nivel"], a["ia_razon"], a["ia_modelo"], a["ia_dominantes"], a["nivel"], a["estado"],
+             f.get("_productos", False), f["id"]))
         hechas += 1
     return hechas
 

@@ -78,7 +78,8 @@ def main():
                    f"Marcas de la cartera recomparadas: {st['recomparadas_cartera']}. "
                    f"Juez IA: {'activo' if st['juez_activo'] else 'apagado'}; pares juzgados {st['juzgadas']}, "
                    f"descartados por IA {st['descartadas_ia']}, alertas viejas reevaluadas {st['reevaluadas']}, "
-                   f"llamadas {st['llamadas_ia']}, errores {st['errores_ia']}, costo máx. USD {st['costo_ia_usd_max']}.")
+                   f"llamadas {st['llamadas_ia']}, errores {st['errores_ia']}, costo máx. USD {st['costo_ia_usd_max']}. "
+                   f"Expedientes leídos para productos y servicios: {st.get('consultas_productos_inpi', 0)}.")
         print(f"::notice::{resumen}")
         print(f"\n{resumen}")
         registrar("vigilancia.yml", {
@@ -90,6 +91,7 @@ def main():
             "reevaluadas_ia": st["reevaluadas"], "llamadas_ia": st["llamadas_ia"], "errores_ia": st["errores_ia"],
             "costo_ia_usd_max": st["costo_ia_usd_max"], "vencidas_borradas": man["vencidas_borradas"],
             "duplicadas_unidas": man["duplicadas_unidas"],
+            "consultas_productos_inpi": st.get("consultas_productos_inpi", 0),
         }, conn)
         avisar_altas_por_telegram(conn)
     finally:

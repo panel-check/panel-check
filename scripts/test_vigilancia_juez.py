@@ -129,6 +129,25 @@ class Juez(unittest.TestCase):
         with self.assertRaises(juez.ErrorJuez):
             juez._normalizar_respuesta({"veredicto": "quizás"}, "m")
 
+    def test_productos_en_el_mensaje(self):
+        import productos_vigilancia as prod
+        self.assertEqual(prod.texto({"estado": "ok", "proteccion": "Solamente", "limitacion": "SUPLEMENTOS NUTRICIONALES"}),
+                         "Solamente: SUPLEMENTOS NUTRICIONALES")
+        self.assertEqual(prod.texto({"estado": "ok", "proteccion": "Toda la clase", "limitacion": None}), "Toda la clase")
+        self.assertEqual(prod.texto({"estado": "error"}), "")
+        t = juez.texto_par({"marca_cliente": "APEX LAB", "marca_nueva": "APEX PERFORMANCE", "clase_nueva": 5,
+                            "productos_cliente": "Solamente: SUPLEMENTOS NUTRICIONALES",
+                            "productos_nueva": "Solamente: SUPLEMENTOS ALIMENTICIOS PARA PERSONAS"})
+        self.assertIn("Productos/servicios de la marca del cliente: Solamente: SUPLEMENTOS NUTRICIONALES", t)
+        self.assertIn("SUPLEMENTOS ALIMENTICIOS PARA PERSONAS", t)
+        self.assertFalse(prod.consultar_habilitado() and "VIGILANCIA_CONSULTAR_INPI" not in os.environ)
+
+    def test_acta_del_cliente_de_la_misma_clase(self):
+        a = {"acta_cliente": "100", "clase_nueva": 32,
+             "actas_cliente": json.dumps([{"acta": "100", "clase": 5}, {"acta": "101", "clase": 32}])}
+        self.assertEqual(vig._acta_cliente_para(a), "101")
+        self.assertEqual(vig._acta_cliente_para({**a, "clase_nueva": 9}), "100")
+
     def test_sin_clave_no_evalua(self):
         viejo = os.environ.pop("ANTHROPIC_API_KEY", None)
         try:

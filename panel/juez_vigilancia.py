@@ -14,9 +14,11 @@ Dos pasos para que salga barato sin perder criterio:
   2. Los que Haiku marca como idéntica, confundible o cercana los vuelve a
      mirar Sonnet, y vale el veredicto de Sonnet.
 
-Qué se le manda: solo datos públicos del boletín (los dos nombres, tipo,
-clases y su relación, y cuán comunes son en la clase las palabras que
-comparten). Nada del cliente (ni su nombre ni sus datos de contacto).
+Qué se le manda: solo datos públicos del boletín y del expediente (los dos
+nombres, tipo, clases y su relación, cuán comunes son en la clase las
+palabras que comparten y, desde el 13/11/2026, la protección/limitación de
+productos y servicios de cada una). Nada del cliente (ni su nombre ni sus
+datos de contacto).
 
 Variables de entorno:
   ANTHROPIC_API_KEY     la clave (sin ella, la vigilancia funciona igual con
@@ -87,7 +89,7 @@ Juzgá como un examinador del INPI:
 5. Clases: misma clase pesa más; clase relacionada, algo menos; clase sin relación, solo si las marcas son idénticas o la del cliente es muy conocida.
 6. Una marca corta e inventada (de fantasía) se confunde con menos diferencia que una formada por palabras comunes.
 7. En marcas mixtas o figurativas solo ves el texto, no el logo: no supongas nada del dibujo.
-8. No conocés la lista de productos o servicios de cada una: juzgá con la clase.
+8. Productos y servicios: si te paso la protección o limitación de cada marca (lo que figura en el expediente), comparalos como el INPI: idénticos, uno incluido en el otro («suplementos nutricionales» dentro de «suplementos alimenticios para personas»), relacionados (mismo canal o mismo público) o distintos. Productos idénticos o incluidos suben el riesgo aunque los nombres no sean idénticos; productos claramente distintos dentro de la misma clase lo bajan, salvo que las marcas sean idénticas o la del cliente sea muy conocida. «Toda la clase» cubre todo. Si falta el dato de alguna, juzgá con la clase. Mencioná los productos en la razón cuando pesen.
 
 Veredictos posibles:
 - "identica": mismo elemento distintivo, con diferencias mínimas (espacios, signos, plural, una palabra descriptiva agregada).
@@ -221,6 +223,10 @@ def texto_par(par: dict) -> str:
         f"SOLICITUD NUEVA: «{par.get('marca_nueva') or ''}» · {TIPOS.get((par.get('tipo_nuevo') or '')[:1].upper(), 'tipo sin dato')} · clase {_clase(par.get('clase_nueva'))}",
         f"Relación de clases: {rel}.",
     ]
+    if par.get("productos_cliente"):
+        lineas.append(f"Productos/servicios de la marca del cliente: {par['productos_cliente']}")
+    if par.get("productos_nueva"):
+        lineas.append(f"Productos/servicios de la solicitud nueva: {par['productos_nueva']}")
     if par.get("otros_nombres"):
         lineas.append(f"El cliente también vigila estos nombres: {par['otros_nombres']}.")
     comp = par.get("compartidas") or []

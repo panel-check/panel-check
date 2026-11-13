@@ -294,7 +294,7 @@ def crear_tablas(cur):
     # (actas_cliente = todas las actas/clases de esa marca: [{"acta":..,"clase":..}]).
     for col, tipo_col in (("actas_cliente", "JSONB"), ("ia_veredicto", "TEXT"), ("ia_nivel", "TEXT"), ("ia_razon", "TEXT"),
                           ("ia_modelo", "TEXT"), ("ia_en", "TIMESTAMPTZ"), ("ia_dominantes", "TEXT"),
-                          ("ia_desacuerdo", "BOOLEAN"), ("nivel_motor", "TEXT")):
+                          ("ia_desacuerdo", "BOOLEAN"), ("nivel_motor", "TEXT"), ("ia_productos", "BOOLEAN")):
         cur.execute(f"ALTER TABLE vigilancia_alertas ADD COLUMN IF NOT EXISTS {col} {tipo_col}")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_vigilancia_alertas_nueva ON vigilancia_alertas(acta_nueva)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_vigilancia_alertas_cliente ON vigilancia_alertas(cliente_id)")
