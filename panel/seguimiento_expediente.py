@@ -112,3 +112,115 @@ def hubo_cambio(anterior: tuple, nueva: tuple) -> bool:
     """anterior y nueva son (ubicacion, fecha). La primera lectura (anterior vacía) no es un cambio."""
     fa, fn = firma_ubicacion(*anterior), firma_ubicacion(*nueva)
     return fa is not None and fn is not None and fa != fn
+
+
+# ── Tablas ────────────────────────────────────────────────────────────────
+# seguimiento_titulares: uno por titular (un solo mail y un solo link para todas sus actas).
+#   estado: prueba | pendiente | invitado | activo | baja. Los de prueba nunca reciben mails: sirven para
+#   validar el barrido con actas reales antes de lanzar.
+# seguimiento_actas: cada acta seguida, con la última ubicación leída y si sigue activa (motivo_fin al cortar).
+# seguimiento_eventos: historial (ubicaciones para la línea de tiempo, concesión, apoderado...). aviso:
+#   pendiente (hay que mandar mail) | alerta (lo tiene que ver Pame en el panel) | no_corresponde | enviado.
+DDL = [
+    """CREATE TABLE IF NOT EXISTS seguimiento_titulares (
+        id           SERIAL PRIMARY KEY,
+        clave        TEXT UNIQUE NOT NULL,
+        email        TEXT,
+        token        TEXT UNIQUE NOT NULL,
+        estado       TEXT NOT NULL DEFAULT 'pendiente',
+        prueba       BOOLEAN NOT NULL DEFAULT false,
+        invitado_en  TIMESTAMPTZ,
+        aceptado_en  TIMESTAMPTZ,
+        baja_en      TIMESTAMPTZ,
+        creado_en    TIMESTAMPTZ NOT NULL DEFAULT now()
+    )""",
+    """CREATE TABLE IF NOT EXISTS seguimiento_actas (
+        acta             TEXT PRIMARY KEY,
+        titular_id       INTEGER NOT NULL REFERENCES seguimiento_titulares(id) ON DELETE CASCADE,
+        activo           BOOLEAN NOT NULL DEFAULT true,
+        motivo_fin       TEXT,
+        finalizado_en    TIMESTAMPTZ,
+        ubicacion_actual TEXT,
+        ubicacion_fecha  DATE,
+        sector           TEXT,
+        estado_tramite   TEXT,
+        revisado_en      TIMESTAMPTZ,
+        alta_en          TIMESTAMPTZ NOT NULL DEFAULT now()
+    )""",
+    "CREATE INDEX IF NOT EXISTS idx_seguimiento_actas_titular ON seguimiento_actas(titular_id)",
+    """CREATE TABLE IF NOT EXISTS seguimiento_eventos (
+        id               SERIAL PRIMARY KEY,
+        acta             TEXT NOT NULL,
+        tipo             TEXT NOT NULL,
+        sector           TEXT,
+        ubicacion        TEXT,
+        ubicacion_fecha  DATE,
+        detalle          TEXT,
+        aviso            TEXT NOT NULL DEFAULT 'no_corresponde',
+        detectado_en     TIMESTAMPTZ NOT NULL DEFAULT now()
+    )""",
+    "CREATE INDEX IF NOT EXISTS idx_seguimiento_eventos_acta ON seguimiento_eventos(acta, detectado_en)",
+    "CREATE INDEX IF NOT EXISTS idx_seguimiento_eventos_aviso ON seguimiento_eventos(aviso) WHERE aviso IN ('pendiente', 'alerta')",
+]
+
+
+def asegurar_tablas(cur) -> None:
+    for sql in DDL:
+        cur.execute(sql)
+
+
+# ── Lógica de cada lectura (pura: se prueba sin base ni INPI) ─────────────
+def _fin_por_estado(estado_tramite: str | None) -> str | None:
+    t = limpiar(estado_tramite)
+    if "conced" in t:
+        return "concedida"
+    if "deneg" in t:
+        return "denegada"
+    if "desist" in t or "abandon" in t:
+        return "desistida"
+    return None
+
+
+def con_representante(exp: dict) -> bool:
+    """Mismo criterio que define si es lead: CARACTER (Apoderado, Gestor Ratificado) o matrícula de agente."""
+    return bool((exp.get("caracter") or "").strip() or (exp.get("matricula_agente") or "").strip())
+
+
+def evaluar(guardado: dict, exp: dict, prueba: bool = False) -> tuple[dict, list[dict]]:
+    """Compara lo guardado de un acta con una lectura nueva del expediente (inpi_lead.consultar_expediente).
+    Devuelve (cambios para seguimiento_actas, eventos para seguimiento_eventos). En las de prueba ningún
+    evento queda para mail ni alerta."""
+    ub, fecha = exp.get("ubicacion_actual"), exp.get("ubicacion_fecha")
+    sector = sector_de(ub)
+    cambios = {"ubicacion_actual": ub, "ubicacion_fecha": fecha, "sector": sector,
+               "estado_tramite": exp.get("estado_tramite")}
+    eventos = []
+    fin = "apoderado" if con_representante(exp) else _fin_por_estado(exp.get("estado_tramite"))
+
+    def ev(tipo, aviso, detalle=None):
+        eventos.append({"tipo": tipo, "sector": sector, "ubicacion": ub, "ubicacion_fecha": fecha,
+                        "detalle": detalle, "aviso": "no_corresponde" if prueba else aviso})
+
+    anterior = (guardado.get("ubicacion_actual"), guardado.get("ubicacion_fecha"))
+    if ub and not anterior[0]:
+        ev("ubicacion_inicial", "no_corresponde")
+    elif ub and hubo_cambio((anterior[0], str(anterior[1]) if anterior[1] else None), (ub, fecha)):
+        if fin == "apoderado":
+            aviso = "no_corresponde"
+        elif sector is None:
+            aviso = "alerta"  # sector que el catálogo no conoce: se carga antes de avisar a nadie
+        elif not CATALOGO[sector]["mail"]:
+            aviso = "no_corresponde"
+        else:
+            aviso = "pendiente"
+        ev("ubicacion", aviso, None if sector else "Sector desconocido: cargarlo en el catálogo")
+
+    if fin:
+        cambios.update({"activo": False, "motivo_fin": fin})
+        if fin == "concedida":
+            ev("concedida", "pendiente")
+        elif fin == "apoderado":
+            ev("apoderado", "no_corresponde", "Se sumó un apoderado o gestor: no se mandan más mails")
+        else:
+            ev(fin, "alerta", "Contacto personalizado")
+    return cambios, eventos
