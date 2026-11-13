@@ -1,0 +1,255 @@
+<!--
+  Página «Seguimiento de tu expediente» — smartiesconsultora.com.ar/seguimiento/?t=<token del titular>
+
+  ESTADO: BORRADOR (13/11/2026). Todavía NO se publica: los textos marcados con «REVISAR» (aceptación, aviso legal y
+  explicaciones de cada etapa) los tiene que validar Pame. Las explicaciones de cada etapa salen del panel
+  (panel/seguimiento_expediente.py, CATALOGO): se cambian ahí, no en esta página.
+
+  A QUIÉN LE LLEGA: al titular que recibe el mail de invitación de la vigilancia de expediente gratuita. Un link por
+  titular (todas sus marcas en la misma página). El token es largo y al azar: sin él no se ve nada.
+
+  CÓMO PONERLA (WordPress + Elementor), cuando esté aprobada:
+    1. Páginas → Añadir nueva → título «Seguimiento» (dirección /seguimiento/).
+    2. Plantilla: «Elementor ancho completo» (Ajustes de página → Diseño). Usa el header y el footer del sitio.
+    3. Editar con Elementor → un contenedor a ANCHO COMPLETO (margen y relleno 0) → widget «HTML» → pegar TODO este archivo.
+    4. SEO: «no indexar» (es una página personal, no para Google).
+    5. Probarla con el link de un titular de prueba (Más → Automatizaciones → Vigilancia de expediente).
+
+  QUÉ HACE: lee el token (?t=) de la dirección y le pide al panel
+  (https://panel.registrodemimarca.com.ar/api/publico/seguimiento/<token>) las marcas ya guardadas por el barrido diario:
+  nunca consulta al INPI, así carga al instante. Si el seguimiento no está activo muestra el texto de aceptación y el
+  botón «Activar seguimiento» (POST …/activar). Abajo, «Dejar de recibir avisos» (POST …/baja).
+  No muestra CUIT, mail ni domicilio.
+
+  Estilo: el mismo de /oposicion/ (manual de marca: azul #161250, celeste #0095FF, turquesa #5CFFE1).
+-->
+<div id="smo" class="smo">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Mulish:wght@400;600;700&family=Outfit:wght@600;800;900&display=swap">
+  <style>
+    .smo, .smo * { box-sizing: border-box; }
+    .smo {
+      --smo-azul: #161250; --smo-celeste: #0095ff; --smo-turq: #5cffe1; --smo-gris: #606060; --smo-fondo: #f4f7ff;
+      --smo-titulo: "Outfit", "Roboto", "Segoe UI", sans-serif;
+      --smo-texto: "Mulish", "Roboto", "Segoe UI", sans-serif;
+      font-family: var(--smo-texto); color: var(--smo-gris); font-size: 17px; line-height: 1.6; background: #fff;
+      -webkit-font-smoothing: antialiased;
+      width: 100vw; max-width: 100vw; margin-left: calc(50% - 50vw); margin-right: calc(50% - 50vw);
+      overflow: hidden; --smo-header: 90px;
+    }
+    body:has(#smo) { overflow-x: clip; }
+    .smo h1, .smo h2, .smo h3 { font-family: var(--smo-titulo); color: var(--smo-azul); margin: 0; }
+    .smo p { margin: 0; }
+    .smo [hidden] { display: none !important; }
+    .smo .smo-caja { width: 100%; max-width: 920px; margin: 0 auto; padding: 0 24px; }
+
+    .smo .smo-btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; cursor: pointer;
+      text-decoration: none; min-height: 46px; padding: 0 24px; border-radius: 27px; border: 1px solid var(--smo-turq);
+      font: 700 16px/1 var(--smo-texto); transition: background .15s, transform .15s; }
+    .smo .smo-btn:hover { transform: translateY(-1px); }
+    .smo .smo-btn.pri { background: var(--smo-turq); color: var(--smo-azul); }
+    .smo .smo-btn.pri:hover { background: #8dffee; }
+    .smo .smo-btn.sec { background: transparent; color: var(--smo-azul); border-color: var(--smo-azul); }
+    .smo .smo-btn[disabled] { opacity: .6; cursor: wait; }
+    .smo .smo-btn svg { width: 20px; height: 20px; fill: currentColor; }
+
+    .smo .smo-hero { background: var(--smo-azul); color: #fff; padding: calc(var(--smo-header) + 40px) 0 56px; }
+    .smo .smo-eyebrow { font: 700 14px/1.3 var(--smo-texto); letter-spacing: .14em; text-transform: uppercase; color: var(--smo-turq); margin-bottom: 10px; }
+    .smo .smo-h1 { font: 900 clamp(30px, 5vw, 46px)/1.1 var(--smo-titulo); color: #fff; margin-bottom: 14px; }
+    .smo .smo-lead { font-size: 18px; color: #e6e8ff; max-width: 680px; }
+
+    .smo .smo-sec { padding: 44px 0 64px; }
+    .smo .smo-aviso { border-radius: 20px; padding: 22px 24px; margin-bottom: 28px; }
+    .smo .smo-aviso.aceptar { background: var(--smo-fondo); border: 1px solid var(--smo-turq); }
+    .smo .smo-aviso.ok { background: #e9fff9; border: 1px solid var(--smo-turq); color: var(--smo-azul); font-weight: 700; }
+    .smo .smo-aviso.baja { background: #fff5f0; border: 1px solid #ffcfb8; }
+    .smo .smo-aviso.error { background: #fff5f0; border: 1px solid #ffcfb8; text-align: center; }
+    .smo .smo-aviso h2 { font-size: 22px; margin-bottom: 8px; }
+    .smo .smo-aviso .smo-legal { font-size: 14px; line-height: 1.5; color: #4b4a6b; margin: 12px 0 18px; }
+
+    .smo .smo-marcas { display: grid; gap: 16px; }
+    .smo .smo-tarjeta { background: #fff; border: 1px solid var(--smo-turq); border-radius: 20px; padding: 22px 24px;
+      box-shadow: 0 6px 24px rgba(22,18,80,.06); }
+    .smo .smo-cab { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 6px 14px; }
+    .smo .smo-marca { font: 900 22px/1.2 var(--smo-titulo); color: var(--smo-azul); text-transform: uppercase; overflow-wrap: anywhere; }
+    .smo .smo-datos { font-size: 14px; color: #6b6a88; }
+    .smo .smo-badge { display: inline-block; padding: 4px 12px; border-radius: 20px; font: 800 12px/1.3 var(--smo-titulo);
+      letter-spacing: .06em; text-transform: uppercase; background: #cfe9ff; color: var(--smo-azul); }
+    .smo .smo-badge.fin { background: #eceaf5; color: #4b4a6b; }
+    .smo .smo-badge.ok { background: var(--smo-turq); }
+
+    .smo .smo-pasos { list-style: none; padding: 0; margin: 18px 0 14px; display: flex; gap: 6px; }
+    .smo .smo-pasos li { flex: 1; text-align: center; font-size: 12px; line-height: 1.25; color: #9a99b5; }
+    .smo .smo-pasos li::before { content: ""; display: block; height: 6px; border-radius: 3px; background: #e6e6f0; margin-bottom: 6px; }
+    .smo .smo-pasos li.hecho::before { background: var(--smo-celeste); }
+    .smo .smo-pasos li.actual { color: var(--smo-azul); font-weight: 800; }
+    .smo .smo-pasos li.actual::before { background: var(--smo-turq); }
+    .smo .smo-etapa h3 { font-size: 18px; margin-bottom: 4px; }
+    .smo .smo-etapa p + p { margin-top: 6px; }
+    .smo .smo-etapa b { color: var(--smo-azul); }
+    .smo .smo-linea { margin-top: 12px; font-size: 14px; color: #6b6a88; }
+
+    .smo .smo-contacto { margin-top: 36px; text-align: center; }
+    .smo .smo-contacto .smo-acciones { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px; margin-top: 14px; }
+    .smo .smo-pie { margin-top: 32px; font-size: 13px; line-height: 1.5; color: #8a89a5; text-align: center; }
+    .smo .smo-pie button { background: none; border: 0; padding: 0; color: inherit; text-decoration: underline; cursor: pointer; font: inherit; }
+
+    @media (max-width: 640px) {
+      .smo { font-size: 16px; }
+      .smo .smo-caja { padding: 0 18px; }
+      .smo .smo-hero { padding: calc(var(--smo-header) + 24px) 0 40px; }
+      .smo .smo-pasos li { font-size: 0; }
+      .smo .smo-pasos li.actual { font-size: 11px; }
+      .smo .smo-acciones .smo-btn, .smo .smo-aviso .smo-btn { width: 100%; }
+    }
+  </style>
+
+  <section class="smo-hero">
+    <div class="smo-caja">
+      <p class="smo-eyebrow">Vigilancia de expediente</p>
+      <h1 class="smo-h1">Seguimiento de tus marcas</h1>
+      <p class="smo-lead">El INPI no avisa por mail: las novedades quedan en la bandeja de entrada de su portal. Nosotros
+        revisamos tus expedientes todos los días y te escribimos cuando se mueven.</p>
+    </div>
+  </section>
+
+  <section class="smo-sec">
+    <div class="smo-caja">
+      <p data-smo-cargando>Cargando tus expedientes…</p>
+
+      <div class="smo-aviso error" data-smo-error hidden>
+        <h2>No encontramos este seguimiento</h2>
+        <p>El link puede estar incompleto. Copialo entero desde el mail o escribinos y lo vemos.</p>
+      </div>
+
+      <!-- REVISAR (Pame): texto de aceptación y aviso legal -->
+      <div class="smo-aviso aceptar" data-smo-aceptar hidden>
+        <h2>Activá el seguimiento gratuito</h2>
+        <p>Te avisamos por mail cada vez que tu expediente cambie de etapa o si aparece algo que haya que contestar.</p>
+        <p class="smo-legal">Al activar el seguimiento aceptás recibir por mail avisos sobre el estado de tus expedientes.
+          Es gratuito y no implica contratar ningún servicio: Smarties no te representa ante el INPI ni presenta escritos
+          en tu nombre salvo que lo contrates. La información surge de la consulta pública del INPI y es orientativa; el
+          estado oficial es el que figura en el portal del INPI. Usamos tu mail solo para estos avisos y podés darte de
+          baja cuando quieras.</p>
+        <button type="button" class="smo-btn pri" data-smo-activar>Activar seguimiento</button>
+      </div>
+
+      <div class="smo-aviso ok" data-smo-activo hidden>✓ Seguimiento activo. Te vamos a escribir cuando tu expediente se mueva.</div>
+
+      <div class="smo-aviso baja" data-smo-baja hidden>
+        <p>Diste de baja los avisos de este seguimiento. Si querés volver a recibirlos:</p>
+        <p style="margin-top:14px"><button type="button" class="smo-btn sec" data-smo-activar>Volver a activar</button></p>
+      </div>
+
+      <div class="smo-marcas" data-smo-marcas></div>
+      <p class="smo-linea" data-smo-actualizado hidden></p>
+
+      <div class="smo-contacto" data-smo-contacto hidden>
+        <h2>¿Tenés dudas sobre tu trámite?</h2>
+        <div class="smo-acciones">
+          <a class="smo-btn pri" data-smo-wa href="#" target="_blank" rel="noopener">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2a10 10 0 0 0-8.6 15.1L2 22l5-1.3A10 10 0 1 0 12 2zm5.3 14.2c-.2.6-1.3 1.2-1.8 1.2-.5.1-1 .2-3.3-.7-2.8-1.1-4.6-4-4.7-4.2-.1-.2-1.1-1.5-1.1-2.9s.7-2 1-2.3c.2-.3.5-.3.7-.3h.5c.2 0 .4 0 .6.5l.8 1.9c.1.2.1.3 0 .5l-.3.5-.4.4c-.1.1-.3.3-.1.6.2.3.8 1.3 1.7 2.1 1.1 1 2.1 1.3 2.4 1.5.3.1.5.1.6-.1l.9-1c.2-.3.4-.2.6-.1l1.8.9c.3.1.5.2.5.3.1.2.1.7-.1 1.2z"/></svg>
+            WhatsApp</a>
+          <a class="smo-btn sec" href="mailto:info@smartiesconsultora.com.ar">info@smartiesconsultora.com.ar</a>
+        </div>
+      </div>
+
+      <p class="smo-pie" data-smo-pie hidden>La información surge de la consulta pública del INPI y es orientativa; el estado
+        oficial es el que figura en el portal del INPI.<span data-smo-baja-link hidden><br>
+        <button type="button" data-smo-dar-baja>Dejar de recibir avisos</button></span></p>
+    </div>
+  </section>
+
+  <script>
+  (function () {
+    var API = "https://panel.registrodemimarca.com.ar/api/publico/seguimiento/";
+    var WHATSAPP = "5491155890784";
+    // Recorrido típico (claves de panel/seguimiento_expediente.py). Notificaciones y Análisis de fondo no van en la barra.
+    var PASOS = [["estudio_forma", "Forma"], ["estudio_fondo", "Fondo"], ["publicacion", "Publicación"],
+                 ["resoluciones", "Resolución"], ["concedida", "Concedida"]];
+    var raiz = document.getElementById("smo");
+    function $(s) { return raiz.querySelector(s); }
+    function $$(s) { return Array.prototype.slice.call(raiz.querySelectorAll(s)); }
+    function esc(t) { var d = document.createElement("div"); d.textContent = t == null ? "" : String(t); return d.innerHTML; }
+    function fecha(iso) { if (!iso) return ""; var p = iso.split("-"); return p[2] + "/" + p[1] + "/" + p[0]; }
+    var token = (new URLSearchParams(location.search).get("t") || "").trim();
+
+    function pasoActual(m) {
+      if (m.estado === "concedida") return "concedida";
+      if (!m.sector) return null;
+      if (m.sector.clave === "analisis_fondo") return "estudio_fondo";
+      if (m.sector.clave === "notificaciones") return "publicacion";
+      return m.sector.clave;
+    }
+
+    function tarjeta(m) {
+      var actual = pasoActual(m), idx = -1;
+      PASOS.forEach(function (p, i) { if (p[0] === actual) idx = i; });
+      var pasos = PASOS.map(function (p, i) {
+        var c = i < idx ? "hecho" : (i === idx ? "actual" : "");
+        return '<li class="' + c + '">' + esc(p[1]) + "</li>";
+      }).join("");
+      var badge = m.estado === "en_curso" ? "" : (m.estado === "concedida" ? " ok" : " fin");
+      var etapa = "";
+      if (m.sector) {
+        etapa = '<div class="smo-etapa"><h3>' + esc(m.sector.nombre) +
+          (m.ubicacion_fecha ? ' <span class="smo-datos">desde el ' + fecha(m.ubicacion_fecha) + "</span>" : "") +
+          "</h3><p>" + esc(m.sector.que_es) + "</p><p><b>Lo que sigue:</b> " + esc(m.sector.que_sigue) + "</p></div>";
+      } else if (m.estado === "concedida") {
+        etapa = '<div class="smo-etapa"><h3>¡Marca concedida!</h3><p>El INPI resolvió a favor y la marca quedó registrada a tu nombre por 10 años.</p></div>';
+      } else if (m.estado === "en_curso") {
+        etapa = '<div class="smo-etapa"><p>Estamos actualizando la información de este expediente.</p></div>';
+      }
+      var linea = (m.linea || []).map(function (p) { return esc(p.sector) + (p.fecha ? " (" + fecha(p.fecha) + ")" : ""); }).join(" → ");
+      return '<article class="smo-tarjeta"><div class="smo-cab"><span class="smo-marca">' + esc(m.denominacion) + "</span>" +
+        '<span class="smo-badge' + badge + '">' + esc(m.estado_texto) + "</span></div>" +
+        '<p class="smo-datos">' + (m.clase ? "Clase " + esc(m.clase) + " · " : "") + "Acta " + esc(m.acta) + "</p>" +
+        (actual ? '<ol class="smo-pasos">' + pasos + "</ol>" : "") + etapa +
+        (linea ? '<p class="smo-linea">Recorrido: ' + linea + "</p>" : "") + "</article>";
+    }
+
+    function mostrar(d) {
+      $("[data-smo-cargando]").hidden = true;
+      $("[data-smo-aceptar]").hidden = d.activo || d.baja;
+      $("[data-smo-activo]").hidden = !d.activo;
+      $("[data-smo-baja]").hidden = !d.baja;
+      $("[data-smo-marcas]").innerHTML = (d.marcas || []).map(tarjeta).join("");
+      var act = $("[data-smo-actualizado]");
+      act.hidden = !d.actualizado;
+      act.textContent = d.actualizado ? "Última revisión en el INPI: " + fecha(d.actualizado) : "";
+      $("[data-smo-contacto]").hidden = false;
+      $("[data-smo-pie]").hidden = false;
+      $("[data-smo-baja-link]").hidden = !d.activo;
+      var primera = (d.marcas || [])[0];
+      var texto = "Hola, quiero consultar por mi marca" + (primera ? " " + primera.denominacion + " (acta " + primera.acta + ")" : "") + ".";
+      $("[data-smo-wa]").href = "https://wa.me/" + WHATSAPP + "?text=" + encodeURIComponent(texto);
+    }
+
+    function error() {
+      $("[data-smo-cargando]").hidden = true;
+      $("[data-smo-error]").hidden = false;
+      $("[data-smo-contacto]").hidden = false;
+      $("[data-smo-wa]").href = "https://wa.me/" + WHATSAPP;
+    }
+
+    function pedir(ruta, metodo) {
+      return fetch(API + encodeURIComponent(token) + (ruta || ""), { method: metodo || "GET", headers: { "Accept": "application/json" } })
+        .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); });
+    }
+
+    function accion(ruta, boton) {
+      if (boton) boton.disabled = true;
+      pedir(ruta, "POST").then(mostrar).catch(function () {
+        alert("No se pudo guardar. Probá de nuevo en un momento.");
+      }).then(function () { if (boton) boton.disabled = false; });
+    }
+
+    $$("[data-smo-activar]").forEach(function (b) { b.addEventListener("click", function () { accion("/activar", b); }); });
+    $("[data-smo-dar-baja]").addEventListener("click", function () {
+      if (confirm("¿Dejar de recibir los avisos de tus expedientes?")) accion("/baja", null);
+    });
+
+    if (!token) { error(); return; }
+    pedir().then(mostrar).catch(error);
+  })();
+  </script>
+</div>

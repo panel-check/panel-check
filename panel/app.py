@@ -75,6 +75,7 @@ import calendario_core
 import conceptos_vigilancia
 import programador
 import seguimiento_expediente
+import seguimiento_api
 import cartera
 import seguridad
 import cartera_api
@@ -4412,6 +4413,7 @@ app.include_router(informes_api.crear_router(
 ))
 app.include_router(verificador_api.crear_router(verificar_login, conexion))
 app.include_router(presentacion_api.crear_router(conexion))   # presentación de oposición (página privada de la web)
+app.include_router(seguimiento_api.crear_router(verificar_login, conexion))     # vigilancia de expediente (página del titular en la web)
 app.include_router(buscador_inpi_api.crear_router(verificar_login, conexion))
 app.include_router(accesos_api.crear_router(verificar_login, conexion, CLAVES_ACCESO_RAPIDO, _contar_consulta))
 
