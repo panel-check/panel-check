@@ -129,6 +129,10 @@ def main():
                    FROM vigilancia_alertas a LEFT JOIN cartera_marcas cm ON cm.acta = a.acta_cliente LEFT JOIN clientes c ON c.id = a.cliente_id
                    WHERE a.tipo='similitud' AND a.estado='nueva' AND a.ia_veredicto IS NULL GROUP BY 1,2,3""")
     rep.append(tabla("Nuevas sin juzgar: ¿la marca del cliente sigue en la cartera?", cur.fetchall(), ["En cartera", "Vigilar", "Cliente activo", "Alertas"]))
+    cur.execute("""SELECT (creado_en AT TIME ZONE 'America/Argentina/Buenos_Aires')::date d,
+                          COUNT(*) FILTER (WHERE es_lead), COUNT(*) FILTER (WHERE NOT es_lead), COUNT(*) FILTER (WHERE es_lead IS NULL)
+                   FROM solicitudes_escaneadas WHERE creado_en >= now() - interval '10 days' GROUP BY 1 ORDER BY 1""")
+    rep.append(tabla("Escaneo de actas: guardadas por día (sin agente / con agente / sin dato)", cur.fetchall(), ["Día", "Sin agente", "Con agente", "Sin dato"]))
     cur.execute("SELECT metricas FROM registro_corridas WHERE proceso = 'vigilancia.yml' ORDER BY creado_en DESC LIMIT 1")
     f = cur.fetchone()
     rep.append(f"- Última corrida de la vigilancia: {f[0] if f else 'sin datos'}")
