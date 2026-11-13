@@ -105,6 +105,13 @@ class CoherenciaConLosWorkflows(unittest.TestCase):
         for p in pg.PROGRAMADOS:
             self.assertIsNotNone(pg.proxima(p["cron"], utc(2026, 10, 27, 0, 0)), p["workflow"])
 
+    def test_automatizaciones_calcula_la_proxima_con_el_lector_del_programador(self):
+        # El 12/11/2026 «*/15» (Avisos por Telegram) tiró abajo /crons con un lector propio que no lo entendía.
+        with open(os.path.join(RAIZ, "panel", "app.py"), encoding="utf-8") as f:
+            app = f.read()
+        cuerpo = app.split("def _proxima_cron_unico", 1)[1].split("\ndef ", 1)[0]
+        self.assertIn("programador.proxima(", cuerpo)
+
     def test_la_tarjeta_de_automatizaciones_lee_los_horarios_de_aca(self):
         with open(os.path.join(RAIZ, "panel", "app.py"), encoding="utf-8") as f:
             app = f.read()
