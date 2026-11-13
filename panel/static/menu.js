@@ -315,7 +315,10 @@
   }
 
   // Pantallas que siempre están en el ⚡ (no son búsquedas guardadas: son links fijos para todo el equipo).
-  const PANTALLAS_RAPIDAS = [{ nombre: "🗓 Disponibilidad", href: "/disponibilidad", titulo: "Los horarios libres para agendar reuniones" }];
+  const PANTALLAS_RAPIDAS = [
+    { nombre: "🗓 Disponibilidad", href: "/disponibilidad", titulo: "Los horarios libres para agendar reuniones" },
+    { nombre: "🔎 Vigilancia", href: "/clientes?vista=vigilancia", titulo: "Las alertas de vigilancia marcaria (Clientes → Vigilancia)" },
+  ];
   function pantallasRapidas() {
     return `<div class="acceso-titulo">Pantallas</div>` + PANTALLAS_RAPIDAS.map((p) =>
       `<div class="acceso"><a class="acceso-link" href="${esc(p.href)}" role="menuitem" title="${esc(p.titulo)}"><span class="acceso-nombre">${esc(p.nombre)}</span></a></div>`).join("");
