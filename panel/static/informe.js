@@ -134,6 +134,60 @@
     }));
   }
 
+  // Fechas clave de cada acta opuesta: solicitud, publicación en el boletín, cierre del plazo para recibir
+  // oposiciones (publicación + 30 días corridos) y fin de los 3 meses para negociar. Usa «fechas_clave» si el
+  // JSON lo trae; si no (informes cargados antes), las arma con marca_cliente.actas_opuestas y oposiciones.
+  const aFecha = s => { const m = /^(\d{1,2})\/(\d{1,2})\/(\d{4})/.exec(String(s || "").trim()); return m ? new Date(+m[3], +m[2] - 1, +m[1]) : null; };
+  const deFecha = f => `${String(f.getDate()).padStart(2, "0")}/${String(f.getMonth() + 1).padStart(2, "0")}/${f.getFullYear()}`;
+  const diasHasta = f => { const h = new Date(); return Math.round((f - new Date(h.getFullYear(), h.getMonth(), h.getDate())) / 864e5); };
+  function fechasClave(d) {
+    const mc = d.marca_cliente || {}, ops = (Array.isArray(d.oposiciones) ? d.oposiciones : []).filter(o => o && typeof o === "object");
+    const actas = (Array.isArray(mc.actas_opuestas) ? mc.actas_opuestas : []).filter(a => a && typeof a === "object");
+    const propias = (Array.isArray(d.fechas_clave) ? d.fechas_clave : []).filter(x => x && typeof x === "object");
+    let claves = [...new Set([...propias.map(x => x.acta), ...actas.map(a => a.acta), ...ops.map(o => o.acta_cliente)]
+      .map(a => String(a || "").trim()).filter(Boolean))];
+    const unica = claves.length <= 1;
+    if (!claves.length) claves = [""];
+    const buscar = (lista, campo, acta) => lista.find(x => String(x[campo] || "").trim() === acta) || (unica ? lista[0] || {} : {});
+    return claves.map(acta => {
+      const p = buscar(propias, "acta", acta), a = buscar(actas, "acta", acta), o = buscar(ops, "acta_cliente", acta);
+      const publicacion = p.fecha_publicacion || a.fecha_publicacion || "";
+      let cierre = p.cierre_oposiciones || "";
+      if (!cierre && aFecha(publicacion)) { const f = aFecha(publicacion); f.setDate(f.getDate() + 30); cierre = deFecha(f); }
+      return {
+        acta, clase: p.clase ?? a.clase ?? o.clase ?? "",
+        solicitud: p.fecha_solicitud || a.fecha_presentacion || "", publicacion, boletin: p.boletin || a.boletin || "", cierre,
+        vence: p.vencimiento_negociacion || o.vencimiento_negociacion || "", notificacion: p.fecha_notificacion || o.fecha_notificacion || "",
+        estimado: p.vencimiento_estimado === true || (p.notificacion || o.notificacion) === "esperada",
+      };
+    }).filter(f => f.solicitud || f.publicacion || f.cierre || f.vence);
+  }
+  function cajaFechas(d) {
+    const filas = fechasClave(d);
+    if (!filas.length) return "";
+    const tarjeta = (titulo, valor, nota, cls = "") => `<div class="op-fecha${cls ? " " + cls : ""}"><span>${esc(titulo)}</span><b>${esc(valor || "—")}</b>${nota ? `<small>${esc(nota)}</small>` : ""}</div>`;
+    const falta = (txt, pasado) => {
+      const f = aFecha(txt);
+      if (!f) return { nota: "", cls: "" };
+      const n = diasHasta(f);
+      return n < 0 ? { nota: pasado, cls: "pasada" } : n === 0 ? { nota: "es hoy", cls: "urgente" }
+        : { nota: `faltan ${n} ${n === 1 ? "día" : "días"}`, cls: n <= 15 ? "urgente" : "" };
+    };
+    return caja("📅 Fechas clave", filas.map(f => {
+      const c = falta(f.cierre, "ya cerró"), v = falta(f.vence, "ya venció");
+      const notaVence = f.vence
+        ? [f.estimado ? "estimado: falta la notificación" : f.notificacion ? `notificada el ${f.notificacion}` : "", v.nota].filter(Boolean).join(" · ")
+        : "falta la notificación del INPI";
+      return `${filas.length > 1 ? `<div class="op-fechas-cab">Acta ${f.acta ? `<a class="link-acta" href="javascript:void(0)" data-acta="${esc(f.acta)}">${esc(f.acta)} ↗</a>` : "—"}${f.clase !== "" ? ` <span class="cl-tag">Clase ${esc(f.clase)}</span>` : ""}</div>` : ""}
+        <div class="op-fechas">
+          ${tarjeta("Se solicitó la marca", f.solicitud, "")}
+          ${tarjeta("Se publicó en el boletín", f.publicacion, f.boletin ? `Boletín ${f.boletin}` : "")}
+          ${tarjeta("Cierra el plazo de oposiciones", f.cierre, ["30 días corridos desde la publicación", c.nota].filter(Boolean).join(" · "), c.cls)}
+          ${tarjeta("Vencen los 3 meses para negociar", f.vence, notaVence, f.vence ? (v.cls || "clave") : "")}
+        </div>`;
+    }).join(""));
+  }
+
   // Informe Oposición IA: ficha ⚡ arriba, después oposiciones, marcas, comparación, palancas y caminos.
   function oposicion(r) {
     const d = r.datos || {}, rx = d.resumen_express || {}, mc = d.marca_cliente || {}, cmp = d.comparacion || {};
@@ -149,7 +203,7 @@
     const actaLink = a => a ? `<a class="link-acta" href="javascript:void(0)" data-acta="${esc(a)}">${esc(a)} ↗</a>` : "";
     const sit = v => { const t = String(v || "").toLowerCase(); return t.startsWith("id") ? "mal" : t.startsWith("inc") ? "aviso" : t.startsWith("af") ? "ok" : ""; };
     const sino = v => v === true ? "sí" : v === false ? "no" : esc(texto(v));
-    const conocidas = new Set(["tipo", "version", "fecha_analisis", "resumen_express", "resumen", "marca_cliente", "oposiciones", "marcas_oponente",
+    const conocidas = new Set(["tipo", "version", "fecha_analisis", "fechas_clave", "resumen_express", "resumen", "marca_cliente", "oposiciones", "marcas_oponente",
       "comparacion", "palancas", "chances", "caminos", "preguntas_cliente", "a_confirmar_pame", "limitaciones"]);
     const otras = Object.entries(d).filter(([k]) => !conocidas.has(k));
     const signos = cmp.signos && typeof cmp.signos === "object" ? cmp.signos : null;
@@ -161,6 +215,7 @@
         <div class="inf-kpi"><b>${esc(vtos.length ? vtos.sort((a, b) => (a.split("/").reverse().join("")).localeCompare(b.split("/").reverse().join("")))[0] : "—")}</b><span>vencen los 3 meses para negociar</span></div>
         <div class="inf-kpi" style="flex:1"><b style="font-size:15px">${esc(oponentes.join(", ") || "—")}</b><span>oponente</span></div>
       </div>
+      ${cajaFechas(d)}
       ${caja("⚡ Resumen express", fichaRx ? `<dl class="op-rx">${fichaRx}</dl>` : "")}
       ${caja("Resumen", d.resumen ? `<p class="inf-obs">${esc(d.resumen)}</p>` : "")}
       ${caja("Marca del cliente", dl(Object.fromEntries(Object.entries(mc).filter(([k]) => !["actas_opuestas", "otras_actas"].includes(k))))

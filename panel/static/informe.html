@@ -53,6 +53,18 @@
   .op-ch::first-letter { text-transform: uppercase; }
   .op-ch { display: block; }
   .op-ch.mal { color: var(--rojo); } .op-ch.aviso { color: #b86e00; } .op-ch.ok { color: var(--verde); }
+  .op-fechas { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-bottom: 10px; }
+  .op-fechas:last-child { margin-bottom: 0; }
+  .op-fechas-cab { font-size: 14px; margin: 4px 0 8px; }
+  .op-fecha { border: 1px solid var(--borde); border-radius: 8px; padding: 10px 12px; background: #fafbfc; }
+  .op-fecha span { display: block; font-size: 12px; color: var(--gris); }
+  .op-fecha b { display: block; font-size: 18px; color: #1f2430; margin: 2px 0; }
+  .op-fecha small { display: block; font-size: 12px; color: var(--gris); line-height: 1.35; }
+  .op-fecha.clave { border-color: var(--azul); }
+  .op-fecha.urgente { border-color: #f0b429; background: #fff8e6; }
+  .op-fecha.urgente small { color: #8a4b00; font-weight: 600; }
+  .op-fecha.pasada b { color: var(--gris); }
+  @media (max-width: 640px) { .op-fechas { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
   .op-lista { display: grid; gap: 12px; }
   .op-item { border: 1px solid var(--borde); border-radius: 8px; padding: 10px 14px; background: #fafbfc; }
   .op-item-cab { font-size: 14px; margin-bottom: 8px; }
@@ -103,6 +115,6 @@
 <div class="contenido" id="informe"><p class="crm-cargando">Cargando…</p></div>
 
 <script src="/static/comun.js?v=nc1"></script>
-<script src="/static/informe.js?v=vista1"></script>
+<script src="/static/informe.js?v=fechas1"></script>
 </body>
 </html>

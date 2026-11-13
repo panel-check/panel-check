@@ -16,6 +16,13 @@ Esquema (versión 1). Todos los textos en español; las fechas como «DD/MM/AAAA
     "cliente_marca": "...", "oponente": "...", "que_cita": "...", "plazos": "...",
     "chances": "...", "ojo": "...", "camino_sugerido": "...", "falta": "..."
   },
+  "fechas_clave": [                          # opcional: una fila por acta opuesta (la página las muestra arriba;
+    {"acta", "clase", "fecha_solicitud",     # si falta, informe.js las arma con actas_opuestas y oposiciones)
+     "fecha_publicacion", "boletin",
+     "cierre_oposiciones",                   # publicación + 30 días corridos
+     "fecha_notificacion", "vencimiento_negociacion",
+     "vencimiento_estimado": false}          # true si todavía no hay notificación
+  ],
   "resumen": "2 o 3 líneas",
   "marca_cliente": {                         # obligatorio: denominacion
     "denominacion": "PEAKS", "tipo": "denominativa|mixta|figurativa",
