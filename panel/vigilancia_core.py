@@ -605,7 +605,7 @@ def mantenimiento(conn, hoy=None, log=print) -> dict:
          las actas y clases de esa marca (actas_cliente). Se queda la que alguien ya trabajó o,
          si ninguna, la de mayor puntaje."""
     hoy = hoy or cartera.hoy_ar()
-    st = {"vencidas_borradas": 0, "duplicadas_unidas": 0}
+    st = {"vencidas_borradas": 0, "duplicadas_unidas": 0, "huerfanas_borradas": 0}
     with conn.cursor() as cur:
         cur.execute(
             f"""DELETE FROM vigilancia_alertas a
@@ -613,6 +613,12 @@ def mantenimiento(conn, hoy=None, log=print) -> dict:
                   AND {SQL_PUBLICACION} IS NOT NULL
                   AND {SQL_PUBLICACION} + %s < %s""", (VENTANA_OPOSICION_DIAS, hoy))
         st["vencidas_borradas"] = cur.rowcount
+        # Alertas de una marca que ya no está en la cartera (la sacaron o la borraron con el cliente):
+        # ya no hay nada que vigilar. Las que alguien trabajó (oponer, opuesta, descartada) quedan.
+        cur.execute("""DELETE FROM vigilancia_alertas a
+                       WHERE a.tipo = 'similitud' AND a.estado IN ('nueva', 'monitorear', 'descartada_ia')
+                         AND NOT EXISTS (SELECT 1 FROM cartera_marcas cm WHERE cm.acta = a.acta_cliente)""")
+        st["huerfanas_borradas"] = cur.rowcount
 
         cur.execute("""SELECT a.id, a.acta_cliente, a.acta_nueva, a.estado, a.puntaje, a.actas_cliente, a.decidido_en,
                               cm.cliente_id, cm.denominacion, cm.grupo_marca, cm.clase
@@ -638,9 +644,9 @@ def mantenimiento(conn, hoy=None, log=print) -> dict:
             if json.dumps(sorted(actual or [], key=lambda d: d["acta"])) != actas_g:
                 cur.execute("UPDATE vigilancia_alertas SET actas_cliente = %s WHERE id = %s", (actas_g, guardar["id"]))
     conn.commit()
-    if st["vencidas_borradas"] or st["duplicadas_unidas"]:
+    if st["vencidas_borradas"] or st["duplicadas_unidas"] or st["huerfanas_borradas"]:
         log(f"[vigilancia] mantenimiento: {st['vencidas_borradas']} alerta(s) vencidas borradas, "
-            f"{st['duplicadas_unidas']} duplicada(s) unidas")
+            f"{st['duplicadas_unidas']} duplicada(s) unidas, {st['huerfanas_borradas']} de marcas que ya no están en la cartera")
     return st
 
 
