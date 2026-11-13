@@ -958,7 +958,8 @@ async function pintarVigilancia() {
 /* «💲 Consumo IA»: lo que se gasta en la API de Claude (tabla ia_consumo). */
 const usd = (v, dec = 2) => "USD " + (v ?? 0).toLocaleString("es-AR", { minimumFractionDigits: dec, maximumFractionDigits: dec });
 const usdFino = v => usd(v, (v ?? 0) < 0.1 ? 4 : 2);
-const ORIGENES_IA = { vigilancia: "Corridas de la vigilancia (juez)", conceptos: "Listas de conceptos", prueba: "Probar conexión" };
+const ORIGENES_IA = { vigilancia: "Corridas de la vigilancia (juez)", conceptos: "Listas de conceptos", prueba: "Probar conexión",
+  ajuste: "Ajuste con la Consola (lo gastado antes de contar cada llamada)" };
 
 async function cargarConsumoIA() {
   try {
@@ -985,7 +986,13 @@ async function pintarConsumoIA() {
         <div><small>Histórico${r.desde ? " (desde " + crmFecha(r.desde) + ")" : ""}</small><strong>${usdFino(r.total)}</strong></div>
         <div><small>Llamadas a la API</small><strong>${fmtNum(r.llamadas)}</strong></div>
       </div>
-      ${r.total_estimado ? `<p class="crm-nota">Incluye ${usdFino(r.total_estimado)} de corridas anteriores al 13/11/2026, calculadas como máximo (a precio de Sonnet). Desde esa fecha cada llamada se cuenta con el precio de su modelo. Las corridas que se cortaron antes de terminar no quedaron registradas: el número exacto de la factura está en console.anthropic.com.</p>` : ""}
+      ${r.total_estimado ? `<p class="crm-nota">Incluye ${usdFino(r.total_estimado)} de lo gastado antes de que el panel contara cada llamada (13/11/2026)${r.por_origen.some(o => o.origen === "ajuste") ? ", tomado de la Consola de Claude" : ", calculado como máximo (a precio de Sonnet) y sin las corridas que se cortaron"}.</p>` : ""}
+      <form class="cl-barra vg-consumo-ajuste" id="vg-consumo-ajuste">
+        <span class="crm-gris">¿No coincide con la Consola de Claude (Gasto y uso → Coste, filtrando la clave del panel y con un rango que tome todo)? Copiá el total:</span>
+        <label>USD<input id="vg-consumo-total" inputmode="decimal" placeholder="1,12" style="width:90px"></label>
+        <button type="submit" class="cl-btn sec mini">Igualar con la Consola</button> <span id="vg-consumo-ajuste-res" class="crm-gris"></span>
+      </form>
+      <p class="crm-nota">La Consola cuenta en hora UTC (el panel, en hora de Argentina) y tarda un rato en sumar lo último: de un día para el otro puede haber unos centavos de diferencia.</p>
       <div class="vg-consumo-cols">
         <div><h4>Por mes</h4><table class="cl-tabla"><thead><tr><th>Mes</th><th class="num">Gasto</th><th class="num">Llamadas</th></tr></thead><tbody>
           ${r.por_mes.map(m => `<tr><td>${esc(m.mes)}</td><td class="num">${usdFino(m.usd)}</td><td class="num">${fmtNum(+m.llamadas)}</td></tr>`).join("") || '<tr><td colspan="3" class="crm-gris">Sin consumo todavía.</td></tr>'}</tbody></table>
@@ -996,7 +1003,15 @@ async function pintarConsumoIA() {
       </div>
       <h4>Últimas corridas de la vigilancia</h4><table class="cl-tabla"><thead><tr><th>Cuándo</th><th>Qué hizo</th><th class="num">Llamadas</th><th class="num">Gasto</th></tr></thead><tbody>
         ${r.corridas.map(c => `<tr><td>${fmtFechaHora(c.fecha)}</td><td>${esc(c.detalle || "")}${c.errores ? ` · ${c.errores} error(es)` : ""}</td><td class="num">${fmtNum(c.llamadas)}</td><td class="num">${usdFino(c.costo_usd)}${c.estimado ? " <small class=\"crm-gris\">(máx.)</small>" : ""}</td></tr>`).join("") || '<tr><td colspan="4" class="crm-gris">Todavía no hay corridas registradas.</td></tr>'}</tbody></table>
-      <p class="crm-nota">Precios usados (USD por millón de tokens, entrada / salida): ${Object.entries(r.precios).map(([k, v]) => `${esc(k)} ${v[0]} / ${v[1]}`).join(" · ")}. La caché del pedido se cobra 1,25× al escribirla y 0,1× al leerla.</p>`;
+      <p class="crm-nota">Precios usados (USD por millón de tokens, entrada / salida / lectura de caché): ${Object.entries(r.precios).map(([k, v]) => `${esc(k)} ${v[0]} / ${v[1]} / ${v[2]}`).join(" · ")}. Escribir la caché cuesta 1,25× la entrada.</p>`;
+    $("vg-consumo-ajuste").addEventListener("submit", async ev => {
+      ev.preventDefault();
+      const total = parseFloat($("vg-consumo-total").value.replace(/[^\d,.-]/g, "").replace(",", "."));
+      if (!(total >= 0)) { $("vg-consumo-ajuste-res").textContent = "Escribí el total en dólares, por ejemplo 1,12"; return; }
+      if (!confirm(`¿Igualar el histórico del panel con USD ${total.toFixed(2)}? Se reemplazan las estimaciones viejas por un ajuste.`)) return;
+      try { await apiJson("/api/cartera/vigilancia/consumo-ia/ajuste", "POST", { total_usd: total }); pintarConsumoIA(); }
+      catch (e) { $("vg-consumo-ajuste-res").textContent = e.message; }
+    });
   } catch (e) { caja.innerHTML = `<p class="crm-error">No se pudo cargar el consumo (${esc(e.message)}).</p>`; }
 }
 

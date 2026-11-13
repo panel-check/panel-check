@@ -120,9 +120,10 @@ def modelos():
             (os.environ.get("JUEZ_MODELO_FINO") or MODELO_FINO).strip())
 
 
-# Precio por millón de tokens (USD): entrada, salida. La caché se cobra 1,25× la entrada al escribirla
-# y 0,1× al leerla. Si Anthropic cambia los precios, se cambian acá (lo usa el «Consumo IA» del panel).
-PRECIOS = {"haiku": (0.10, 0.50), "sonnet": (2.0, 10.0), "opus": (5.0, 25.0)}
+# Precio por millón de tokens (USD): entrada, salida y lectura de caché (precios publicados en
+# platform.claude.com, 13/11/2026; Haiku 5.5 hasta 100.000 tokens por pedido). Escribir la caché
+# cuesta 1,25× la entrada. Si Anthropic cambia los precios, se cambian acá («💲 Consumo IA» del panel).
+PRECIOS = {"haiku": (0.10, 0.50, 0.01), "sonnet": (2.0, 10.0, 0.10), "opus": (4.0, 20.0, 0.20)}
 
 
 def precio_de(modelo: str):
@@ -167,8 +168,8 @@ class Uso:
         """USD de lo usado, con el precio de cada modelo."""
         total = 0.0
         for modelo, d in self.por_modelo.items():
-            p_in, p_out = precio_de(modelo)
-            total += (d["entrada"] * p_in + d["cache_escrita"] * p_in * 1.25 + d["cache_leida"] * p_in * 0.1
+            p_in, p_out, p_cache = precio_de(modelo)
+            total += (d["entrada"] * p_in + d["cache_escrita"] * p_in * 1.25 + d["cache_leida"] * p_cache
                       + d["salida"] * p_out) / 1e6
         return round(total, 6)
 
@@ -396,6 +397,23 @@ def registrar_consumo(cur, origen: str, uso: "Uso", detalle: str = None) -> None
            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
         (origen, detalle, uso.llamadas, uso.errores, uso.entrada, uso.cache, uso.salida, uso.costo(),
          json.dumps(uso.por_modelo)))
+
+
+def ajustar_con_consola(cur, total_consola: float) -> dict:
+    """La persona copia el total que muestra la Consola de Claude para la clave del panel: se borran las
+    estimaciones viejas y se guarda un ajuste por la diferencia, así el histórico del panel coincide.
+    De ahí en adelante cada llamada se cuenta sola (la Consola tarda un rato en actualizarse)."""
+    crear_tabla_consumo(cur)
+    cur.execute("DELETE FROM ia_consumo WHERE estimado")
+    cur.execute("SELECT COALESCE(SUM(costo_usd), 0), MIN(fecha) FROM ia_consumo")
+    r = cur.fetchone()
+    contado, primera = (r[0], r[1]) if not isinstance(r, dict) else tuple(r.values())
+    diferencia = round(float(total_consola) - float(contado or 0), 6)
+    cur.execute("""INSERT INTO ia_consumo (fecha, origen, detalle, costo_usd, estimado)
+                   VALUES (COALESCE(%s - interval '1 minute', now()), 'ajuste', %s, %s, true)""",
+                (primera, f"Ajuste con la Consola de Claude (total informado USD {float(total_consola):.2f}): "
+                          "lo gastado antes de que el panel contara cada llamada", diferencia))
+    return {"contado": float(contado or 0), "ajuste": diferencia}
 
 
 def importar_corridas_viejas(cur) -> int:

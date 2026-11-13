@@ -976,6 +976,20 @@ def crear_router(verificar_login, conexion, crm) -> APIRouter:
                 "desde": tot["desde"], "por_origen": por_origen, "por_mes": por_mes, "por_dia": por_dia,
                 "corridas": corridas, "precios": juez.PRECIOS}
 
+    class AjusteConsumo(BaseModel):
+        total_usd: float
+
+    @router.post("/api/cartera/vigilancia/consumo-ia/ajuste")
+    def ajustar_consumo_ia(body: AjusteConsumo, _: str = Depends(verificar_login)):
+        """Iguala el histórico del panel con el total que muestra la Consola de Claude para la clave del panel."""
+        if body.total_usd < 0 or body.total_usd > 100000:
+            raise HTTPException(status_code=400, detail="El total tiene que ser un monto en dólares (por ejemplo 1.12)")
+        with nueva_conexion() as conn:
+            with rcur(conn) as cur:
+                r = juez.ajustar_con_consola(cur, body.total_usd)
+            conn.commit()
+        return r
+
     # ── Vencimientos y plazos de toda la cartera ──────────────────────
     @router.get("/api/cartera/agenda")
     def agenda(_: str = Depends(verificar_login)):

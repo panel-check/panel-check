@@ -91,7 +91,7 @@ class ConsumoIA(unittest.TestCase):
         u.sumar({"input_tokens": 1_000_000, "output_tokens": 1_000_000}, "claude-haiku-5-5")
         u.sumar({"input_tokens": 1_000_000, "cache_read_input_tokens": 1_000_000}, "claude-sonnet-5-5")
         p_h, p_s = juez.PRECIOS["haiku"], juez.PRECIOS["sonnet"]
-        self.assertAlmostEqual(u.costo(), p_h[0] + p_h[1] + p_s[0] + p_s[0] * 0.1, places=5)
+        self.assertAlmostEqual(u.costo(), p_h[0] + p_h[1] + p_s[0] + p_s[2], places=5)
         self.assertEqual(u.llamadas, 2)
 
 
