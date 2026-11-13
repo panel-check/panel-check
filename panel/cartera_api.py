@@ -29,6 +29,7 @@ import inpi_lead
 import presupuestos
 import similitud as sim
 import vigilancia_core as vig
+import juez_vigilancia as juez
 
 RE_ACTA = re.compile(r"^\d{4,9}$")
 DIAS_VENCEN = 180   # «Vencen»: marcas cuyo registro vence dentro de este plazo (tarjeta de Clientes → Marcas)
@@ -103,6 +104,7 @@ class MarcaCambios(BaseModel):
     terminos_vigilancia: Optional[str] = None
     umbral_vigilancia: Optional[int] = None   # 40-100; null = usar el de Ajustes
     conceptos_vigilancia: Optional[str] = None  # traducciones/sinónimos (coma); corregidos a mano
+    sensibilidad_vigilancia: Optional[str] = None  # identicas | similares | amplia (juez IA); vale para toda la marca
     notas: Optional[str] = None
 
 
@@ -658,6 +660,13 @@ def crear_router(verificar_login, conexion, crm) -> APIRouter:
             sets.append("conceptos_vigilancia = %s"); val.append(", ".join(lista) or None)
             sets.append("conceptos_para = upper(regexp_replace(trim(COALESCE(denominacion, '')), '\\s+', ' ', 'g'))")
             sets.append("conceptos_en = now()")
+            sets.append("conceptos_origen = 'manual'")
+        sens_nueva = None
+        if "sensibilidad_vigilancia" in enviados:
+            sens_nueva = (body.sensibilidad_vigilancia or juez.SENSIBILIDAD_DEFAULT).strip().lower()
+            if sens_nueva not in juez.SENSIBILIDADES:
+                raise HTTPException(status_code=400, detail="Sensibilidad: identicas, similares o amplia")
+            sets.append("sensibilidad_vigilancia = %s"); val.append(sens_nueva)
         if "notas" in enviados:
             sets.append("notas = %s"); val.append(_limpio(body.notas, 2000))
         if "grupo_marca" in enviados:
@@ -670,6 +679,15 @@ def crear_router(verificar_login, conexion, crm) -> APIRouter:
                 fila = cur.fetchone()
                 if not fila:
                     raise HTTPException(status_code=404, detail="Esa marca no está en la cartera")
+                if sens_nueva:
+                    # La sensibilidad es de la marca: se aplica a todas sus actas (mismo cliente y grupo)
+                    # y las alertas ya juzgadas se muestran u ocultan según su veredicto.
+                    cur.execute("SELECT acta, cliente_id, denominacion, grupo_marca FROM cartera_marcas WHERE cliente_id = %s",
+                                (fila["cliente_id"],))
+                    g = vig.clave_grupo(fila)
+                    actas = [r["acta"] for r in cur.fetchall() if vig.clave_grupo(r) == g]
+                    cur.execute("UPDATE cartera_marcas SET sensibilidad_vigilancia = %s WHERE acta = ANY(%s)", (sens_nueva, actas))
+                    vig.reaplicar_sensibilidad(cur, actas)
             conn.commit()
         return {"ok": True, "marca": fila}
 
@@ -802,8 +820,10 @@ def crear_router(verificar_login, conexion, crm) -> APIRouter:
         if "estado" in enviados:
             if body.estado not in cartera.ESTADOS_ALERTA:
                 raise HTTPException(status_code=400, detail=f"Estado desconocido: {body.estado}")
-            sets += ["estado = %s", "decidido_por = %s", "decidido_en = now()"]
-            val += [body.estado, usuario]
+            # Sacar una alerta de «Descartada por IA» = no estar de acuerdo con el juez (queda marcado para calibrar).
+            sets += ["ia_desacuerdo = CASE WHEN estado = 'descartada_ia' AND %s <> 'descartada_ia' THEN true ELSE ia_desacuerdo END",
+                     "estado = %s", "decidido_por = %s", "decidido_en = now()"]
+            val += [body.estado, body.estado, usuario]
         if "nota" in enviados:
             sets.append("nota = %s"); val.append(_limpio(body.nota, 1000))
         if not sets:
@@ -865,6 +885,7 @@ def crear_router(verificar_login, conexion, crm) -> APIRouter:
                     """
                     SELECT cm.acta, cm.cliente_id, c.nombre AS cliente_nombre, cm.denominacion, cm.clase,
                            cm.vigilar_todas_clases, cm.terminos_vigilancia, cm.umbral_vigilancia, cm.conceptos_vigilancia,
+                           cm.sensibilidad_vigilancia, cm.conceptos_origen,
                            (SELECT COUNT(*) FROM vigilancia_alertas a WHERE a.acta_cliente = cm.acta
                               AND a.estado IN ('nueva','monitorear','oponer')) AS alertas_abiertas
                     FROM cartera_marcas cm JOIN clientes c ON c.id = cm.cliente_id
@@ -878,7 +899,24 @@ def crear_router(verificar_login, conexion, crm) -> APIRouter:
                 ultima = cur.fetchone()["ult"]
                 sin_conceptos = conceptos_vigilancia.contar_pendientes(cur)
         return {"marcas": marcas, "umbral_general": conf["umbral"], "ultima_vigilancia": ultima,
-                "conceptos_pendientes": sin_conceptos, "ia_disponible": ia_texto.configurada()}
+                "conceptos_pendientes": sin_conceptos, "ia_disponible": conceptos_vigilancia.disponible(),
+                "juez_activo": juez.configurado(),
+                "sensibilidades": {k: v[0] for k, v in juez.SENSIBILIDADES.items()},
+                "sensibilidad_default": juez.SENSIBILIDAD_DEFAULT}
+
+    @router.get("/api/cartera/vigilancia/juez")
+    def estado_juez(_: str = Depends(verificar_login)):
+        """Chequeo del juez con IA: si la clave está cargada en el servidor y la API responde."""
+        r = juez.probar_conexion()
+        with nueva_conexion() as conn:
+            with rcur(conn) as cur:
+                cur.execute("""SELECT COUNT(*) FILTER (WHERE ia_veredicto IS NOT NULL) AS juzgadas,
+                                      COUNT(*) FILTER (WHERE estado = 'descartada_ia') AS descartadas_ia,
+                                      COUNT(*) FILTER (WHERE COALESCE(ia_desacuerdo, false)) AS desacuerdos,
+                                      COUNT(*) FILTER (WHERE estado = 'nueva' AND ia_veredicto IS NULL AND tipo = 'similitud') AS sin_juzgar
+                               FROM vigilancia_alertas""")
+                r["totales"] = cur.fetchone()
+        return r
 
     # ── Vencimientos y plazos de toda la cartera ──────────────────────
     @router.get("/api/cartera/agenda")

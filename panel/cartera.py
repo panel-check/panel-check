@@ -56,6 +56,9 @@ ESTADOS_ALERTA = {
     "oponer": "Oponer",
     "opuesta": "Oposición presentada",
     "descartada": "Descartada",
+    # Desde el 12/11/2026: el juez con IA (juez_vigilancia.py) la evaluó y no alcanza la
+    # sensibilidad de la marca. No se borra: queda para revisar («No estoy de acuerdo»).
+    "descartada_ia": "Descartada por IA",
 }
 ESTADOS_ALERTA_ABIERTOS = ("nueva", "monitorear", "oponer")
 
@@ -182,6 +185,12 @@ def crear_tablas(cur):
     cur.execute("ALTER TABLE cartera_marcas ADD COLUMN IF NOT EXISTS conceptos_vigilancia TEXT")
     cur.execute("ALTER TABLE cartera_marcas ADD COLUMN IF NOT EXISTS conceptos_para TEXT")
     cur.execute("ALTER TABLE cartera_marcas ADD COLUMN IF NOT EXISTS conceptos_en TIMESTAMPTZ")
+    # Quién armó la lista de conceptos: 'claude', 'llama' (la IA anterior) o 'manual'; y la lista anterior
+    # cuando se rearmó con Claude (12/11/2026), por si había correcciones a mano para recuperar.
+    cur.execute("ALTER TABLE cartera_marcas ADD COLUMN IF NOT EXISTS conceptos_origen TEXT")
+    cur.execute("ALTER TABLE cartera_marcas ADD COLUMN IF NOT EXISTS conceptos_previos TEXT")
+    # Sensibilidad de la vigilancia con juez IA: 'identicas' | 'similares' (NULL = similares) | 'amplia'.
+    cur.execute("ALTER TABLE cartera_marcas ADD COLUMN IF NOT EXISTS sensibilidad_vigilancia TEXT")
     cur.execute(
         """
         CREATE TABLE IF NOT EXISTS cartera_novedades (
@@ -281,6 +290,13 @@ def crear_tablas(cur):
         "ON vigilancia_alertas(tipo, COALESCE(acta_cliente, ''), acta_nueva)"
     )
     cur.execute("CREATE INDEX IF NOT EXISTS idx_vigilancia_alertas_estado ON vigilancia_alertas(estado, creada_en DESC)")
+    # Juez con IA (12/11/2026, ver juez_vigilancia.py) y alerta única por marca del cliente
+    # (actas_cliente = todas las actas/clases de esa marca: [{"acta":..,"clase":..}]).
+    for col, tipo_col in (("actas_cliente", "JSONB"), ("ia_veredicto", "TEXT"), ("ia_nivel", "TEXT"), ("ia_razon", "TEXT"),
+                          ("ia_modelo", "TEXT"), ("ia_en", "TIMESTAMPTZ"), ("ia_dominantes", "TEXT"),
+                          ("ia_desacuerdo", "BOOLEAN"), ("nivel_motor", "TEXT")):
+        cur.execute(f"ALTER TABLE vigilancia_alertas ADD COLUMN IF NOT EXISTS {col} {tipo_col}")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_vigilancia_alertas_nueva ON vigilancia_alertas(acta_nueva)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_vigilancia_alertas_cliente ON vigilancia_alertas(cliente_id)")
     cur.execute(
         """

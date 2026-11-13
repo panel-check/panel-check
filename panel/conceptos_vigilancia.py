@@ -10,8 +10,12 @@ sinónimos y palabras muy cercanas del mismo campo. Si una solicitud nueva
 nombra uno de esos conceptos, la vigilancia la alerta con el motivo «mismo
 concepto que …» (puntaje en similitud.puntaje_conceptos).
 
-Quién arma la lista: la IA del panel (la misma de «Mejorar texto», ver
-ia_texto.py), UNA vez por nombre de marca, no por solicitud. Lo hace sola un
+Quién arma la lista: desde el 12/11/2026, Claude (ANTHROPIC_API_KEY, ver
+juez_vigilancia.py), con un pedido más estricto; sin esa clave, la IA de
+«Mejorar texto» (ia_texto.py). UNA vez por nombre de marca, no por solicitud.
+La primera vez que el panel arranca con Claude configurado, rearma una vez
+todas las listas que había hecho la IA anterior (la vieja queda guardada en
+conceptos_previos); las corregidas a mano después de ese día no se tocan. Lo hace sola un
 hilo del panel (cada 20 minutos, de a tandas) para las marcas vigiladas que
 todavía no la tienen o que cambiaron de nombre (`conceptos_para` guarda el
 nombre para el que se armó). El equipo la puede corregir a mano en la ficha
@@ -27,6 +31,7 @@ import threading
 import time
 
 import ia_texto
+import juez_vigilancia as juez
 import similitud as sim
 
 MAX_CONCEPTOS = 15
@@ -53,6 +58,28 @@ PROMPT = (
 )
 
 
+PROMPT_CLAUDE = (
+    "Sos un agente de la propiedad industrial de Argentina que hace vigilancia de marcas. Te paso el nombre de una "
+    "marca de un cliente. Devolvé SOLO los términos que un examinador del INPI consideraría que transmiten exactamente "
+    "LA MISMA IDEA para un consumidor argentino, para detectar solicitudes de terceros que se le parezcan por su "
+    "significado aunque se escriban distinto:\n"
+    "- traducciones directas al inglés, portugués, italiano y francés de las palabras con significado (y al español si la "
+    "marca está en otro idioma);\n"
+    "- sinónimos muy cercanos de uso corriente.\n"
+    "Reglas estrictas:\n"
+    "1. Interpretá la marca como la entiende un argentino, incluido el lunfardo y el uso rioplatense (TIMBEROS = "
+    "jugadores, apostadores; no tiene nada que ver con la madera). Si dudás del sentido, no inventes: devolvé menos términos.\n"
+    "2. Nada de asociaciones libres, campos semánticos amplios, palabras que solo se parecen en otro idioma ni traducciones "
+    "rebuscadas o de verbos poco comunes (MANAR no es FLUX).\n"
+    "3. Si la marca es una palabra inventada sin significado, devolvé la lista vacía; si evoca claramente una palabra real "
+    "(KOMUNIKA → comunicar), usá esa palabra y sus traducciones.\n"
+    "4. No incluyas el nombre tal cual, ni variantes de escritura, ni palabras genéricas o descriptivas del rubro (VIAJES, "
+    "TURISMO, TRIP, CAFE, SHOP, STORE, GROUP, ESTUDIO, SOLUCIONES…), ni artículos o preposiciones.\n"
+    "5. Máximo 8 términos, cada uno de 1 a 3 palabras, en mayúsculas.\n"
+    "Respondé SOLO con un objeto JSON, sin explicaciones: {\"conceptos\": [\"...\", \"...\"]}"
+)
+
+
 def limpiar(lista, denominacion: str = "") -> list:
     """Términos únicos, en mayúsculas, sin el propio nombre ni basura. Tope MAX_CONCEPTOS."""
     propio = sim.normalizar(denominacion or "")
@@ -71,11 +98,26 @@ def limpiar(lista, denominacion: str = "") -> list:
     return out[:MAX_CONCEPTOS]
 
 
+def disponible() -> bool:
+    return juez.configurado() or ia_texto.configurada()
+
+
+def origen_actual() -> str:
+    return "claude" if juez.configurado() else "llama"
+
+
 def pedir_a_la_ia(denominacion: str) -> list:
     """La lista de conceptos de un nombre de marca. Levanta ia_texto.ErrorIA si no se pudo."""
-    crudo = ia_texto._pedir([{"role": "system", "content": PROMPT},
-                             {"role": "user", "content": f"Marca: {denominacion.strip()}"}], temperatura=0.1)
-    d = ia_texto._json_de(crudo)
+    if juez.configurado():
+        try:
+            crudo = juez.pedir(PROMPT_CLAUDE, f"Marca: {denominacion.strip()}", juez.modelos()[1], max_tokens=300)
+        except juez.ErrorJuez as e:
+            raise ia_texto.ErrorIA(f"Claude no respondió: {e}") from e
+        d = juez._json_de(crudo)
+    else:
+        crudo = ia_texto._pedir([{"role": "system", "content": PROMPT},
+                                 {"role": "user", "content": f"Marca: {denominacion.strip()}"}], temperatura=0.1)
+        d = ia_texto._json_de(crudo)
     if d is None or not isinstance(d.get("conceptos"), list):
         raise ia_texto.ErrorIA("La IA devolvió una respuesta que no se entiende.")
     return limpiar(d["conceptos"], denominacion)
@@ -85,29 +127,36 @@ def _clave(denominacion: str) -> str:
     return " ".join((denominacion or "").split()).upper()
 
 
-def guardar(cur, acta: str, denominacion: str, conceptos: list):
+def guardar(cur, acta: str, denominacion: str, conceptos: list, origen: str = None):
     cur.execute(
-        "UPDATE cartera_marcas SET conceptos_vigilancia = %s, conceptos_para = %s, conceptos_en = now() WHERE acta = %s",
-        (", ".join(conceptos) or None, _clave(denominacion), acta),
+        "UPDATE cartera_marcas SET conceptos_vigilancia = %s, conceptos_para = %s, conceptos_en = now(), "
+        "conceptos_origen = %s WHERE acta = %s",
+        (", ".join(conceptos) or None, _clave(denominacion), origen or origen_actual(), acta),
     )
 
 
 def _ya_armados(cur, denominacion: str):
     """Si otro expediente con el mismo nombre ya tiene su lista (de la IA o corregida), se reusa: no se pregunta dos veces."""
-    cur.execute("SELECT conceptos_vigilancia FROM cartera_marcas WHERE conceptos_para = %s AND conceptos_en IS NOT NULL "
-                "ORDER BY conceptos_en DESC LIMIT 1", (_clave(denominacion),))
+    # Con Claude configurado, no se reusa una lista de la IA anterior.
+    origenes = ["claude", "manual"] if juez.configurado() else ["claude", "manual", "llama"]
+    cur.execute("SELECT conceptos_vigilancia, conceptos_origen FROM cartera_marcas WHERE conceptos_para = %s "
+                "AND conceptos_en IS NOT NULL AND COALESCE(conceptos_origen, 'llama') = ANY(%s) "
+                "ORDER BY conceptos_en DESC LIMIT 1", (_clave(denominacion), origenes))
     f = cur.fetchone()
     if f is None:
         return None
-    return sim.separar_conceptos(f["conceptos_vigilancia"] if isinstance(f, dict) else f[0])
+    return sim.separar_conceptos(f["conceptos_vigilancia"] if isinstance(f, dict) else f[0]), \
+        (f["conceptos_origen"] if isinstance(f, dict) else f[1])
 
 
 def armar(cur, acta: str, denominacion: str, reusar: bool = True) -> list:
     """Arma y guarda la lista de una marca. Levanta ia_texto.ErrorIA si la IA falla."""
-    conceptos = _ya_armados(cur, denominacion) if reusar else None
-    if conceptos is None:
-        conceptos = pedir_a_la_ia(denominacion)
-    guardar(cur, acta, denominacion, conceptos)
+    previo = _ya_armados(cur, denominacion) if reusar else None
+    if previo is not None:
+        conceptos, origen = previo
+    else:
+        conceptos, origen = pedir_a_la_ia(denominacion), origen_actual()
+    guardar(cur, acta, denominacion, conceptos, origen)
     return conceptos
 
 
@@ -129,7 +178,7 @@ def armar_pendientes(conexion, limite: int = TANDA, log=print) -> dict:
     """Una tanda: arma la lista de las marcas vigiladas que no la tienen (o cambiaron de nombre).
     Si la IA falla (límite de uso, clave), corta la tanda y sigue en la próxima."""
     stats = {"armadas": 0, "error": None}
-    if not ia_texto.configurada():
+    if not disponible():
         return stats
     with conexion() as conn:
         with conn.cursor() as cur:
@@ -148,11 +197,35 @@ def armar_pendientes(conexion, limite: int = TANDA, log=print) -> dict:
     return stats
 
 
+def rearmar_con_claude_una_vez(conexion, log=print) -> int:
+    """La primera vez que hay Claude: las listas que armó la IA anterior (o sin origen) se
+    marcan para rearmar; la lista vieja queda en conceptos_previos. Una sola vez."""
+    if not juez.configurado():
+        return 0
+    with conexion() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT 1 FROM vigilancia_config WHERE clave = 'conceptos_rearmados_claude'")
+            if cur.fetchone():
+                return 0
+            cur.execute("UPDATE cartera_marcas SET conceptos_previos = conceptos_vigilancia, conceptos_para = NULL "
+                        "WHERE conceptos_en IS NOT NULL AND COALESCE(conceptos_origen, 'llama') = 'llama'")
+            n = cur.rowcount
+            cur.execute("INSERT INTO vigilancia_config (clave, valor) VALUES ('conceptos_rearmados_claude', now()::text) "
+                        "ON CONFLICT (clave) DO NOTHING")
+        conn.commit()
+    log(f"[conceptos] {n} lista(s) de la IA anterior se van a rearmar con Claude")
+    return n
+
+
 def iniciar(conexion):
-    """Prende el hilo que arma las listas que faltan. Sin IA_API_KEY no hace nada."""
-    if not ia_texto.configurada():
-        print("[conceptos] sin IA_API_KEY: la vigilancia por concepto queda solo con las listas cargadas a mano")
+    """Prende el hilo que arma las listas que faltan. Sin IA no hace nada."""
+    if not disponible():
+        print("[conceptos] sin IA (ANTHROPIC_API_KEY ni IA_API_KEY): la vigilancia por concepto queda solo con las listas cargadas a mano")
         return None
+    try:
+        rearmar_con_claude_una_vez(conexion, log=lambda t: print(t, flush=True))
+    except Exception as e:  # noqa: BLE001
+        print(f"[conceptos] no se pudo marcar el rearmado con Claude: {e}", flush=True)
 
     def bucle():
         time.sleep(120)
