@@ -120,8 +120,21 @@ def modelos():
             (os.environ.get("JUEZ_MODELO_FINO") or MODELO_FINO).strip())
 
 
+# Precio por millón de tokens (USD): entrada, salida. La caché se cobra 1,25× la entrada al escribirla
+# y 0,1× al leerla. Si Anthropic cambia los precios, se cambian acá (lo usa el «Consumo IA» del panel).
+PRECIOS = {"haiku": (0.10, 0.50), "sonnet": (2.0, 10.0), "opus": (5.0, 25.0)}
+
+
+def precio_de(modelo: str):
+    m = (modelo or "").lower()
+    for k, v in PRECIOS.items():
+        if k in m:
+            return v
+    return PRECIOS["sonnet"]  # desconocido: el más caro de los dos que usamos
+
+
 class Uso:
-    """Tokens usados en una corrida (para el reporte y la estimación de costo)."""
+    """Tokens usados en una corrida, por modelo (para el reporte y el costo)."""
 
     def __init__(self):
         self._l = threading.Lock()
@@ -130,13 +143,34 @@ class Uso:
         self.salida = 0
         self.cache = 0
         self.errores = 0
+        self.por_modelo = {}
 
-    def sumar(self, u: dict):
+    def sumar(self, u: dict, modelo: str = ""):
+        ent = int(u.get("input_tokens") or 0)
+        esc = int(u.get("cache_creation_input_tokens") or 0)
+        lee = int(u.get("cache_read_input_tokens") or 0)
+        sal = int(u.get("output_tokens") or 0)
         with self._l:
             self.llamadas += 1
-            self.entrada += int(u.get("input_tokens") or 0) + int(u.get("cache_creation_input_tokens") or 0)
-            self.cache += int(u.get("cache_read_input_tokens") or 0)
-            self.salida += int(u.get("output_tokens") or 0)
+            self.entrada += ent + esc
+            self.cache += lee
+            self.salida += sal
+            d = self.por_modelo.setdefault(modelo or "?", {"llamadas": 0, "entrada": 0, "cache_escrita": 0,
+                                                           "cache_leida": 0, "salida": 0})
+            d["llamadas"] += 1
+            d["entrada"] += ent
+            d["cache_escrita"] += esc
+            d["cache_leida"] += lee
+            d["salida"] += sal
+
+    def costo(self) -> float:
+        """USD de lo usado, con el precio de cada modelo."""
+        total = 0.0
+        for modelo, d in self.por_modelo.items():
+            p_in, p_out = precio_de(modelo)
+            total += (d["entrada"] * p_in + d["cache_escrita"] * p_in * 1.25 + d["cache_leida"] * p_in * 0.1
+                      + d["salida"] * p_out) / 1e6
+        return round(total, 6)
 
     def error(self):
         with self._l:
@@ -168,7 +202,7 @@ def pedir(sistema: str, texto: str, modelo: str, max_tokens: int = 1200, uso: Us
         if r.status_code == 200:
             d = r.json()
             if uso:
-                uso.sumar(d.get("usage") or {})
+                uso.sumar(d.get("usage") or {}, modelo)
             return "".join(b.get("text", "") for b in d.get("content", []) if b.get("type") == "text")
         try:
             detalle = r.json().get("error", {}).get("message", "")
@@ -314,12 +348,74 @@ def probar_conexion() -> dict:
         return {"ok": False, "detalle": "Falta la variable ANTHROPIC_API_KEY en el servidor del panel."}
     rapido, fino = modelos()
     try:
-        t = pedir("Respondé solo con la palabra OK.", "Prueba de conexión", rapido, max_tokens=5)
-        return {"ok": True, "detalle": f"La API respondió ({rapido}): {t.strip()[:20]}", "modelos": [rapido, fino]}
+        uso = Uso()
+        t = pedir("Respondé solo con la palabra OK.", "Prueba de conexión", rapido, max_tokens=5, uso=uso)
+        return {"_uso": uso, "ok": True, "detalle": f"La API respondió ({rapido}): {t.strip()[:20]}", "modelos": [rapido, fino]}
     except ErrorJuez as e:
         return {"ok": False, "detalle": str(e), "modelos": [rapido, fino]}
 
 
 def costo_estimado(uso: Uso) -> float:
-    """USD aproximados de la corrida (a precio de Sonnet, el más caro de los dos: cota superior)."""
-    return round(uso.entrada / 1e6 * 2 + uso.cache / 1e6 * 0.2 + uso.salida / 1e6 * 10, 4)
+    """USD de la corrida, con el precio de cada modelo (desde el 13/11/2026; antes era una cota
+    superior a precio de Sonnet)."""
+    return round(uso.costo(), 4)
+
+
+# ── Consumo de IA guardado (Vigilancia → «💲 Consumo IA») ──────────────
+SQL_TABLA_CONSUMO = """
+    CREATE TABLE IF NOT EXISTS ia_consumo (
+        id BIGSERIAL PRIMARY KEY,
+        fecha TIMESTAMPTZ NOT NULL DEFAULT now(),
+        origen TEXT NOT NULL,           -- vigilancia | conceptos | prueba | ...
+        detalle TEXT,
+        llamadas INT NOT NULL DEFAULT 0,
+        errores INT NOT NULL DEFAULT 0,
+        tokens_entrada BIGINT NOT NULL DEFAULT 0,
+        tokens_cache BIGINT NOT NULL DEFAULT 0,
+        tokens_salida BIGINT NOT NULL DEFAULT 0,
+        costo_usd NUMERIC(12, 6) NOT NULL DEFAULT 0,
+        por_modelo JSONB,
+        estimado BOOLEAN NOT NULL DEFAULT false   -- true: reconstruido de corridas viejas (cota máxima)
+    );
+    CREATE INDEX IF NOT EXISTS ia_consumo_fecha ON ia_consumo (fecha);
+"""
+
+
+def crear_tabla_consumo(cur) -> None:
+    cur.execute(SQL_TABLA_CONSUMO)
+
+
+def registrar_consumo(cur, origen: str, uso: "Uso", detalle: str = None) -> None:
+    """Guarda lo que gastó una corrida o una llamada suelta. No hace nada si no hubo llamadas."""
+    if not uso or not (uso.llamadas or uso.errores):
+        return
+    crear_tabla_consumo(cur)
+    cur.execute(
+        """INSERT INTO ia_consumo (origen, detalle, llamadas, errores, tokens_entrada, tokens_cache, tokens_salida,
+                                   costo_usd, por_modelo)
+           VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+        (origen, detalle, uso.llamadas, uso.errores, uso.entrada, uso.cache, uso.salida, uso.costo(),
+         json.dumps(uso.por_modelo)))
+
+
+def importar_corridas_viejas(cur) -> int:
+    """Una sola vez: el costo de las corridas de vigilancia anteriores a este registro (del registro de
+    corridas, «costo máx.», a precio de Sonnet), marcado como estimado."""
+    crear_tabla_consumo(cur)
+    cur.execute("SELECT 1 FROM vigilancia_config WHERE clave = 'consumo_ia_importado'")
+    if cur.fetchone():
+        return 0
+    cur.execute("INSERT INTO vigilancia_config (clave, valor) VALUES ('consumo_ia_importado', now()::text) "
+                "ON CONFLICT (clave) DO NOTHING")
+    cur.execute("SELECT to_regclass('registro_corridas') IS NOT NULL")
+    r = cur.fetchone()
+    if not (r[0] if not isinstance(r, dict) else list(r.values())[0]):
+        return 0
+    cur.execute("""INSERT INTO ia_consumo (fecha, origen, detalle, llamadas, errores, costo_usd, estimado)
+                   SELECT creado_en, 'vigilancia', 'corrida anterior al registro de consumo (costo máximo estimado)',
+                          COALESCE((metricas->>'llamadas_ia')::int, 0), COALESCE((metricas->>'errores_ia')::int, 0),
+                          (metricas->>'costo_ia_usd_max')::numeric, true
+                   FROM registro_corridas
+                   WHERE proceso = 'vigilancia.yml' AND COALESCE((metricas->>'costo_ia_usd_max')::numeric, 0) > 0
+                     AND creado_en < COALESCE((SELECT MIN(fecha) FROM ia_consumo WHERE NOT estimado), now())""")
+    return cur.rowcount

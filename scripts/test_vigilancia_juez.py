@@ -85,6 +85,16 @@ class ReglasCorregidas(unittest.TestCase):
         self.assertGreaterEqual(hits, 21)
 
 
+class ConsumoIA(unittest.TestCase):
+    def test_costo_con_el_precio_de_cada_modelo(self):
+        u = juez.Uso()
+        u.sumar({"input_tokens": 1_000_000, "output_tokens": 1_000_000}, "claude-haiku-5-5")
+        u.sumar({"input_tokens": 1_000_000, "cache_read_input_tokens": 1_000_000}, "claude-sonnet-5-5")
+        p_h, p_s = juez.PRECIOS["haiku"], juez.PRECIOS["sonnet"]
+        self.assertAlmostEqual(u.costo(), p_h[0] + p_h[1] + p_s[0] + p_s[0] * 0.1, places=5)
+        self.assertEqual(u.llamadas, 2)
+
+
 class UmbralPorClase(unittest.TestCase):
     """13/11/2026: el 65 vale para la misma clase; en otra clase hace falta mucho más parecido."""
     def _aj(self):

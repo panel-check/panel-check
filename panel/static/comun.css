@@ -2141,3 +2141,17 @@ button.crm-chip.crm-chip-ir:hover { border-color: var(--azul); }
   table.crm-tabla-marcas td:nth-child(2) { order: 4; flex: 1 1 100%; font-weight: 600; font-size: 13px; }
   table.crm-tabla-marcas td:nth-child(5) { order: 5; flex: 1 1 100%; }
 }
+
+/* Vigilancia → «💲 Consumo IA» */
+.vg-consumo-tag { border: 1px solid #b7d3ea; background: #eef6fc; color: #1f4e79; border-radius: 999px; padding: 4px 12px; font-size: 13px; font-weight: 600; cursor: pointer; }
+.vg-consumo-tag:hover { background: #dcecf8; }
+.vg-consumo { margin-top: 8px; }
+.vg-consumo h4 { margin: 14px 0 6px; font-size: 14px; }
+.vg-consumo-kpis { display: flex; flex-wrap: wrap; gap: 10px; }
+.vg-consumo-kpis > div { border: 1px solid #e3e8ef; border-radius: 8px; padding: 8px 12px; min-width: 130px; }
+.vg-consumo-kpis small { display: block; color: #6b7280; font-size: 12px; }
+.vg-consumo-kpis strong { font-size: 18px; }
+.vg-consumo-cols { display: grid; grid-template-columns: minmax(240px, 1fr) 2fr; gap: 18px; }
+@media (max-width: 900px) { .vg-consumo-cols { grid-template-columns: 1fr; } }
+.vg-consumo td.num, .vg-consumo th.num { text-align: right; white-space: nowrap; }
+.vg-barra { display: inline-block; height: 10px; background: #1f4e79; border-radius: 3px; opacity: .7; }

@@ -112,11 +112,11 @@ def origen_actual() -> str:
     return "claude" if juez.configurado() else "llama"
 
 
-def pedir_a_la_ia(denominacion: str) -> list:
+def pedir_a_la_ia(denominacion: str, uso=None) -> list:
     """La lista de conceptos de un nombre de marca. Levanta ia_texto.ErrorIA si no se pudo."""
     if juez.configurado():
         try:
-            crudo = juez.pedir(PROMPT_CLAUDE, f"Marca: {denominacion.strip()}", juez.modelos()[1], max_tokens=300)
+            crudo = juez.pedir(PROMPT_CLAUDE, f"Marca: {denominacion.strip()}", juez.modelos()[1], max_tokens=300, uso=uso)
         except juez.ErrorJuez as e:
             raise ia_texto.ErrorIA(f"Claude no respondió: {e}") from e
         d = juez._json_de(crudo)
@@ -161,7 +161,14 @@ def armar(cur, acta: str, denominacion: str, reusar: bool = True) -> list:
     if previo is not None:
         conceptos, origen = previo
     else:
-        conceptos, origen = pedir_a_la_ia(denominacion), origen_actual()
+        uso = juez.Uso()
+        try:
+            conceptos, origen = pedir_a_la_ia(denominacion, uso), origen_actual()
+        finally:
+            try:  # el consumo se guarda aunque la respuesta no sirva («💲 Consumo IA» en Vigilancia)
+                juez.registrar_consumo(cur, "conceptos", uso, f"conceptos de {denominacion.strip()[:80]}")
+            except Exception:  # noqa: BLE001
+                pass
     guardar(cur, acta, denominacion, conceptos, origen)
     return conceptos
 

@@ -904,6 +904,8 @@ async function pintarVigilancia() {
     cont.dataset.armado = "1";
     cont.innerHTML = `
       <div class="cl-vista">
+        <div style="margin-top:12px"><button type="button" class="vg-consumo-tag" id="vg-consumo-btn" title="Lo que se va gastando en la API de Claude (juez y conceptos)">💲 Consumo IA <span id="vg-consumo-mes"></span></button></div>
+        <div class="cl-caja vg-consumo" id="vg-consumo" hidden></div>
         <div class="cl-caja" style="margin-top:12px">
           <strong>Probar un nombre</strong> <span class="crm-gris">— qué solicitudes conocidas se parecen a una marca (para chequear una marca nueva antes de presentarla)</span>
           <div class="cl-barra" style="padding:8px 0 0"><label>Nombre<input id="pr-nombre" style="min-width:220px"></label>
@@ -929,6 +931,11 @@ async function pintarVigilancia() {
     ["vg-estado", "vg-nivel", "vg-tipo", "vg-cliente", "vg-sc"].forEach(id => $(id).addEventListener("change", pintarVigilancia));
     $("vg-marcas-det").addEventListener("toggle", () => { if ($("vg-marcas-det").open) pintarVigilanciaMarcas(); });
     $("pr-ir").addEventListener("click", probarNombre);
+    $("vg-consumo-btn").addEventListener("click", () => {
+      const caja = $("vg-consumo"); caja.hidden = !caja.hidden;
+      if (!caja.hidden) pintarConsumoIA();
+    });
+    cargarConsumoIA();
     $("pr-nombre").addEventListener("keydown", ev => { if (ev.key === "Enter") probarNombre(); });
   }
   const p = new URLSearchParams();
@@ -946,6 +953,51 @@ async function pintarVigilancia() {
     conectarAlertas(lista, pintarVigilancia);
     if ($("vg-marcas-det").open) pintarVigilanciaMarcas();
   } catch (e) { lista.innerHTML = `<p class="crm-error">No se pudo cargar (${esc(e.message)}).</p>`; }
+}
+
+/* «💲 Consumo IA»: lo que se gasta en la API de Claude (tabla ia_consumo). */
+const usd = (v, dec = 2) => "USD " + (v ?? 0).toLocaleString("es-AR", { minimumFractionDigits: dec, maximumFractionDigits: dec });
+const usdFino = v => usd(v, (v ?? 0) < 0.1 ? 4 : 2);
+const ORIGENES_IA = { vigilancia: "Corridas de la vigilancia (juez)", conceptos: "Listas de conceptos", prueba: "Probar conexión" };
+
+async function cargarConsumoIA() {
+  try {
+    est.consumoIA = await api("/api/cartera/vigilancia/consumo-ia");
+    $("vg-consumo-mes").textContent = `· ${usdFino(est.consumoIA.mes)} este mes`;
+  } catch (e) { $("vg-consumo-mes").textContent = ""; }
+}
+
+async function pintarConsumoIA() {
+  const caja = $("vg-consumo");
+  caja.innerHTML = '<p class="crm-gris">Cargando…</p>';
+  try {
+    const r = est.consumoIA = await api("/api/cartera/vigilancia/consumo-ia");
+    $("vg-consumo-mes").textContent = `· ${usdFino(r.mes)} este mes`;
+    const maxDia = Math.max(0.0001, ...r.por_dia.map(d => d.usd || 0));
+    const filasDia = r.por_dia.map(d => `<tr><td>${crmFecha(d.dia)}</td><td class="num">${usdFino(d.usd)}</td>
+        <td><span class="vg-barra" style="width:${Math.max(2, Math.round((d.usd || 0) / maxDia * 160))}px"></span></td>
+        <td class="num crm-gris">${usdFino(d.vigilancia || 0)} juez · ${usdFino(d.conceptos || 0)} conceptos</td><td class="num">${fmtNum(+d.llamadas)}</td></tr>`).join("");
+    caja.innerHTML = `
+      <div class="vg-consumo-kpis">
+        <div><small>Este mes</small><strong>${usdFino(r.mes)}</strong></div>
+        <div><small>Últimas 24 h</small><strong>${usdFino(r.ultimas_24h)}</strong></div>
+        <div><small>Mes anterior</small><strong>${usdFino(r.mes_anterior)}</strong></div>
+        <div><small>Histórico${r.desde ? " (desde " + crmFecha(r.desde) + ")" : ""}</small><strong>${usdFino(r.total)}</strong></div>
+        <div><small>Llamadas a la API</small><strong>${fmtNum(r.llamadas)}</strong></div>
+      </div>
+      ${r.total_estimado ? `<p class="crm-nota">Incluye ${usdFino(r.total_estimado)} de corridas anteriores al 13/11/2026, calculadas como máximo (a precio de Sonnet). Desde esa fecha cada llamada se cuenta con el precio de su modelo. Las corridas que se cortaron antes de terminar no quedaron registradas: el número exacto de la factura está en console.anthropic.com.</p>` : ""}
+      <div class="vg-consumo-cols">
+        <div><h4>Por mes</h4><table class="cl-tabla"><thead><tr><th>Mes</th><th class="num">Gasto</th><th class="num">Llamadas</th></tr></thead><tbody>
+          ${r.por_mes.map(m => `<tr><td>${esc(m.mes)}</td><td class="num">${usdFino(m.usd)}</td><td class="num">${fmtNum(+m.llamadas)}</td></tr>`).join("") || '<tr><td colspan="3" class="crm-gris">Sin consumo todavía.</td></tr>'}</tbody></table>
+          <h4>En qué se gastó</h4><table class="cl-tabla"><tbody>
+          ${r.por_origen.map(o => `<tr><td>${esc(ORIGENES_IA[o.origen] || o.origen)}</td><td class="num">${usdFino(o.usd)}</td><td class="num">${fmtNum(+o.llamadas)} llamadas</td></tr>`).join("")}</tbody></table></div>
+        <div><h4>Por día (últimos 45)</h4><table class="cl-tabla"><thead><tr><th>Día</th><th class="num">Gasto</th><th></th><th class="num">Detalle</th><th class="num">Llamadas</th></tr></thead><tbody>
+          ${filasDia || '<tr><td colspan="5" class="crm-gris">Sin consumo en los últimos 45 días.</td></tr>'}</tbody></table></div>
+      </div>
+      <h4>Últimas corridas de la vigilancia</h4><table class="cl-tabla"><thead><tr><th>Cuándo</th><th>Qué hizo</th><th class="num">Llamadas</th><th class="num">Gasto</th></tr></thead><tbody>
+        ${r.corridas.map(c => `<tr><td>${fmtFechaHora(c.fecha)}</td><td>${esc(c.detalle || "")}${c.errores ? ` · ${c.errores} error(es)` : ""}</td><td class="num">${fmtNum(c.llamadas)}</td><td class="num">${usdFino(c.costo_usd)}${c.estimado ? " <small class=\"crm-gris\">(máx.)</small>" : ""}</td></tr>`).join("") || '<tr><td colspan="4" class="crm-gris">Todavía no hay corridas registradas.</td></tr>'}</tbody></table>
+      <p class="crm-nota">Precios usados (USD por millón de tokens, entrada / salida): ${Object.entries(r.precios).map(([k, v]) => `${esc(k)} ${v[0]} / ${v[1]}`).join(" · ")}. La caché del pedido se cobra 1,25× al escribirla y 0,1× al leerla.</p>`;
+  } catch (e) { caja.innerHTML = `<p class="crm-error">No se pudo cargar el consumo (${esc(e.message)}).</p>`; }
 }
 
 /* Tabla «Qué se vigila»: una fila por marca vigilada, con su umbral (editable) y sus alertas abiertas. */

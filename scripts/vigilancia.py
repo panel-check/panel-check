@@ -79,7 +79,7 @@ def main():
                    f"Marcas de la cartera recomparadas: {st['recomparadas_cartera']}. "
                    f"Juez IA: {'activo' if st['juez_activo'] else 'apagado'}; pares juzgados {st['juzgadas']}, "
                    f"descartados por IA {st['descartadas_ia']}, quedan sin revisar (ocultas) {st.get('pendientes_ia', 0)}, "
-                   f"llamadas {st['llamadas_ia']}, errores {st['errores_ia']}, costo máx. USD {st['costo_ia_usd_max']}. "
+                   f"llamadas {st['llamadas_ia']}, errores {st['errores_ia']}, costo USD {st['costo_ia_usd_max']}. "
                    f"Expedientes leídos para productos y servicios: {st.get('consultas_productos_inpi', 0)}.")
         print(f"::notice::{resumen}")
         print(f"\n{resumen}")

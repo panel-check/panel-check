@@ -916,8 +916,11 @@ def crear_router(verificar_login, conexion, crm) -> APIRouter:
     def estado_juez(_: str = Depends(verificar_login)):
         """Chequeo del juez con IA: si la clave está cargada en el servidor y la API responde."""
         r = juez.probar_conexion()
+        uso = r.pop("_uso", None)
         with nueva_conexion() as conn:
             with rcur(conn) as cur:
+                juez.registrar_consumo(cur, "prueba", uso, "Probar conexión")
+                conn.commit()
                 cur.execute("""SELECT COUNT(*) FILTER (WHERE ia_veredicto IS NOT NULL) AS juzgadas,
                                       COUNT(*) FILTER (WHERE estado = 'descartada_ia') AS descartadas_ia,
                                       COUNT(*) FILTER (WHERE COALESCE(ia_desacuerdo, false)) AS desacuerdos,
@@ -925,6 +928,53 @@ def crear_router(verificar_login, conexion, crm) -> APIRouter:
                                FROM vigilancia_alertas""")
                 r["totales"] = cur.fetchone()
         return r
+
+    @router.get("/api/cartera/vigilancia/consumo-ia")
+    def consumo_ia(_: str = Depends(verificar_login)):
+        """Lo que se va gastando en la API de Claude: este mes, el anterior, histórico, por origen,
+        por mes, por día (últimos 45) y las últimas corridas."""
+        with nueva_conexion() as conn:
+            with rcur(conn) as cur:
+                juez.importar_corridas_viejas(cur)
+                conn.commit()
+                cur.execute("""SELECT
+                        COALESCE(SUM(costo_usd) FILTER (WHERE fecha >= date_trunc('month', now() AT TIME ZONE 'America/Argentina/Buenos_Aires') AT TIME ZONE 'America/Argentina/Buenos_Aires'), 0) AS mes,
+                        COALESCE(SUM(costo_usd) FILTER (WHERE fecha >= (date_trunc('month', now() AT TIME ZONE 'America/Argentina/Buenos_Aires') - interval '1 month') AT TIME ZONE 'America/Argentina/Buenos_Aires'
+                                                          AND fecha < date_trunc('month', now() AT TIME ZONE 'America/Argentina/Buenos_Aires') AT TIME ZONE 'America/Argentina/Buenos_Aires'), 0) AS mes_anterior,
+                        COALESCE(SUM(costo_usd) FILTER (WHERE fecha >= now() - interval '1 day'), 0) AS ultimas_24h,
+                        COALESCE(SUM(costo_usd), 0) AS total,
+                        COALESCE(SUM(llamadas), 0) AS llamadas,
+                        COALESCE(SUM(costo_usd) FILTER (WHERE estimado), 0) AS total_estimado,
+                        MIN(fecha) AS desde
+                    FROM ia_consumo""")
+                tot = cur.fetchone()
+                cur.execute("""SELECT origen, SUM(costo_usd) AS usd, SUM(llamadas) AS llamadas FROM ia_consumo
+                               GROUP BY origen ORDER BY usd DESC""")
+                por_origen = cur.fetchall()
+                cur.execute("""SELECT to_char(fecha AT TIME ZONE 'America/Argentina/Buenos_Aires', 'YYYY-MM') AS mes,
+                                      SUM(costo_usd) AS usd, SUM(llamadas) AS llamadas
+                               FROM ia_consumo GROUP BY 1 ORDER BY 1 DESC LIMIT 24""")
+                por_mes = cur.fetchall()
+                cur.execute("""SELECT (fecha AT TIME ZONE 'America/Argentina/Buenos_Aires')::date AS dia,
+                                      SUM(costo_usd) AS usd, SUM(llamadas) AS llamadas,
+                                      SUM(costo_usd) FILTER (WHERE origen = 'vigilancia') AS vigilancia,
+                                      SUM(costo_usd) FILTER (WHERE origen = 'conceptos') AS conceptos
+                               FROM ia_consumo WHERE fecha >= now() - interval '45 days'
+                               GROUP BY 1 ORDER BY 1 DESC""")
+                por_dia = cur.fetchall()
+                cur.execute("""SELECT fecha, origen, detalle, llamadas, errores, costo_usd, estimado FROM ia_consumo
+                               WHERE origen = 'vigilancia' ORDER BY fecha DESC LIMIT 15""")
+                corridas = cur.fetchall()
+        num = lambda v: float(v or 0)  # noqa: E731
+        for lista in (por_origen, por_mes, por_dia, corridas):
+            for f in lista:
+                for k in ("usd", "vigilancia", "conceptos", "costo_usd"):
+                    if k in f:
+                        f[k] = num(f[k])
+        return {"mes": num(tot["mes"]), "mes_anterior": num(tot["mes_anterior"]), "ultimas_24h": num(tot["ultimas_24h"]),
+                "total": num(tot["total"]), "total_estimado": num(tot["total_estimado"]), "llamadas": int(tot["llamadas"] or 0),
+                "desde": tot["desde"], "por_origen": por_origen, "por_mes": por_mes, "por_dia": por_dia,
+                "corridas": corridas, "precios": juez.PRECIOS}
 
     # ── Vencimientos y plazos de toda la cartera ──────────────────────
     @router.get("/api/cartera/agenda")

@@ -532,6 +532,15 @@ def comparar(conn, hoy=None, log=print, limite_filas=None) -> dict:
     conn.commit()
     stats.update(uso.resumen())
     stats["costo_ia_usd_max"] = juez.costo_estimado(uso)
+    try:
+        with conn.cursor() as cur:
+            juez.importar_corridas_viejas(cur)
+            juez.registrar_consumo(cur, "vigilancia", uso,
+                                   f"{stats['juzgadas']} alertas juzgadas, {stats['descartadas_ia']} descartadas")
+        conn.commit()
+    except Exception as e:  # noqa: BLE001  (no frena la corrida)
+        conn.rollback()
+        log(f"[juez] no se pudo guardar el consumo de IA: {type(e).__name__}")
     return stats
 
 
