@@ -81,6 +81,7 @@ import formularios_api
 import informes_api
 import informes_viabilidad
 import verificador_api
+import presentacion_api
 import buscador_inpi_api
 import verificador_core
 import mails_api
@@ -4327,6 +4328,7 @@ app.include_router(informes_api.crear_router(
     SimpleNamespace(asegurar_claves=_asegurar_claves, cte_marcas=lambda: _cte_marcas_con_clave()),
 ))
 app.include_router(verificador_api.crear_router(verificar_login, conexion))
+app.include_router(presentacion_api.crear_router(conexion))   # presentación de oposición (página privada de la web)
 app.include_router(buscador_inpi_api.crear_router(verificar_login, conexion))
 app.include_router(accesos_api.crear_router(verificar_login, conexion, CLAVES_ACCESO_RAPIDO, _contar_consulta))
 

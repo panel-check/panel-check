@@ -98,3 +98,17 @@ class PaginaArmada(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PresentacionOposicion(unittest.TestCase):
+    def test_usa_la_ruta_y_la_cabecera_del_panel(self):
+        src = leer("presentacion-oposicion.html")
+        api = (WP.parent / "panel" / "presentacion_api.py").read_text(encoding="utf-8")
+        self.assertIn("/api/publico/presentacion/consulta", src)
+        self.assertIn('"/api/publico/presentacion/consulta"', api)
+        self.assertIn("X-Presentacion-Clave", src)
+        self.assertIn('CABECERA_CLAVE = "X-Presentacion-Clave"', api)
+
+    def test_la_ruta_esta_habilitada_desde_la_web(self):
+        core = (WP.parent / "panel" / "verificador_core.py").read_text(encoding="utf-8")
+        self.assertIn('"/api/publico/presentacion/"', core)

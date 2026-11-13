@@ -55,7 +55,9 @@ TIMEOUT_INPI = 20            # segundos por pedido a INPI
 PAUSA_ENTRE_PEDIDOS = 1.0    # segundos entre una búsqueda y la siguiente a INPI
 
 ORIGENES_POR_DEFECTO = "https://smartiesconsultora.com.ar,https://www.smartiesconsultora.com.ar"
-RUTAS_CRUZADAS = ("/api/publico/verificador/",)  # las únicas que puede llamar la web desde otro dominio
+# Las únicas que puede llamar la web desde otro dominio: el verificador de marcas y la presentación de
+# oposición para las llamadas con clientes (presentacion_api, protegida además con PRESENTACION_CLAVE).
+RUTAS_CRUZADAS = ("/api/publico/verificador/", "/api/publico/presentacion/")
 
 VEREDICTOS = {"disponible", "con_similares", "no_disponible", "error"}
 VEREDICTO_LEGIBLE = {
