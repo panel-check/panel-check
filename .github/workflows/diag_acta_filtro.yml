@@ -1,0 +1,40 @@
+name: "Diag: por qué un acta no entra en la revisión de vistas (temporal)"
+on:
+  push:
+    branches: [diag/acta-4806298]
+permissions:
+  contents: read
+jobs:
+  diag:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.11"
+      - run: pip install psycopg2-binary
+      - name: Campos del filtro (sin nombres ni datos personales)
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL || secrets.DATABASE_PUBLIC_URL }}
+        run: |
+          python3 - <<'PY'
+          import os, psycopg2
+          c = psycopg2.connect(os.environ["DATABASE_URL"]); cur = c.cursor()
+          cur.execute("SELECT column_name FROM information_schema.columns WHERE table_name='marcas'")
+          cols = {r[0] for r in cur.fetchall()}
+          quiero = ["acta","es_lead","boletin","contactado","no_contactar_en","fecha_presentacion","vista_grilla_estado",
+                    "vista_estado","estado_tramite","tuvo_vista","vista_sirve","vista_revisada_en","vista_detectada_en",
+                    "vista_fecha_notificacion","caracter","origen","created_at","actualizado_en","crm_etapa","es_cliente",
+                    "con_agente","tipo","clase","fecha_publicacion","verificado","sin_verificar"]
+          sel = [x for x in quiero if x in cols]
+          cur.execute(f"SELECT {', '.join(sel)} FROM marcas WHERE acta = '4806298'")
+          for fila in cur.fetchall():
+              for k, v in zip(sel, fila):
+                  print(f"{k}: {v}")
+          extra = sorted(c for c in cols if any(p in c for p in ("lead","contact","agente","apoder","descart","excl","sin_")))
+          print("otras columnas relacionadas:", extra)
+          if extra:
+              cur.execute(f"SELECT {', '.join(extra)} FROM marcas WHERE acta = '4806298'")
+              for k, v in zip(extra, cur.fetchone() or []):
+                  if k not in sel: print(f"{k}: {v}")
+          PY
