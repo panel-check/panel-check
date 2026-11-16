@@ -21,7 +21,7 @@ PARAMS = {"hoy": HOY.isoformat(), "dias_min": 3, "dias_venc": 7, "cada_vista": 1
 TABLA = """
 CREATE TEMP TABLE marcas (
     acta TEXT PRIMARY KEY, denominacion TEXT, denominacion_inpi TEXT, titular TEXT,
-    es_lead BOOLEAN DEFAULT true, boletin TEXT, contactado BOOLEAN, fecha_presentacion TIMESTAMPTZ,
+    es_lead BOOLEAN DEFAULT true, boletin TEXT, contactado BOOLEAN, no_contactar_en TIMESTAMPTZ, fecha_presentacion TIMESTAMPTZ,
     vista_grilla_estado TEXT, vista_estado TEXT, estado_tramite TEXT,
     tuvo_vista BOOLEAN, vista_sirve BOOLEAN, vista_revisada_en TIMESTAMPTZ,
     vista_vencimiento_calculado DATE, vista_fecha_vencimiento DATE, vista_detalle TEXT
@@ -108,7 +108,6 @@ class Seleccion(unittest.TestCase):
         self.marca("denegada", vista_estado="denegada", tuvo_vista=True)
         self.marca("con_apoderado", vista_estado="con_apoderado", tuvo_vista=True)
         self.marca("denegada_por_estado", estado_tramite="Denegada")
-        self.marca("orden", vista_grilla_estado="orden_publicacion")
         self.marca("publicada", vista_grilla_estado="publicada")
         self.marca("grilla_denegada", vista_grilla_estado="vista_denegada")
         self.marca("ya_publicada_en_boletin", boletin="11200")
@@ -116,6 +115,14 @@ class Seleccion(unittest.TestCase):
         self.marca("abierta")
         self.assertEqual(self.elegidas(), ["abierta"])
         self.assertEqual(self.elegidas(repaso=True), [])
+
+    def test_orden_de_publicacion_sin_boletin_se_sigue_mirando_cada_2_dias(self):
+        # Acta 4806298 (16/11/2026): orden de publicación el 23/10, sin boletín semanas después, y le llegó una vista.
+        self.marca("orden_hace_1", presentada=10, revisada=ar(1, "20:00"), vista_grilla_estado="orden_publicacion")
+        self.marca("orden_hace_2", presentada=10, revisada=ar(2, "20:00"), vista_grilla_estado="orden_publicacion")
+        self.marca("orden_publicada", presentada=10, revisada=ar(5, "20:00"), vista_grilla_estado="orden_publicacion",
+                   boletin="11200")
+        self.assertEqual(self.elegidas(cada=2), ["orden_hace_2"])
 
     def test_vencida_hace_mas_de_7_dias_sale_de_la_diaria_pero_el_repaso_la_sigue_45(self):
         self.marca("venc_8", tuvo_vista=True, vista_sirve=True, vista_estado="plazo_vencido",

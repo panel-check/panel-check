@@ -7,8 +7,11 @@ una y las clasifica:
 
   publicada          ya tiene "Hoja Publicacion": salió en un boletín; sigue el
                      flujo de oposiciones de siempre
-  orden_publicacion  tiene "Orden de Publicación" (con o sin vista antes, ya resuelta):
-                     sale en el próximo miércoles, no hay nada que ofrecer
+  orden_publicacion  tiene "Orden de Publicación" (con o sin vista antes, ya resuelta). Hasta el
+                     16/11/2026 se daba por cerrada («sale el próximo miércoles»), pero el acta 4806298
+                     tuvo orden de publicación el 23/10, semanas después seguía sin boletín y recibió
+                     una vista que nunca se vio. Ahora se sigue mirando (cada --dias-entre-revisiones
+                     días, solo con el expediente) hasta que sale en un boletín.
   vista_pendiente    tiene "Vista de Marcas" y todavía no hay Orden de
                      Publicación ni contestación posterior: CANDIDATA. Se pide
                      además el expediente para ver notificación/vencimiento
@@ -148,7 +151,7 @@ ESTADOS_VISTA_QUE_SIRVEN = ("sin_notificar", "notificada_en_plazo", "plazo_venci
 # Vistas que no se vuelven a revisar nunca: contestada, denegada o ya con apoderado.
 ESTADOS_VISTA_CERRADOS = ("resuelta", "con_apoderado", "denegada")
 # Lo último que mostró la Grilla y deja la marca fuera de la revisión.
-GRILLA_CERRADA = ("orden_publicacion", "publicada", "vista_con_apoderado", "vista_denegada")
+GRILLA_CERRADA = ("publicada", "vista_con_apoderado", "vista_denegada")  # orden_publicacion sigue abierta (16/11/2026)
 TZ_AR = "America/Argentina/Buenos_Aires"
 
 # Condiciones comunes a la corrida diaria y al repaso. %(hoy)s es la fecha de Argentina (la misma que usa
@@ -164,7 +167,7 @@ _SQL_ABIERTA = f"""
 """
 _SQL_REVISADA_EL = f"(vista_revisada_en AT TIME ZONE '{TZ_AR}')::date"
 _SQL_COLUMNAS = """acta, COALESCE(NULLIF(denominacion, ''), denominacion_inpi) AS denominacion, titular,
-       fecha_presentacion::date AS presentada"""
+       fecha_presentacion::date AS presentada, vista_grilla_estado AS estado_previo"""
 
 
 def sql_candidatas(repaso: bool) -> str:
@@ -192,6 +195,8 @@ def sql_candidatas(repaso: bool) -> str:
           AND (vista_revisada_en IS NULL
                OR {_SQL_REVISADA_EL} <= %(hoy)s::date - CASE
                     WHEN tuvo_vista IS TRUE AND vista_sirve IS TRUE THEN %(cada_vista)s
+                    -- con orden de publicación y todavía sin boletín: como las viejas (16/11/2026)
+                    WHEN vista_grilla_estado = 'orden_publicacion' THEN %(cada)s
                     WHEN %(hoy)s::date - fecha_presentacion::date < %(dias_jovenes)s THEN %(cada_joven)s
                     ELSE %(cada)s END)
         ORDER BY (tuvo_vista IS TRUE AND vista_sirve IS TRUE) DESC, vista_revisada_en ASC NULLS FIRST, fecha_presentacion ASC
@@ -254,7 +259,7 @@ def vistas_abiertas_expediente(exp: dict) -> list[str]:
     return sorted(v["fecha"] for v in (exp or {}).get("vistas", []) if v.get("fecha") and not v.get("contestacion"))
 
 
-def necesita_grilla(exp: dict | None) -> bool:
+def necesita_grilla(exp: dict | None, estado_previo: str | None = None) -> bool:
     """La Grilla (2 consultas) solo hace falta si el expediente no alcanza: no se pudo leer, tiene vistas (para
     el PDF y las contestaciones), tiene resolución o el expediente ya salió de estudio de fondo (puede estar
     publicado u ordenada la publicación, que es lo que la Grilla distingue)."""
@@ -262,6 +267,8 @@ def necesita_grilla(exp: dict | None) -> bool:
         return True
     if exp.get("vistas") or exp.get("estado_tramite"):
         return True
+    if estado_previo == "orden_publicacion":
+        return False  # ya se sabe que tiene orden de publicación: solo hace falta ver si aparece una vista
     return not en_estudio_de_fondo(exp.get("ubicacion"))
 
 
@@ -612,7 +619,7 @@ def main():
                 print(f"  [{n}/{len(marcas)}] acta {m['acta']}: expediente con error {e}", flush=True)
             abiertas = vistas_abiertas_expediente(exp_previo) if exp_previo and not exp_previo.get("bloqueado") else []
         # 2) Grilla solo si hace falta (vistas, resolución, fuera de estudio de fondo o expediente ilegible)
-        if args.solo_grilla or necesita_grilla(exp_previo):
+        if args.solo_grilla or necesita_grilla(exp_previo, m.get("estado_previo")):
             if exp_previo is not None:
                 time.sleep(args.delay)
             try:
@@ -626,10 +633,11 @@ def main():
                 categoria, ingreso, vista = clasificar(archivos)
         else:
             archivos = []
-            categoria, ingreso, vista = "en_examen", (str(m["presentada"]) if m.get("presentada") else None), None
+            categoria = "orden_publicacion" if m.get("estado_previo") == "orden_publicacion" else "en_examen"
+            ingreso, vista = (str(m["presentada"]) if m.get("presentada") else None), None
             conteo["sin_grilla"] = conteo.get("sin_grilla", 0) + 1
         # 3) La Grilla todavía no la muestra pero el expediente sí: vista sin notificar
-        if abiertas and categoria in ("en_examen", "sin_datos") and not any(
+        if abiertas and categoria in ("en_examen", "sin_datos", "orden_publicacion") and not any(
                 o >= abiertas[-1] for o in _fechas(archivos, "ORDEN DE PUBLICACION")):
             categoria, vista = "vista_pendiente", abiertas[-1]
             conteo["vista_solo_expediente"] = conteo.get("vista_solo_expediente", 0) + 1
