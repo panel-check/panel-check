@@ -70,14 +70,14 @@ class Pendientes(unittest.TestCase):
         self.assertNotIn("escanear_actas.yml", [x["workflow"] for x in d])
 
     def test_orden_por_hora_programada(self):
-        # a las 02:30 UTC (23:30 ART) tocaron cartera 01:35, sin verificar 02:05 y oposiciones 02:10
-        d = pg.pendientes(utc(2026, 10, 27, 2, 30), set(), [p for p in pg.PROGRAMADOS if p["workflow"] in
+        # a las 03:00 UTC (00:00 ART) tocaron cartera 02:35, sin verificar 02:40 y oposiciones 02:45
+        d = pg.pendientes(utc(2026, 10, 27, 3, 0), set(), [p for p in pg.PROGRAMADOS if p["workflow"] in
                           ("revisar_oposiciones.yml", "revisar_cartera.yml", "reintentar_sin_verificar.yml")])
         self.assertEqual([x["workflow"] for x in d], ["revisar_cartera.yml", "reintentar_sin_verificar.yml", "revisar_oposiciones.yml"])
 
     def test_inputs_de_la_revision_diaria_de_vistas(self):
         d = {x["workflow"]: x for x in pg.pendientes(utc(2026, 10, 27, 21, 10), set())}
-        self.assertEqual(d["probar_vistas_preboletin.yml"]["inputs"]["hasta_hora"], "22:40")
+        self.assertEqual(d["probar_vistas_preboletin.yml"]["inputs"]["hasta_hora"], "23:30")
         self.assertEqual(d["probar_vistas_preboletin.yml"]["inputs"]["guardar"], "true")
 
 

@@ -65,18 +65,18 @@ CARRIL_INPI = frozenset({
 PROGRAMADOS = [
     # 18:00  Solicitudes nuevas del día (después dispara sola Vigilancia, que no usa el carril)
     {"workflow": "escanear_actas.yml", "cron": "0 21 * * *", "gracia": 360},
-    # 18:05  Revisión diaria de vistas: espera a que el escaneo libere el carril y se corta sola a las 22:40
+    # 18:05  Revisión diaria de vistas: espera a que el escaneo libere el carril y se corta sola a las 23:30 (16/11/2026: antes 22:40)
     {"workflow": "probar_vistas_preboletin.yml", "cron": "5 21 * * *", "gracia": 270,
-     "inputs": {"limite": "4000", "max_minutes": "200", "hasta_hora": "22:40", "guardar": "true"}},
+     "inputs": {"limite": "5000", "max_minutes": "260", "hasta_hora": "23:30", "guardar": "true"}},
     # 03:30 miércoles  Pasada extra de vistas: las presentadas hace 3 a 25 días, para agarrar las que INPI cargó el
     # martes antes de que las notifique a las 06:00. Espera a que termine oposiciones (mismo carril) y se corta a las 05:45.
     {"workflow": "vistas_madrugada.yml", "cron": "30 6 * * 3", "gracia": 120},
-    # 22:35  Seguimiento de la cartera
-    {"workflow": "revisar_cartera.yml", "cron": "35 1 * * *", "gracia": 360},
-    # 23:05  Sin verificar (no los martes a la noche)
-    {"workflow": "reintentar_sin_verificar.yml", "cron": "5 2 * * 0,1,2,4,5,6", "gracia": 360},
-    # 23:10  Oposiciones: rotación nocturna de 5 boletines
-    {"workflow": "revisar_oposiciones.yml", "cron": "10 2 * * *", "gracia": 480},
+    # 23:35  Seguimiento de la cartera
+    {"workflow": "revisar_cartera.yml", "cron": "35 2 * * *", "gracia": 360},
+    # 23:40  Sin verificar (no los martes a la noche)
+    {"workflow": "reintentar_sin_verificar.yml", "cron": "40 2 * * 0,1,2,4,5,6", "gracia": 360},
+    # 23:45  Oposiciones: rotación nocturna de 4 boletines (16/11/2026: antes 5, para dejarle más tiempo a vistas)
+    {"workflow": "revisar_oposiciones.yml", "cron": "45 2 * * *", "gracia": 480},
     # 04:20 lunes  Concesiones y vencimientos
     {"workflow": "revisar_estado.yml", "cron": "20 7 * * 1", "gracia": 480},
     # 05:10  Sin email (no los miércoles de madrugada)

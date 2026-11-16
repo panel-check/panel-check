@@ -817,13 +817,13 @@ GRUPOS_AUTOMATIZACIONES = [
         "tarjetas": [
             {
                 "nombre": "Oposiciones",
-                "descripcion": "Todas las noches revisa el boletín COMPLETO (todos sus leads) de hasta 5 "
-                               "boletines -- los que estén más cerca de cerrar el plazo de 30 días para "
+                "descripcion": "Todas las noches revisa el boletín COMPLETO (todos sus leads) de hasta 4 "
+                               "boletines (5 hasta el 16/11/2026) -- los que estén más cerca de cerrar el plazo de 30 días para "
                                "oponerse, o ya cerrados esperando que INPI notifique a los titulares el "
                                "miércoles siguiente -- así se van rotando todos los boletines abiertos cada "
                                "pocas noches (decidido el 15/10/2026, reemplaza el esquema anterior de "
                                "revisar a cada lead a los 10/23/33 días). El mail de aviso sale a las 7:30.",
-                "horario": "Todos los días, 23:10 hs",
+                "horario": "Todos los días, 23:45 hs",
                 "metricas": [
                     # Solo oposiciones de un tercero (el detalle trae "OPO"); las vistas de INPI
                     # antes de publicar tienen su propia tarjeta, más abajo.
@@ -834,7 +834,7 @@ GRUPOS_AUTOMATIZACIONES = [
                 ],
                 "procesos": [
                     {"etiqueta": "Rotación nocturna", "workflow_file": "revisar_oposiciones.yml", "cron": programador.cron_de("revisar_oposiciones.yml"),
-                     "horario": "todos los días, 23:10 hs",
+                     "horario": "todos los días, 23:45 hs",
                      "pendientes_sql": _SQL_OPOSICIONES_PENDIENTES},
                 ],
             },
@@ -846,7 +846,7 @@ GRUPOS_AUTOMATIZACIONES = [
                                "logotipos o precisar productos, 10 días hábiles). Baja y lee el PDF de la vista y "
                                "guarda el tipo, el artículo, la marca anterior con la que se parece y el "
                                "vencimiento. Corre todos los días desde las 18:05, apenas el escaneo de actas deja "
-                               "libre el carril de INPI, y se corta sola a las 22:40, antes de los procesos de la "
+                               "libre el carril de INPI, y se corta sola a las 23:30, antes de los procesos de la "
                                "noche. Una marca no se revisa dos "
                                "veces el mismo día; las que tienen una vista sin contestar se miran todos los "
                                "días. INPI carga las vistas de miércoles a martes y las notifica todas el "
@@ -858,7 +858,7 @@ GRUPOS_AUTOMATIZACIONES = [
                                "denegadas, las que ya tienen apoderado y las que salieron en un boletín. No revisa "
                                "las contactadas: esas con vista las repasa los miércoles a las 14:00, junto con "
                                "las demás, para actualizar si se notificó, se contestó o venció el plazo.",
-                "horario": "Todos los días, desde las 18:05 (espera al escaneo; se corta a las 22:40) · pasada extra: miércoles 03:30 hs · repaso: miércoles 14:00 hs",
+                "horario": "Todos los días, desde las 18:05 (espera al escaneo; se corta a las 23:30) · pasada extra: miércoles 03:30 hs · repaso: miércoles 14:00 hs",
                 "metricas": [
                     {"sql": "SELECT COUNT(*) FROM marcas WHERE es_lead = true AND boletin IS NULL "
                             "AND tuvo_vista IS TRUE AND vista_sirve IS TRUE",
@@ -879,7 +879,7 @@ GRUPOS_AUTOMATIZACIONES = [
                 ],
                 "procesos": [
                     {"etiqueta": "Revisión diaria", "workflow_file": "probar_vistas_preboletin.yml", "cron": programador.cron_de("probar_vistas_preboletin.yml"),
-                     "horario": "todos los días, 18:05 hs (espera a que termine el escaneo; se corta a las 22:40)",
+                     "horario": "todos los días, 18:05 hs (espera a que termine el escaneo; se corta a las 23:30)",
                      "pendientes_sql": _SQL_VISTAS_PENDIENTES},
                     {"etiqueta": "Pasada de la madrugada del miércoles", "workflow_file": "vistas_madrugada.yml",
                      "cron": programador.cron_de("vistas_madrugada.yml"),
@@ -934,7 +934,7 @@ GRUPOS_AUTOMATIZACIONES = [
                 "nombre": "Seguimiento de la cartera",
                 "descripcion": "Vuelve a leer en INPI los expedientes de las marcas de los clientes (estado, "
                                "concesión, vencimiento, oposiciones, movimientos nuevos) y guarda las novedades.",
-                "horario": "Todos los días, 22:35 hs",
+                "horario": "Todos los días, 23:35 hs",
                 "metricas": [
                     {"sql": "SELECT COUNT(*) FROM cartera_novedades WHERE detectado_en >= now() - interval '7 days'",
                      "etiqueta": "novedades en los últimos 7 días", "destacada": True},
@@ -983,7 +983,7 @@ GRUPOS_AUTOMATIZACIONES = [
                 "procesos": [
                     {"etiqueta": "Sin verificar", "workflow_file": "reintentar_sin_verificar.yml",
                      "cron": programador.cron_de("reintentar_sin_verificar.yml"),
-                     "horario": "todas las noches menos la del martes, 23:05 hs",
+                     "horario": "todas las noches menos la del martes, 23:40 hs",
                      "pendientes_sql": "SELECT COUNT(*) FROM marcas WHERE es_lead IS NULL AND TRIM(COALESCE(matricula_agente, '')) IN ('', 'Part.')"},
                     {"etiqueta": "Sin email", "workflow_file": "reintentar_sin_email.yml",
                      "cron": programador.cron_de("reintentar_sin_email.yml"),
