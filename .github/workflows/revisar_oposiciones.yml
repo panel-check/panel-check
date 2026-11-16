@@ -6,7 +6,7 @@ on:
   # esperando turno si el carril de INPI está ocupado. Se puede lanzar a mano igual.
     # Rotación nocturna automática (decidido el 15/10/2026: reemplaza el
     # esquema anterior de hitos a los 10/23/33 días). Todas las noches, a
-    # las 23:10 ART (02:10 UTC), revisa el boletín COMPLETO -- todos sus
+    # las 23:45 ART (02:45 UTC), revisa el boletín COMPLETO -- todos sus
     # leads, misma lógica que el botón manual «Buscar oposiciones» de
     # /boletines -- de hasta 5 boletines: los que estén más cerca de cerrar
     # el plazo de oposición (o ya cerrados, esperando que INPI notifique a
@@ -34,9 +34,9 @@ on:
         required: false
         default: false
       cantidad:
-        description: "Si no se indica boletín ni reverificar_apoderados: dispara la rotación ahora. Cuántos boletines revisar esta corrida (5 = lo normal de cada noche; se puede subir para ponerse al día)"
+        description: "Si no se indica boletín ni reverificar_apoderados: dispara la rotación ahora. Cuántos boletines revisar esta corrida (4 = lo normal de cada noche desde el 16/11/2026; se puede subir para ponerse al día)"
         required: false
-        default: "5"
+        default: "4"
 
 permissions:
   contents: read
@@ -86,7 +86,7 @@ jobs:
         run: |
           cd scripts
           cantidad="${{ github.event.inputs.cantidad }}"
-          lista=$(python3 elegir_boletines_oposicion.py --max "${cantidad:-5}")
+          lista=$(python3 elegir_boletines_oposicion.py --max "${cantidad:-4}")
           if [ "$lista" = "[]" ]; then hay=false; else hay=true; fi
           echo "lista=$lista" >> "$GITHUB_OUTPUT"
           echo "hay=$hay" >> "$GITHUB_OUTPUT"

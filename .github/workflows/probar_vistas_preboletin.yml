@@ -4,7 +4,7 @@ on:
   # Además, los miércoles a las 03:30 ART el panel lo lanza otra vez con forzar_cada=1 y edad_maxima=25: pasada extra
   # para agarrar las vistas que INPI cargó el martes antes de que las notifique a las 06:00.
   # Todos los días lo lanza el panel (panel/programador.py, 18:05 ART): espera a que el escaneo de actas libere el
-  # carril de INPI (entre las 18:20 y las 20:10) y se corta solo a las 22:40 (o a los 100 minutos) para no pisar a
+  # carril de INPI (entre las 18:20 y las 20:10) y se corta solo a las 23:30 (o a los 260 minutos) para no pisar a
   # los procesos de las 23:00. Antes se encadenaba al escaneo con workflow_run; los horarios de GitHub se atrasan
   # horas, por eso ahora lo dispara el panel. Una marca revisada hoy no se vuelve a revisar hoy, así que repetir la
   # corrida el mismo día no repite nada.
