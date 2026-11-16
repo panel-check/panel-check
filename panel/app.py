@@ -731,7 +731,7 @@ _SQL_OPOSICIONES_PENDIENTES = """
 _SQL_HOY_AR = "(now() AT TIME ZONE 'America/Argentina/Buenos_Aires')::date"
 _SQL_VISTAS_ABIERTA = f"""
       es_lead = true AND boletin IS NULL
-      AND COALESCE(vista_grilla_estado, '') NOT IN ('orden_publicacion', 'publicada', 'vista_con_apoderado', 'vista_denegada')
+      AND COALESCE(vista_grilla_estado, '') NOT IN ('publicada', 'vista_con_apoderado', 'vista_denegada')
       AND COALESCE(vista_estado, '') NOT IN ('resuelta', 'con_apoderado', 'denegada')
       AND COALESCE(estado_tramite, '') <> 'Denegada'
       AND NOT COALESCE(tuvo_vista IS TRUE AND vista_sirve IS TRUE
@@ -748,6 +748,8 @@ _SQL_VISTAS_PENDIENTES = f"""
       AND (vista_revisada_en IS NULL
            OR {_SQL_VISTAS_REVISADA_EL} <= {_SQL_HOY_AR} - CASE
                 WHEN tuvo_vista IS TRUE AND vista_sirve IS TRUE THEN 1
+                -- con orden de publicación y todavía sin boletín: como las viejas (16/11/2026)
+                WHEN vista_grilla_estado = 'orden_publicacion' THEN 2
                 -- todos los días (09/11/2026): jóvenes (menos de 30 días) cada 1, viejas cada 2
                 WHEN {_SQL_HOY_AR} - fecha_presentacion::date < 30 THEN 1
                 ELSE 2 END)

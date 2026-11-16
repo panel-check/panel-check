@@ -186,6 +186,12 @@ class ExpedientePrimero(unittest.TestCase):
         for u in ("2026-11-11 División Publicación", "División Notificaciones", None, ""):
             self.assertFalse(pv.en_estudio_de_fondo(u), u)
 
+    def test_con_orden_de_publicacion_alcanza_el_expediente(self):
+        publicacion = self.exp(ubicacion="2026-11-11 División Publicación")
+        self.assertTrue(pv.necesita_grilla(publicacion))
+        self.assertFalse(pv.necesita_grilla(publicacion, "orden_publicacion"))
+        self.assertTrue(pv.necesita_grilla(self.exp([self.vista("2026-11-12")]), "orden_publicacion"))
+
     def test_vistas_abiertas(self):
         e = self.exp([self.vista("2026-11-04"), self.vista("2026-09-01", contestacion="2026-09-10")])
         self.assertEqual(pv.vistas_abiertas_expediente(e), ["2026-11-04"])
@@ -199,7 +205,7 @@ class ExpedientePrimero(unittest.TestCase):
         self.assertTrue(pv.necesita_grilla(self.exp(bloqueado=True)))
         self.assertTrue(pv.necesita_grilla(None))
 
-    def _correr(self, exp, archivos):
+    def _correr(self, exp, archivos, estado_previo=None):
         """Corre main() con --actas 4808442 contra INPI y base simulados. Devuelve (salida, llamadas a la Grilla)."""
         import contextlib
         import io
@@ -217,7 +223,7 @@ class ExpedientePrimero(unittest.TestCase):
                 elif "FROM marcas WHERE acta = ANY" in sql:
                     import datetime as dt
                     self.filas = [{"acta": "4808442", "denominacion": "X", "titular": "Y",
-                                   "presentada": dt.date(2026, 10, 15)}]
+                                   "presentada": dt.date(2026, 10, 15), "estado_previo": estado_previo}]
                 else:
                     self.filas = []
             def fetchone(self):
@@ -266,3 +272,21 @@ class ExpedientePrimero(unittest.TestCase):
         salida, grilla = self._correr(self.exp(), [])
         self.assertEqual(grilla, [])
         self.assertIn("en_examen", salida)
+
+
+class OrdenDePublicacionSigue(ExpedientePrimero):
+    """Acta 4806298 (PARRIPIZZA): orden de publicación el 23/10, vista después, nunca detectada (16/11/2026)."""
+
+    def test_orden_sin_vistas_no_consulta_la_grilla_y_sigue_en_orden(self):
+        salida, grilla = self._correr(self.exp(ubicacion="2026-11-11 División Publicación"), [], "orden_publicacion")
+        self.assertEqual(grilla, [])
+        self.assertIn("): orden_publicacion", salida)
+
+    def test_orden_con_vista_nueva_en_el_expediente(self):
+        archivos = [fila("Recibo de Ingreso", "13/10/2026", "Solicitud de marcas"),
+                    fila("Orden de Publicación", "23/10/2026")]
+        salida, grilla = self._correr(self.exp([self.vista("2026-11-12")], ubicacion="Sector Estudio Fondo"),
+                                      archivos, "orden_publicacion")
+        self.assertEqual(grilla, ["4808442"])
+        self.assertIn("vista_pendiente", salida)
+        self.assertIn("sin_notificar", salida)
