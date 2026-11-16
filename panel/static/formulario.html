@@ -227,6 +227,10 @@ async function enviar(ev) {
     if (conPoder && resp.poder_enviado) {
       app.innerHTML = `<div class="tarjeta cabecera ok"><div class="tilde">✓</div><h2>Poder generado y enviado por mail</h2>
         <p>Revisá spam o promociones. En el mail te indicamos cómo debés firmarlo.</p></div>`;
+    } else if (def.tipo_persona === "fisica") {
+      // Persona física sin envío automático del poder (desde el 16/11/2026): lo prepara y lo manda el equipo.
+      app.innerHTML = `<div class="tarjeta cabecera ok"><div class="tilde">✓</div><h2>¡Datos recibidos!</h2>
+        <p>Vamos a revisarlos y a preparar el poder para que lo firmes. Te lo enviamos por mail a la brevedad, con las indicaciones para firmarlo.</p></div>`;
     } else {
       app.innerHTML = `<div class="tarjeta cabecera ok"><div class="tilde">✓</div><h2>¡Gracias! Recibimos tus datos</h2>
         <p>Ya nos llegó el formulario. ${conPoder ? "No pudimos enviarte el poder automáticamente: te lo mandamos por mail a la brevedad. " : ""}Nos vamos a poner en contacto con vos a la brevedad.</p></div>`;
