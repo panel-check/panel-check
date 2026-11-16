@@ -754,8 +754,33 @@ def crear_router(verificar_login, conexion, crm) -> APIRouter:
                 "aviso": None if info.get("estado_consulta") == "ok" else "INPI no respondió bien: probá de nuevo en unos minutos"}
 
     # ── Alertas de vigilancia ─────────────────────────────────────────
+    # Cuándo la vio el sistema: el escaneo diario de actas o la alerta, lo primero.
+    SQL_DETECTADA = "LEAST(a.creada_en, (SELECT s.creado_en FROM solicitudes_escaneadas s WHERE s.acta = a.acta_nueva))"
+    # Filtro «Cuándo» de la pestaña Vigilancia: (desde, hasta) en días atrás, contados en hora de Argentina.
+    # hasta None = sin límite hacia atrás.
+    PERIODOS_ALERTA = {
+        "hoy": ("Hoy", 0, 0), "ayer": ("Ayer", 1, 1), "semana": ("Últimos 7 días", 0, 6),
+        "semana_pasada": ("La semana pasada (hace 7 a 13 días)", 7, 13),
+        "mas_2_semanas": ("Hace más de dos semanas", 14, None), "mas_1_mes": ("Hace más de un mes", 30, None),
+    }
+
+    def _cond_periodo(periodo: str, segun: str, hoy):
+        """Condición SQL para «Cuándo» según la fecha de detección o la del análisis de la IA."""
+        if periodo not in PERIODOS_ALERTA:
+            return None, []
+        _, desde, hasta = PERIODOS_ALERTA[periodo]
+        col = "a.ia_en" if segun == "ia" else SQL_DETECTADA
+        dia = f"(({col}) AT TIME ZONE 'America/Argentina/Buenos_Aires')::date"
+        cond, val = [f"{dia} <= %s"], [hoy - _dt.timedelta(days=desde)]
+        if hasta is not None:
+            cond.append(f"{dia} >= %s"); val.append(hoy - _dt.timedelta(days=hasta))
+        return " AND ".join(cond), val
+
     def _alertas(cur, filtros: dict, limite=500):
         cond, val = [], []
+        c_per, v_per = _cond_periodo(filtros.get("periodo") or "", filtros.get("segun") or "", cartera.hoy_ar())
+        if c_per:
+            cond.append(c_per); val += v_per
         if filtros.get("estado") == "abiertas":
             cond.append("a.estado IN ('nueva','monitorear','oponer')")
         elif filtros.get("estado"):
@@ -783,7 +808,7 @@ def crear_router(verificar_login, conexion, crm) -> APIRouter:
                                 ELSE COALESCE(m.fecha_publicacion, b.fecha, b.procesado_en::date) END
                       FROM marcas m LEFT JOIN boletines b ON b.numero = m.boletin WHERE m.acta = a.acta_nueva) AS publicacion_nueva,
                    -- cuándo se enteró el sistema de la solicitud nueva: el escaneo diario de actas o la alerta, lo primero
-                   LEAST(a.creada_en, (SELECT s.creado_en FROM solicitudes_escaneadas s WHERE s.acta = a.acta_nueva)) AS detectada_en
+                   {SQL_DETECTADA} AS detectada_en
             FROM vigilancia_alertas a
             LEFT JOIN clientes c ON c.id = a.cliente_id
             LEFT JOIN cartera_marcas cm ON cm.acta = a.acta_cliente
@@ -812,14 +837,18 @@ def crear_router(verificar_login, conexion, crm) -> APIRouter:
 
     @router.get("/api/cartera/alertas")
     def listar_alertas(estado: str = "abiertas", cliente_id: Optional[int] = None, nivel: str = "", tipo: str = "",
-                       sin_contratar: bool = False, _: str = Depends(verificar_login)):
+                       sin_contratar: bool = False, periodo: str = "", segun: str = "deteccion",
+                       _: str = Depends(verificar_login)):
         if estado and estado != "abiertas" and estado not in cartera.ESTADOS_ALERTA:
             raise HTTPException(status_code=400, detail=f"Estado desconocido: {estado}")
+        if periodo and periodo not in PERIODOS_ALERTA:
+            raise HTTPException(status_code=400, detail=f"Período desconocido: {periodo}")
         with nueva_conexion() as conn:
             with rcur(conn) as cur:
                 filas = _alertas(cur, {"estado": estado, "cliente_id": cliente_id, "nivel": nivel, "tipo": tipo,
-                                       "sin_contratar": sin_contratar})
-        return {"alertas": filas, "estados": cartera.ESTADOS_ALERTA}
+                                       "sin_contratar": sin_contratar, "periodo": periodo, "segun": segun})
+        return {"alertas": filas, "estados": cartera.ESTADOS_ALERTA,
+                "periodos": {k: v[0] for k, v in PERIODOS_ALERTA.items()}}
 
     @router.post("/api/cartera/alertas/{alerta_id}")
     def decidir_alerta(alerta_id: int, body: AlertaCambios, usuario: str = Depends(verificar_login)):

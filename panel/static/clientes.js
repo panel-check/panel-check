@@ -866,7 +866,7 @@ function htmlAlerta(a, { sinCliente = false } = {}) {
         <div class="vg-col"><small>Solicitud nueva</small><strong>${esc(a.denominacion_nueva || "(sin nombre)")}</strong>
           <div class="crm-gris">clase ${esc(a.clase_nueva ?? "?")} · acta <a class="link-acta" href="javascript:void(0)" data-abrir="${esc(a.acta_nueva)}">${esc(a.acta_nueva)} ↗</a>
             · ${esc(tipoLegible(a.tipo_nuevo))}<br>Titular: ${esc(a.titular_nuevo || "?")}${agente}<br>${esc(a.fuente_nueva || "")}${a.fecha_presentacion_nueva ? " · presentada " + crmFecha(a.fecha_presentacion_nueva) : ""}</div></div>
-      </div>${a.ia_veredicto ? `<div class="vg-ia"><span class="cl-tag ${(VEREDICTOS[a.ia_veredicto] || [""])[0]}" title="Veredicto del juez con IA (${esc(a.ia_modelo || "")})">🤖 ${esc((VEREDICTOS[a.ia_veredicto] || ["", a.ia_veredicto])[1])}</span>
+      </div>${a.ia_veredicto ? `<div class="vg-ia"><span class="cl-tag ${(VEREDICTOS[a.ia_veredicto] || [""])[0]}" title="Veredicto del juez con IA (${esc(a.ia_modelo || "")})">🤖 ${esc((VEREDICTOS[a.ia_veredicto] || ["", a.ia_veredicto])[1])}</span>${a.ia_en ? ` <span class="crm-gris" title="Cuándo la analizó la IA">${fmtFechaHora(a.ia_en)}</span> ·` : ""}
           ${esc(a.ia_razon || "")}${a.ia_dominantes ? ` <span class="crm-gris">(elemento dominante: ${esc(a.ia_dominantes)})</span>` : ""}${a.ia_desacuerdo ? ' <span class="cl-tag azul" title="Alguien la sacó de «Descartada por IA»">no de acuerdo con la IA</span>' : ""}</div>
         <div class="vg-motivos">Motor: ${esc(a.motivos || "")}</div>`
       : `<div class="vg-motivos">${esc(a.motivos || "")}${!otro && a.estado === "nueva" ? ' <span class="crm-gris">· todavía sin revisar por la IA</span>' : ""}</div>`}`}
@@ -919,6 +919,11 @@ async function pintarVigilancia() {
           <label>Estado<select id="vg-estado"></select></label>
           <label>Nivel<select id="vg-nivel"><option value="">Todos</option><option value="alta">Alta</option><option value="media">Media</option><option value="baja">Baja</option></select></label>
           <label>Tipo<select id="vg-tipo"><option value="">Todos</option><option value="similitud">Parecidos</option></select></label>
+          <label title="Cuándo la detectó el sistema o cuándo la analizó la IA">Cuándo<select id="vg-periodo"><option value="">Siempre</option>
+            <option value="hoy">Hoy</option><option value="ayer">Ayer</option><option value="semana">Últimos 7 días</option>
+            <option value="semana_pasada">La semana pasada</option><option value="mas_2_semanas">Hace más de 2 semanas</option>
+            <option value="mas_1_mes">Hace más de un mes</option></select></label>
+          <label>Según<select id="vg-segun"><option value="deteccion">Detección</option><option value="ia">Análisis de la IA</option></select></label>
           <label>Cliente<select id="vg-cliente"><option value="">Todos</option></select></label>
           <label class="check" style="flex-direction:row;align-items:center;gap:6px"><input type="checkbox" id="vg-sc"> Solo clientes sin vigilancia contratada</label>
         </div>
@@ -928,7 +933,7 @@ async function pintarVigilancia() {
     $("vg-cliente").innerHTML += r.clientes.map(c => `<option value="${c.id}">${esc(c.nombre)}</option>`).join("");
     const aj = await api("/api/cartera/alertas?estado=abiertas&cliente_id=-1"); est.estadosAlerta = aj.estados;
     $("vg-estado").innerHTML = `<option value="abiertas">Abiertas</option>` + Object.entries(aj.estados).map(([k, v]) => `<option value="${k}">${esc(v)}</option>`).join("") + `<option value="">Todas</option>`;
-    ["vg-estado", "vg-nivel", "vg-tipo", "vg-cliente", "vg-sc"].forEach(id => $(id).addEventListener("change", pintarVigilancia));
+    ["vg-estado", "vg-nivel", "vg-tipo", "vg-periodo", "vg-segun", "vg-cliente", "vg-sc"].forEach(id => $(id).addEventListener("change", pintarVigilancia));
     $("vg-marcas-det").addEventListener("toggle", () => { if ($("vg-marcas-det").open) pintarVigilanciaMarcas(); });
     $("pr-ir").addEventListener("click", probarNombre);
     $("vg-consumo-btn").addEventListener("click", () => {
@@ -942,6 +947,7 @@ async function pintarVigilancia() {
   p.set("estado", $("vg-estado").value);
   if ($("vg-nivel").value) p.set("nivel", $("vg-nivel").value);
   if ($("vg-tipo").value) p.set("tipo", $("vg-tipo").value);
+  if ($("vg-periodo").value) { p.set("periodo", $("vg-periodo").value); p.set("segun", $("vg-segun").value); }
   if ($("vg-cliente").value) p.set("cliente_id", $("vg-cliente").value);
   if ($("vg-sc").checked) p.set("sin_contratar", "true");
   const lista = $("vg-lista");
