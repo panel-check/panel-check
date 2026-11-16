@@ -54,6 +54,8 @@ class CorreccionDePuntaAPunta(unittest.TestCase):
             mock.patch.object(formularios_api.mails_cola, "enviar_o_encolar",
                               side_effect=lambda conexion, **kw: cls.mails.append(kw) or {"en_cola": False, "id": "x"}),
             mock.patch.dict(os.environ, {"TURNSTILE_SITE_KEY": "", "TURNSTILE_SECRET_KEY": ""}),
+            # el envío automático del poder está apagado desde el 16/11/2026; acá se prueba el código por si se reactiva
+            mock.patch.object(formularios_api.fc, "ENVIAR_PODER_AUTOMATICO", True),
         ]
         for p in cls.parches:
             p.start()
