@@ -200,8 +200,9 @@ async function enviar(ev) {
     }
     datos.append("cf-turnstile-response", token);
   }
-  // Persona física: se arma y se manda el poder por mail. Mientras tanto, 2 segundos de barra de carga.
-  const conPoder = def.tipo_persona === "fisica";
+  // Solo si el panel tiene activado el envío automático del poder (desde el 16/11/2026 está apagado:
+  // el poder lo manda el equipo a mano). Mientras se arma, 2 segundos de barra de carga.
+  const conPoder = !!def.envia_poder;
   let carga = null;
   if (conPoder) {
     carga = document.createElement("div");

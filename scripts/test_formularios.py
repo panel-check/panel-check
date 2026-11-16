@@ -33,6 +33,12 @@ def validar(extra, archivos=None):
     return fc.validar("persona-fisica", {**BASE, **extra}, archivos or {})
 
 
+class PoderManual(unittest.TestCase):
+    def test_el_poder_no_se_manda_solo(self):
+        # Desde el 16/11/2026 el poder del formulario de Persona Física lo manda el equipo a mano.
+        self.assertFalse(fc.ENVIAR_PODER_AUTOMATICO)
+
+
 class ServicioPersonaFisica(unittest.TestCase):
     def test_servicio_va_despues_del_domicilio_comercial_y_es_obligatorio(self):
         ids = [c["id"] for c in fc.FORMULARIOS["persona-fisica"]["campos"]]

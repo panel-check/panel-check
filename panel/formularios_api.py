@@ -299,6 +299,7 @@ def crear_router(verificar_login, conexion) -> APIRouter:
         return {"slug": slug, "tipo_persona": f["tipo_persona"], **{k: f[k] for k in ("titulo", "descripcion", "otro")},
                 "campos": [{k: v for k, v in c.items() if k != "cliente"} for c in f["campos"]],
                 "max_archivo": fc.MAX_ARCHIVO,
+                "envia_poder": fc.ENVIAR_PODER_AUTOMATICO and f["tipo_persona"] == "fisica",
                 "turnstile_site_key": os.environ.get("TURNSTILE_SITE_KEY") if _turnstile_activo() else None}
 
     @router.post("/api/publico/formulario/{slug}")
@@ -339,7 +340,7 @@ def crear_router(verificar_login, conexion) -> APIRouter:
                 res = fc.guardar_respuesta(cur, slug, datos, validos, ip)
             conn.commit()
         background.add_task(_aviso_en_segundo_plano, res["respuesta_id"])
-        if fc.FORMULARIOS[slug]["tipo_persona"] == "fisica":
+        if fc.ENVIAR_PODER_AUTOMATICO and fc.FORMULARIOS[slug]["tipo_persona"] == "fisica":
             return {"ok": True, "poder_enviado": await run_in_threadpool(_enviar_poder, res["respuesta_id"])}
         return {"ok": True}
 
@@ -397,7 +398,7 @@ def crear_router(verificar_login, conexion) -> APIRouter:
             conn.commit()
         background.add_task(_aviso_en_segundo_plano, resp["id"])
         poder = None
-        if res["reenviar_poder"]:
+        if fc.ENVIAR_PODER_AUTOMATICO and res["reenviar_poder"]:
             poder = await run_in_threadpool(_enviar_poder, resp["id"])
         return {"ok": True, "cambios": len(res["cambios"]), "poder_enviado": poder}
 

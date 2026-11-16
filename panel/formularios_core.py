@@ -568,6 +568,10 @@ def aplicar_edicion(cur, resp: dict, datos: dict, archivos: list, ip: str) -> di
             "reenviar_poder": FORMULARIOS[slug]["tipo_persona"] == "fisica" and cambia_poder(antes, datos)}
 
 
+# Desde el 16/11/2026 el poder NO se manda solo al completar o corregir el formulario de Persona Física:
+# lo manda el equipo a mano desde la ficha del cliente («Generar poder para firmar»). True = volver al envío automático.
+ENVIAR_PODER_AUTOMATICO = False
+
 CLAVE_MAIL_PODER = "poder_persona_fisica"
 PODER_MAX_24H = 3  # poderes por mail en 24 hs: evita que usen el formulario para spamear a un tercero
 
