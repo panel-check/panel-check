@@ -69,7 +69,7 @@ jobs:
     runs-on: ubuntu-latest
     # Una tanda de 600 marcas tarda ~30 min; con "limite" alto (una pasada de varios miles) puede llegar
     # a 2-3 h. El corte "prolijo" lo hace max_minutes; este es solo el tope duro del trabajo.
-    timeout-minutes: 240
+    timeout-minutes: 300  # por encima de max_minutes (260) y del corte de las 23:30
     env:
       # Alarma de bloqueo masivo de INPI (scripts/monitor_bloqueo.py)
       RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
