@@ -188,7 +188,38 @@
     }).join(""));
   }
 
-  // Informe Oposición IA: ficha ⚡ arriba, después oposiciones, marcas, comparación, palancas y caminos.
+  // «📨 Para el cliente» (clave opcional para_cliente): por cada acta opuesta, a qué se dedica el cliente, a qué se
+  // dedica el oponente y si los rubros coinciden. Es información preliminar escrita para mandarse tal cual al cliente.
+  const filasParaCliente = d => (Array.isArray(d.para_cliente) ? d.para_cliente : []).filter(x => x && typeof x === "object");
+  const COINC = { "no": ["No", "ok"], "en parte": ["En parte", "aviso"], "sí": ["Sí", "mal"] };
+  function textoParaCliente(d) {
+    return filasParaCliente(d).map(p => {
+      const c = COINC[String(p.coinciden || "").toLowerCase()] || [texto(p.coinciden), ""];
+      const marca = [p.marca, p.acta ? `acta ${p.acta}` : "", p.clase != null && p.clase !== "" ? `clase ${p.clase}` : ""].filter(Boolean);
+      return [`• Tu marca${marca.length ? ` (${marca.join(", ")})` : ""}: ${texto(p.cliente_se_dedica)}`,
+        `• Quién se opone: ${[p.oponente, p.oponente_se_dedica].filter(Boolean).map(texto).join(", ")}`,
+        `• ¿Coinciden los rubros?: ${[c[0] ? c[0] + "." : "", texto(p.explicacion)].filter(Boolean).join(" ")}`].join("\n");
+    }).join("\n\n");
+  }
+  function cajaParaCliente(d) {
+    const filas = filasParaCliente(d);
+    if (!filas.length) return "";
+    return caja("📨 Para el cliente", `<p class="crm-gris" style="margin:0 0 10px;font-size:12.5px">Información preliminar, sin chances, plazos ni precios: se puede mandar tal cual.</p>
+      <div class="op-lista">${filas.map(p => {
+        const c = COINC[String(p.coinciden || "").toLowerCase()] || [texto(p.coinciden), ""];
+        return `<div class="op-item op-pc">
+          <div class="op-item-cab"><strong>${esc(p.marca || "")}</strong>${p.acta ? ` · Acta <a class="link-acta" href="javascript:void(0)" data-acta="${esc(p.acta)}">${esc(p.acta)} ↗</a>` : ""}${p.clase != null && p.clase !== "" ? ` <span class="cl-tag">Clase ${esc(p.clase)}</span>` : ""}
+            ${c[0] ? `<span class="cl-tag ${c[1]}">Rubros: ${esc(c[0].toLowerCase())}</span>` : ""}</div>
+          <dl class="inf-grid">
+            ${p.cliente_se_dedica ? `<dt>Tu marca</dt><dd>${esc(texto(p.cliente_se_dedica))}</dd>` : ""}
+            ${p.oponente || p.oponente_se_dedica ? `<dt>Quién se opone</dt><dd>${p.oponente ? `<strong>${esc(texto(p.oponente))}</strong>${p.oponente_se_dedica ? ": " : ""}` : ""}${esc(texto(p.oponente_se_dedica))}</dd>` : ""}
+            ${c[0] || p.explicacion ? `<dt>¿Coinciden los rubros?</dt><dd>${c[0] ? `<strong>${esc(c[0])}.</strong> ` : ""}${esc(texto(p.explicacion))}</dd>` : ""}
+          </dl></div>`;
+      }).join("")}</div>
+      <button type="button" class="cl-btn sec mini" id="op-pc-copiar" style="margin-top:10px">📋 Copiar texto para el cliente</button>`);
+  }
+
+  // Informe Oposición IA: ficha ⚡ arriba, 📨 para el cliente, después oposiciones, marcas, comparación, palancas y caminos.
   function oposicion(r) {
     const d = r.datos || {}, rx = d.resumen_express || {}, mc = d.marca_cliente || {}, cmp = d.comparacion || {};
     const ops = Array.isArray(d.oposiciones) ? d.oposiciones : [];
@@ -203,7 +234,7 @@
     const actaLink = a => a ? `<a class="link-acta" href="javascript:void(0)" data-acta="${esc(a)}">${esc(a)} ↗</a>` : "";
     const sit = v => { const t = String(v || "").toLowerCase(); return t.startsWith("id") ? "mal" : t.startsWith("inc") ? "aviso" : t.startsWith("af") ? "ok" : ""; };
     const sino = v => v === true ? "sí" : v === false ? "no" : esc(texto(v));
-    const conocidas = new Set(["tipo", "version", "fecha_analisis", "fechas_clave", "resumen_express", "resumen", "marca_cliente", "oposiciones", "marcas_oponente",
+    const conocidas = new Set(["tipo", "version", "fecha_analisis", "fechas_clave", "resumen_express", "para_cliente", "resumen", "marca_cliente", "oposiciones", "marcas_oponente",
       "comparacion", "palancas", "chances", "caminos", "preguntas_cliente", "a_confirmar_pame", "limitaciones"]);
     const otras = Object.entries(d).filter(([k]) => !conocidas.has(k));
     const signos = cmp.signos && typeof cmp.signos === "object" ? cmp.signos : null;
@@ -217,6 +248,7 @@
       </div>
       ${cajaFechas(d)}
       ${caja("⚡ Resumen express", fichaRx ? `<dl class="op-rx">${fichaRx}</dl>` : "")}
+      ${cajaParaCliente(d)}
       ${caja("Resumen", d.resumen ? `<p class="inf-obs">${esc(d.resumen)}</p>` : "")}
       ${caja("Marca del cliente", dl(Object.fromEntries(Object.entries(mc).filter(([k]) => !["actas_opuestas", "otras_actas"].includes(k))))
         + ((mc.actas_opuestas || []).length ? `<h3 style="margin-top:12px">Actas opuestas</h3>${tabla(mc.actas_opuestas, { id: "t-actas" })}` : "")
@@ -259,6 +291,13 @@
       ${caja("Limitaciones", (d.limitaciones || []).length ? lista(d.limitaciones) : "")}
       ${otras.map(([k, v]) => caja(etiqueta(k), Array.isArray(v) && v.length && typeof v[0] === "object" ? tabla(v) : typeof v === "object" ? dl(v) : `<p style="margin:0">${esc(texto(v))}</p>`)).join("")}`;
     cont.querySelectorAll("[data-acta]").forEach(a => a.addEventListener("click", ev => { ev.preventDefault(); ev.stopPropagation(); abrirActa(a.dataset.acta); }));
+    const bCopiar = $("op-pc-copiar");
+    if (bCopiar) bCopiar.addEventListener("click", async () => {
+      const t = textoParaCliente(d);
+      try { await navigator.clipboard.writeText(t); bCopiar.textContent = "✓ Texto copiado"; }
+      catch (e) { prompt("Copiá el texto:", t); }
+      setTimeout(() => { bCopiar.textContent = "📋 Copiar texto para el cliente"; }, 2500);
+    });
     cont.querySelectorAll("[data-filtrar]").forEach(inp => inp.addEventListener("input", () => {
       const q = inp.value.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
       $(inp.dataset.filtrar).querySelectorAll("tbody tr").forEach(tr => {

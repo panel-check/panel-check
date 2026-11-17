@@ -23,6 +23,10 @@ Esquema (versión 1). Todos los textos en español; las fechas como «DD/MM/AAAA
      "fecha_notificacion", "vencimiento_negociacion",
      "vencimiento_estimado": false}          # true si todavía no hay notificación
   ],
+  "para_cliente": [                          # opcional: lo que se le puede mandar tal cual al cliente
+    {"acta", "clase", "marca", "cliente_se_dedica", "oponente", "oponente_se_dedica",
+     "coinciden": "no|en parte|sí", "explicacion"}   # una por acta opuesta, sin chances, plazos ni precios
+  ],
   "resumen": "2 o 3 líneas",
   "marca_cliente": {                         # obligatorio: denominacion
     "denominacion": "PEAKS", "tipo": "denominativa|mixta|figurativa",
@@ -62,6 +66,8 @@ import datetime as _dt
 import re
 
 TIPO = "informe_oposicion_ia"
+COINCIDEN = {"no": "no", "en parte": "en parte", "parcial": "en parte", "parcialmente": "en parte",
+             "si": "sí", "sí": "sí"}
 NIVELES = ["muy bajas", "bajas", "bajas a medias", "medias", "medias a altas", "altas", "muy altas"]
 
 
@@ -120,6 +126,19 @@ def normalizar(d: dict) -> dict:
         raise OposicionInvalida(f"«chances.nivel» tiene que ser uno de: {', '.join(NIVELES)} (vino «{_txt(ch['nivel'], 40)}»).")
     if isinstance(ch, dict) and ch.get("nivel"):
         ch["nivel"] = nivel_chances(ch["nivel"])
+    pc = d.get("para_cliente")
+    if pc is not None:
+        if isinstance(pc, dict):
+            d["para_cliente"] = pc = [pc]
+        if not isinstance(pc, list) or not all(isinstance(p, dict) for p in pc):
+            raise OposicionInvalida("«para_cliente» tiene que ser una lista (una entrada por acta opuesta).")
+        for i, p in enumerate(pc, 1):
+            if p.get("coinciden") in (None, ""):
+                continue
+            c = COINCIDEN.get(" ".join(_txt(p["coinciden"], 30).lower().split()))
+            if not c:
+                raise OposicionInvalida(f"En «para_cliente» {i}, «coinciden» tiene que ser no, en parte o sí (vino «{_txt(p['coinciden'], 30)}»).")
+            p["coinciden"] = c
     texto = str(d)
     if "[FIRMA]" in texto:
         raise OposicionInvalida("Quedó «[FIRMA]» en el JSON: el informe de oposición es interno y no lleva firma.")
