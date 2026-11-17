@@ -58,6 +58,19 @@ class TestOposicion(unittest.TestCase):
         with self.assertRaises(io_.OposicionInvalida):
             io_.normalizar(d)
 
+    def test_para_cliente(self):
+        d = copy.deepcopy(BASE)
+        d["para_cliente"] = [{"acta": "4790681", "coinciden": "Parcial"}, {"acta": "4790682", "coinciden": "SI"}, {"acta": "1"}]
+        d = io_.normalizar(d)
+        self.assertEqual([p.get("coinciden") for p in d["para_cliente"]], ["en parte", "sí", None])
+        d = copy.deepcopy(BASE)
+        d["para_cliente"] = {"acta": "4790681", "coinciden": "no"}
+        self.assertIsInstance(io_.normalizar(d)["para_cliente"], list)
+        d = copy.deepcopy(BASE)
+        d["para_cliente"] = [{"coinciden": "quizás"}]
+        with self.assertRaises(io_.OposicionInvalida):
+            io_.normalizar(d)
+
     def test_rechaza_json_del_preliminar(self):
         with self.assertRaises(io_.OposicionInvalida):
             io_.normalizar({"tipo": "informe_viabilidad_interno", "caso": {}})
