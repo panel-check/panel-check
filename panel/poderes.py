@@ -368,6 +368,8 @@ def nombre_archivo(d: dict, ext: str) -> str:
 
 # ── Poder simple marcas (modelo pedido el 09/11/2026) ─────────────────────────────────────────────
 # Poder acotado a marcas (INPI y negociaciones/acuerdos vinculados), solo para persona humana (con DNI).
+# Con varios titulares (formulario de Persona Física) los nombra a todos, en plural, con un bloque de firma,
+# aclaración y DNI para cada uno (18/11/2026: antes salía solo el titular 1).
 # Texto fijo del estudio: el apoderado va tal cual el modelo, no sale de Ajustes.
 
 MODELO_SIMPLE = "simple_marcas"
@@ -380,6 +382,10 @@ APODERADO_SIMPLE = ("Pamela Daiana Guzzardi, Agente de la Propiedad Industrial, 
 GENEROS = {"neutro": ("El/La", "representarlo/a", "del/de la"),
            "masculino": ("El", "representarlo", "del"),
            "femenino": ("La", "representarla", "de la")}
+# Varios titulares: «Los/Las abajo firmantes», «representarlos/as», «de los/las mandantes».
+GENEROS_PLURAL = {"neutro": ("Los/Las", "representarlos/as", "de los/las"),
+                  "masculino": ("Los", "representarlos", "de los"),
+                  "femenino": ("Las", "representarlas", "de las")}
 
 SIMPLE_FACULTADES = (
     "A tal efecto, la faculta para solicitar registros y renovaciones de marcas; presentar escritos, "
@@ -388,12 +394,12 @@ SIMPLE_FACULTADES = (
     "acompañar prueba; tomar intervención y vista de expedientes; solicitar rectificaciones de datos, cambios "
     "de domicilio, certificados, testimonios y títulos; abonar tasas y aranceles; recibir documentación y "
     "notificaciones; constituir domicilio electrónico y realizar los demás actos de trámite necesarios para la "
-    "obtención, conservación y defensa administrativa de los derechos marcarios {del} mandante."
+    "obtención, conservación y defensa administrativa de los derechos marcarios {del} {mandante}."
 )
 SIMPLE_NEGOCIACION = (
     "Asimismo, la faculta para intervenir en negociaciones relativas a oposiciones y acuerdos de coexistencia "
     "marcaria; celebrar y suscribir acuerdos; transigir; desistir de solicitudes u oposiciones; renunciar a "
-    "registros; ceder o transferir marcas; y aceptar cesiones o transferencias en nombre {del} mandante."
+    "registros; ceder o transferir marcas; y aceptar cesiones o transferencias en nombre {del} {mandante}."
 )
 SIMPLE_LIMITE = ("Las facultades enumeradas se ejercerán únicamente dentro del objeto y de los límites "
                  "establecidos en el presente instrumento.")
@@ -403,34 +409,48 @@ def es_simple(d: dict) -> bool:
     return (d or {}).get("modelo") == MODELO_SIMPLE
 
 
-def propuesta_simple(cliente: dict, hoy=None) -> dict:
-    """Valores sugeridos para el poder simple marcas: nombre, DNI y domicilio del cliente, y como lugar
-    la localidad y provincia. Todo se puede corregir antes de generar."""
-    hoy = hoy or _dt.date.today()
-    c = cliente or {}
-    nombre = (c.get("nombre") or "").strip()
+def _persona_simple(c: dict) -> str:
+    """«Nombre, DNI x, con domicilio en …» de una persona humana (modelo del poder simple marcas)."""
     domicilio = str(c.get("domicilio") or "").strip().rstrip(".")
     provincia = (c.get("provincia") or "").strip()
     localidad = (c.get("localidad") or "").strip()
     dom = [domicilio] if domicilio else []
     if _es_caba(provincia):
         dom.append(CABA)
-        lugar = CABA
     else:
         if localidad and localidad.lower() not in domicilio.lower():
             dom.append(localidad)
         if provincia:
             dom.append(f"Provincia de {provincia}")
-        lugar = ", ".join(x for x in (localidad, f"Provincia de {provincia}" if provincia else "") if x) or CABA
-    partes = [nombre]
+    partes = [(c.get("nombre") or "").strip()]
     if c.get("dni"):
         partes.append(f"DNI {fmt_dni(c.get('dni'))}")
     if dom:
         partes.append("con domicilio en " + ", ".join(dom))
+    return ", ".join(partes)
+
+
+def propuesta_simple(cliente: dict, hoy=None) -> dict:
+    """Valores sugeridos para el poder simple marcas: nombre, DNI y domicilio del cliente (y de cada cotitular,
+    si la marca tiene varios titulares), y como lugar la localidad y provincia. Todo se puede corregir antes de generar."""
+    hoy = hoy or _dt.date.today()
+    c = cliente or {}
+    provincia = (c.get("provincia") or "").strip()
+    localidad = (c.get("localidad") or "").strip()
+    if _es_caba(provincia):
+        lugar = CABA
+    else:
+        lugar = ", ".join(x for x in (localidad, f"Provincia de {provincia}" if provincia else "") if x) or CABA
     tipo = c.get("tipo_persona") or ("juridica" if _dig(c.get("cuit")).startswith("3") else "fisica")
-    return {"modelo": MODELO_SIMPLE, "tipo_persona": "fisica", "genero": genero_de_sexo(c.get("sexo")),
-            "otorgante": ", ".join(partes), "lugar": lugar, "fecha": hoy.isoformat(),
-            "cliente_juridica": tipo == "juridica"}
+    personas = [c] + (_cotitulares_de(c)[:MAX_FIRMANTES - 1] if tipo != "juridica" else [])
+    generos = {genero_de_sexo(x.get("sexo")) for x in personas}
+    if len(personas) == 1:
+        genero = generos.pop()
+    else:  # plural: «Las» solo si son todas mujeres; con alguno «Otro» o sin dato, «Los/Las»
+        genero = "femenino" if generos == {"femenino"} else "neutro" if "neutro" in generos else "masculino"
+    return {"modelo": MODELO_SIMPLE, "tipo_persona": "fisica", "genero": genero,
+            "otorgante": _unir([_persona_simple(x) for x in personas]), "lugar": lugar, "fecha": hoy.isoformat(),
+            "firmantes": len(personas), "cliente_juridica": tipo == "juridica"}
 
 
 def genero_de_sexo(sexo) -> str:
@@ -440,22 +460,25 @@ def genero_de_sexo(sexo) -> str:
 
 
 def _genero(d):
-    return GENEROS.get(d.get("genero") or "neutro", GENEROS["neutro"])
+    tabla = GENEROS_PLURAL if firmantes(d) > 1 else GENEROS
+    return tabla.get(d.get("genero") or "neutro", tabla["neutro"])
 
 
 def _simple_parrafo_inicial(d):
     art, repr_, _ = _genero(d)
+    varios = firmantes(d) > 1
     otorgante = re.sub(r",?\s*República Argentina\.?$", "", d["otorgante"].strip().rstrip(".,"), flags=re.I)
-    return (f"{art} abajo firmante {otorgante}, República Argentina, por el presente otorga a {APODERADO_SIMPLE}, "
-            f"poder para {repr_} exclusivamente en materia de marcas de productos y servicios de las que sea "
-            "titular o cuyo registro solicite, en trámites ante el Instituto Nacional de la Propiedad Industrial "
-            "(INPI) de la República Argentina y en las negociaciones y acuerdos vinculados con dicha materia.")
+    return (f"{art} abajo {'firmantes' if varios else 'firmante'} {otorgante}, República Argentina, por el presente "
+            f"{'otorgan' if varios else 'otorga'} a {APODERADO_SIMPLE}, poder para {repr_} exclusivamente en materia "
+            f"de marcas de productos y servicios de las que {'sean titulares' if varios else 'sea titular'} o cuyo "
+            f"registro {'soliciten' if varios else 'solicite'}, en trámites ante el Instituto Nacional de la Propiedad "
+            "Industrial (INPI) de la República Argentina y en las negociaciones y acuerdos vinculados con dicha materia.")
 
 
 def _simple_parrafos(d):
     _, _, del_ = _genero(d)
-    return [_simple_parrafo_inicial(d), SIMPLE_FACULTADES.format(**{"del": del_}),
-            SIMPLE_NEGOCIACION.format(**{"del": del_}), SIMPLE_LIMITE]
+    v = {"del": del_, "mandante": "mandantes" if firmantes(d) > 1 else "mandante"}
+    return [_simple_parrafo_inicial(d), SIMPLE_FACULTADES.format(**v), SIMPLE_NEGOCIACION.format(**v), SIMPLE_LIMITE]
 
 
 def _simple_lugar_fecha(d):
@@ -499,6 +522,11 @@ def _armar_pdf_simple(d: dict, letra, interlineado, esc, logo_cm):
     h += [Paragraph("<u>Poder</u>", titulo), esp(0.3)]
     h += [Paragraph(escape(p), cuerpo) for p in _simple_parrafos(d)]
     h += [esp(1.2), Paragraph(escape(_simple_lugar_fecha(d)), normal)]
+    n = firmantes(d)
+    if n > 1:  # un bloque de firma, aclaración y DNI por titular, de a dos por fila (igual que el poder amplio)
+        h.append(_tabla_firmas(n, normal, letra, esc, doc.width))
+        doc.build(h)
+        return buf.getvalue(), doc.page
     for i, (rot, largo) in enumerate(_LINEAS_FIRMA_SIMPLE):
         # el lugar para la firma nunca baja de ~1,2 cm, aunque se achique todo lo demás
         h += [Spacer(1, max((2.4 if i == 0 else 1.0) * esc, 1.2 if i == 0 else 0.6) * cm),
@@ -549,8 +577,20 @@ def generar_docx_simple(d: dict) -> bytes:
     for p in _simple_parrafos(d):
         par(p, WD_ALIGN_PARAGRAPH.JUSTIFY, despues=8)
     par(_simple_lugar_fecha(d), antes=22)
-    for i, (rot, largo) in enumerate(_LINEAS_FIRMA_SIMPLE):
-        par(rot + "_" * largo, antes=56 if i == 0 else 24)
+    n = firmantes(d)
+    if n > 1:
+        tabla = doc.add_table(rows=(n + 1) // 2, cols=2)
+        for i in range(n):
+            celda = tabla.cell(i // 2, i % 2)
+            q = celda.paragraphs[0]
+            q.paragraph_format.space_before = Pt(36)
+            q.add_run(f"FIRMA (titular {i + 1})")
+            for rot in ("ACLARACIÓN: " + "_" * 22, "DNI: " + "_" * 28):
+                q = celda.add_paragraph(rot)
+                q.paragraph_format.space_before = Pt(14)
+    else:
+        for i, (rot, largo) in enumerate(_LINEAS_FIRMA_SIMPLE):
+            par(rot + "_" * largo, antes=56 if i == 0 else 24)
     buf = io.BytesIO()
     doc.save(buf)
     return buf.getvalue()

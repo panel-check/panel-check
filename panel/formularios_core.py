@@ -42,12 +42,18 @@ import archivos_seguros
 #        lista de condiciones: el campo se muestra solo si se cumplen todas.
 # "cliente": a qué columna de la tabla clientes va la respuesta.
 
-MAX_TITULARES = 4
+MAX_TITULARES = 6
 OPCIONES_TITULARES = [str(i) for i in range(1, MAX_TITULARES + 1)]
 # Datos que se piden de cada cotitular (titular 2, 3…): los mismos del titular 1 que van al poder y al INPI,
 # sin correo, teléfono ni domicilio comercial (el contacto es el titular 1). id del campo: t<N>_<clave>.
-CAMPOS_COTITULAR = ("nombre", "sexo", "nacionalidad", "dni", "cuit", "domicilio", "localidad", "provincia",
+CAMPOS_COTITULAR = ("nombre", "porcentaje", "sexo", "nacionalidad", "dni", "cuit", "domicilio", "localidad", "provincia",
                     "codigo_postal", "estado_civil", "conyuge_nombre", "conyuge_dni")
+
+
+# Con más de un titular, cada uno dice qué porcentaje de la marca le corresponde (entre todos, 100 %).
+AYUDA_PORCENTAJE = ("Qué porcentaje de la marca le corresponde a este titular. Entre todos los titulares tienen que "
+                    "sumar 100 % (por ejemplo, 50 y 50, o 33,34 / 33,33 / 33,33).")
+SI_VARIOS_TITULARES = {"campo": "cantidad_titulares", "valores": OPCIONES_TITULARES[1:]}
 
 
 def _campos_cotitular(n: int) -> list:
@@ -60,6 +66,8 @@ def _campos_cotitular(n: int) -> list:
          "ayuda": f"Completá los datos de la persona número {n} que va a ser titular de la marca. "
                   "Tienen que coincidir con su DNI (y, si la marca ya fue solicitada, con lo ingresado en el INPI)."},
         {"id": f"{t}nombre", "tipo": "texto", "etiqueta": f"Titular {n}: Apellido y Nombre", "obligatorio": True, "si": si},
+        {"id": f"{t}porcentaje", "tipo": "texto", "etiqueta": f"Titular {n}: Porcentaje de titularidad", "obligatorio": True,
+         "formato": "porcentaje", "si": si, "ayuda": AYUDA_PORCENTAJE},
         {"id": f"{t}sexo", "tipo": "opcion", "etiqueta": f"Titular {n}: Sexo", "obligatorio": True, "si": si,
          "opciones": ["Masculino", "Femenino", "Otro"]},
         {"id": f"{t}nacionalidad", "tipo": "texto", "etiqueta": f"Titular {n}: Nacionalidad", "obligatorio": True, "si": si},
@@ -170,6 +178,8 @@ FORMULARIOS = {
              "ayuda": "Si la marca es (o va a ser) de más de una persona, más abajo te pedimos los datos de cada una. "
                       "El poder lo tienen que firmar todos los titulares. Primero completá los datos del titular 1."},
             {"id": "nombre", "tipo": "texto", "etiqueta": "Apellido y Nombre del titular", "obligatorio": True, "cliente": "nombre"},
+            {"id": "porcentaje", "tipo": "texto", "etiqueta": "Porcentaje de titularidad del titular 1", "obligatorio": True,
+             "formato": "porcentaje", "si": SI_VARIOS_TITULARES, "ayuda": AYUDA_PORCENTAJE},
             # Para redactar el poder: Masculino → «El», Femenino → «La», Otro → «El/La» (ver poderes.propuesta_simple)
             {"id": "sexo", "tipo": "opcion", "etiqueta": "Sexo", "obligatorio": True, "cliente": "sexo",
              "opciones": ["Masculino", "Femenino", "Otro"]},
@@ -228,6 +238,7 @@ TIPO_LEGIBLE = {"fisica": "Persona física", "juridica": "Persona jurídica"}
 COLUMNAS_CLIENTE_NUEVAS = [
     "tipo_persona", "dni", "sexo", "nacionalidad", "domicilio", "localidad", "provincia", "codigo_postal",
     "domicilio_comercial", "estado_civil", "conyuge_nombre", "conyuge_dni", "firmante_nombre", "firmante_cargo",
+    "porcentaje_titularidad",  # % del titular 1 cuando la marca tiene varios titulares
     "cotitulares",  # JSON con los demás titulares (titular 2, 3…) del formulario de persona física
 ]
 
@@ -412,10 +423,34 @@ def validar(slug: str, valores: dict, archivos: dict, existentes=frozenset()) ->
             v = solo_digitos(v)
             if not 6 <= len(v) <= 9:
                 raise ErrorFormulario(f"«{c['etiqueta']}»: revisá el número.")
+        if c.get("formato") == "porcentaje":
+            n = numero_porcentaje(v)
+            if n is None or not 0 < n <= 100:
+                raise ErrorFormulario(f"«{c['etiqueta']}»: poné un número entre 1 y 100 (por ejemplo, 50).")
+            v = texto_porcentaje(n)
         datos[c["id"]] = v
     if faltan:
         raise ErrorFormulario("Faltan completar: " + ", ".join(faltan) + ".")
+    porcentajes = [numero_porcentaje(datos[c["id"]]) for c in form["campos"]
+                   if c.get("formato") == "porcentaje" and c["id"] in datos]
+    if porcentajes and abs(sum(porcentajes) - 100) > 0.05:
+        raise ErrorFormulario(f"Los porcentajes de titularidad suman {texto_porcentaje(sum(porcentajes))} %: "
+                              "entre todos los titulares tienen que sumar 100 %.")
     return datos, validos
+
+
+def numero_porcentaje(v):
+    """«50», «50 %», «33,33» → float; None si no es un número."""
+    t = str(v or "").replace("%", "").replace(" ", "").replace(",", ".")
+    try:
+        return float(t) if re.fullmatch(r"\d+(\.\d+)?", t) else None
+    except ValueError:
+        return None
+
+
+def texto_porcentaje(n: float) -> str:
+    """50.0 → «50»; 33.333 → «33,33»."""
+    return f"{round(n, 2):.2f}".rstrip("0").rstrip(".").replace(".", ",")
 
 
 # ── Guardado: respuesta + cliente ─────────────────────────────────────────
@@ -464,6 +499,7 @@ def datos_cliente(slug: str, datos: dict) -> dict:
     if form["tipo_persona"] == "fisica":
         cot = cotitulares(datos)  # lo último que mandó manda: con un solo titular, se borran los anteriores
         campos["cotitulares"] = json.dumps(cot, ensure_ascii=False) if cot else None
+        campos["porcentaje_titularidad"] = datos.get("porcentaje") if cot else None
     if campos.get("firmante_nombre"):
         campos.setdefault("contacto", campos["firmante_nombre"])
     return campos
@@ -496,7 +532,7 @@ def diferencias(slug: str, antes: dict, despues: dict, archivos_antes: dict = No
 
 
 def cambia_poder(antes: dict, despues: dict) -> bool:
-    claves = set(CAMPOS_PODER) | {"cantidad_titulares"} | {f"t{n}_{k}" for n in range(2, MAX_TITULARES + 1)
+    claves = set(CAMPOS_PODER) | {"cantidad_titulares", "porcentaje"} | {f"t{n}_{k}" for n in range(2, MAX_TITULARES + 1)
                                                           for k in CAMPOS_COTITULAR}
     return any((antes or {}).get(k, "") != (despues or {}).get(k, "") for k in claves)
 

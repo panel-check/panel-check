@@ -466,6 +466,7 @@ const CAMPOS_EXTRA = [
   ["provincia", "Provincia"], ["codigo_postal", "Código postal"], ["domicilio_comercial", "Domicilio comercial"],
   ["estado_civil", "Estado civil"], ["conyuge_nombre", "Cónyuge (nombre y apellido)"], ["conyuge_dni", "DNI del cónyuge"],
   ["firmante_nombre", "Firmante (persona jurídica)"], ["firmante_cargo", "Cargo del firmante"],
+  ["porcentaje_titularidad", "% de titularidad del titular 1 (si hay varios)"],
 ];
 
 // Al elegir Origen «Referido» se pide quién es: lleva el cursor al campo del nombre.
@@ -1328,7 +1329,7 @@ async function abrirGeneradorPoder(clienteId) {
   }));
 }
 
-// Poder simple marcas: modelo acotado a marcas (INPI y negociaciones/acuerdos), solo persona humana.
+// Poder simple marcas: modelo acotado a marcas (INPI y negociaciones/acuerdos), solo persona humana (uno o varios titulares).
 async function abrirGeneradorPoderSimple(clienteId) {
   const caja = $("cli-poder-simple");
   if (!caja.hidden) { caja.hidden = true; return; }
@@ -1346,14 +1347,16 @@ async function abrirGeneradorPoderSimple(clienteId) {
     <p class="crm-gris" style="margin:0 0 8px">Poder acotado a marcas: trámites ante el INPI y negociaciones y acuerdos (oposiciones, coexistencia). Es para <strong>persona humana</strong> (con DNI). Firma, aclaración y DNI salen como líneas en blanco para completar a mano. Sale siempre en una sola hoja.</p>
     ${p.cliente_juridica ? '<p class="crm-error" style="padding:0 0 8px">Ojo: este cliente figura como persona jurídica y este modelo es para persona humana. Usá «Generar poder para firmar», que en persona jurídica arma el modelo de empresa («El abajo firmante … en representación de …»).</p>' : ""}
     ${faltan.length ? `<p class="crm-error" style="padding:0 0 8px">Ojo: falta ${faltan.join(", ")} en la ficha. Podés completarlo acá abajo o en «Datos para el trámite».</p>` : ""}
+    ${p.firmantes > 1 ? `<p class="crm-nota" style="margin:0 0 8px">La marca tiene <strong>${p.firmantes} titulares</strong> (según el formulario): el poder los nombra a todos, en plural («Los abajo firmantes… otorgan…»), y lleva un lugar de firma, aclaración y DNI para cada uno.</p>` : ""}
     <form class="cl-form" id="poder-simple-form" style="margin-top:0">
       <label>Firmante<select name="genero">
-        <option value="neutro" ${p.genero === "neutro" ? "selected" : ""}>El/La (como el modelo)</option>
-        <option value="masculino" ${p.genero === "masculino" ? "selected" : ""}>El (representarlo, del mandante)</option>
-        <option value="femenino" ${p.genero === "femenino" ? "selected" : ""}>La (representarla, de la mandante)</option></select></label>
+        <option value="neutro" ${p.genero === "neutro" ? "selected" : ""}>El/La (como el modelo) · Los/Las si son varios</option>
+        <option value="masculino" ${p.genero === "masculino" ? "selected" : ""}>El (representarlo, del mandante) · Los si son varios</option>
+        <option value="femenino" ${p.genero === "femenino" ? "selected" : ""}>La (representarla, de la mandante) · Las si son varios</option></select></label>
+      <label title="Cuántos titulares firman (cada uno tiene su lugar de firma)">Titulares que firman<input type="number" name="firmantes" min="1" max="6" value="${esc(p.firmantes || 1)}"></label>
       <label>Lugar<input name="lugar" value="${esc(p.lugar)}"></label>
       <label>Fecha<input type="date" name="fecha" value="${esc(p.fecha)}"></label>
-      <label class="ancho">El/La abajo firmante… (nombre, DNI y domicilio)<textarea name="otorgante" rows="3">${esc(p.otorgante)}</textarea></label>
+      <label class="ancho">El/La abajo firmante… (nombre, DNI y domicilio de cada titular; si son varios, separados por «;»)<textarea name="otorgante" rows="${p.firmantes > 1 ? 6 : 3}">${esc(p.otorgante)}</textarea></label>
     </form>
     <p class="crm-nota">Apoderado (fijo en este modelo): ${esc(r.apoderado)}</p>
     <div class="cl-acciones"><button type="button" class="cl-btn" data-generar-simple="pdf">Descargar PDF</button>
@@ -1363,7 +1366,7 @@ async function abrirGeneradorPoderSimple(clienteId) {
   caja.querySelectorAll("[data-generar-simple]").forEach(b => b.addEventListener("click", async () => {
     const f = form.elements;
     const datos = { modelo: "simple_marcas", tipo_persona: "fisica", genero: f.genero.value, otorgante: f.otorgante.value,
-                    lugar: f.lugar.value, fecha: f.fecha.value };
+                    lugar: f.lugar.value, fecha: f.fecha.value, firmantes: String(f.firmantes.value || 1) };
     const e = $("poder-simple-estado"); e.className = "cl-estado"; e.textContent = "Generando…"; b.disabled = true;
     try {
       await bajarArchivo(`/api/clientes/${clienteId}/poder?formato=${b.dataset.generarSimple}`,

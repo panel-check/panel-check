@@ -167,3 +167,46 @@ class PoderPersonaJuridica(unittest.TestCase):
         texto = pypdf.PdfReader(io.BytesIO(pdf)).pages[0].extract_text()
         self.assertIn("en representación de", texto)
         self.assertIn("CARGO", texto)
+
+
+class PoderSimpleVariosTitulares(unittest.TestCase):
+    """El Poder simple marcas nombra a todos los titulares del formulario (antes salía solo el titular 1)."""
+    BASE = {"tipo_persona": "fisica", "nombre": "Van Norden Jordi", "sexo": "Masculino", "dni": "39585860",
+            "domicilio": "Pasaje España 1415", "localidad": "Córdoba", "provincia": "Córdoba"}
+
+    def _cot(self, n, sexo="Masculino"):
+        import json
+        return json.dumps([{"nombre": f"Titular Nro {i}", "sexo": sexo, "dni": f"4{i}111222",
+                            "domicilio": f"Tycho Brahe {5250 + i}", "localidad": "Córdoba", "provincia": "Córdoba"}
+                           for i in range(2, n + 1)])
+
+    def test_nombra_a_todos_en_plural(self):
+        d = poderes.propuesta_simple({**self.BASE, "cotitulares": self._cot(6)}, dt.date(2026, 4, 27))
+        self.assertEqual(d["firmantes"], 6)
+        for i in range(2, 7):
+            self.assertIn(f"Titular Nro {i}", d["otorgante"])
+        texto = " ".join(poderes._simple_parrafos(d))
+        self.assertTrue(texto.startswith("Los abajo firmantes Van Norden Jordi, DNI 39.585.860"))
+        for frase in ("por el presente otorgan a", "poder para representarlos", "sean titulares",
+                      "cuyo registro soliciten", "de los mandantes"):
+            self.assertIn(frase, texto)
+
+    def test_genero_plural(self):
+        todas = poderes.propuesta_simple({**self.BASE, "sexo": "Femenino", "cotitulares": self._cot(2, "Femenino")})
+        self.assertTrue(poderes._simple_parrafo_inicial(todas).startswith("Las abajo firmantes"))
+        otro = poderes.propuesta_simple({**self.BASE, "cotitulares": self._cot(2, "Otro")})
+        self.assertTrue(poderes._simple_parrafo_inicial(otro).startswith("Los/Las abajo firmantes"))
+        uno = poderes.propuesta_simple(self.BASE)
+        self.assertEqual(uno["firmantes"], 1)
+        self.assertTrue(poderes._simple_parrafo_inicial(uno).startswith("El abajo firmante Van Norden"))
+        self.assertIn("por el presente otorga a", poderes._simple_parrafo_inicial(uno))
+
+    @unittest.skipIf(pypdf is None, "falta reportlab o pypdf")
+    def test_pdf_una_hoja_con_firma_de_cada_titular(self):
+        d = poderes.propuesta_simple({**self.BASE, "cotitulares": self._cot(6)}, dt.date(2026, 4, 27))
+        pdf = poderes.generar_pdf_simple(d)
+        self.assertEqual(_hojas(pdf), 1)
+        texto = pypdf.PdfReader(io.BytesIO(pdf)).pages[0].extract_text()
+        for i in range(1, 7):
+            self.assertIn(f"FIRMA (titular {i})", texto)
+        self.assertTrue(poderes.generar_docx_simple(d))

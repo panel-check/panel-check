@@ -114,7 +114,8 @@ function htmlCampo(c) {
   }
   if (c.tipo === "texto" || c.tipo === "email") {
     const extra = c.tipo === "email" ? 'type="email" autocomplete="email" inputmode="email"'
-      : c.formato === "cuit" || c.formato === "dni" ? 'type="text" inputmode="numeric"' : 'type="text"';
+      : c.formato === "cuit" || c.formato === "dni" ? 'type="text" inputmode="numeric"'
+      : c.formato === "porcentaje" ? 'type="text" inputmode="decimal" placeholder="Ej.: 50"' : 'type="text"';
     control = `<input ${extra} id="${id}" name="${c.id}" maxlength="300">`;
   } else if (c.tipo === "parrafo") {
     control = `<textarea id="${id}" name="${c.id}" maxlength="4000"></textarea>`;
@@ -166,14 +167,29 @@ function validar() {
       else if (val && c.tipo === "email" && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(val)) err = "Revisá el correo electrónico.";
       else if (val && c.formato === "cuit" && val.replace(/\D/g, "").length !== 11) err = "Tiene que tener 11 números.";
       else if (val && c.formato === "dni" && !/^\d{6,9}$/.test(val.replace(/\D/g, ""))) err = "Revisá el número.";
+      else if (val && c.formato === "porcentaje" && !(porcentaje(val) > 0 && porcentaje(val) <= 100)) err = "Poné un número entre 1 y 100 (por ejemplo, 50).";
       else if (val && c.tipo === "archivo" && val.size > def.max_archivo) err = `El archivo pesa ${mb(val.size)}: el máximo es ${mb(def.max_archivo)}.`;
     }
     caja.classList.toggle("con-error", !!err);
     caja.querySelector(".err").textContent = err;
     if (err && !primero) primero = caja;
   });
+  // con varios titulares, los porcentajes tienen que sumar 100
+  const pcts = def.campos.filter(c => c.formato === "porcentaje" && visible(c, v) && v[c.id]);
+  const total = pcts.reduce((a, c) => a + (porcentaje(v[c.id]) || 0), 0);
+  if (!primero && pcts.length > 1 && Math.abs(total - 100) > 0.05) {
+    primero = document.querySelector(`[data-campo="${pcts[pcts.length - 1].id}"]`);
+    primero.classList.add("con-error");
+    primero.querySelector(".err").textContent =
+      `Los porcentajes suman ${String(Math.round(total * 100) / 100).replace(".", ",")} %: entre todos los titulares tienen que sumar 100 %.`;
+  }
   if (primero) primero.scrollIntoView({ behavior: "smooth", block: "center" });
   return !primero;
+}
+
+function porcentaje(val) {
+  const t = String(val || "").replace(/[%\s]/g, "").replace(",", ".");
+  return /^\d+(\.\d+)?$/.test(t) ? parseFloat(t) : NaN;
 }
 
 async function enviar(ev) {

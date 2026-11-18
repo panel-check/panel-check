@@ -572,7 +572,7 @@ def crear_router(verificar_login, conexion) -> APIRouter:
             d["tipo_persona"] = "fisica"
             if d["genero"] not in poderes.GENEROS:
                 d["genero"] = "neutro"
-            d.pop("firmantes")
+            d["firmantes"] = poderes.firmantes(d)
         else:
             d.pop("modelo")
             d["genero"] = d["genero"] if d["genero"] in poderes.GENEROS else "masculino"
