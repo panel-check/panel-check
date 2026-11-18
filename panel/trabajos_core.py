@@ -249,3 +249,90 @@ def crear_tablas(cur):
                ON CONFLICT (clave_carga) DO NOTHING""",
             (clave, cid, marca, sid, etapa, contr, notif, acta, drive, comp, notas, cid),
         )
+
+
+# ── Detección automática del acta ─────────────────────────────────────────
+# Una marca que todavía no tiene acta (registro recién presentado) se busca:
+#   1. en la base, cada vez que se abre el tablero (como mucho cada 10 minutos): el escaneo diario de
+#      actas nuevas (18 hs) guarda TODAS las solicitudes en `solicitudes_escaneadas`, también las que
+#      presentamos nosotros con agente (que no son leads y por eso no van a `marcas`), más `marcas`
+#      (boletines) y la cartera del cliente;
+#   2. en vivo en el INPI, con el botón «Buscar en el INPI» de la ficha.
+# Se asigna sola solo si es segura: mismo nombre (sin tildes ni signos), presentada desde 15 días
+# antes de la contratación, y presentada con una matrícula del estudio (Clientes → Ajustes →
+# matrículas) o a nombre del cliente (mismo CUIT o su nombre dentro del titular). Si hay dudas, la
+# ficha muestra las candidatas para elegir con un clic.
+
+DIAS_ANTES_CONTRATACION = 15
+
+
+def comparable(texto) -> str:
+    """Mayúsculas, sin tildes y solo letras, números y espacios («Cine  Catástrofe!» → «CINE CATASTROFE»)."""
+    sin = "".join(c for c in unicodedata.normalize("NFKD", str(texto or "")) if not unicodedata.combining(c))
+    return " ".join(re.sub(r"[^A-Z0-9 ]", " ", sin.upper()).split())
+
+
+def patron_ilike(marca) -> str:
+    """Patrón para prefiltrar en SQL sin depender de tildes: cada vocal pasa a «_» (una letra cualquiera)."""
+    return "%" + re.sub(r"[AEIOU]", "_", comparable(marca)).replace(" ", "%") + "%"
+
+
+def _nombre_en_titular(nombre_cliente, titular) -> bool:
+    """El nombre del cliente aparece en el titular: todas sus palabras de 3 letras o más, y al menos 2."""
+    palabras = [p for p in comparable(nombre_cliente).split() if len(p) >= 3]
+    tit = f" {comparable(titular)} "
+    return len(palabras) >= 2 and all(f" {p} " in tit for p in palabras)
+
+
+def evaluar_candidata(trabajo, cand, cliente, matriculas) -> dict | None:
+    """Devuelve la candidata con `segura` y `motivos`, o None si no es la misma marca o es muy vieja.
+    cand: acta, denominacion, titular, cuit, fecha (iso o date), matricula, fuente."""
+    if not cand.get("acta") or comparable(cand.get("denominacion")) != comparable(trabajo.get("marca")):
+        return None
+    contr, fecha = a_fecha(trabajo.get("contratacion")), a_fecha(cand.get("fecha"))
+    if contr and fecha and fecha < contr - _dt.timedelta(days=DIAS_ANTES_CONTRATACION):
+        return None
+    motivos = []
+    mat = re.sub(r"\D", "", str(cand.get("matricula") or ""))
+    if mat and mat in {re.sub(r"\D", "", str(m)) for m in (matriculas or [])}:
+        motivos.append(f"presentada con nuestra matrícula ({mat})")
+    ccuit = re.sub(r"\D", "", str((cliente or {}).get("cuit") or ""))
+    if ccuit and ccuit == re.sub(r"\D", "", str(cand.get("cuit") or "")):
+        motivos.append("mismo CUIT que el cliente")
+    elif _nombre_en_titular((cliente or {}).get("nombre"), cand.get("titular")):
+        motivos.append("el titular es el cliente")
+    if cand.get("fuente") == "cartera":
+        motivos.append("está en la cartera del cliente")
+    return {**cand, "fecha": fecha, "segura": bool(motivos) and (fecha is not None or cand.get("fuente") == "cartera"),
+            "motivos": motivos}
+
+
+def elegir_acta(trabajo, candidatas, cliente, matriculas):
+    """(elegida o None, todas las evaluadas). Si hay varias seguras (la misma marca en varias clases)
+    se elige la de número más bajo y las demás se nombran en la bitácora."""
+    vistas, evaluadas = set(), []
+    for c in candidatas:
+        e = evaluar_candidata(trabajo, c, cliente, matriculas)
+        if e and e["acta"] not in vistas:
+            vistas.add(e["acta"]); evaluadas.append(e)
+    evaluadas.sort(key=lambda e: (not e["segura"], int(e["acta"]) if str(e["acta"]).isdigit() else 0))
+    seguras = [e for e in evaluadas if e["segura"]]
+    return (seguras[0] if seguras else None), evaluadas
+
+
+def texto_deteccion(elegida, evaluadas, origen) -> str:
+    partes = [f"Acta {elegida['acta']} detectada sola ({origen})"]
+    det = []
+    if elegida.get("fecha"):
+        det.append(f"presentada el {elegida['fecha'].strftime('%d/%m/%Y')}")
+    if elegida.get("clase"):
+        det.append(f"clase {elegida['clase']}")
+    if elegida.get("titular"):
+        det.append(f"titular {elegida['titular']}")
+    if elegida.get("motivos"):
+        det.append("; ".join(elegida["motivos"]))
+    texto = partes[0] + (": " + ", ".join(det) if det else "") + "."
+    otras = [e["acta"] for e in evaluadas if e["segura"] and e["acta"] != elegida["acta"]]
+    if otras:
+        texto += f" También hay con el mismo nombre: actas {', '.join(otras)} (otra clase o tipo)."
+    return texto

@@ -171,7 +171,9 @@ function bloqueExpediente(d) {
   const t = d.trabajo, ex = d.expediente;
   let datos = "";
   if (!ex) {
-    datos = `<p class="sg-exp-aviso">Sin número de acta todavía. Cuando presenten la marca cargá el acta en «Datos» y acá aparece lo que el panel lee del INPI.</p>`;
+    datos = `<div class="sg-exp-aviso">Sin número de acta todavía. El panel la busca sola todos los días en las solicitudes nuevas del INPI (también las que presentamos con agente) y la carga cuando es seguro que es esta marca.
+      <div class="sg-buscar-acta"><button type="button" class="sg-btn sg-btn-mini" data-buscar-acta>🔎 Buscar el acta en el INPI</button></div>
+      <div id="resultado-acta"></div></div>`;
   } else if (!ex.en_cartera) {
     datos = `<p class="sg-exp-aviso">Acta <b>${esc(ex.acta)}</b>. Esta marca todavía no está en Clientes → Marcas, por eso no hay datos del INPI. Agregala ahí (en la ficha del cliente) y el expediente se completa solo.</p>`;
   } else {
@@ -240,6 +242,16 @@ function pintarFicha(d) {
         <button type="button" class="sg-btn sg-btn-peligro" data-borrar-trabajo>🗑 Borrar</button>
       </div>
     </div>`;
+}
+
+function pintarCandidatas(r) {
+  const cont = $("resultado-acta");
+  if (!cont) return;
+  const filas = (r.candidatas || []).map((c) => `<li class="sg-cand ${c.segura ? "segura" : ""}">
+      <div><b>Acta ${esc(c.acta)}</b> · ${esc(c.denominacion || "")}${c.clase ? ` · clase ${esc(c.clase)}` : ""}${c.fecha ? ` · ${fecha(c.fecha)}` : ""}
+        <br><small>${esc(c.titular || "Titular sin dato")}${c.estado ? ` · ${esc(c.estado)}` : ""}${c.motivos && c.motivos.length ? ` · ✓ ${esc(c.motivos.join(", "))}` : ""}</small></div>
+      <button type="button" class="sg-btn sg-btn-suave sg-btn-mini" data-usar-acta="${esc(c.acta)}">Usar esta</button></li>`).join("");
+  cont.innerHTML = `<p class="sg-cand-txt">${esc(r.texto || "")}</p>${filas ? `<ul class="sg-cands">${filas}</ul>` : ""}`;
 }
 
 async function guardar(cambios, repintar = true) {
@@ -317,7 +329,7 @@ async function crearTrabajo(ev) {
 // ── Eventos ─────────────────────────────────────────────────────
 
 document.addEventListener("click", async (ev) => {
-  const el = ev.target.closest("[data-id], [data-filtro], [data-estado], [data-cerrar], [data-etapa], [data-estado-trabajo], [data-borrar-trabajo], [data-borrar-nota]");
+  const el = ev.target.closest("[data-id], [data-filtro], [data-estado], [data-cerrar], [data-etapa], [data-estado-trabajo], [data-borrar-trabajo], [data-borrar-nota], [data-buscar-acta], [data-usar-acta]");
   if (!el) return;
   if (el.matches(".sg-card[data-id]")) return abrirFicha(Number(el.dataset.id));
   if (el.matches("[data-filtro]")) { sg.filtro = sg.filtro === el.dataset.filtro ? "" : el.dataset.filtro; return pintar(); }
@@ -333,6 +345,28 @@ document.addEventListener("click", async (ev) => {
     return guardar({ etapa: n === actual ? n - 1 : n });   // tocar la etapa actual la desmarca
   }
   if (el.matches("[data-estado-trabajo]")) return guardar({ estado: el.dataset.estadoTrabajo });
+  if (el.matches("[data-usar-acta]")) {
+    await guardar({ acta: el.dataset.usarActa });
+    return mostrarAviso(`Acta ${el.dataset.usarActa} cargada`);
+  }
+  if (el.matches("[data-buscar-acta]")) {
+    const id = sg.abierto;
+    el.disabled = true; el.textContent = "Buscando en el INPI…";
+    try {
+      const r = await pedir(`/api/trabajos/${id}/buscar-acta`, { method: "POST" });
+      if (r.asignada) {
+        mostrarAviso(`Acta ${r.asignada} encontrada y cargada`);
+        await abrirFicha(id); cargar();
+      } else {
+        pintarCandidatas(r);
+        el.disabled = false; el.textContent = "🔎 Buscar de nuevo";
+      }
+    } catch (e) {
+      el.disabled = false; el.textContent = "🔎 Buscar el acta en el INPI";
+      mostrarAviso(`No se pudo buscar: ${e.message}`, "aviso");
+    }
+    return;
+  }
   if (el.matches("[data-borrar-trabajo]")) {
     if (!confirm("¿Borrar este trabajo y su bitácora? No se puede deshacer. (Si terminó, mejor «Cerrar trabajo»)")) return;
     try {

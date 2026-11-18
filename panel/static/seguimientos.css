@@ -178,3 +178,11 @@
   .sg-tablero { grid-auto-flow: row; grid-auto-columns: auto; }
   .sg-datos, .sg-exp-datos { grid-template-columns: 1fr; }
 }
+
+/* Buscar el acta */
+.sg-buscar-acta { margin-top: 10px; }
+.sg-cand-txt { margin: 10px 0 6px; color: var(--texto); }
+.sg-cands { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.sg-cand { display: flex; align-items: center; justify-content: space-between; gap: 10px; background: #fff; border: 1px solid var(--borde); border-radius: 10px; padding: 8px 10px; font-size: 13px; color: var(--texto); }
+.sg-cand.segura { border-color: #86efac; background: #f0fdf4; }
+.sg-cand small { color: var(--gris); }
