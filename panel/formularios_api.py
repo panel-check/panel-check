@@ -364,7 +364,10 @@ def crear_router(verificar_login, conexion) -> APIRouter:
                     raise HTTPException(status_code=404, detail="Este link para corregir ya no está disponible: ya se usó o venció. "
                                                                 "Pedinos uno nuevo.")
                 archivos = fc.archivos_por_campo(cur, resp["id"])
-        return {"slug": resp["formulario"], "datos": resp["datos"] or {}, "archivos": archivos,
+        datos = resp["datos"] or {}
+        # por si se equivocó de formulario: lo que ya completó, listo para pasarlo al otro (física ↔ jurídica)
+        otros = {s: fc.datos_para_otro_formulario(datos, s) for s in fc.FORMULARIOS if s != resp["formulario"]}
+        return {"slug": resp["formulario"], "datos": datos, "archivos": archivos, "datos_otro": otros,
                 "recibido_en": resp["recibido_en"], "vence_en": resp["edicion_vence_en"]}
 
     @router.post("/api/publico/formulario-correccion/{token}")
@@ -398,13 +401,17 @@ def crear_router(verificar_login, conexion) -> APIRouter:
                 resp = fc.respuesta_por_token(cur, token, bloquear=True)
                 if not resp:
                     return no_disponible
-                slug = resp["formulario"]
+                # «cambiar_a»: se había equivocado de formulario y lo pasa al otro tipo (física ↔ jurídica)
+                slug = valores.pop("cambiar_a", "") or resp["formulario"]
+                if slug not in fc.FORMULARIOS:
+                    conn.rollback()
+                    return JSONResponse(status_code=400, content={"detail": "Formulario inexistente"})
                 try:
                     datos, validos = fc.validar(slug, valores, archivos, existentes=set(fc.archivos_por_campo(cur, resp["id"])))
                 except fc.ErrorFormulario as e:
                     conn.rollback()
                     return JSONResponse(status_code=400, content={"detail": str(e)})
-                res = fc.aplicar_edicion(cur, resp, datos, validos, ip)
+                res = fc.aplicar_edicion(cur, resp, datos, validos, ip, slug_nuevo=slug)
             conn.commit()
         background.add_task(_aviso_en_segundo_plano, resp["id"])
         poder = None
