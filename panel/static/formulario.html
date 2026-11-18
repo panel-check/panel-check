@@ -63,6 +63,9 @@
   .ok h2 { margin: 0 0 6px; font-size: 22px; }
   .ok p { color: var(--gris); margin: 0; }
   .cargando { color: var(--gris); text-align: center; padding: 40px 0; }
+  .cambio-tipo { margin-top: 12px; padding: 12px 14px; border: 1px solid #b8c9dc; background: var(--azul-claro); border-radius: 10px;
+                 font-size: 14px; color: #1d3b5c; }
+  .cambio-tipo .btn-sec { margin-top: 8px; }
   .aviso-correccion { background: #fff8e6; border: 1px solid #f5d48a; color: #6b4a00; border-radius: 10px; padding: 12px 14px;
                       margin-top: 14px; font-size: 14px; }
   .archivo .ya { color: var(--verde); font-size: 13px; width: 100%; }
@@ -86,7 +89,10 @@ let def = null;
 let captchaId = null;
 // Link para corregir (?corregir=TOKEN): el formulario abre con lo que ya mandó.
 const tokenCorr = new URLSearchParams(location.search).get("corregir");
-let corr = null;   // {datos, archivos: {campo: nombre}, recibido_en, vence_en}
+let corr = null;   // {datos, archivos: {campo: nombre}, recibido_en, vence_en, datos_otro: {slug: datos}}
+// Corrección: si se equivocó de formulario (física ↔ jurídica) puede pasarse al otro; se guarda con ese tipo.
+let original = null;  // {slug, datos} tal como los había mandado
+let cambiarA = "";    // slug del otro formulario, si se pasó
 
 function cargarCaptcha() {
   // Cloudflare Turnstile: casi siempre se resuelve solo, sin que el cliente tenga que hacer nada.
@@ -206,7 +212,10 @@ async function enviar(ev) {
     datos.append(c.id, v[c.id]);
   });
   datos.append("sitio_web", document.getElementById("sitio_web").value);
-  if (corr) return enviarCorreccion(datos, btn, errGen);
+  if (corr) {
+    if (cambiarA) datos.append("cambiar_a", cambiarA);
+    return enviarCorreccion(datos, btn, errGen);
+  }
   if (def.turnstile_site_key) {
     const token = window.turnstile && captchaId !== null ? turnstile.getResponse(captchaId) : "";
     if (!token) {
@@ -315,12 +324,37 @@ async function iniciar() {
       if (!r.ok) throw new Error(j.detail || "");
       corr = j;
       slug = corr.slug;
+      original = { slug: corr.slug, datos: corr.datos };
     } catch (e) {
       app.innerHTML = `<div class="tarjeta cabecera"><h1>Link no disponible</h1><p class="desc">${esc(e.message ||
         "Este link para corregir ya no está disponible: ya se usó o venció. Pedinos uno nuevo.")}</p></div>`;
       return;
     }
   }
+  await armar();
+}
+
+const NOMBRE_TIPO = { "persona-fisica": "Persona Física", "persona-juridica": "Persona Jurídica" };
+
+// Pasa la corrección al otro formulario (o vuelve al original) con los datos que sirven en los dos.
+function cambiarFormulario(destino) {
+  if (destino === original.slug) { cambiarA = ""; corr.datos = original.datos; }
+  else { cambiarA = destino; corr.datos = (corr.datos_otro || {})[destino] || {}; }
+  slug = destino;
+  armar().then(() => window.scrollTo(0, 0));
+}
+
+function htmlCambioTipo() {
+  if (!corr || !def.otro) return "";
+  if (cambiarA) return `<div class="cambio-tipo"><strong>Pasaste tus datos al formulario de ${esc(NOMBRE_TIPO[slug] || "")}.</strong>
+      Ya cargamos lo que sirve (correo, teléfono, domicilio, provincia, quién firma y lo de la marca): completá lo que falta
+      y tocá «Guardar cambios».<br><button type="button" class="btn-sec" data-cambiar="${esc(original.slug)}">← Volver al formulario de ${esc(NOMBRE_TIPO[original.slug] || "")}</button></div>`;
+  return `<div class="cambio-tipo"><strong>¿Te equivocaste de formulario?</strong> ${esc(def.otro.texto.split("?")[0])}?
+      Pasá tus datos al formulario de ${esc(NOMBRE_TIPO[def.otro.slug] || "")}: los que coinciden ya quedan cargados y completás los que faltan.
+      <br><button type="button" class="btn-sec" data-cambiar="${esc(def.otro.slug)}">Cambiar a ${esc(NOMBRE_TIPO[def.otro.slug] || "")} →</button></div>`;
+}
+
+async function armar() {
   try {
     const r = await fetch(`/api/publico/formulario/${encodeURIComponent(slug)}`);
     if (!r.ok) throw new Error();
@@ -335,7 +369,7 @@ async function iniciar() {
     <div class="tarjeta cabecera"><h1>${esc(def.titulo)}</h1><p class="desc">${esc(def.descripcion)}</p>
       ${corr ? `<div class="aviso-correccion"><strong>Estás corrigiendo los datos que enviaste el ${fecha(corr.recibido_en)}.</strong>
           Ya están cargadas tus respuestas: cambiá lo que haga falta y tocá «Guardar cambios». Este link sirve una sola vez
-          y vence el ${fecha(corr.vence_en)}.</div>`
+          y vence el ${fecha(corr.vence_en)}.</div>${htmlCambioTipo()}`
         : def.otro ? `<a class="otro" href="/formulario/${esc(def.otro.slug)}">${esc(def.otro.texto)} →</a>` : ""}
       <div class="oblig-nota">* Indica que la pregunta es obligatoria</div></div>
     <form id="form" novalidate>
@@ -358,6 +392,7 @@ async function iniciar() {
     }
   });
   form.querySelectorAll("[data-elegir]").forEach(b => b.addEventListener("click", () => form.elements[b.dataset.elegir].click()));
+  app.querySelectorAll("[data-cambiar]").forEach(b => b.addEventListener("click", () => cambiarFormulario(b.dataset.cambiar)));
   document.getElementById("btn-borrar").addEventListener("click", () => {
     if (!confirm(corr ? "¿Volver a los datos que habías enviado?" : "¿Borrar todas las respuestas del formulario?")) return;
     form.reset();

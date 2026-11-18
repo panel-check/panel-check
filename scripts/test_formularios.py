@@ -303,3 +303,51 @@ class CorreccionConLink(unittest.TestCase):
         asunto, cuerpo, _ = fc.armar_mail(resp, {}, [], "https://panel")
         self.assertTrue(asunto.startswith("📝 Formulario recibido"))
         self.assertNotIn("Qué cambió", cuerpo)
+
+
+class CambiarDeFormularioAlCorregir(unittest.TestCase):
+    """Con el link para corregir, quien se equivocó de formulario (física ↔ jurídica) se pasa al otro."""
+    FISICA = {**BASE, **OPOSICION, "telefono": "1155556666", "marca_descripcion": "Café"}
+
+    def test_pasa_los_datos_que_sirven(self):
+        a_juridica = fc.datos_para_otro_formulario(self.FISICA, "persona-juridica")
+        self.assertEqual(a_juridica["email"], "a@b.com")
+        self.assertEqual(a_juridica["telefono"], "1155556666")
+        self.assertEqual(a_juridica["domicilio"], "Calle 1")
+        self.assertEqual(a_juridica["firmante_nombre"], "Gómez María")  # quien completó firma por la empresa
+        self.assertEqual(a_juridica["servicio"], fc.SERVICIO_OPOSICION)
+        self.assertEqual(a_juridica["marca_nombre"], "Luna")
+        for k in ("nombre", "cuit", "dni", "sexo", "estado_civil"):  # razón social y CUIT son de la empresa
+            self.assertNotIn(k, a_juridica)
+        a_fisica = fc.datos_para_otro_formulario({**JURIDICA, **VISTAS}, "persona-fisica")
+        self.assertEqual(a_fisica["nombre"], "Gómez María")
+        self.assertEqual(a_fisica["servicio"], fc.SERVICIO_VISTAS)
+        self.assertNotIn("cuit", a_fisica)
+        self.assertNotIn("firmante_nombre", a_fisica)
+
+    def test_guarda_con_el_otro_tipo(self):
+        class Cur:
+            def __init__(self):
+                self.sql = []
+
+            def execute(self, q, v=None):
+                self.sql.append((q, v))
+
+            def fetchall(self):
+                return []
+
+        datos, _ = fc.validar("persona-juridica", {**JURIDICA, **OPOSICION}, DOCS)
+        cur = Cur()
+        resp = {"id": 7, "formulario": "persona-fisica", "datos": self.FISICA, "cliente_id": 3}
+        res = fc.aplicar_edicion(cur, resp, datos, [], "1.1.1.1", slug_nuevo="persona-juridica")
+        self.assertEqual(res["cambios"][0], {"etiqueta": "Tipo de formulario", "antes": "Persona física",
+                                             "despues": "Persona jurídica"})
+        self.assertFalse(res["reenviar_poder"])
+        upd_resp = next(v for q, v in cur.sql if q.startswith("UPDATE formularios_respuestas"))
+        self.assertIn("persona-juridica", upd_resp)
+        self.assertIn("juridica", upd_resp)
+        q, v = next((q, v) for q, v in cur.sql if q.startswith("UPDATE clientes"))
+        self.assertIn("tipo_persona = %s", q)
+        self.assertIn("cotitulares = %s", q)
+        self.assertIn("Luna S.R.L.", v)
+        self.assertIn("juridica", v)

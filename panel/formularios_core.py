@@ -565,6 +565,20 @@ def agregar_aviso_titulares(cuerpo: str, n: int) -> str:
     return cuerpo[:m.start()] + "\n\n" + aviso + cuerpo[m.start():] if m else cuerpo.rstrip() + "\n\n" + aviso
 
 
+def datos_para_otro_formulario(datos: dict, slug_destino: str) -> dict:
+    """Al pasar una respuesta al otro formulario (física ↔ jurídica): las respuestas que sirven igual (correo,
+    teléfono, domicilio, provincia y todo lo del servicio) y, cruzado, quien completó como persona física pasa a
+    ser quien firma por la empresa (y al revés). La razón social y el CUIT no se pasan: no son los de la persona."""
+    ids = {c["id"] for c in FORMULARIOS[slug_destino]["campos"] if c["tipo"] not in ("nota", "archivo")}
+    out = {k: v for k, v in (datos or {}).items() if k in ids and k not in ("nombre", "cuit") and v}
+    if FORMULARIOS[slug_destino]["tipo_persona"] == "juridica":
+        if (datos or {}).get("nombre"):
+            out["firmante_nombre"] = datos["nombre"]
+    elif (datos or {}).get("firmante_nombre"):
+        out["nombre"] = datos["firmante_nombre"]
+    return out
+
+
 def respuesta_por_token(cur, token: str, bloquear: bool = False):
     """La respuesta con ese link para corregir, si sigue vigente (o None). `cur`: RealDictCursor."""
     if not token or len(token) > 100:
@@ -580,12 +594,16 @@ def archivos_por_campo(cur, respuesta_id: int) -> dict:
     return {f["campo"]: f["nombre"] for f in cur.fetchall()}
 
 
-def aplicar_edicion(cur, resp: dict, datos: dict, archivos: list, ip: str) -> dict:
+def aplicar_edicion(cur, resp: dict, datos: dict, archivos: list, ip: str, slug_nuevo: str = None) -> dict:
     """Guarda la corrección de una respuesta (resp: fila bloqueada con respuesta_por_token).
     Reemplaza las respuestas, los archivos que subieron de nuevo (los demás quedan; los de una opción que
     ya no corresponde se borran), actualiza el cliente, deja el historial y anula el link (sirve una vez).
-    La respuesta vuelve a «nueva» y queda pendiente de aviso por mail. Devuelve {"cambios", "reenviar_poder"}."""
-    slug, rid = resp["formulario"], resp["id"]
+    La respuesta vuelve a «nueva» y queda pendiente de aviso por mail. Devuelve {"cambios", "reenviar_poder"}.
+    slug_nuevo: si la persona se había equivocado de formulario (física ↔ jurídica), la respuesta pasa a ese otro
+    tipo (datos ya validados con él) y el cliente cambia de tipo de persona."""
+    rid = resp["id"]
+    slug_antes = resp["formulario"]
+    slug = slug_nuevo if slug_nuevo in FORMULARIOS else slug_antes
     antes = resp["datos"] if isinstance(resp["datos"], dict) else json.loads(resp["datos"] or "{}")
     arch_antes = archivos_por_campo(cur, rid)
     visibles = {c["id"] for c in FORMULARIOS[slug]["campos"] if c["tipo"] == "archivo" and campo_visible(c, datos)}
@@ -601,16 +619,23 @@ def aplicar_edicion(cur, resp: dict, datos: dict, archivos: list, ip: str) -> di
     arch_despues = {c: n for c, n in arch_antes.items() if c not in sacar}
     arch_despues.update({a["campo"]: a["nombre"] for a in archivos})
     cambios = diferencias(slug, antes, datos, arch_antes, arch_despues)
+    if slug != slug_antes:
+        cambios.insert(0, {"etiqueta": "Tipo de formulario",
+                           "antes": TIPO_LEGIBLE[FORMULARIOS[slug_antes]["tipo_persona"]],
+                           "despues": TIPO_LEGIBLE[FORMULARIOS[slug]["tipo_persona"]]})
     cur.execute("INSERT INTO formularios_ediciones (respuesta_id, datos_antes, datos_despues, cambios, ip) VALUES (%s, %s, %s, %s, %s)",
                 (rid, json.dumps(antes, ensure_ascii=False), json.dumps(datos, ensure_ascii=False),
                  json.dumps(cambios, ensure_ascii=False), ip))
     cur.execute(
         "UPDATE formularios_respuestas SET datos = %s, estado = 'nueva', revisado_por = NULL, revisado_en = NULL, "
-        "editado_en = now(), ediciones = ediciones + 1, edicion_token = NULL, aviso_enviado_en = NULL, aviso_error = NULL "
-        "WHERE id = %s", (json.dumps(datos, ensure_ascii=False), rid))
+        "editado_en = now(), ediciones = ediciones + 1, edicion_token = NULL, aviso_enviado_en = NULL, aviso_error = NULL, "
+        "formulario = %s, tipo_persona = %s "
+        "WHERE id = %s", (json.dumps(datos, ensure_ascii=False), slug, FORMULARIOS[slug]["tipo_persona"], rid))
     if resp.get("cliente_id"):
         # Es una corrección pedida por nosotros: se pisan todos los datos del cliente, también el nombre.
         campos = datos_cliente(slug, datos)
+        if FORMULARIOS[slug]["tipo_persona"] == "juridica" and slug != slug_antes:
+            campos.update({"cotitulares": None, "porcentaje_titularidad": None})  # una empresa no tiene cotitulares
         sets = [f"{k} = %s" for k in campos] + ["modificado_en = now()", "modificado_por = %s"]
         cur.execute(f"UPDATE clientes SET {', '.join(sets)} WHERE id = %s",
                     list(campos.values()) + ["formulario web (corrección)", resp["cliente_id"]])
