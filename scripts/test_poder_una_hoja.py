@@ -135,3 +135,35 @@ class PoderSimpleMarcas(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PoderPersonaJuridica(unittest.TestCase):
+    """Modelo del estudio para empresas (18/11/2026): firma una persona «en representación de» la empresa."""
+    EMPRESA = {"tipo_persona": "juridica", "nombre": "NUEVOS EMPRENDIMIENTOS INTERNACIONALES S.R.L.",
+               "cuit": "30712345678", "firmante_nombre": "LUCAS MIGUEL CHAVEZ", "firmante_cargo": "Socio gerente",
+               "domicilio": "Juana Azurduy 1520, piso 4, departamento C, C1429BYB",
+               "provincia": "Ciudad Autónoma de Buenos Aires"}
+
+    def test_firma_en_representacion_de_la_empresa(self):
+        d = poderes.propuesta(self.EMPRESA, dt.date(2026, 2, 3))
+        self.assertEqual(d["otorgante"], "LUCAS MIGUEL CHAVEZ en representación de NUEVOS EMPRENDIMIENTOS "
+                         "INTERNACIONALES S.R.L., domiciliada en Juana Azurduy 1520, piso 4, departamento C, "
+                         "C1429BYB, Ciudad Autónoma de Buenos Aires, República Argentina.")
+        self.assertEqual(d["firmantes"], 1)
+        self.assertEqual(d["lugar"], poderes.CABA)
+        texto = poderes._parrafo_inicial(d, poderes.APODERADO_DEFAULT)
+        self.assertTrue(texto.startswith("El abajo firmante LUCAS MIGUEL CHAVEZ en representación de NUEVOS"))
+        self.assertIn("República Argentina. Por el presente otorgo a Pamela Daiana Guzzardi", texto)
+
+    def test_sin_firmante_queda_linea_en_blanco(self):
+        d = poderes.propuesta({**self.EMPRESA, "firmante_nombre": ""}, dt.date(2026, 2, 3))
+        self.assertTrue(d["otorgante"].startswith(poderes.FIRMANTE_EN_BLANCO + " en representación de NUEVOS"))
+
+    @unittest.skipIf(pypdf is None, "falta reportlab o pypdf")
+    def test_pdf_con_cargo_en_una_hoja(self):
+        d = poderes.propuesta(self.EMPRESA, dt.date(2026, 2, 3))
+        pdf = poderes.generar_pdf(d, poderes.APODERADO_DEFAULT)
+        self.assertEqual(_hojas(pdf), 1)
+        texto = pypdf.PdfReader(io.BytesIO(pdf)).pages[0].extract_text()
+        self.assertIn("en representación de", texto)
+        self.assertIn("CARGO", texto)
