@@ -2,6 +2,7 @@
 Rutas de los formularios para clientes (ver formularios_core.py).
 
 Públicas (sin login — son las que abre el cliente):
+  GET  /formulario                                                 link único: el cliente elige física o jurídica
   GET  /formulario/persona-fisica | /formulario/persona-juridica   la página
   GET  /api/publico/formulario/{slug}                              definición de campos
   POST /api/publico/formulario/{slug}                              envío (multipart)
@@ -282,6 +283,15 @@ def crear_router(verificar_login, conexion) -> APIRouter:
         return error is None
 
     # ── Públicas ──────────────────────────────────────────────────────
+    @router.get("/formulario", include_in_schema=False)
+    @router.get("/formulario/", include_in_schema=False)
+    def pagina_elegir_formulario():
+        """Link único: el cliente elige Persona física o Persona jurídica y pasa a ese formulario."""
+        r = FileResponse(os.path.join(STATIC, "formulario_elegir.html"))
+        r.headers["Cache-Control"] = "no-cache"
+        r.headers["X-Robots-Tag"] = "noindex"
+        return r
+
     @router.get("/formulario/{slug}", include_in_schema=False)
     def pagina_formulario(slug: str):
         if slug not in fc.FORMULARIOS:
@@ -432,8 +442,10 @@ def crear_router(verificar_login, conexion) -> APIRouter:
                 cur.execute("SELECT COUNT(*) AS n FROM formularios_respuestas WHERE estado = 'archivada'")
                 archivadas = cur.fetchone()["n"]
         return {"respuestas": filas, "nuevas": nuevas, "archivadas": archivadas,
-                "formularios": [{"slug": s, "titulo": f["titulo"], "tipo": fc.TIPO_LEGIBLE[f["tipo_persona"]],
-                                 "ruta": f"/formulario/{s}"} for s, f in fc.FORMULARIOS.items()]}
+                "formularios": [{"slug": "", "titulo": "El cliente elige: persona física o jurídica",
+                                 "tipo": "Link único (recomendado)", "ruta": "/formulario"}]
+                + [{"slug": s, "titulo": f["titulo"], "tipo": fc.TIPO_LEGIBLE[f["tipo_persona"]],
+                    "ruta": f"/formulario/{s}"} for s, f in fc.FORMULARIOS.items()]}
 
     @router.get("/api/formularios/{rid}")
     def ver(rid: int, _: str = Depends(verificar_login)):
