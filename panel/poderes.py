@@ -4,7 +4,8 @@ Poder para el registro de marca, autocompletado con los datos del cliente.
 Después de que el cliente completa el formulario (Clientes → Formularios),
 desde su ficha se genera el poder ya lleno —en PDF o en Word— para mandárselo
 y que solo tenga que firmarlo. Es el mismo texto del modelo del estudio
-(persona física o jurídica); lo único que cambia es el párrafo del otorgante,
+(persona física o jurídica; en jurídica firma una persona «en representación de» la
+empresa); lo único que cambia es el párrafo del otorgante,
 y el lugar y fecha. La aclaración (y el cargo, en persona jurídica) quedan en
 blanco: los completa a mano quien firma.
 
@@ -129,6 +130,26 @@ def _unir(personas: list) -> str:
     return "; ".join(personas[:-1]) + "; y " + personas[-1]
 
 
+# Persona jurídica (modelo del estudio, 18/11/2026): firma una persona en representación de la empresa.
+# «El abajo firmante JUAN PÉREZ en representación de EMPRESA S.R.L., domiciliada en …, República Argentina.»
+# Quien firma sale del formulario de Persona Jurídica (firmante_nombre); si no está, queda una línea en blanco.
+FIRMANTE_EN_BLANCO = "_" * 30
+
+
+def otorgante_juridica(c: dict) -> str:
+    nombre = (c.get("nombre") or "").strip()
+    firmante = (c.get("firmante_nombre") or "").strip() or FIRMANTE_EN_BLANCO
+    domicilio = str(c.get("domicilio") or "").strip().rstrip(".")
+    provincia = (c.get("provincia") or "").strip()
+    partes = [f"{firmante} en representación de {nombre}"]
+    if domicilio:
+        dom = domicilio
+        if provincia and provincia.lower() not in domicilio.lower():
+            dom += ", " + (CABA if _es_caba(provincia) else f"Provincia de {provincia}")
+        partes.append(f"domiciliada en {dom}")
+    return ", ".join(partes) + ", República Argentina."
+
+
 def propuesta(cliente: dict, hoy=None, cotitulares=None) -> dict:
     """Valores sugeridos para el poder, a partir de la ficha del cliente.
     Todos se pueden corregir en el panel antes de generar. Persona física con cotitulares (los demás titulares
@@ -141,13 +162,7 @@ def propuesta(cliente: dict, hoy=None, cotitulares=None) -> dict:
     provincia = (c.get("provincia") or "").strip()
     firmantes, genero = 1, "masculino"
     if tipo == "juridica":
-        partes = [f"{nombre}, CUIT {fmt_cuit(c.get('cuit'))}"]
-        if domicilio:
-            dom = domicilio
-            if provincia and provincia.lower() not in domicilio.lower():
-                dom += ", " + (CABA if _es_caba(provincia) else f"Provincia de {provincia}")
-            partes.append(f"domiciliada en {dom}")
-        otorgante = ", ".join(partes) + ", República Argentina."
+        otorgante = otorgante_juridica(c)
     else:
         otros = _cotitulares_de({"cotitulares": cotitulares}) if cotitulares is not None else _cotitulares_de(c)
         personas = [c] + otros[:MAX_FIRMANTES - 1]

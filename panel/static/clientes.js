@@ -1287,6 +1287,10 @@ async function abrirGeneradorPoder(clienteId) {
   const faltan = [];
   if (!p.otorgante.match(/domicili/)) faltan.push("domicilio");
   if (p.tipo_persona === "fisica" && !p.otorgante.match(/DNI/)) faltan.push("DNI");
+  if (p.tipo_persona === "juridica" && /^_+ en representación/.test(p.otorgante)) faltan.push("quién firma por la empresa");
+  const etiquetaOtorgante = p.tipo_persona === "juridica"
+    ? "Otorgante: quien firma «en representación de» la empresa, y el domicilio de la empresa"
+    : "Otorgante(s): nombre, DNI y domicilio de cada titular (si son varios, separados por «;»)";
   caja.innerHTML = `
     <p class="crm-gris" style="margin:0 0 8px">Se arma con el modelo del estudio y los datos del cliente. Revisá el texto (por ejemplo «domiciliado» / «domiciliada») y descargalo para mandárselo a firmar. La aclaración (y el cargo, si es empresa) salen en blanco: los completa a mano quien firma.</p>
     ${p.firmantes > 1 ? `<p class="crm-nota" style="margin:0 0 8px">La marca tiene <strong>${p.firmantes} titulares</strong> (según el formulario): el poder los nombra a todos y lleva un lugar de firma, aclaración y DNI para cada uno.</p>` : ""}
@@ -1300,7 +1304,7 @@ async function abrirGeneradorPoder(clienteId) {
         <option value="masculino" ${p.genero === "masculino" ? "selected" : ""}>El abajo firmante / Los abajo firmantes</option>
         <option value="femenino" ${p.genero === "femenino" ? "selected" : ""}>La abajo firmante / Las abajo firmantes</option>
         <option value="neutro" ${p.genero === "neutro" ? "selected" : ""}>El/La abajo firmante</option></select></label>
-      <label class="ancho">Otorgante(s): nombre, DNI y domicilio de cada titular (si son varios, separados por «;»)<textarea name="otorgante" rows="${p.firmantes > 1 ? 6 : 3}">${esc(p.otorgante)}</textarea></label>
+      <label class="ancho">${etiquetaOtorgante}<textarea name="otorgante" rows="${p.firmantes > 1 ? 6 : 3}">${esc(p.otorgante)}</textarea></label>
     </form>
     <p class="crm-nota">Apoderado: ${esc(r.apoderado)} <a href="/clientes?vista=ajustes" title="Se cambia en Ajustes">(cambiar)</a></p>
     <div class="cl-acciones"><button type="button" class="cl-btn" data-generar="pdf">Descargar PDF</button>
@@ -1340,7 +1344,7 @@ async function abrirGeneradorPoderSimple(clienteId) {
   caja.innerHTML = `
     <h4 style="margin-top:0">Poder simple marcas</h4>
     <p class="crm-gris" style="margin:0 0 8px">Poder acotado a marcas: trámites ante el INPI y negociaciones y acuerdos (oposiciones, coexistencia). Es para <strong>persona humana</strong> (con DNI). Firma, aclaración y DNI salen como líneas en blanco para completar a mano. Sale siempre en una sola hoja.</p>
-    ${p.cliente_juridica ? '<p class="crm-error" style="padding:0 0 8px">Ojo: este cliente figura como persona jurídica y este modelo es para persona humana. Usá el poder para firmar común o cargá acá los datos de quien firma.</p>' : ""}
+    ${p.cliente_juridica ? '<p class="crm-error" style="padding:0 0 8px">Ojo: este cliente figura como persona jurídica y este modelo es para persona humana. Usá «Generar poder para firmar», que en persona jurídica arma el modelo de empresa («El abajo firmante … en representación de …»).</p>' : ""}
     ${faltan.length ? `<p class="crm-error" style="padding:0 0 8px">Ojo: falta ${faltan.join(", ")} en la ficha. Podés completarlo acá abajo o en «Datos para el trámite».</p>` : ""}
     <form class="cl-form" id="poder-simple-form" style="margin-top:0">
       <label>Firmante<select name="genero">
