@@ -1,4 +1,4 @@
-"""Pruebas de la definición del formulario de Persona física (servicio solicitado).
+"""Pruebas de la definición de los formularios de Persona física y jurídica (servicio solicitado).
 Correr: cd scripts && python3 -m unittest test_formularios"""
 import os
 import sys
@@ -136,9 +136,63 @@ class ServicioPersonaFisica(unittest.TestCase):
         self.assertTrue(fc.campo_visible({"si": {"campo": "a", "valor": "1"}}, {"a": "1"}))
         self.assertTrue(fc.campo_visible({}, {}))
 
-    def test_persona_juridica_no_cambia(self):
+    def test_no_aplica_no_pide_nada_mas(self):
+        datos, _ = validar({"servicio": fc.SERVICIO_NO_APLICA})
+        self.assertEqual(datos["servicio"], fc.SERVICIO_NO_APLICA)
+        visibles = [c["id"] for c in fc.FORMULARIOS["persona-fisica"]["campos"]
+                    if fc.campo_visible(c, {**BASE, "servicio": fc.SERVICIO_NO_APLICA})]
+        self.assertEqual(visibles[-1], "servicio")
+        # aunque mande respuestas de otro servicio, no se guardan
+        datos, _ = validar({"servicio": fc.SERVICIO_NO_APLICA, "marca_nombre": "Luna"})
+        self.assertNotIn("marca_nombre", datos)
+
+    def test_no_aplica_es_la_ultima_opcion_en_los_dos(self):
+        for f in fc.FORMULARIOS.values():
+            serv = next(c for c in f["campos"] if c["id"] == "servicio")
+            self.assertEqual(serv["opciones"], [fc.SERVICIO_NUEVA, fc.SERVICIO_OPOSICION, fc.SERVICIO_VISTAS,
+                                                fc.SERVICIO_NO_APLICA])
+            self.assertIn("únicamente si te pedimos que vuelvas a completar", serv["opciones"][-1])
+
+
+JURIDICA = {"email": "a@b.com", "nombre": "Luna S.R.L.", "cuit": "30712345678", "firmante_nombre": "Gómez María",
+            "firmante_cargo": "Socia gerente", "domicilio": "Calle 1, CABA", "provincia": "Ciudad Autónoma de Buenos Aires"}
+DOCS = {"constancia_cuit": ("c.png", "image/png", PNG), "estatuto": ("e.png", "image/png", PNG)}
+
+
+class ServicioPersonaJuridica(unittest.TestCase):
+    def _validar(self, extra, archivos=None):
+        return fc.validar("persona-juridica", {**JURIDICA, **extra}, {**DOCS, **(archivos or {})})
+
+    def test_servicio_va_al_final_de_los_datos_de_la_empresa_y_es_obligatorio(self):
         ids = [c["id"] for c in fc.FORMULARIOS["persona-juridica"]["campos"]]
-        self.assertNotIn("servicio", ids)
+        self.assertEqual(ids.index("servicio"), ids.index("estatuto") + 1)
+        with self.assertRaises(fc.ErrorFormulario) as e:
+            self._validar({})
+        self.assertIn("¿Qué servicio solicitás?", str(e.exception))
+
+    def test_mismas_preguntas_que_persona_fisica_segun_el_servicio(self):
+        def desde_servicio(slug):
+            ids = [c["id"] for c in fc.FORMULARIOS[slug]["campos"]]
+            return ids[ids.index("servicio"):]
+        self.assertEqual(desde_servicio("persona-juridica"), desde_servicio("persona-fisica"))
+        datos, _ = self._validar(NUEVA)
+        self.assertEqual(datos["empresa_nombre"], "Luna")
+        datos, _ = self._validar(VISTAS)
+        self.assertEqual(datos["marca_nombre"], "Luna")
+        with self.assertRaises(fc.ErrorFormulario):
+            self._validar({"servicio": fc.SERVICIO_OPOSICION})  # falta nombre de la marca y si tiene logo
+        datos, _ = self._validar(OPOSICION)
+        self.assertEqual(datos["tiene_logo"], "NO")
+
+    def test_la_nota_del_inpi_habla_de_datos_de_la_empresa(self):
+        nota = next(c for c in fc.FORMULARIOS["persona-juridica"]["campos"] if c["id"] == "nota_coinciden_inpi")
+        self.assertIn("razón social, CUIT y domicilio", nota["ayuda"])
+        self.assertNotIn("DNI", nota["ayuda"])
+
+    def test_no_aplica_no_pide_nada_mas(self):
+        datos, _ = self._validar({"servicio": fc.SERVICIO_NO_APLICA})
+        self.assertEqual(datos["servicio"], fc.SERVICIO_NO_APLICA)
+        self.assertEqual(fc.nombre_marca(datos), "")
 
 
 class VariosTitulares(unittest.TestCase):
