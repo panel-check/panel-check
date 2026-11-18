@@ -76,6 +76,8 @@ import conceptos_vigilancia
 import programador
 import seguimiento_expediente
 import seguimiento_api
+import trabajos_api
+import trabajos_core
 import cartera
 import seguridad
 import cartera_api
@@ -238,6 +240,17 @@ def migrar_columnas_panel():
             conn.commit()
     except Exception as e:
         print(f"[startup] tablas de clientes/vigilancia salteadas (no bloqueante): {e}")
+
+    # Seguimientos (/seguimientos): trabajos puntuales de cada cliente. Van después de
+    # `clientes` (tienen FK) y cargan una sola vez los trabajos de la Planilla Pagos.
+    try:
+        with conexion() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SET lock_timeout = '3s'")
+                trabajos_core.crear_tablas(cur)
+            conn.commit()
+    except Exception as e:
+        print(f"[startup] tablas de seguimientos salteadas (no bloqueante): {e}")
 
     # Vigilancia: borra las alertas con el plazo de oposición vencido y une las duplicadas
     # (una por marca del cliente). Idempotente; también lo hace cada corrida de vigilancia.
@@ -4347,6 +4360,12 @@ def pagina_clientes(_: str = Depends(verificar_pagina)):
     return FileResponse(os.path.join(os.path.dirname(__file__), "static", "clientes.html"))
 
 
+@app.get("/seguimientos")
+def pagina_seguimientos(_: str = Depends(verificar_pagina)):
+    """Tablero de trabajos puntuales de los clientes (registro, oposición, vista...)."""
+    return FileResponse(os.path.join(os.path.dirname(__file__), "static", "seguimientos.html"))
+
+
 @app.get("/mails")
 def pagina_mails(_: str = Depends(verificar_pagina)):
     return FileResponse(os.path.join(os.path.dirname(__file__), "static", "mails.html"))
@@ -4416,6 +4435,7 @@ app.include_router(informes_api.crear_router(
 app.include_router(verificador_api.crear_router(verificar_login, conexion))
 app.include_router(presentacion_api.crear_router(conexion))   # presentación de oposición (página privada de la web)
 app.include_router(seguimiento_api.crear_router(verificar_login, conexion))     # vigilancia de expediente (página del titular en la web)
+app.include_router(trabajos_api.crear_router(verificar_login, conexion))        # Seguimientos: trabajos puntuales de los clientes
 app.include_router(buscador_inpi_api.crear_router(verificar_login, conexion))
 app.include_router(accesos_api.crear_router(verificar_login, conexion, CLAVES_ACCESO_RAPIDO, _contar_consulta))
 
