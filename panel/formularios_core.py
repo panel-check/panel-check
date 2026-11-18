@@ -97,14 +97,58 @@ EXT_POR_MIME = {
 }
 MAX_ARCHIVO = 10 * 1024 * 1024  # 10 MB, igual que en Google Forms
 
-# Persona física: qué servicio pide (decide qué preguntas de la marca se muestran).
+# Qué servicio pide (Persona física y jurídica): decide qué preguntas de la marca se muestran.
 SERVICIO_NUEVA = "Registro de una nueva marca"
 SERVICIO_OPOSICION = "Responder a las oposiciones recibidas"
 SERVICIO_VISTAS = "Respuesta de Vistas"
+# Para cuando le pedimos al cliente que vuelva a completar el formulario (por ejemplo, para corregir sus datos):
+# no se muestra ninguna pregunta más (todas las demás dependen de otro servicio).
+SERVICIO_NO_APLICA = "No aplica (elegir únicamente si te pedimos que vuelvas a completar el formulario)"
+SERVICIOS = [SERVICIO_NUEVA, SERVICIO_OPOSICION, SERVICIO_VISTAS, SERVICIO_NO_APLICA]
 SI_NUEVA = {"campo": "servicio", "valor": SERVICIO_NUEVA}
 SI_OPOSICION = {"campo": "servicio", "valor": SERVICIO_OPOSICION}
 # Oposiciones y vistas son sobre una marca ya presentada: comparten nombre, descripción y web/redes.
 SI_OPOSICION_O_VISTAS = {"campo": "servicio", "valores": [SERVICIO_OPOSICION, SERVICIO_VISTAS]}
+
+
+def _campos_servicio(datos_a_revisar: str) -> list:
+    """«¿Qué servicio solicitás?» y las preguntas de la marca según la respuesta. Va igual en Persona física y
+    Persona jurídica; solo cambia qué datos de arriba tienen que coincidir con el INPI. «No aplica» no muestra nada más."""
+    return [
+        {"id": "servicio", "tipo": "opcion", "etiqueta": "¿Qué servicio solicitás?", "obligatorio": True,
+         "opciones": SERVICIOS},
+        # ── Opción 1: registro de una nueva marca ──
+        {"id": "empresa_nombre", "tipo": "texto", "etiqueta": "Nombre de la empresa", "obligatorio": True, "si": SI_NUEVA},
+        {"id": "rubro", "tipo": "texto", "etiqueta": "Rubro", "obligatorio": True, "si": SI_NUEVA},
+        {"id": "actividad_descripcion", "tipo": "parrafo", "etiqueta": "Descripción de la actividad", "obligatorio": True,
+         "ayuda": "Es importante poder dar una descripción lo más cercana a la realidad para poder definir en qué clase debería ser registrada la marca.",
+         "si": SI_NUEVA},
+        {"id": "web_redes", "tipo": "texto", "etiqueta": "Web o Redes", "obligatorio": True, "si": SI_NUEVA},
+        {"id": "nueva_tiene_logo", "tipo": "opcion", "etiqueta": "¿Tiene logo?", "obligatorio": True, "opciones": ["SI", "NO"],
+         "si": SI_NUEVA},
+        {"id": "nueva_logo", "tipo": "archivo", "etiqueta": "Adjunte su logo", "obligatorio": True,
+         "ayuda": "Imagen (JPG, PNG, WEBP, GIF) o PDF. Máximo 10 MB.", "mimes": MIME_LOGO,
+         "si": [SI_NUEVA, {"campo": "nueva_tiene_logo", "valor": "SI"}]},
+        # ── Opción 2: responder a las oposiciones recibidas y Opción 3: respuesta de vistas ──
+        {"id": "nota_coinciden_inpi", "tipo": "nota", "etiqueta": "Importante",
+         "ayuda": f"Revisá que todos los datos que completaste arriba ({datos_a_revisar}) "
+                  "coincidan con los ingresados a la hora de hacer la solicitud de la marca en el INPI.",
+         "si": SI_OPOSICION_O_VISTAS},
+        {"id": "marca_nombre", "tipo": "texto", "etiqueta": "Nombre de la marca", "obligatorio": True, "si": SI_OPOSICION_O_VISTAS},
+        {"id": "marca_descripcion", "tipo": "parrafo",
+         "etiqueta": "Describa de manera sencilla pero a la vez completa los servicios y/o productos que brinda su marca",
+         "obligatorio": False, "si": SI_OPOSICION_O_VISTAS},
+        {"id": "marca_web_redes", "tipo": "texto", "etiqueta": "Web o Redes", "obligatorio": False,
+         "ayuda": "La página web o las redes de la marca (por ejemplo, @tumarca en Instagram). Si no tiene, dejalo vacío.",
+         "si": SI_OPOSICION_O_VISTAS},
+        # el logo se pide solo para responder oposiciones
+        {"id": "tiene_logo", "tipo": "opcion", "etiqueta": "¿Tiene logo?", "obligatorio": True, "opciones": ["SI", "NO"],
+         "si": SI_OPOSICION},
+        {"id": "logo", "tipo": "archivo", "etiqueta": "Adjunte su logo en el tamaño 4x4", "obligatorio": True,
+         "ayuda": "Imagen (JPG, PNG, WEBP, GIF) o PDF. Máximo 10 MB.", "mimes": MIME_LOGO,
+         "si": [SI_OPOSICION, {"campo": "tiene_logo", "valor": "SI"}]},
+    ]
+
 
 FORMULARIOS = {
     "persona-fisica": {
@@ -149,38 +193,7 @@ FORMULARIOS = {
             {"id": "conyuge_dni", "tipo": "texto", "etiqueta": "DNI del cónyuge", "obligatorio": False,
              "cliente": "conyuge_dni", "formato": "dni", "si": {"campo": "estado_civil", "valor": "Casado/a"}},
             *[c for n in range(2, MAX_TITULARES + 1) for c in _campos_cotitular(n)],
-            {"id": "servicio", "tipo": "opcion", "etiqueta": "¿Qué servicio solicitás?", "obligatorio": True,
-             "opciones": [SERVICIO_NUEVA, SERVICIO_OPOSICION, SERVICIO_VISTAS]},
-            # ── Opción 1: registro de una nueva marca ──
-            {"id": "empresa_nombre", "tipo": "texto", "etiqueta": "Nombre de la empresa", "obligatorio": True, "si": SI_NUEVA},
-            {"id": "rubro", "tipo": "texto", "etiqueta": "Rubro", "obligatorio": True, "si": SI_NUEVA},
-            {"id": "actividad_descripcion", "tipo": "parrafo", "etiqueta": "Descripción de la actividad", "obligatorio": True,
-             "ayuda": "Es importante poder dar una descripción lo más cercana a la realidad para poder definir en qué clase debería ser registrada la marca.",
-             "si": SI_NUEVA},
-            {"id": "web_redes", "tipo": "texto", "etiqueta": "Web o Redes", "obligatorio": True, "si": SI_NUEVA},
-            {"id": "nueva_tiene_logo", "tipo": "opcion", "etiqueta": "¿Tiene logo?", "obligatorio": True, "opciones": ["SI", "NO"],
-             "si": SI_NUEVA},
-            {"id": "nueva_logo", "tipo": "archivo", "etiqueta": "Adjunte su logo", "obligatorio": True,
-             "ayuda": "Imagen (JPG, PNG, WEBP, GIF) o PDF. Máximo 10 MB.", "mimes": MIME_LOGO,
-             "si": [SI_NUEVA, {"campo": "nueva_tiene_logo", "valor": "SI"}]},
-            # ── Opción 2: responder a las oposiciones recibidas y Opción 3: respuesta de vistas ──
-            {"id": "nota_coinciden_inpi", "tipo": "nota", "etiqueta": "Importante",
-             "ayuda": "Revisá que todos los datos personales que completaste arriba (nombre, DNI, CUIL/CUIT y domicilio) "
-                      "coincidan con los ingresados a la hora de hacer la solicitud de la marca en el INPI.",
-             "si": SI_OPOSICION_O_VISTAS},
-            {"id": "marca_nombre", "tipo": "texto", "etiqueta": "Nombre de la marca", "obligatorio": True, "si": SI_OPOSICION_O_VISTAS},
-            {"id": "marca_descripcion", "tipo": "parrafo",
-             "etiqueta": "Describa de manera sencilla pero a la vez completa los servicios y/o productos que brinda su marca",
-             "obligatorio": False, "si": SI_OPOSICION_O_VISTAS},
-            {"id": "marca_web_redes", "tipo": "texto", "etiqueta": "Web o Redes", "obligatorio": False,
-             "ayuda": "La página web o las redes de la marca (por ejemplo, @tumarca en Instagram). Si no tiene, dejalo vacío.",
-             "si": SI_OPOSICION_O_VISTAS},
-            # el logo se pide solo para responder oposiciones
-            {"id": "tiene_logo", "tipo": "opcion", "etiqueta": "¿Tiene logo?", "obligatorio": True, "opciones": ["SI", "NO"],
-             "si": SI_OPOSICION},
-            {"id": "logo", "tipo": "archivo", "etiqueta": "Adjunte su logo en el tamaño 4x4", "obligatorio": True,
-             "ayuda": "Imagen (JPG, PNG, WEBP, GIF) o PDF. Máximo 10 MB.", "mimes": MIME_LOGO,
-             "si": [SI_OPOSICION, {"campo": "tiene_logo", "valor": "SI"}]},
+            *_campos_servicio("nombre, DNI, CUIL/CUIT y domicilio"),
         ],
     },
     "persona-juridica": {
@@ -204,6 +217,7 @@ FORMULARIOS = {
             {"id": "provincia", "tipo": "lista", "etiqueta": "Provincia", "obligatorio": True, "cliente": "provincia", "opciones": PROVINCIAS},
             {"id": "estatuto", "tipo": "archivo", "etiqueta": "Estatuto / contrato social / poder", "obligatorio": True,
              "ayuda": "PDF, imagen (JPG, PNG) o Word (.docx). Máximo 10 MB.", "mimes": MIME_DOCS},
+            *_campos_servicio("razón social, CUIT y domicilio"),
         ],
     },
 }
