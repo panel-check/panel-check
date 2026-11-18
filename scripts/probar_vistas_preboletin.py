@@ -513,6 +513,7 @@ def main():
     ap.add_argument("--dias-entre-revisiones-vista", type=int, default=1, help="días hasta volver a mirar una marca con vista sin contestar")
     ap.add_argument("--dias-despues-vencimiento", type=int, default=7, help="días después del vencimiento de la vista en que se deja de revisar")
     ap.add_argument("--hasta-hora", default="", help="hora de Argentina (HH:MM) a la que se corta la corrida, para no pisar los procesos de la noche")
+    ap.add_argument("--hoy", default="", help="fecha de Argentina (AAAA-MM-DD) que cuenta como «hoy» (corridas que pasan la medianoche: no vuelve a mirar lo revisado antes de las 00:00)")
     ap.add_argument("--solo-grilla", action="store_true",
                     help="como antes del 13/11/2026: mirar solo la Grilla y leer el expediente únicamente si la Grilla trae una vista")
     ap.add_argument("--repaso", action="store_true",
@@ -547,7 +548,7 @@ def main():
         cur.execute("SELECT count(*) FROM information_schema.columns WHERE table_name = 'marcas' AND column_name = 'vista_motivo'")
         if not cur.fetchone()[0]:
             sys.exit("Faltan las columnas de vista en la tabla marcas: se crean solas cuando el panel arranca con el último deploy. Reintentar en unos minutos.")
-    hoy_iso = hoy_argentina()
+    hoy_iso = args.hoy or hoy_argentina()  # --hoy: una corrida que pasa la medianoche sigue contando el mismo día
     if args.guardar:
         cerrar_denegadas_conocidas(conn)
         # Antes de elegir: las vistas ya conocidas en un acta cuya gemela (mismo nombre) se contactó no se revisan más.
