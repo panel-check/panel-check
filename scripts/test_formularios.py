@@ -198,7 +198,7 @@ class ServicioPersonaJuridica(unittest.TestCase):
 class VariosTitulares(unittest.TestCase):
     T2 = {"t2_nombre": "Ruiz Pedro", "t2_sexo": "Masculino", "t2_nacionalidad": "Argentina", "t2_dni": "29.888.777",
           "t2_cuit": "20298887771", "t2_domicilio": "Mitre 50", "t2_localidad": "Quilmes", "t2_provincia": "Buenos Aires",
-          "t2_codigo_postal": "1878", "t2_estado_civil": "Soltero/a"}
+          "t2_codigo_postal": "1878", "t2_estado_civil": "Soltero/a", "t2_porcentaje": "50"}
 
     def _slug(self):
         return next(k for k, f in fc.FORMULARIOS.items() if f["tipo_persona"] == "fisica")
@@ -207,11 +207,39 @@ class VariosTitulares(unittest.TestCase):
         with self.assertRaises(fc.ErrorFormulario) as e:
             fc.validar(self._slug(), {**BASE, **NUEVA, "cantidad_titulares": "2"}, {})
         self.assertIn("Titular 2: Apellido y Nombre", str(e.exception))
-        datos, _ = fc.validar(self._slug(), {**BASE, **NUEVA, **self.T2, "cantidad_titulares": "2"}, {})
+        datos, _ = fc.validar(self._slug(), {**BASE, **NUEVA, **self.T2, "cantidad_titulares": "2", "porcentaje": "50"}, {})
         self.assertEqual(datos["t2_dni"], "29888777")
         cot = fc.cotitulares(datos)
         self.assertEqual([c["nombre"] for c in cot], ["Ruiz Pedro"])
         self.assertIn("Ruiz Pedro", fc.datos_cliente(self._slug(), datos)["cotitulares"])
+        self.assertEqual(cot[0]["porcentaje"], "50")
+        self.assertEqual(fc.datos_cliente(self._slug(), datos)["porcentaje_titularidad"], "50")
+
+    def test_porcentaje_de_titularidad(self):
+        base = {**BASE, **NUEVA, **self.T2, "cantidad_titulares": "2"}
+        with self.assertRaises(fc.ErrorFormulario) as e:  # con varios titulares es obligatorio
+            fc.validar(self._slug(), {k: v for k, v in base.items() if k != "t2_porcentaje"}, {})
+        self.assertIn("Titular 2: Porcentaje de titularidad", str(e.exception))
+        with self.assertRaises(fc.ErrorFormulario) as e:
+            fc.validar(self._slug(), {**base, "porcentaje": "60"}, {})
+        self.assertIn("suman 110 %", str(e.exception))
+        with self.assertRaises(fc.ErrorFormulario):
+            fc.validar(self._slug(), {**base, "porcentaje": "cincuenta"}, {})
+        datos, _ = fc.validar(self._slug(), {**base, "porcentaje": "50 %", "t2_porcentaje": "50,0"}, {})
+        self.assertEqual((datos["porcentaje"], datos["t2_porcentaje"]), ("50", "50"))
+        # con un solo titular no se pregunta
+        datos, _ = fc.validar(self._slug(), {**BASE, **NUEVA, "porcentaje": "30"}, {})
+        self.assertNotIn("porcentaje", datos)
+
+    def test_hasta_seis_titulares_que_suman_100(self):
+        self.assertEqual(fc.MAX_TITULARES, 6)
+        extra = {"cantidad_titulares": "6", "porcentaje": "16,7"}
+        for n in range(2, 7):
+            extra.update({k.replace("t2_", f"t{n}_"): v for k, v in self.T2.items()})
+            extra[f"t{n}_nombre"] = f"Titular {n}"
+            extra[f"t{n}_porcentaje"] = "16,66"
+        datos, _ = fc.validar(self._slug(), {**BASE, **NUEVA, **extra}, {})
+        self.assertEqual(len(fc.cotitulares(datos)), 5)
 
     def test_un_titular_ignora_los_demas(self):
         datos, _ = fc.validar(self._slug(), {**BASE, **NUEVA, **self.T2, "cantidad_titulares": "1"}, {})
@@ -222,6 +250,7 @@ class VariosTitulares(unittest.TestCase):
     def test_cambia_poder_y_aviso(self):
         self.assertTrue(fc.cambia_poder({"t2_dni": "1"}, {"t2_dni": "2"}))
         self.assertTrue(fc.cambia_poder({"cantidad_titulares": "1"}, {"cantidad_titulares": "2"}))
+        self.assertTrue(fc.cambia_poder({"t6_nombre": "A"}, {"t6_nombre": "B"}))
         cuerpo = "Hola,\n\nTe adjunto el poder.\n\nSaludos,\nEquipo"
         self.assertEqual(fc.agregar_aviso_titulares(cuerpo, 1), cuerpo)
         con = fc.agregar_aviso_titulares(cuerpo, 3)

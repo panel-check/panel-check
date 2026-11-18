@@ -58,6 +58,7 @@ class ClienteNuevo(BaseModel):
     conyuge_dni: Optional[str] = None
     firmante_nombre: Optional[str] = None
     firmante_cargo: Optional[str] = None
+    porcentaje_titularidad: Optional[str] = None  # % del titular 1 si la marca tiene varios titulares
     referido: Optional[str] = None
 
 
@@ -85,6 +86,7 @@ class ClienteCambios(BaseModel):
     conyuge_dni: Optional[str] = None
     firmante_nombre: Optional[str] = None
     firmante_cargo: Optional[str] = None
+    porcentaje_titularidad: Optional[str] = None  # % del titular 1 si la marca tiene varios titulares
     referido: Optional[str] = None
 
 
@@ -370,7 +372,8 @@ def crear_router(verificar_login, conexion, crm) -> APIRouter:
             out["email"] = email
         for k, largo in (("telefono", 60), ("contacto", 200), ("notas", 4000), ("referido", 120)) + tuple(
                 (c, 300) for c in formularios_core.COLUMNAS_CLIENTE_NUEVAS if c != "tipo_persona"):
-            if hay(k):
+            # solo las columnas que se editan a mano (cotitulares viene únicamente del formulario)
+            if k in type(body).model_fields and hay(k):
                 out[k] = _limpio(getattr(body, k), largo)
         if hay("tipo_persona"):
             tp = (body.tipo_persona or "").strip() or None
