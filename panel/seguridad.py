@@ -41,9 +41,9 @@ CSP = "; ".join([
 ])
 
 # Páginas HTML de /static que se pueden abrir sin iniciar sesión: la pantalla de
-# ingreso y el formulario público para clientes. Las demás (Ayuda, Crons, Mails,
+# ingreso, el formulario público para clientes y la página para elegirlo (/formulario). Las demás (Ayuda, Crons, Mails,
 # Clientes, etc.) solo se sirven con sesión, igual que sus rutas (/ayuda, /crons...).
-HTML_PUBLICOS = {"/static/login.html", "/static/formulario.html"}
+HTML_PUBLICOS = {"/static/login.html", "/static/formulario.html", "/static/formulario_elegir.html"}
 
 
 def es_html_privado(ruta: str) -> bool:

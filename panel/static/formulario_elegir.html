@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="robots" content="noindex" />
+<title>Registro de marca – Elegí tu formulario</title>
+<link rel="icon" type="image/png" href="/static/favicon.png" />
+<link rel="apple-touch-icon" href="/static/apple-touch-icon.png" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" />
+<!-- Link único (/formulario): el cliente elige si la marca va a su nombre (Persona física) o al de una empresa
+     (Persona jurídica) y pasa al formulario que corresponde. Mismo estilo que formulario.html. -->
+<style>
+  :root {
+    --azul: #015197; --azul-oscuro: #013e74; --azul-claro: #e8f1fa;
+    --texto: #1f2430; --gris: #5b6472; --borde: #dfe3e9; --fondo: #f3f5f8;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: "Inter", -apple-system, "Segoe UI", Roboto, Arial, sans-serif; background: var(--fondo);
+         color: var(--texto); -webkit-font-smoothing: antialiased; line-height: 1.45; }
+  .pagina { max-width: 680px; margin: 0 auto; padding: 28px 16px 60px; }
+  .tarjeta { background: #fff; border: 1px solid var(--borde); border-radius: 12px; padding: 22px 24px; margin-bottom: 12px; }
+  .cabecera { border-top: 8px solid var(--azul); }
+  h1 { font-size: 24px; line-height: 1.25; margin: 0 0 8px; letter-spacing: -0.01em; }
+  .desc { color: var(--gris); margin: 0; }
+  a.opcion { display: block; text-decoration: none; color: inherit; transition: border-color .15s, box-shadow .15s; }
+  a.opcion:hover, a.opcion:focus-visible { border-color: var(--azul); box-shadow: 0 0 0 3px rgba(1,81,151,.12); outline: none; }
+  .opcion .fila { display: flex; align-items: flex-start; gap: 14px; }
+  .opcion .icono { flex-shrink: 0; width: 44px; height: 44px; border-radius: 10px; background: var(--azul-claro);
+                   display: grid; place-items: center; font-size: 22px; }
+  .opcion h2 { font-size: 18px; margin: 0 0 4px; }
+  .opcion .quien { margin: 0 0 8px; font-weight: 500; }
+  .opcion .pide { margin: 0; color: var(--gris); font-size: 14px; }
+  .opcion .ir { display: inline-block; margin-top: 12px; background: var(--azul); color: #fff; font-weight: 600; font-size: 15px;
+                padding: 10px 20px; border-radius: 8px; }
+  a.opcion:hover .ir { background: var(--azul-oscuro); }
+  .nota { background: var(--azul-claro); }
+  .nota strong { display: block; margin-bottom: 6px; }
+  .nota p { margin: 0; color: #1d3b5c; font-size: 14px; }
+  .nota p + p { margin-top: 6px; }
+  @media (max-width: 520px) { .tarjeta { padding: 18px 16px; } h1 { font-size: 21px; } .opcion .ir { display: block; text-align: center; } }
+</style>
+</head>
+<body>
+<main class="pagina">
+  <div class="tarjeta cabecera">
+    <h1>Formulario para el registro de tu marca</h1>
+    <p class="desc">Para empezar, contanos a nombre de quién va a quedar registrada la marca. Elegí una opción y completá el formulario: te lleva unos minutos.</p>
+  </div>
+
+  <a class="tarjeta opcion" href="/formulario/persona-fisica">
+    <div class="fila"><div class="icono" aria-hidden="true">👤</div><div>
+      <h2>Persona física</h2>
+      <p class="quien">La marca va a tu nombre (o al de varias personas, si son más de un titular).</p>
+      <p class="pide">Para emprendedores, profesionales y comercios que facturan con su CUIT personal (monotributo o responsable inscripto). Te vamos a pedir tus datos personales (DNI, CUIL y domicilio) y los de la marca.</p>
+      <span class="ir">Completar como persona física →</span>
+    </div></div>
+  </a>
+
+  <a class="tarjeta opcion" href="/formulario/persona-juridica">
+    <div class="fila"><div class="icono" aria-hidden="true">🏢</div><div>
+      <h2>Persona jurídica</h2>
+      <p class="quien">La marca va a nombre de una empresa o sociedad.</p>
+      <p class="pide">Para S.A., S.R.L., S.A.S., cooperativas, asociaciones o fundaciones. Te vamos a pedir la razón social, el CUIT, el domicilio, quién firma por la empresa, la constancia de CUIT y el estatuto o contrato social.</p>
+      <span class="ir">Completar como persona jurídica →</span>
+    </div></div>
+  </a>
+
+  <div class="tarjeta nota">
+    <strong>¿No sabés cuál elegir?</strong>
+    <p>Si facturás con tu propio CUIT (empieza con 20, 23, 24 o 27), elegí <strong>Persona física</strong>.</p>
+    <p>Si la empresa tiene un CUIT propio (empieza con 30, 33 o 34), elegí <strong>Persona jurídica</strong>.</p>
+  </div>
+</main>
+</body>
+</html>
