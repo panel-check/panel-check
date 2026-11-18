@@ -8,20 +8,33 @@ API de la pantalla Seguimientos (/seguimientos): trabajos puntuales de cada clie
   DELETE /api/trabajos/{id}                borrar
   POST   /api/trabajos/{id}/bitacora       agregar una nota a la bitácora
   DELETE /api/trabajos/{id}/bitacora/{bid} borrar una nota
+  POST   /api/trabajos/{id}/buscar-acta    buscar el acta en la base y, si no, en vivo en el INPI
+
+Detección del acta: al abrir el tablero (como mucho cada 10 minutos) se buscan en la base las actas
+de los trabajos que todavía no tienen (ver trabajos_core.elegir_acta); si una es segura se carga sola,
+se anota en la bitácora y, en un registro, la etapa pasa a «Presentada».
 
 La lógica (servicios, etapas, vencimientos, alertas, orden) está en trabajos_core.py.
 """
 
 import re
+import threading
+import time
 from typing import Optional
 
 import psycopg2.extras
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
+import buscador_inpi as bi
 import trabajos_core as tc
 
 RE_ACTA = re.compile(r"^\d{4,9}$")
+CADA_DETECCION = 600          # segundos entre detecciones automáticas al abrir el tablero
+MATRICULAS_FIJAS = {"2906"}   # matrícula de Pame (además de las de Clientes → Ajustes → Matrículas)
+ETAPA_PRESENTADA = 3          # «Presentada» en Registro de marca
+_ultima_deteccion = 0.0
+_candado_deteccion = threading.Lock()
 
 
 class TrabajoNuevo(BaseModel):
@@ -156,6 +169,84 @@ def crear_router(verificar_login, conexion) -> APIRouter:
             raise HTTPException(status_code=404, detail="No existe ese trabajo")
         return tc.completar(dict(t))
 
+    def _matriculas(cur):
+        try:
+            cur.execute("SELECT matricula FROM cartera_matriculas")
+            return MATRICULAS_FIJAS | {str(f["matricula"]) for f in cur.fetchall()}
+        except Exception:
+            return set(MATRICULAS_FIJAS)
+
+    def _candidatas_db(cur, trabajos):
+        """Solicitudes con un nombre parecido en el escaneo diario, en los boletines y en la cartera."""
+        patrones = sorted({tc.patron_ilike(t["marca"]) for t in trabajos})
+        clientes = sorted({t["cliente_id"] for t in trabajos})
+        out = []
+        consultas = [
+            ("escaneo", """SELECT acta, denominacion, titular, cuit, fecha_presentacion AS fecha,
+                                  matricula_agente AS matricula, clase, NULL::int AS cliente_id
+                           FROM solicitudes_escaneadas WHERE denominacion ILIKE ANY(%s)""", (patrones,)),
+            ("boletin", """SELECT acta, COALESCE(NULLIF(denominacion_inpi, ''), denominacion) AS denominacion, titular, cuit,
+                                  fecha_presentacion::date AS fecha, matricula_agente AS matricula, clase, NULL::int AS cliente_id
+                           FROM marcas WHERE COALESCE(NULLIF(denominacion_inpi, ''), denominacion) ILIKE ANY(%s)""", (patrones,)),
+            ("cartera", """SELECT acta, denominacion, titular, cuit, fecha_presentacion AS fecha,
+                                  matricula_agente AS matricula, clase, cliente_id
+                           FROM cartera_marcas WHERE cliente_id = ANY(%s)""", (clientes,)),
+        ]
+        for fuente, sql, val in consultas:
+            try:
+                cur.execute("SAVEPOINT cand")
+                cur.execute(sql, val)
+                out += [{**dict(f), "fuente": fuente} for f in cur.fetchall()]
+                cur.execute("RELEASE SAVEPOINT cand")
+            except Exception as e:   # una tabla que falta no frena las demás
+                cur.execute("ROLLBACK TO SAVEPOINT cand")
+                print(f"[seguimientos] candidatas de {fuente}: {e}")
+        return out
+
+    def _asignar(cur, t, elegida, evaluadas, origen):
+        texto = tc.texto_deteccion(elegida, evaluadas, origen)
+        cur.execute(
+            "UPDATE trabajos SET acta = %s, etapa = CASE WHEN servicio = 'registro' AND etapa < %s THEN %s ELSE etapa END, "
+            "modificado_en = now(), modificado_por = 'sistema' WHERE id = %s AND acta IS NULL",
+            (elegida["acta"], ETAPA_PRESENTADA, ETAPA_PRESENTADA, t["id"]))
+        if cur.rowcount:
+            cur.execute("INSERT INTO trabajos_bitacora (trabajo_id, fecha, texto, usuario) VALUES (%s, %s, %s, 'sistema')",
+                        (t["id"], tc.hoy_ar(), texto))
+        return texto
+
+    def _detectar(cur, solo_id=None):
+        """Busca en la base el acta de los trabajos activos sin acta. Devuelve {id: (elegida, evaluadas, texto)}."""
+        cond = "t.acta IS NULL AND t.estado = 'activo'" + (" AND t.id = %s" if solo_id else "")
+        cur.execute(f"SELECT t.id, t.marca, t.servicio, t.contratacion, t.cliente_id, c.nombre AS cliente_nombre, c.cuit AS cliente_cuit "
+                    f"FROM trabajos t JOIN clientes c ON c.id = t.cliente_id WHERE {cond}", (solo_id,) if solo_id else None)
+        trabajos = cur.fetchall()
+        if not trabajos:
+            return {}
+        candidatas = _candidatas_db(cur, trabajos)
+        matriculas = _matriculas(cur)
+        res = {}
+        for t in trabajos:
+            suyas = [c for c in candidatas if c["fuente"] != "cartera" or c.get("cliente_id") == t["cliente_id"]]
+            cliente = {"nombre": t["cliente_nombre"], "cuit": t["cliente_cuit"]}
+            elegida, evaluadas = tc.elegir_acta(t, suyas, cliente, matriculas)
+            texto = _asignar(cur, t, elegida, evaluadas, "escaneo diario del INPI y base del panel") if elegida else None
+            res[t["id"]] = (elegida, evaluadas, texto)
+        return res
+
+    def _deteccion_periodica(conn, cur):
+        global _ultima_deteccion
+        if time.time() - _ultima_deteccion < CADA_DETECCION or not _candado_deteccion.acquire(blocking=False):
+            return
+        try:
+            _ultima_deteccion = time.time()
+            _detectar(cur)
+            conn.commit()
+        except Exception as e:
+            conn.rollback()
+            print(f"[seguimientos] detección de actas: {e}")
+        finally:
+            _candado_deteccion.release()
+
     @router.get("/api/trabajos")
     def listar(estado: str = "activo", q: str = "", _: str = Depends(verificar_login)):
         cond, val = [], []
@@ -167,6 +258,7 @@ def crear_router(verificar_login, conexion) -> APIRouter:
             val += [like, like, q.strip(), like]
         donde = (" WHERE " + " AND ".join(cond)) if cond else ""
         with conexion() as conn, rcur(conn) as cur:
+            _deteccion_periodica(conn, cur)
             cur.execute(SQL_LISTA + donde, val)
             hoy = tc.hoy_ar()
             filas = tc.ordenar([tc.completar(dict(f), hoy) for f in cur.fetchall()])
@@ -226,9 +318,15 @@ def crear_router(verificar_login, conexion) -> APIRouter:
         if not campos:
             raise HTTPException(status_code=400, detail="No hay cambios")
         sets = [f"{k} = %s" for k in campos] + ["modificado_en = now()", "modificado_por = %s"]
+        extra = []
         if "estado" in campos:
             sets.append("cerrado_en = CASE WHEN %s = 'cerrado' THEN now() ELSE NULL END")
-        val = list(campos.values()) + [usuario] + ([campos["estado"]] if "estado" in campos else [])
+            extra.append(campos["estado"])
+        if campos.get("acta") and "etapa" not in campos:
+            # Se cargó el acta: si era un registro todavía sin presentar, pasa a «Presentada».
+            sets.append("etapa = CASE WHEN servicio = 'registro' AND etapa < %s THEN %s ELSE etapa END")
+            extra += [ETAPA_PRESENTADA, ETAPA_PRESENTADA]
+        val = list(campos.values()) + [usuario] + extra
         with conexion() as conn, rcur(conn) as cur:
             if "cliente_id" in campos:
                 cur.execute("SELECT 1 FROM clientes WHERE id = %s", (campos["cliente_id"],))
@@ -239,6 +337,51 @@ def crear_router(verificar_login, conexion) -> APIRouter:
                 raise HTTPException(status_code=404, detail="No existe ese trabajo")
             conn.commit()
             return {"trabajo": _uno(cur, tid)}
+
+    @router.post("/api/trabajos/{tid}/buscar-acta")
+    def buscar_acta(tid: int, usuario: str = Depends(verificar_login)):
+        """Primero en la base; si no aparece segura, en vivo en el INPI por denominación. Si tampoco es
+        segura, devuelve las candidatas para que se elija una en la ficha."""
+        with conexion() as conn, rcur(conn) as cur:
+            t = _uno(cur, tid)
+            if t.get("acta"):
+                return {"asignada": t["acta"], "texto": "El trabajo ya tiene acta.", "candidatas": []}
+            res = _detectar(cur, solo_id=tid).get(tid)
+            conn.commit()
+            if res and res[0]:
+                return {"asignada": res[0]["acta"], "texto": res[2], "candidatas": _publicas(res[1])}
+            evaluadas_db = res[1] if res else []
+            contr = tc.a_fecha(t.get("contratacion"))
+            desde = (contr - tc._dt.timedelta(days=tc.DIAS_ANTES_CONTRATACION)).isoformat() if contr else ""
+            try:
+                r = bi.buscar_avanzada({"denominacion": t["marca"], "ingreso_desde": desde, "limit": 100})
+            except bi.BuscadorError as e:
+                return {"asignada": None, "texto": f"El INPI no respondió: {e}", "candidatas": _publicas(evaluadas_db),
+                        "error_inpi": True}
+            except Exception as e:
+                return {"asignada": None, "texto": f"El INPI no respondió ({e.__class__.__name__}). Probá de nuevo en un rato.",
+                        "candidatas": _publicas(evaluadas_db), "error_inpi": True}
+            cand = [{"acta": f.get("acta"), "denominacion": f.get("denominacion"), "titular": f.get("titulares"),
+                     "cuit": f.get("cuit"), "fecha": f.get("fecha_ingreso"), "clase": f.get("clase"),
+                     "estado": f.get("estado"), "fuente": "inpi"} for f in r.get("filas") or []]
+            cur.execute("SELECT nombre, cuit FROM clientes WHERE id = %s", (t["cliente_id"],))
+            cliente = cur.fetchone() or {}
+            elegida, evaluadas = tc.elegir_acta(t, cand + evaluadas_db, cliente, _matriculas(cur))
+            if elegida:
+                texto = _asignar(cur, t, elegida, evaluadas, "búsqueda en el INPI")
+                conn.commit()
+                return {"asignada": elegida["acta"], "texto": texto, "candidatas": _publicas(evaluadas)}
+            if not evaluadas:
+                texto = (f"No hay en el INPI ninguna solicitud «{t['marca']}» presentada desde el "
+                         f"{(contr - tc._dt.timedelta(days=tc.DIAS_ANTES_CONTRATACION)).strftime('%d/%m/%Y') if contr else 'principio'}. "
+                         "Si se presentó hoy, puede tardar un día en aparecer.")
+            else:
+                texto = "Hay solicitudes con ese nombre, pero ninguna es seguro que sea la nuestra: elegí la correcta."
+            return {"asignada": None, "texto": texto, "candidatas": _publicas(evaluadas)}
+
+    def _publicas(evaluadas):
+        return [{k: e.get(k) for k in ("acta", "denominacion", "titular", "fecha", "clase", "estado", "fuente", "segura", "motivos")}
+                for e in evaluadas][:30]
 
     @router.delete("/api/trabajos/{tid}")
     def borrar(tid: int, _: str = Depends(verificar_login)):

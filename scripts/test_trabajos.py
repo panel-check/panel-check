@@ -110,5 +110,50 @@ class Varios(unittest.TestCase):
         self.assertTrue(all("ON CONFLICT (clave_carga) DO NOTHING" in s for s, _ in ejecutadas if "INSERT" in s))
 
 
+class DeteccionActa(unittest.TestCase):
+    T = {"id": 2, "marca": "TIMBEROS", "servicio": "registro", "contratacion": "2026-10-16", "cliente_id": 32}
+    CLIENTE = {"nombre": "Leonardo Mazziotti", "cuit": "20300000001"}
+
+    def _c(self, acta, **k):
+        base = {"acta": acta, "denominacion": "TIMBEROS", "titular": "BBATACAZO SRL", "cuit": "30711111111",
+                "fecha": "2026-11-10", "matricula": None, "fuente": "escaneo", "clase": 41}
+        base.update(k)
+        return base
+
+    def test_segura_por_matricula_del_estudio(self):
+        elegida, _ = tc.elegir_acta(self.T, [self._c("4812000", matricula="2906")], self.CLIENTE, {"2906"})
+        self.assertEqual(elegida["acta"], "4812000")
+        self.assertIn("matrícula", elegida["motivos"][0])
+
+    def test_segura_por_cuit_o_nombre_del_cliente(self):
+        e, _ = tc.elegir_acta(self.T, [self._c("4812001", cuit="20300000001")], self.CLIENTE, set())
+        self.assertEqual(e["acta"], "4812001")
+        e, _ = tc.elegir_acta(self.T, [self._c("4812002", titular="MAZZIOTTI LEONARDO 100.00%")], self.CLIENTE, set())
+        self.assertEqual(e["acta"], "4812002")
+
+    def test_dudosa_no_se_asigna(self):
+        # Mismo nombre pero de un tercero (otro CUIT, otro agente): se muestra pero no se carga sola
+        e, evaluadas = tc.elegir_acta(self.T, [self._c("4800000", matricula="1234")], self.CLIENTE, {"2906"})
+        self.assertIsNone(e)
+        self.assertEqual([x["acta"] for x in evaluadas], ["4800000"])
+
+    def test_otro_nombre_o_muy_vieja_se_descarta(self):
+        _, ev = tc.elegir_acta(self.T, [self._c("1", denominacion="TIMBEROS PLUS", matricula="2906"),
+                                        self._c("2", fecha="2025-01-01", matricula="2906")], self.CLIENTE, {"2906"})
+        self.assertEqual(ev, [])
+
+    def test_tildes_y_varias_clases(self):
+        t = {**self.T, "marca": "CINE CATASTROFE"}
+        cands = [self._c("4812100", denominacion="Cine Catástrofe", matricula="2906", clase=41),
+                 self._c("4812050", denominacion="CINE  CATÁSTROFE", matricula="2906", clase=9)]
+        e, ev = tc.elegir_acta(t, cands, self.CLIENTE, {"2906"})
+        self.assertEqual(e["acta"], "4812050")          # la de número más bajo
+        texto = tc.texto_deteccion(e, ev, "prueba")
+        self.assertIn("4812100", texto)                   # la otra clase queda nombrada en la bitácora
+
+    def test_patron_sql(self):
+        self.assertEqual(tc.patron_ilike("Cine Catástrofe"), "%C_N_%C_T_STR_F_%")
+
+
 if __name__ == "__main__":
     unittest.main()
