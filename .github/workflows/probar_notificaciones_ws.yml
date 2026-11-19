@@ -1,0 +1,58 @@
+name: Probar notificaciones INPI (webservice Autogestión)
+
+on:
+  workflow_dispatch:
+    inputs:
+      desde:
+        description: "Fecha inicial AAAA-MM-DD (vacío = hace un año)"
+        required: false
+      hasta:
+        description: "Fecha final AAAA-MM-DD (vacío = hoy)"
+        required: false
+      acta:
+        description: "Número de acta (vacío = todas)"
+        required: false
+      tipo:
+        description: "Código de tipo de notificación (vacío = todos; 20 = Cédula)"
+        required: false
+
+permissions:
+  contents: read
+
+# Un solo carril contra INPI: si hay otro proceso de INPI corriendo, este espera su turno.
+concurrency:
+  group: inpi-lane
+  cancel-in-progress: false
+
+env:
+  INPI_RELAY_URL: ${{ secrets.INPI_RELAY_URL }}
+  INPI_RELAY_CLAVE: ${{ secrets.INPI_RELAY_CLAVE }}
+  PYTHONPATH: ${{ github.workspace }}/panel/relay_site
+
+jobs:
+  probar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: "3.11"
+
+      - name: Instalar dependencias
+        run: pip install -r requirements.txt
+
+      - name: Consultar notificaciones (en el log solo la estructura; la respuesta completa va por mail)
+        run: |
+          cd scripts
+          python3 probar_notificaciones_ws.py --desde "$DESDE" --hasta "$HASTA" --acta "$ACTA" --tipo "$TIPO"
+        env:
+          PYTHONUNBUFFERED: "1"
+          DESDE: ${{ inputs.desde }}
+          HASTA: ${{ inputs.hasta }}
+          ACTA: ${{ inputs.acta }}
+          TIPO: ${{ inputs.tipo }}
+          INPI_HASH_DELEGACION: ${{ secrets.INPI_HASH_DELEGACION }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          RESEND_FROM: ${{ secrets.RESEND_FROM }}
+          NOTIFICAR_A: ${{ secrets.NOTIFICAR_A }}
