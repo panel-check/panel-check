@@ -87,7 +87,7 @@ function tarjeta(t) {
   const venc = t.vencimiento && t.alerta?.nivel !== "cumplido" ? `<span class="venc-fecha">${fecha(t.vencimiento)}</span>` : "";
   const inf = t.informes ? `<span class="sg-inf" title="${t.informes} informe${t.informes > 1 ? "s" : ""} de esta marca">📄 ${t.informes}</span>` : "";
   const sigue = t.estado !== "cerrado" && t.proxima_etapa
-    ? `<div class="sg-sigue" title="Próxima etapa"><span class="flecha" aria-hidden="true">→</span>${esc(t.proxima_etapa)}</div>` : "";
+    ? `<div class="sg-sigue" title="Próxima etapa"><span class="prox">Prox.</span>${esc(t.proxima_etapa)}</div>` : "";
   const acta = t.acta_efectiva ? `<span class="acta">Acta ${esc(t.acta_efectiva)}</span>` : `<span class="acta">Sin acta</span>`;
   return `<button type="button" class="sg-card ${t.estado === "cerrado" ? "cerrado" : ""}" data-id="${t.id}" style="--sg-color:${s.color}">
     <div class="marca">${esc(t.marca)}</div>
