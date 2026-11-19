@@ -51,6 +51,33 @@ class Alerta(unittest.TestCase):
         self.assertEqual(tc.alerta("vista", "2026-10-29", "cerrado", hoy=HOY)["nivel"], "cerrado")
 
 
+class PlazoCumplido(unittest.TestCase):
+    def test_vista_con_escrito_presentado(self):
+        a = tc.alerta("vista", "2026-10-10", hoy=HOY, etapa=3)        # vencida, pero ya se contestó
+        self.assertEqual((a["nivel"], a["texto"]), ("cumplido", "✓ Escrito presentado"))
+        self.assertEqual(tc.alerta("vista", "2026-10-29", hoy=HOY, etapa=2)["nivel"], "verde")
+
+    def test_oposicion_con_acuerdo(self):
+        self.assertEqual(tc.alerta("oposicion", "2026-11-04", hoy=HOY, etapa=5)["nivel"], "cumplido")
+        self.assertEqual(tc.alerta("oposicion", "2026-11-04", hoy=HOY, etapa=4)["nivel"], "verde")
+
+    def test_cumplidos_van_despues_de_los_pendientes(self):
+        filas = [tc.completar({"marca": "HECHA", "servicio": "vista", "notificacion": "2026-10-20", "estado": "activo", "etapa": 3}, HOY),
+                 tc.completar({"marca": "SIN", "servicio": "vista", "notificacion": None, "estado": "activo", "etapa": 1}, HOY),
+                 tc.completar({"marca": "PEND", "servicio": "vista", "notificacion": "2026-11-05", "estado": "activo", "etapa": 1}, HOY)]
+        self.assertEqual([t["marca"] for t in tc.ordenar(filas)], ["PEND", "SIN", "HECHA"])
+
+
+class Informes(unittest.TestCase):
+    def test_separar_por_marca(self):
+        suyos, otros = tc.separar_informes({"marca": "AKRO LAB"}, [
+            {"id": 1, "tipo": "cliente", "marca": "Akro Lab"}, {"id": 2, "tipo": "interno", "marca": "AKRO LAB"},
+            {"id": 3, "tipo": "cliente", "marca": "OTRA"}])
+        self.assertEqual([i["id"] for i in suyos], [1, 2])
+        self.assertEqual(suyos[0]["tipo_nombre"], "Informe preliminar")
+        self.assertEqual([i["id"] for i in otros], [3])
+
+
 class Orden(unittest.TestCase):
     def _t(self, nombre, sid, notif=None, contr="2026-11-01", estado="activo"):
         return tc.completar({"marca": nombre, "servicio": sid, "notificacion": notif,

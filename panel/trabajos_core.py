@@ -27,10 +27,10 @@ NOTION_PROCESOS = "https://www.notion.so/f6a567ff9f074f22b8dccde2283af8c5"
 # Orden de las columnas del tablero: primero las que tienen vencimiento (vista, oposición).
 SERVICIOS = [
     {"id": "vista", "nombre": "Contestación de vista", "corto": "Vista", "color": "#7c3aed",
-     "plazo": ("dias", 30),
+     "plazo": ("dias", 30), "cumple_en": 3,   # con el escrito presentado el plazo ya está cumplido
      "etapas": ["Seña cobrada", "Análisis", "Escrito presentado", "Resuelta"]},
     {"id": "oposicion", "nombre": "Oposición + negociación", "corto": "Oposición", "color": "#ea580c",
-     "plazo": ("meses", 3),
+     "plazo": ("meses", 3), "cumple_en": 5,   # con acuerdo o retiro ya no corre la negociación
      "etapas": ["Seña cobrada", "Análisis", "Contacto con el oponente", "Negociando", "Acuerdo o retiro"]},
     {"id": "oposicion_adm", "nombre": "Oposición administrativa", "corto": "Opo. administrativa", "color": "#dc2626",
      "plazo": None,
@@ -53,7 +53,7 @@ def servicio(sid):
 def servicios_publicos():
     """Lo que necesita la pantalla (sin tuplas)."""
     return [{"id": s["id"], "nombre": s["nombre"], "corto": s["corto"], "color": s["color"],
-             "etapas": s["etapas"], "con_vencimiento": s["plazo"] is not None,
+             "etapas": s["etapas"], "con_vencimiento": s["plazo"] is not None, "cumple_en": s.get("cumple_en"),
              "plazo_texto": _plazo_texto(s["plazo"])} for s in SERVICIOS]
 
 
@@ -97,15 +97,24 @@ def vencimiento(sid, notificacion):
     return sumar_meses(n, cant) if unidad == "meses" else n + _dt.timedelta(days=cant)
 
 
-def alerta(sid, notificacion, estado="activo", hoy=None):
+def plazo_cumplido(sid, etapa) -> bool:
+    """La etapa ya cumple el plazo: vista con el escrito presentado, oposición con acuerdo o retiro."""
+    s = servicio(sid)
+    return bool(s and s.get("cumple_en") and int(etapa or 0) >= s["cumple_en"])
+
+
+def alerta(sid, notificacion, estado="activo", hoy=None, etapa=0):
     """{nivel, texto, dias}. Niveles: vencido, rojo (≤3 días), amarillo (≤7), verde,
-    falta (servicio con plazo sin notificación cargada), ninguno (sin vencimiento), cerrado."""
+    falta (servicio con plazo sin notificación cargada), cumplido (la etapa ya cumplió el plazo),
+    ninguno (sin vencimiento), cerrado."""
     hoy = hoy or hoy_ar()
     s = servicio(sid)
     if estado == "cerrado":
         return {"nivel": "cerrado", "texto": "Cerrado", "dias": None}
     if not s or not s["plazo"]:
         return {"nivel": "ninguno", "texto": "Sin vencimiento", "dias": None}
+    if plazo_cumplido(sid, etapa):
+        return {"nivel": "cumplido", "texto": "✓ " + s["etapas"][s["cumple_en"] - 1], "dias": None}
     v = vencimiento(sid, notificacion)
     if not v:
         return {"nivel": "falta", "texto": "Cargar notificación", "dias": None}
@@ -121,14 +130,16 @@ def clave_orden(t):
     """Orden dentro de cada columna: 1) los que tienen vencimiento, del más cercano al más
     lejano (los vencidos quedan arriba de todo); 2) los de servicios con plazo a los que les
     falta cargar la notificación; 3) los que no tienen vencimiento, lo contratado más nuevo
-    arriba. Los cerrados siempre al final."""
+    arriba; 4) los que ya cumplieron el plazo (vista contestada, oposición resuelta). Los cerrados
+    siempre al final."""
     v = a_fecha(t.get("vencimiento"))
     c = a_fecha(t.get("contratacion")) or _dt.date(1900, 1, 1)
     cerrado = t.get("estado") == "cerrado"
-    if v:
-        return (1 if cerrado else 0, 0, v.toordinal(), 0)
     nivel = (t.get("alerta") or {}).get("nivel")
-    return (1 if cerrado else 0, 1 if nivel == "falta" else 2, 0, -c.toordinal())
+    if v and nivel in ("vencido", "rojo", "amarillo", "verde"):
+        return (1 if cerrado else 0, 0, v.toordinal(), 0)
+    grupo = {"falta": 1, "cumplido": 3}.get(nivel, 2)
+    return (1 if cerrado else 0, grupo, 0, -c.toordinal())
 
 
 def ordenar(trabajos):
@@ -157,7 +168,7 @@ def completar(t, hoy=None):
     t["etapa_nombre"] = etapas[etapa - 1] if etapa else "Esperando seña"
     t["proxima_etapa"] = etapas[etapa] if etapa < len(etapas) else None
     t["vencimiento"] = vencimiento(t.get("servicio"), t.get("notificacion"))
-    t["alerta"] = alerta(t.get("servicio"), t.get("notificacion"), t.get("estado") or "activo", hoy)
+    t["alerta"] = alerta(t.get("servicio"), t.get("notificacion"), t.get("estado") or "activo", hoy, etapa)
     return t
 
 
@@ -336,3 +347,18 @@ def texto_deteccion(elegida, evaluadas, origen) -> str:
     if otras:
         texto += f" También hay con el mismo nombre: actas {', '.join(otras)} (otra clase o tipo)."
     return texto
+
+
+# ── Informes ya hechos (Más → Informes / ficha del cliente) ───────────────
+TIPOS_INFORME = {"cliente": "Informe preliminar", "interno": "Informe IA interno",
+                 "oposicion": "Informe Oposición IA", "vista": "Informe Vista IA"}
+
+
+def separar_informes(trabajo, informes):
+    """(de esta marca, otros del cliente). La marca se compara sin tildes ni signos."""
+    m = comparable(trabajo.get("marca"))
+    suyos, otros = [], []
+    for i in informes:
+        i = {**i, "tipo_nombre": TIPOS_INFORME.get(i.get("tipo"), i.get("tipo"))}
+        (suyos if comparable(i.get("marca")) == m else otros).append(i)
+    return suyos, otros
