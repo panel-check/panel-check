@@ -142,7 +142,10 @@ def _campos(body, parcial):
 SQL_LISTA = """
     SELECT t.*, c.nombre AS cliente, c.email AS cliente_email, c.telefono AS cliente_telefono,
            COALESCE(t.acta, cm.acta) AS acta_efectiva, (t.acta IS NULL AND cm.acta IS NOT NULL) AS acta_auto,
-           cm.estado_tramite, cm.ultimo_movimiento, cm.ultimo_movimiento_fecha
+           cm.estado_tramite, cm.ultimo_movimiento, cm.ultimo_movimiento_fecha,
+           (SELECT COUNT(*) FROM informes_viabilidad i
+             WHERE i.cliente_id = t.cliente_id AND i.archivado_en IS NULL
+               AND upper(btrim(i.marca)) = upper(btrim(t.marca))) AS informes
     FROM trabajos t
     JOIN clientes c ON c.id = t.cliente_id
     LEFT JOIN LATERAL (
@@ -289,7 +292,12 @@ def crear_router(verificar_login, conexion) -> APIRouter:
                 "SELECT id, fecha, texto, usuario, creado_en FROM trabajos_bitacora "
                 "WHERE trabajo_id = %s ORDER BY fecha DESC, id DESC", (tid,))
             bitacora = cur.fetchall()
+            cur.execute(
+                "SELECT id, tipo, marca, generado_en, generado_por FROM informes_viabilidad "
+                "WHERE cliente_id = %s AND archivado_en IS NULL ORDER BY generado_en DESC LIMIT 50", (t["cliente_id"],))
+            informes, otros_informes = tc.separar_informes(t, cur.fetchall())
         return {"trabajo": t, "expediente": expediente, "bitacora": bitacora,
+                "informes": informes, "otros_informes": otros_informes,
                 "servicios": tc.servicios_publicos(), "notion_procesos": tc.NOTION_PROCESOS}
 
     @router.post("/api/trabajos")

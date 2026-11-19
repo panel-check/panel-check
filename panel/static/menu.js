@@ -726,8 +726,7 @@
   const SECCIONES = [
     { id: "seguimientos", nombre: "Seguimientos", href: "/seguimientos", color: "#015197",
       svg: '<rect x="3" y="4" width="18" height="17" rx="2"/><path d="M8 2v4M16 2v4M7 11l2 2 4-4M7 17h10"/>' },
-    { id: "crm", nombre: "CRM", href: "/crm", color: "#015197",
-      svg: '<rect x="3" y="4" width="5" height="16" rx="1.5"/><rect x="10" y="4" width="5" height="11" rx="1.5"/><rect x="17" y="4" width="4" height="7" rx="1.5"/>' },
+    // CRM oculto del menú por ahora (18/11/2026): la página /crm sigue andando si se entra directo.
     { id: "boletines", nombre: "Boletines", href: "/boletines", color: "#475569",
       svg: '<path d="M4 4h13a2 2 0 0 1 2 2v14H6a2 2 0 0 1-2-2z"/><path d="M19 8h1a1 1 0 0 1 1 1v9a2 2 0 0 1-2 2"/><path d="M8 8h7M8 12h7M8 16h4"/>' },
     { id: "crons", nombre: "Crons", href: "/crons", color: "#475569",

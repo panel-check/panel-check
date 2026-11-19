@@ -84,12 +84,13 @@ function pintarResumen(trabajos) {
 function tarjeta(t) {
   const s = servicioDe(t.servicio);
   const barra = s.etapas.map((_, i) => `<span class="${i < t.etapa ? "hecha" : ""}"></span>`).join("");
-  const venc = t.vencimiento ? `<span class="venc-fecha">${fecha(t.vencimiento)}</span>` : "";
+  const venc = t.vencimiento && t.alerta?.nivel !== "cumplido" ? `<span class="venc-fecha">${fecha(t.vencimiento)}</span>` : "";
+  const inf = t.informes ? `<span class="sg-inf" title="${t.informes} informe${t.informes > 1 ? "s" : ""} de esta marca">📄 ${t.informes}</span>` : "";
   const acta = t.acta_efectiva ? `<span class="acta">Acta ${esc(t.acta_efectiva)}</span>` : `<span class="acta">Sin acta</span>`;
   return `<button type="button" class="sg-card ${t.estado === "cerrado" ? "cerrado" : ""}" data-id="${t.id}" style="--sg-color:${s.color}">
     <div class="marca">${esc(t.marca)}</div>
     <div class="cliente">${esc(t.cliente)}</div>
-    <div class="fila">${t.alerta?.nivel === "ninguno" ? `<span class="contratado">Contratado el ${fecha(t.contratacion)}</span>` : chipAlerta(t.alerta) + venc}</div>
+    <div class="fila">${t.alerta?.nivel === "ninguno" ? `<span class="contratado">Contratado el ${fecha(t.contratacion)}</span>` : chipAlerta(t.alerta) + venc}${inf}</div>
     <div class="sg-avance"><div class="barra">${barra}</div>
       <div class="txt"><span><b>${esc(t.etapa_nombre)}</b>${t.etapas_total ? ` · ${t.etapa}/${t.etapas_total}` : ""}</span>${acta}</div></div>
   </button>`;
@@ -143,6 +144,8 @@ function bloqueCuenta(t, s) {
   const a = t.alerta;
   if (a.nivel === "ninguno") return "";
   if (a.nivel === "cerrado") return `<div class="sg-cuenta cerrado"><div class="det"><b>Trabajo cerrado</b><br>Ya no cuenta para los vencimientos.</div></div>`;
+  if (a.nivel === "cumplido")
+    return `<div class="sg-cuenta cumplido"><div class="num">✓</div><div class="det"><b>Plazo cumplido</b><br>${esc(a.texto.replace("✓ ", ""))}${t.vencimiento ? ` · el plazo vencía el ${fecha(t.vencimiento)}` : ""}</div></div>`;
   if (a.nivel === "falta")
     return `<div class="sg-cuenta falta"><div class="num">?</div><div class="det"><b>Falta la fecha de notificación</b><br>Cargala abajo y el vencimiento se calcula solo (${esc(s.plazo_texto)}).</div></div>`;
   const dias = Math.abs(a.dias);
@@ -196,6 +199,17 @@ function bloqueExpediente(d) {
     ${lineaTiempo(d)}</div>`;
 }
 
+function bloqueInformes(d) {
+  const item = (i) => `<li><a href="/informes/${i.id}" target="_blank" rel="noopener"><b>${esc(i.tipo_nombre)}</b>${i.marca ? ` · ${esc(i.marca)}` : ""}</a>
+      <small>${fecha(i.generado_en)}${i.generado_por ? ` · ${esc(i.generado_por)}` : ""}</small></li>`;
+  const suyos = d.informes || [], otros = d.otros_informes || [];
+  if (!suyos.length && !otros.length) return "";
+  return `<div class="sg-bloque"><h3>📄 Informes <span class="der"><a href="/clientes?cliente=${d.trabajo.cliente_id}" target="_blank" rel="noopener">Ver en el cliente →</a></span></h3>
+    ${suyos.length ? `<ul class="sg-informes">${suyos.map(item).join("")}</ul>` : '<p class="sg-exp-aviso">No hay informes de esta marca.</p>'}
+    ${otros.length ? `<details class="sg-otros"><summary>Otros informes del cliente (${otros.length})</summary><ul class="sg-informes">${otros.map(item).join("")}</ul></details>` : ""}
+  </div>`;
+}
+
 function pintarFicha(d) {
   const t = d.trabajo;
   const s = servicioDe(t.servicio);
@@ -236,6 +250,7 @@ function pintarFicha(d) {
           <label class="ancho">Comprobante <input type="url" data-campo="comprobante" value="${esc(t.comprobante || "")}" placeholder="Link al comprobante de pago" /></label>
           <label class="ancho">Notas <textarea data-campo="notas" rows="3">${esc(t.notas || "")}</textarea></label>
         </div></div>
+      ${bloqueInformes(d)}
       ${bloqueExpediente(d)}
       <div class="sg-pie">
         <button type="button" class="sg-btn sg-btn-suave" data-estado-trabajo="${t.estado === "cerrado" ? "activo" : "cerrado"}">${t.estado === "cerrado" ? "↩ Reabrir trabajo" : "✓ Cerrar trabajo"}</button>
