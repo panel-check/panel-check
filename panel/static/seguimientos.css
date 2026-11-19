@@ -72,6 +72,8 @@
 .sg-alerta.falta { background: #fff7ed; color: #c2410c; border: 1px dashed #fdba74; }
 .sg-alerta.ninguno, .sg-alerta.cerrado { background: #f1f3f6; color: var(--gris); font-weight: 600; }
 .sg-card .venc-fecha { font-size: 11.5px; color: var(--gris); }
+.sg-card .sg-sigue { display: inline-flex; align-items: center; gap: 5px; margin-top: 8px; padding: 3px 9px; border-radius: 999px; font-size: 11.5px; font-weight: 600; color: var(--sg-color, #4b5563); background: color-mix(in srgb, var(--sg-color, #9aa1ab) 12%, white); border: 1px solid color-mix(in srgb, var(--sg-color, #9aa1ab) 30%, white); }
+.sg-card .sg-sigue .flecha { font-size: 12.5px; line-height: 1; }
 .sg-card .contratado { font-size: 12px; color: var(--gris); }
 
 /* Avance por etapas */

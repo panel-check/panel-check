@@ -86,6 +86,8 @@ function tarjeta(t) {
   const barra = s.etapas.map((_, i) => `<span class="${i < t.etapa ? "hecha" : ""}"></span>`).join("");
   const venc = t.vencimiento && t.alerta?.nivel !== "cumplido" ? `<span class="venc-fecha">${fecha(t.vencimiento)}</span>` : "";
   const inf = t.informes ? `<span class="sg-inf" title="${t.informes} informe${t.informes > 1 ? "s" : ""} de esta marca">📄 ${t.informes}</span>` : "";
+  const sigue = t.estado !== "cerrado" && t.proxima_etapa
+    ? `<div class="sg-sigue" title="Próxima etapa"><span class="flecha" aria-hidden="true">→</span>${esc(t.proxima_etapa)}</div>` : "";
   const acta = t.acta_efectiva ? `<span class="acta">Acta ${esc(t.acta_efectiva)}</span>` : `<span class="acta">Sin acta</span>`;
   return `<button type="button" class="sg-card ${t.estado === "cerrado" ? "cerrado" : ""}" data-id="${t.id}" style="--sg-color:${s.color}">
     <div class="marca">${esc(t.marca)}</div>
@@ -93,6 +95,7 @@ function tarjeta(t) {
     <div class="fila">${t.alerta?.nivel === "ninguno" ? `<span class="contratado">Contratado el ${fecha(t.contratacion)}</span>` : chipAlerta(t.alerta) + venc}${inf}</div>
     <div class="sg-avance"><div class="barra">${barra}</div>
       <div class="txt"><span><b>${esc(t.etapa_nombre)}</b>${t.etapas_total ? ` · ${t.etapa}/${t.etapas_total}` : ""}</span>${acta}</div></div>
+    ${sigue}
   </button>`;
 }
 
