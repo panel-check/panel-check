@@ -50,6 +50,9 @@ on:
       - "Verificar orden de publicación (manual, solo lectura)"
       - "Vigilancia marcaria"
       - "Vistas: pasada de la madrugada del miércoles"
+      - "Notificaciones INPI (campanita del panel)"
+      - "Probar notificaciones INPI (webservice Autogestión)"
+      - "Noche especial: vistas hasta terminar y después boletines"
   # A mano: reportar (o volver a reportar) una corrida puntual, o mandar un mensaje de prueba.
   workflow_dispatch:
     inputs:

@@ -859,7 +859,171 @@
     }
   }
 
-  function iniciar() { iniciarSecciones(); iniciarAccesos(); iniciarBusqueda(); iniciarAtajos(); iniciarGrupos(); iniciarChat(); }
+  // ── Campanita 🔔: notificaciones del INPI (19/11/2026) ─────────────────
+  // Las notificaciones que el INPI le manda a Pame (títulos digitales, vistas, vistas a la oposición,
+  // recibos) llegan por el webservice de Autogestión (scripts/sincronizar_notificaciones_inpi.py, 3 veces
+  // por día). El número rojo cuenta las que entraron desde la última vez que este usuario abrió la campanita.
+  const CAMPANA_SVG = '<svg class="nav-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg>';
+  let campana = null, panelCampana = null, filtroCampana = "", consultandoCampana = false;
+
+  function campanaAbierta() { return !!(panelCampana && panelCampana.classList.contains("abierto")); }
+
+  function pintarCampana(n, titulos) {
+    if (!campana) return;
+    const badge = campana.querySelector(".nav-badge");
+    badge.textContent = n > 0 ? (n > 9 ? "9+" : String(n)) : "";
+    campana.classList.toggle("con-nuevos", n > 0);
+    campana.title = n > 0
+      ? `Notificaciones del INPI — ${n} nueva${n !== 1 ? "s" : ""}${titulos ? ` (${titulos} título${titulos !== 1 ? "s" : ""})` : ""}`
+      : "Notificaciones del INPI";
+    campana.setAttribute("aria-label", campana.title);
+  }
+
+  async function refrescarCampana() {
+    if (consultandoCampana || campanaAbierta()) return;
+    consultandoCampana = true;
+    try {
+      const r = await fetch("/api/notificaciones-inpi/resumen", { credentials: "include" });
+      if (!r.ok) return;
+      const d = await r.json();
+      pintarCampana(d.nuevas || 0, d.titulos || 0);
+    } catch (_) { /* sin red: la próxima vuelta */ }
+    finally { consultandoCampana = false; }
+  }
+
+  function fechaCorta(iso) {
+    if (!iso) return "";
+    const d = new Date(iso);
+    if (isNaN(d)) return "";
+    return d.toLocaleDateString("es-AR", { day: "2-digit", month: "2-digit", year: "2-digit" });
+  }
+
+  function haceCuanto(iso) {
+    if (!iso) return "nunca";
+    const min = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
+    if (min < 1) return "recién";
+    if (min < 60) return `hace ${min} min`;
+    const h = Math.round(min / 60);
+    if (h < 24) return `hace ${h} h`;
+    return `el ${fechaCorta(iso)}`;
+  }
+
+  function itemCampana(n) {
+    const marca = n.marca ? esc(n.marca) : `Acta ${esc(n.acta)}`;
+    const clase = n.clase ? ` <span class="nc-clase">cl. ${esc(n.clase)}</span>` : "";
+    const quien = n.cliente
+      ? `<a href="/clientes?cliente=${encodeURIComponent(n.cliente_id)}">${esc(n.cliente)}</a>`
+      : (n.titular ? `${esc(n.titular)} <span class="nc-fuera" title="Esta acta no está cargada en Clientes">no está en Clientes</span>` : '<span class="nc-fuera">no está en Clientes</span>');
+    const pdf = (n.tiene_pdf || n.tiene_link)
+      ? `<a class="nc-pdf" href="/api/notificaciones-inpi/${n.id_notificacion}/pdf" target="_blank" rel="noopener">Ver PDF</a>
+         <a class="nc-pdf nc-bajar" href="/api/notificaciones-inpi/${n.id_notificacion}/pdf?descargar=true" title="Descargar PDF" aria-label="Descargar PDF">⬇</a>`
+      : '<span class="nc-sinpdf">sin PDF</span>';
+    return `<li class="nc-item${n.nueva ? " nueva" : ""}${n.tipo_codigo === "1" ? " titulo" : ""}">
+      <span class="nc-ico" aria-hidden="true">${n.icono}</span>
+      <div class="nc-cuerpo">
+        <div class="nc-l1"><strong>${esc(n.tipo)}</strong>${n.nueva ? '<span class="nc-nueva">nueva</span>' : ""}<span class="nc-fecha">${fechaCorta(n.fecha_carga)}</span></div>
+        <div class="nc-l2">${marca}${clase} · <span class="nc-acta">acta ${esc(n.acta)}</span></div>
+        <div class="nc-l3">${quien}</div>
+      </div>
+      <div class="nc-acciones">${pdf}</div>
+    </li>`;
+  }
+
+  async function cargarCampana() {
+    const lista = panelCampana.querySelector(".nc-lista");
+    const pie = panelCampana.querySelector(".nc-pie-txt");
+    lista.innerHTML = '<li class="nc-vacio">Cargando…</li>';
+    try {
+      const r = await fetch(`/api/notificaciones-inpi?limite=80${filtroCampana ? "&tipo=" + filtroCampana : ""}`, { credentials: "include" });
+      if (r.status === 401 && typeof irAlLogin === "function") return irAlLogin();
+      if (!r.ok) throw new Error(r.status);
+      const d = await r.json();
+      lista.innerHTML = d.items.length
+        ? d.items.map(itemCampana).join("")
+        : `<li class="nc-vacio">${d.total ? "No hay notificaciones de este tipo." : "Todavía no se trajo ninguna notificación del INPI."}</li>`;
+      pie.textContent = `Actualizado ${haceCuanto(d.ultima_actualizacion)}${d.ultima_con_error ? " · la última consulta falló" : ""}`;
+    } catch (e) {
+      lista.innerHTML = `<li class="nc-vacio">No se pudieron cargar las notificaciones (${esc(e.message)}).</li>`;
+    }
+  }
+
+  function crearPanelCampana() {
+    panelCampana = document.createElement("div");
+    panelCampana.className = "panel-campana";
+    panelCampana.setAttribute("role", "dialog");
+    panelCampana.setAttribute("aria-label", "Notificaciones del INPI");
+    panelCampana.innerHTML = `
+      <div class="nc-cab">
+        <strong>Notificaciones del INPI</strong>
+        <button type="button" class="nc-cerrar" aria-label="Cerrar">✕</button>
+      </div>
+      <div class="nc-filtros" role="tablist">
+        <button type="button" data-tipo="" class="activo">Todas</button>
+        <button type="button" data-tipo="1">🏅 Títulos</button>
+        <button type="button" data-tipo="14">👁 Vistas</button>
+        <button type="button" data-tipo="15">⚠️ Vistas a la oposición</button>
+        <button type="button" data-tipo="4239">🧾 Recibos</button>
+      </div>
+      <ul class="nc-lista"></ul>
+      <div class="nc-pie"><span class="nc-pie-txt"></span><button type="button" class="nc-actualizar">Actualizar</button></div>`;
+    document.body.appendChild(panelCampana);
+    panelCampana.addEventListener("click", (e) => e.stopPropagation());
+    panelCampana.querySelector(".nc-cerrar").addEventListener("click", () => abrirCampana(false));
+    panelCampana.querySelectorAll(".nc-filtros button").forEach((b) => b.addEventListener("click", () => {
+      filtroCampana = b.dataset.tipo;
+      panelCampana.querySelectorAll(".nc-filtros button").forEach((x) => x.classList.toggle("activo", x === b));
+      cargarCampana();
+    }));
+    const act = panelCampana.querySelector(".nc-actualizar");
+    act.addEventListener("click", async () => {
+      act.disabled = true;
+      const pie = panelCampana.querySelector(".nc-pie-txt");
+      try {
+        const r = await fetch("/api/notificaciones-inpi/actualizar", { method: "POST", credentials: "include" });
+        const d = await r.json().catch(() => ({}));
+        pie.textContent = r.ok ? "Consultando al INPI… en 1 o 2 minutos se actualiza." : `No se pudo: ${d.detail || r.status}`;
+        if (r.ok) setTimeout(() => { if (campanaAbierta()) cargarCampana(); }, 120000);
+      } catch (_) { pie.textContent = "No se pudo pedir la actualización."; }
+      setTimeout(() => { act.disabled = false; }, 60000);
+    });
+  }
+
+  async function abrirCampana(abrir) {
+    if (!panelCampana) { if (!abrir) return; crearPanelCampana(); }
+    panelCampana.classList.toggle("abierto", !!abrir);
+    campana.classList.toggle("activa", !!abrir);
+    campana.setAttribute("aria-expanded", abrir ? "true" : "false");
+    if (abrir) {
+      await cargarCampana();
+      try { await fetch("/api/notificaciones-inpi/visto", { method: "POST", credentials: "include" }); } catch (_) {}
+      pintarCampana(0, 0);
+    }
+  }
+
+  function iniciarCampana() {
+    const nav = document.querySelector(".app-header .nav");
+    if (!nav || nav.querySelector(".nav-campana")) return;
+    campana = document.createElement("button");
+    campana.type = "button";
+    campana.className = "nav-boton nav-campana";
+    campana.setAttribute("aria-expanded", "false");
+    campana.innerHTML = CAMPANA_SVG + '<span class="nav-badge"></span>';
+    // Al lado del usuario: después del chat (o al final del menú si la pantalla no tiene chat).
+    const chat = document.getElementById("link-comentarios");
+    const usuario = document.getElementById("menu-usuario");
+    if (chat && chat.parentNode === nav) nav.insertBefore(campana, chat.nextSibling);
+    else if (usuario && usuario.parentNode === nav) nav.insertBefore(campana, usuario);
+    else nav.appendChild(campana);
+    pintarCampana(0, 0);
+    campana.addEventListener("click", (e) => { e.stopPropagation(); abrirCampana(!campanaAbierta()); });
+    document.addEventListener("click", () => { if (campanaAbierta()) abrirCampana(false); });
+    document.addEventListener("keydown", (e) => { if (e.key === "Escape" && campanaAbierta()) abrirCampana(false); });
+    refrescarCampana();
+    setInterval(() => { if (!document.hidden) refrescarCampana(); }, 5 * 60000);
+    document.addEventListener("visibilitychange", () => { if (!document.hidden) refrescarCampana(); });
+  }
+
+  function iniciar() { iniciarSecciones(); iniciarAccesos(); iniciarBusqueda(); iniciarAtajos(); iniciarGrupos(); iniciarChat(); iniciarCampana(); }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", iniciar);
   else iniciar();
 })();

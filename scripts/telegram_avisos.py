@@ -6,7 +6,7 @@ propio tema, para que no se mezcle todo en un mismo chat. El bot crea los temas 
 los necesita (tiene que ser administrador del grupo con el permiso «Gestionar temas»). Si el chat no es un
 grupo con temas (por ejemplo, un chat privado con el bot), todo va al chat sin separar.
 
-Temas (TEMAS): corridas · oposiciones · boletines · sistema · resumen · vigilancia. Para mandar algo desde otro script:
+Temas (TEMAS): corridas · oposiciones · boletines · sistema · resumen · vigilancia · inpi. Para mandar algo desde otro script:
 
     from telegram_avisos import enviar
     enviar("texto en HTML", tema="sistema")
@@ -33,6 +33,7 @@ TEMAS = {
     "sistema": ("🚨 Sistema", 16478047),         # rojo
     "resumen": ("📊 Resumen", 13338331),         # violeta
     "vigilancia": ("🔎 Vigilancia marcaria", 16749490),  # rosa
+    "inpi": ("🔔 Notificaciones INPI", 7322096),  # azul
 }
 
 DESCRIPCION_TEMAS = {
@@ -42,6 +43,7 @@ DESCRIPCION_TEMAS = {
     "sistema": "bloqueos de INPI, cupo de Resend, fallas del deploy o del programador.",
     "resumen": "el resumen diario o semanal.",
     "vigilancia": "alertas ALTAS de la vigilancia marcaria (marca parecida a la de un cliente), apenas aparecen.",
+    "inpi": "notificaciones del INPI a Pame (títulos digitales, vistas, vistas a la oposición), apenas llegan.",
 }
 
 CREAR_TABLA = "CREATE TABLE IF NOT EXISTS reportes_config (clave TEXT PRIMARY KEY, valor TEXT)"
