@@ -159,17 +159,22 @@ function cerrarFicha() {
   history.replaceState(null, "", "/seguimientos");
 }
 
+// Vencimiento en dos renglones, sin el número grande: «Vence en 15 días (4 diciembre 2026)» / «Notificado el 04/11/26».
+const MESES = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"];
+function fechaLarga(iso) {
+  const [a, m, d] = String(iso || "").slice(0, 10).split("-").map(Number);
+  return a ? `${d} ${MESES.at(m - 1)} ${a}` : "";
+}
 function bloqueCuenta(t, s) {
   const a = t.alerta;
   if (a.nivel === "ninguno") return "";
-  if (a.nivel === "cerrado") return `<div class="sg-cuenta cerrado"><div class="det"><b>Trabajo cerrado</b><br>Ya no cuenta para los vencimientos.</div></div>`;
+  const caja = (nivel, l1, l2) => `<div class="sg-cuenta ${nivel}"><div class="det"><b>${l1}</b>${l2 ? `<br>${l2}` : ""}</div></div>`;
+  if (a.nivel === "cerrado") return caja("cerrado", "Trabajo cerrado", "Ya no cuenta para los vencimientos.");
   if (a.nivel === "cumplido")
-    return `<div class="sg-cuenta cumplido"><div class="num">✓</div><div class="det"><b>Plazo cumplido</b><br>${esc(a.texto.replace("✓ ", ""))}${t.vencimiento ? ` · el plazo vencía el ${fecha(t.vencimiento)}` : ""}</div></div>`;
+    return caja("cumplido", `✓ ${esc(a.texto.replace("✓ ", ""))}`, t.vencimiento ? `El plazo vencía el ${fechaLarga(t.vencimiento)}` : "");
   if (a.nivel === "falta")
-    return `<div class="sg-cuenta falta"><div class="num">?</div><div class="det"><b>Falta la fecha de notificación</b><br>Cargala abajo y el vencimiento se calcula solo (${esc(s.plazo_texto)}).</div></div>`;
-  const dias = Math.abs(a.dias);
-  return `<div class="sg-cuenta ${a.nivel}"><div class="num">${dias}<small>${dias === 1 ? "día" : "días"}</small></div>
-    <div class="det"><b>${esc(a.texto)}</b><br>Vence el ${fecha(t.vencimiento, true)}<br>Notificado el ${fecha(t.notificacion)}</div></div>`;
+    return caja("falta", "Falta la fecha de notificación", `Cargala en Datos y el vencimiento se calcula solo (${esc(s.plazo_texto)}).`);
+  return caja(a.nivel, `${esc(a.texto)} <span class="fecha">(${fechaLarga(t.vencimiento)})</span>`, `Notificado el ${fecha(t.notificacion)}`);
 }
 
 // Texto de una nota: respeta los saltos de línea, pone en negrita lo que va entre *asteriscos* y, si es largo, se muestra plegado con «Ver más».
@@ -285,6 +290,8 @@ function pintarFicha(d) {
       ${bloqueCuenta(t, s)}
       <div class="sg-bloque"><h3>Etapas <span class="der">${t.proxima_etapa ? `Sigue: <b>${esc(t.proxima_etapa)}</b>` : "✓ Todas completas"}</span></h3>
         <ol class="sg-pasos">${pasos}</ol>${bloqueInpi}</div>
+      ${bloqueInformes(d)}
+      ${bloqueExpediente(d)}
       <div class="sg-bloque"><h3>Datos <span class="der sg-guardado" id="guardado">✓ Guardado</span></h3>
         <div class="sg-datos">
           <label>Servicio <select data-campo="servicio">${opServ}</select></label>
@@ -296,8 +303,6 @@ function pintarFicha(d) {
           ${campoLink("comprobante", "Comprobante", t.comprobante, "Link al comprobante de pago", "cargado")}
           <label class="ancho">Notas <textarea data-campo="notas" rows="3">${esc(t.notas || "")}</textarea></label>
         </div></div>
-      ${bloqueInformes(d)}
-      ${bloqueExpediente(d)}
       <div class="sg-pie">
         <button type="button" class="sg-btn sg-btn-suave" data-estado-trabajo="${t.estado === "cerrado" ? "activo" : "cerrado"}">${t.estado === "cerrado" ? "↩ Reabrir trabajo" : "✓ Cerrar trabajo"}</button>
         <button type="button" class="sg-btn sg-btn-peligro" data-borrar-trabajo>🗑 Borrar</button>

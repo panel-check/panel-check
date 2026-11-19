@@ -114,11 +114,12 @@
 .sg-bloque h3 .der { margin-left: auto; text-transform: none; letter-spacing: 0; font-weight: 500; }
 
 /* Cuenta regresiva grande */
-.sg-cuenta { display: flex; align-items: center; gap: 16px; border-radius: 14px; padding: 16px 18px; }
+.sg-cuenta { display: flex; align-items: center; gap: 16px; border-radius: 12px; padding: 11px 16px; }
 .sg-cuenta .num { font-size: 40px; font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums; }
 .sg-cuenta .num small { font-size: 14px; font-weight: 600; margin-left: 4px; }
 .sg-cuenta .det { font-size: 13.5px; line-height: 1.45; }
 .sg-cuenta .det b { font-size: 15px; }
+.sg-cuenta .det .fecha { font-weight: 500; }
 .sg-cuenta.vencido { background: #111827; color: #fff; }
 .sg-cuenta.rojo { background: #fee2e2; color: #991b1b; }
 .sg-cuenta.amarillo { background: #fef3c7; color: #92400e; }
