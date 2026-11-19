@@ -172,11 +172,13 @@ function bloqueCuenta(t, s) {
     <div class="det"><b>${esc(a.texto)}</b><br>Vence el ${fecha(t.vencimiento, true)}<br>Notificado el ${fecha(t.notificacion)}</div></div>`;
 }
 
-// Texto de una nota: respeta los saltos de línea y, si es largo, se muestra plegado con «Ver más».
+// Texto de una nota: respeta los saltos de línea, pone en negrita lo que va entre *asteriscos* y, si es largo, se muestra plegado con «Ver más».
 function textoNota(texto) {
   const t = String(texto || "");
   const largo = t.length > 260 || t.split("\n").length > 4;
-  return `<div class="sg-nota-txt${largo ? " plegada" : ""}">${esc(t)}</div>${largo ? '<button type="button" class="sg-ver-mas" data-ver-mas>Ver más</button>' : ""}`;
+  // *texto* → negrita (como en WhatsApp). Se aplica después de escapar, así no se puede inyectar HTML.
+  const html = esc(t).replace(/\*([^*\n]+?)\*/g, "<b>$1</b>");
+  return `<div class="sg-nota-txt${largo ? " plegada" : ""}">${html}</div>${largo ? '<button type="button" class="sg-ver-mas" data-ver-mas>Ver más</button>' : ""}`;
 }
 
 // «/Date(1793715300000)/ - Vista de Marcas - None» (así viene del INPI) → «04/11/26 · Vista de Marcas».
@@ -230,7 +232,7 @@ function bloqueExpediente(d) {
     </div>`;
   }
   return `<div class="sg-bloque"><h3>📂 Expediente y bitácora</h3>${datos}
-    <form class="sg-nota-nueva" id="form-nota"><textarea id="nota-texto" rows="1" placeholder="Agregar una nota: «Le mandé el escrito para firmar»… (puede ser larga)" maxlength="50000"></textarea>
+    <form class="sg-nota-nueva" id="form-nota"><textarea id="nota-texto" rows="1" placeholder="Agregar una nota…" title="Enter: salto de línea · Cmd/Ctrl + Enter: guardar · *texto* en negrita" maxlength="50000"></textarea>
       <button type="submit" class="sg-btn sg-btn-mini">Agregar</button></form>
     ${lineaTiempo(d)}</div>`;
 }
