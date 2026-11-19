@@ -119,13 +119,14 @@ function pintar() {
 
 // ── Ficha ───────────────────────────────────────────────────────
 
-// Campo de link: si ya tiene URL queda cerrado (el botón para abrirlo está
-// arriba, en la cabecera de la ficha); «Cambiar» lo despliega.
+// Campo de link (Drive, comprobante): siempre cerrado. Con URL muestra «✓ cargada · Cambiar»
+// (el botón para abrirlo está arriba, en la cabecera); vacío, «Sin cargar · ＋ Agregar».
 function campoLink(campo, nombre, valor, placeholder, cargado) {
   const input = `<input type="url" data-campo="${campo}" value="${esc(valor || "")}" placeholder="${placeholder}" />`;
-  if (!valor) return `<label class="ancho">${nombre} ${input}</label>`;
-  return `<div class="ancho sg-link plegado"><div class="sg-link-cab"><span>${nombre}</span>
-    <button type="button" class="sg-link-cambiar" data-cambiar-link title="Editar el link">✓ ${cargado} · <u>Cambiar</u></button></div>${input}</div>`;
+  const boton = valor
+    ? `<button type="button" class="sg-link-cambiar" data-cambiar-link title="Editar el link">✓ ${cargado} · <u>Cambiar</u></button>`
+    : `<button type="button" class="sg-link-cambiar vacio" data-cambiar-link title="Cargar el link">Sin cargar · <u>＋ Agregar</u></button>`;
+  return `<div class="ancho sg-link plegado"><div class="sg-link-cab"><span>${nombre}</span>${boton}</div>${input}</div>`;
 }
 
 async function abrirFicha(id) {
@@ -535,6 +536,7 @@ document.addEventListener("click", (ev) => {
   caja.classList.remove("plegado");
   const inp = caja.querySelector("input");
   inp.focus(); inp.select();
+  inp.addEventListener("blur", () => { if (!inp.value.trim() && inp.defaultValue === "") caja.classList.add("plegado"); }, { once: true });
 });
 
 (async function iniciar() {
