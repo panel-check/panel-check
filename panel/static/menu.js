@@ -868,14 +868,14 @@
 
   function campanaAbierta() { return !!(panelCampana && panelCampana.classList.contains("abierto")); }
 
-  function pintarCampana(n, titulos) {
+  function pintarCampana(n, titulos, movimientos) {
     if (!campana) return;
     const badge = campana.querySelector(".nav-badge");
     badge.textContent = n > 0 ? (n > 9 ? "9+" : String(n)) : "";
     campana.classList.toggle("con-nuevos", n > 0);
     campana.title = n > 0
-      ? `Notificaciones del INPI — ${n} nueva${n !== 1 ? "s" : ""}${titulos ? ` (${titulos} título${titulos !== 1 ? "s" : ""})` : ""}`
-      : "Notificaciones del INPI";
+      ? `Notificaciones — ${n} nueva${n !== 1 ? "s" : ""}${titulos ? ` · ${titulos} título${titulos !== 1 ? "s" : ""}` : ""}${movimientos ? ` · ${movimientos} movimiento${movimientos !== 1 ? "s" : ""} de clientes` : ""}`
+      : "Notificaciones del INPI y movimientos de clientes";
     campana.setAttribute("aria-label", campana.title);
   }
 
@@ -886,7 +886,7 @@
       const r = await fetch("/api/notificaciones-inpi/resumen", { credentials: "include" });
       if (!r.ok) return;
       const d = await r.json();
-      pintarCampana(d.nuevas || 0, d.titulos || 0);
+      pintarCampana(d.nuevas || 0, d.titulos || 0, d.movimientos || 0);
     } catch (_) { /* sin red: la próxima vuelta */ }
     finally { consultandoCampana = false; }
   }
@@ -914,6 +914,17 @@
     const quien = n.cliente
       ? `<a href="/clientes?cliente=${encodeURIComponent(n.cliente_id)}">${esc(n.cliente)}</a>`
       : (n.titular ? `${esc(n.titular)} <span class="nc-fuera" title="Esta acta no está cargada en Clientes">no está en Clientes</span>` : '<span class="nc-fuera">no está en Clientes</span>');
+    if (n.origen === "mov") {
+      return `<li class="nc-item mov${n.nueva ? " nueva" : ""}">
+      <span class="nc-ico" aria-hidden="true">${n.icono}</span>
+      <div class="nc-cuerpo">
+        <div class="nc-l1"><strong>${esc(n.tipo)}</strong>${n.nueva ? '<span class="nc-nueva">nueva</span>' : ""}<span class="nc-fecha">${fechaCorta(n.fecha)}</span></div>
+        <div class="nc-l2">${marca}${clase} · <span class="nc-acta">acta ${esc(n.acta)}</span></div>
+        <div class="nc-texto">${esc(n.texto)}</div>
+        <div class="nc-l3">${quien}</div>
+      </div>
+    </li>`;
+    }
     const pdf = (n.tiene_pdf || n.tiene_link)
       ? `<a class="nc-pdf" href="/api/notificaciones-inpi/${n.id_notificacion}/pdf" target="_blank" rel="noopener">Ver PDF</a>
          <a class="nc-pdf nc-bajar" href="/api/notificaciones-inpi/${n.id_notificacion}/pdf?descargar=true" title="Descargar PDF" aria-label="Descargar PDF">⬇</a>`
@@ -921,7 +932,7 @@
     return `<li class="nc-item${n.nueva ? " nueva" : ""}${n.tipo_codigo === "1" ? " titulo" : ""}">
       <span class="nc-ico" aria-hidden="true">${n.icono}</span>
       <div class="nc-cuerpo">
-        <div class="nc-l1"><strong>${esc(n.tipo)}</strong>${n.nueva ? '<span class="nc-nueva">nueva</span>' : ""}<span class="nc-fecha">${fechaCorta(n.fecha_carga)}</span></div>
+        <div class="nc-l1"><strong>${esc(n.tipo)}</strong><span class="nc-origen">INPI</span>${n.nueva ? '<span class="nc-nueva">nueva</span>' : ""}<span class="nc-fecha">${fechaCorta(n.fecha_carga)}</span></div>
         <div class="nc-l2">${marca}${clase} · <span class="nc-acta">acta ${esc(n.acta)}</span></div>
         <div class="nc-l3">${quien}</div>
       </div>
@@ -934,14 +945,14 @@
     const pie = panelCampana.querySelector(".nc-pie-txt");
     lista.innerHTML = '<li class="nc-vacio">Cargando…</li>';
     try {
-      const r = await fetch(`/api/notificaciones-inpi?limite=80${filtroCampana ? "&tipo=" + filtroCampana : ""}`, { credentials: "include" });
+      const r = await fetch(`/api/notificaciones-inpi?limite=80${filtroCampana ? "&" + filtroCampana : ""}`, { credentials: "include" });
       if (r.status === 401 && typeof irAlLogin === "function") return irAlLogin();
       if (!r.ok) throw new Error(r.status);
       const d = await r.json();
       lista.innerHTML = d.items.length
         ? d.items.map(itemCampana).join("")
-        : `<li class="nc-vacio">${d.total ? "No hay notificaciones de este tipo." : "Todavía no se trajo ninguna notificación del INPI."}</li>`;
-      pie.textContent = `Actualizado ${haceCuanto(d.ultima_actualizacion)}${d.ultima_con_error ? " · la última consulta falló" : ""}`;
+        : `<li class="nc-vacio">${d.total ? "No hay notificaciones de este tipo." : "Todavía no hay notificaciones."}</li>`;
+      pie.textContent = `INPI: actualizado ${haceCuanto(d.ultima_actualizacion)}${d.ultima_con_error ? " (la última consulta falló)" : ""} · movimientos: cada noche`;
     } catch (e) {
       lista.innerHTML = `<li class="nc-vacio">No se pudieron cargar las notificaciones (${esc(e.message)}).</li>`;
     }
@@ -951,18 +962,20 @@
     panelCampana = document.createElement("div");
     panelCampana.className = "panel-campana";
     panelCampana.setAttribute("role", "dialog");
-    panelCampana.setAttribute("aria-label", "Notificaciones del INPI");
+    panelCampana.setAttribute("aria-label", "Notificaciones");
     panelCampana.innerHTML = `
       <div class="nc-cab">
-        <strong>Notificaciones del INPI</strong>
+        <strong>Notificaciones</strong>
         <button type="button" class="nc-cerrar" aria-label="Cerrar">✕</button>
       </div>
       <div class="nc-filtros" role="tablist">
-        <button type="button" data-tipo="" class="activo">Todas</button>
-        <button type="button" data-tipo="1">🏅 Títulos</button>
-        <button type="button" data-tipo="14">👁 Vistas</button>
-        <button type="button" data-tipo="15">⚠️ Vistas a la oposición</button>
-        <button type="button" data-tipo="4239">🧾 Recibos</button>
+        <button type="button" data-filtro="" class="activo">Todas</button>
+        <button type="button" data-filtro="origen=mov">📂 Movimientos de clientes</button>
+        <button type="button" data-filtro="origen=inpi">INPI</button>
+        <button type="button" data-filtro="tipo=1">🏅 Títulos</button>
+        <button type="button" data-filtro="tipo=14">👁 Vistas</button>
+        <button type="button" data-filtro="tipo=15">⚠️ Vistas a la oposición</button>
+        <button type="button" data-filtro="tipo=4239">🧾 Recibos</button>
       </div>
       <ul class="nc-lista"></ul>
       <div class="nc-pie"><span class="nc-pie-txt"></span><button type="button" class="nc-actualizar">Actualizar</button></div>`;
@@ -970,7 +983,7 @@
     panelCampana.addEventListener("click", (e) => e.stopPropagation());
     panelCampana.querySelector(".nc-cerrar").addEventListener("click", () => abrirCampana(false));
     panelCampana.querySelectorAll(".nc-filtros button").forEach((b) => b.addEventListener("click", () => {
-      filtroCampana = b.dataset.tipo;
+      filtroCampana = b.dataset.filtro;
       panelCampana.querySelectorAll(".nc-filtros button").forEach((x) => x.classList.toggle("activo", x === b));
       cargarCampana();
     }));
@@ -996,7 +1009,7 @@
     if (abrir) {
       await cargarCampana();
       try { await fetch("/api/notificaciones-inpi/visto", { method: "POST", credentials: "include" }); } catch (_) {}
-      pintarCampana(0, 0);
+      pintarCampana(0, 0, 0);
     }
   }
 
@@ -1014,7 +1027,7 @@
     if (chat && chat.parentNode === nav) nav.insertBefore(campana, chat.nextSibling);
     else if (usuario && usuario.parentNode === nav) nav.insertBefore(campana, usuario);
     else nav.appendChild(campana);
-    pintarCampana(0, 0);
+    pintarCampana(0, 0, 0);
     campana.addEventListener("click", (e) => { e.stopPropagation(); abrirCampana(!campanaAbierta()); });
     document.addEventListener("click", () => { if (campanaAbierta()) abrirCampana(false); });
     document.addEventListener("keydown", (e) => { if (e.key === "Escape" && campanaAbierta()) abrirCampana(false); });

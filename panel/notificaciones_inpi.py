@@ -220,3 +220,32 @@ def describir(fila: dict) -> dict:
     """Agrega nombre corto e ícono del tipo a una fila de SELECT_DETALLE."""
     nombre, icono, importante = tipo_de(fila.get("tipo_codigo") or "", fila.get("tipo_nombre") or "")
     return {**fila, "tipo": nombre, "icono": icono, "importante": importante}
+
+
+# ── Movimientos de las actas de clientes (cartera_novedades) ─────────────
+# La revisión diaria de la cartera (revisar_cartera.yml, 23:35) ya guarda cada cambio que encuentra en el
+# expediente de una marca de cliente. La campanita los muestra junto con las notificaciones del INPI (pedido
+# de Pame, 19/11/2026). tipo → (nombre, ícono)
+TIPOS_MOVIMIENTO = {
+    "estado": ("Cambio de estado", "🏁"),
+    "oposicion": ("Oposición o vista", "⚠️"),
+    "publicacion": ("Publicada en el boletín", "📰"),
+    "titular": ("Cambio de titular", "👤"),
+    "ubicacion": ("Cambió de sector", "📍"),
+    "movimiento": ("Movimiento en el expediente", "🗂"),
+    "alta_auto": ("Marca sumada a Clientes", "➕"),
+}
+
+SELECT_MOVIMIENTOS = """
+    SELECT nv.id, nv.acta, nv.tipo, nv.texto, nv.detectado_en,
+           NULLIF(cm.denominacion, '') AS marca, cm.clase, NULLIF(cm.titular, '') AS titular,
+           COALESCE(nv.cliente_id, cm.cliente_id) AS cliente_id, c.nombre AS cliente
+    FROM cartera_novedades nv
+    LEFT JOIN cartera_marcas cm ON cm.acta = nv.acta
+    LEFT JOIN clientes c ON c.id = COALESCE(nv.cliente_id, cm.cliente_id)
+"""
+
+
+def describir_movimiento(fila: dict) -> dict:
+    nombre, icono = TIPOS_MOVIMIENTO.get(fila.get("tipo") or "", ("Novedad del expediente", "🗂"))
+    return {**fila, "tipo_mov": fila.get("tipo"), "tipo": nombre, "icono": icono}
