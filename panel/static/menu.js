@@ -926,8 +926,7 @@
     </li>`;
     }
     const pdf = (n.tiene_pdf || n.tiene_link)
-      ? `<a class="nc-pdf" href="/api/notificaciones-inpi/${n.id_notificacion}/pdf" target="_blank" rel="noopener">Ver PDF</a>
-         <a class="nc-pdf nc-bajar" href="/api/notificaciones-inpi/${n.id_notificacion}/pdf?descargar=true" title="Descargar PDF" aria-label="Descargar PDF">⬇</a>`
+      ? `<a class="nc-pdf" href="/api/notificaciones-inpi/${n.id_notificacion}/pdf" download title="Descargar el PDF (acta-marca.pdf)">PDF</a>`
       : '<span class="nc-sinpdf">sin PDF</span>';
     return `<li class="nc-item${n.nueva ? " nueva" : ""}${n.tipo_codigo === "1" ? " titulo" : ""}">
       <span class="nc-ico" aria-hidden="true">${n.icono}</span>
