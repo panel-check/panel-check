@@ -117,16 +117,21 @@ function pintar() {
 // ── Ficha ───────────────────────────────────────────────────────
 
 async function abrirFicha(id) {
-  sg.abierto = id;
   const f = $("ficha");
-  f.innerHTML = '<div class="sg-f-cab"><p class="sg-cargando">Cargando…</p></div>';
+  // Si la ficha ya está abierta con este trabajo, se refresca sin vaciarla
+  // (así no parpadea en blanco al cambiar una etapa o un dato).
+  const refresco = sg.abierto === id && f.classList.contains("abierta") && !f.querySelector(".sg-cargando");
+  sg.abierto = id;
+  if (!refresco) f.innerHTML = '<div class="sg-f-cab"><p class="sg-cargando">Cargando…</p></div>';
   f.classList.add("abierta"); f.setAttribute("aria-hidden", "false");
   $("velo").hidden = false;
   history.replaceState(null, "", `/seguimientos?trabajo=${id}`);
   try {
     const d = await pedir(`/api/trabajos/${id}`);
     if (sg.abierto !== id) return;
+    const scroll = f.scrollTop;
     pintarFicha(d);
+    if (refresco) f.scrollTop = scroll;
   } catch (e) {
     f.innerHTML = `<div class="sg-f-cab"><button class="cerrar" type="button" data-cerrar aria-label="Cerrar">×</button><p>No se pudo abrir: ${esc(e.message)}</p></div>`;
   }
@@ -357,7 +362,15 @@ document.addEventListener("click", async (ev) => {
   if (el.matches("[data-etapa]")) {
     const n = Number(el.dataset.etapa);
     const actual = Number($("ficha").querySelector(".sg-paso.actual")?.dataset.etapa || 0);
-    return guardar({ etapa: n === actual ? n - 1 : n });   // tocar la etapa actual la desmarca
+    const nueva = n === actual ? n - 1 : n;
+    // Se marca al instante; el guardado y el refresco van por detrás.
+    $("ficha").querySelectorAll(".sg-paso").forEach((li) => {
+      const k = Number(li.dataset.etapa);
+      li.classList.toggle("hecho", k <= nueva);
+      li.classList.toggle("actual", k === nueva);
+      li.querySelector(".bola").textContent = k <= nueva ? "✓" : "";
+    });
+    return guardar({ etapa: nueva });   // tocar la etapa actual la desmarca
   }
   if (el.matches("[data-estado-trabajo]")) return guardar({ estado: el.dataset.estadoTrabajo });
   if (el.matches("[data-usar-acta]")) {
