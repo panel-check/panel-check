@@ -119,6 +119,15 @@ function pintar() {
 
 // ── Ficha ───────────────────────────────────────────────────────
 
+// Campo de link: si ya tiene URL queda cerrado (el botón para abrirlo está
+// arriba, en la cabecera de la ficha); «Cambiar» lo despliega.
+function campoLink(campo, nombre, valor, placeholder, cargado) {
+  const input = `<input type="url" data-campo="${campo}" value="${esc(valor || "")}" placeholder="${placeholder}" />`;
+  if (!valor) return `<label class="ancho">${nombre} ${input}</label>`;
+  return `<div class="ancho sg-link plegado"><div class="sg-link-cab"><span>${nombre}</span>
+    <button type="button" class="sg-link-cambiar" data-cambiar-link title="Editar el link">✓ ${cargado} · <u>Cambiar</u></button></div>${input}</div>`;
+}
+
 async function abrirFicha(id) {
   const f = $("ficha");
   // Si la ficha ya está abierta con este trabajo, se refresca sin vaciarla
@@ -254,8 +263,8 @@ function pintarFicha(d) {
           <label>Contratación <input type="date" data-campo="contratacion" value="${esc(t.contratacion || "")}" /></label>
           ${s.con_vencimiento ? `<label>Notificación <input type="date" data-campo="notificacion" value="${esc(t.notificacion || "")}" /></label>
           <label>Vencimiento <span class="calc">${t.vencimiento ? fecha(t.vencimiento, true) : "—"}</span></label>` : ""}
-          <label class="ancho">Carpeta de Drive <input type="url" data-campo="carpeta_drive" value="${esc(t.carpeta_drive || "")}" placeholder="https://drive.google.com/…" /></label>
-          <label class="ancho">Comprobante <input type="url" data-campo="comprobante" value="${esc(t.comprobante || "")}" placeholder="Link al comprobante de pago" /></label>
+          ${campoLink("carpeta_drive", "Carpeta de Drive", t.carpeta_drive, "https://drive.google.com/…", "cargada")}
+          ${campoLink("comprobante", "Comprobante", t.comprobante, "Link al comprobante de pago", "cargado")}
           <label class="ancho">Notas <textarea data-campo="notas" rows="3">${esc(t.notas || "")}</textarea></label>
         </div></div>
       ${bloqueInformes(d)}
@@ -459,6 +468,15 @@ $("n-cliente").addEventListener("input", (ev) => {
   ayuda.textContent = "Tiene que ser un cliente de Clientes. Si no existe, crealo primero ahí.";
   clearTimeout(timerClientes);
   timerClientes = setTimeout(() => buscarClientes(ev.target.value), 250);
+});
+
+document.addEventListener("click", (ev) => {
+  const b = ev.target.closest("#ficha [data-cambiar-link]");
+  if (!b) return;
+  const caja = b.closest(".sg-link");
+  caja.classList.remove("plegado");
+  const inp = caja.querySelector("input");
+  inp.focus(); inp.select();
 });
 
 (async function iniciar() {
