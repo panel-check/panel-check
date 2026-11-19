@@ -554,7 +554,7 @@ def crear_router(verificar_login, conexion) -> APIRouter:
 
     @router.post("/api/trabajos/{tid}/bitacora")
     def agregar_nota(tid: int, body: NotaBitacora, usuario: str = Depends(verificar_login)):
-        texto = _texto(body.texto, 4000)
+        texto = _texto(body.texto, 50000)   # notas largas (un escrito, un mail pegado): hasta 50.000 caracteres
         if not texto:
             raise HTTPException(status_code=400, detail="La nota está vacía")
         fecha = _fecha(body.fecha, "fecha") or tc.hoy_ar()
