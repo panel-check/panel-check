@@ -595,10 +595,12 @@ async function abrirCliente(id) {
       <div data-cpanel="poderes" ${est.clienteTab === "poderes" ? "" : "hidden"}>
         <div class="cl-acciones" style="margin-top:12px"><button type="button" class="cl-btn" id="cli-poder-btn2">📄 Generar poder para firmar</button>
           <button type="button" class="cl-btn" id="cli-poder-simple-btn" title="Poder acotado a marcas (INPI y negociaciones), para persona humana">📄 Poder simple marcas</button>
-          <button type="button" class="cl-btn" id="cli-toma-btn">📑 Generar toma de intervención</button></div>
+          <button type="button" class="cl-btn" id="cli-toma-btn">📑 Generar toma de intervención</button>
+          <button type="button" class="cl-btn" id="cli-desiste-btn" title="Escrito para desistir de la solicitud de registro de una marca ante el INPI">🚫 Desiste</button></div>
         <div class="cl-caja" id="cli-poder" hidden style="margin-top:10px"></div>
         <div class="cl-caja" id="cli-poder-simple" hidden style="margin-top:10px"></div>
         <div class="cl-caja" id="cli-toma" hidden style="margin-top:10px"></div>
+        <div class="cl-caja" id="cli-desiste" hidden style="margin-top:10px"></div>
         <div id="cli-poderes-lista">${d.poderes && d.poderes.length ? "<h4>Poderes generados</h4>" + htmlPoderes(d.poderes) : '<p class="crm-gris">Todavía no se generó ningún poder.</p>'}</div>
       </div>
 
@@ -655,6 +657,7 @@ async function abrirCliente(id) {
   $("cli-poder-btn2").addEventListener("click", abrirPoder);
   $("cli-poder-simple-btn").addEventListener("click", () => abrirGeneradorPoderSimple(id));
   $("cli-toma-btn").addEventListener("click", () => abrirGeneradorToma(id));
+  $("cli-desiste-btn").addEventListener("click", () => abrirGeneradorDesiste(id));
   $("cli-inf-btn").addEventListener("click", () => abrirCajaInforme(id, "cliente"));
   $("cli-iai-btn").addEventListener("click", () => abrirCajaInforme(id, "interno"));
   // Informe Oposición IA: diálogo compartido con Más → Informes (informes_comun.js), con el cliente ya elegido.
@@ -1416,6 +1419,51 @@ async function abrirGeneradorToma(clienteId) {
       await bajarArchivo(`/api/clientes/${clienteId}/toma-intervencion?formato=${b.dataset.toma}`,
         { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ items }) }, "Toma_de_intervencion");
       e.textContent = items.length > 1 ? `Listo: se descargó un ZIP con ${items.length} documentos.` : "Listo: se descargó.";
+    } catch (err) { e.textContent = err.message; e.className = "cl-estado mal"; }
+    b.disabled = false;
+  }));
+}
+
+// DESISTE: escrito para desistir de la solicitud de registro de una marca, uno por marca (acta).
+// Si el cliente tiene una sola marca viene tildada; con varias, se tilda a mano la que corresponda.
+async function abrirGeneradorDesiste(clienteId) {
+  const caja = $("cli-desiste");
+  if (!caja.hidden) { caja.hidden = true; return; }
+  caja.hidden = false;
+  caja.innerHTML = '<p class="crm-cargando">Preparando…</p>';
+  let r;
+  try { r = await api(`/api/clientes/${clienteId}/desiste`); }
+  catch (e) { caja.innerHTML = `<p class="crm-error">No se pudo preparar (${esc(e.message)}).</p>`; return; }
+  if (!r.marcas.length) { caja.innerHTML = '<p class="crm-gris">Este cliente no tiene marcas cargadas.</p>'; return; }
+  const una = r.marcas.length === 1;
+  const opcGenero = g => ["domiciliada", "domiciliado", "domiciliado/a"].map(x => `<option ${x === g ? "selected" : ""}>${x}</option>`).join("");
+  caja.innerHTML = `
+    <h4 style="margin-top:0">Desiste</h4>
+    <p class="crm-gris" style="margin:0 0 8px">Escrito para <strong>desistir de la solicitud de registro</strong> de la marca ante el INPI, firmado por ${esc(r.apoderada)} (Matrícula INPI N.º ${esc(r.matricula)}) como apoderada del titular, «conforme al poder que obra en el expediente». Se genera <strong>uno por marca</strong>: ${una ? "la marca del cliente ya viene tildada." : "tildá la o las marcas a desistir."} Podés corregir los datos antes de bajarlo; si elegís varias, se baja un ZIP.</p>
+    <div style="overflow-x:auto"><table class="cl-tabla"><thead><tr><th></th><th>Acta</th><th>Marca</th><th>Clase</th><th>Tipo</th><th>Titular</th><th>CUIT / DNI</th><th>Domicilio</th></tr></thead><tbody>
+    ${r.marcas.map((m, i) => `<tr data-i="${i}">
+      <td><input type="checkbox" data-sel ${una ? "checked" : ""}></td>
+      <td><input data-k="acta" value="${esc(m.acta)}" size="9">${m.estado ? `<br><span class="crm-gris">${esc(m.estado)}</span>` : ""}</td>
+      <td><input data-k="marca" value="${esc(m.marca)}"></td>
+      <td><input data-k="clase" value="${esc(m.clase)}" size="3"></td>
+      <td><input data-k="tipo" value="${esc(m.tipo)}" size="12"></td>
+      <td><input data-k="titular" value="${esc(m.titular)}"></td>
+      <td><input data-k="identificacion" value="${esc(m.identificacion)}" size="18" placeholder="CUIT 30-…"></td>
+      <td><select data-k="genero">${opcGenero(m.genero)}</select> en<br><input data-k="domicilio" value="${esc(m.domicilio)}" size="34"><input type="hidden" data-k="fecha" value="${esc(m.fecha)}"></td></tr>`).join("")}</tbody></table></div>
+    <div class="cl-acciones"><button type="button" class="cl-btn" data-desiste="pdf">Descargar PDF</button>
+      <button type="button" class="cl-btn sec" data-desiste="docx">Descargar Word</button>
+      <span class="cl-estado" id="desiste-estado"></span></div>`;
+  caja.querySelectorAll("[data-desiste]").forEach(b => b.addEventListener("click", async () => {
+    const items = [...caja.querySelectorAll("tr[data-i]")].filter(tr => tr.querySelector("[data-sel]").checked).map(tr => {
+      const o = {}; tr.querySelectorAll("[data-k]").forEach(i => { o[i.dataset.k] = i.value; }); return o; });
+    const e = $("desiste-estado"); e.className = "cl-estado";
+    if (!items.length) { e.textContent = "Tildá al menos una marca."; e.className = "cl-estado mal"; return; }
+    if (items.some(o => !o.acta.trim() || !o.marca.trim() || !o.titular.trim())) { e.textContent = "Falta el acta, la marca o el titular."; e.className = "cl-estado mal"; return; }
+    e.textContent = "Generando…"; b.disabled = true;
+    try {
+      await bajarArchivo(`/api/clientes/${clienteId}/desiste?formato=${b.dataset.desiste}`,
+        { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ items }) }, "Desiste");
+      e.textContent = items.length > 1 ? `Listo: se descargó un ZIP con ${items.length} escritos.` : "Listo: se descargó.";
     } catch (err) { e.textContent = err.message; e.className = "cl-estado mal"; }
     b.disabled = false;
   }));
