@@ -14,6 +14,7 @@ Lee solo la base: nunca consulta al INPI (eso lo hace scripts/sincronizar_notifi
 import os
 import re
 import unicodedata
+from urllib.parse import quote
 
 import psycopg2.extras
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -31,6 +32,21 @@ def _json(f: dict) -> dict:
         if d.get(k) is not None:
             d[k] = d[k].isoformat()
     return d
+
+
+def nombre_archivo(acta: str, marca) -> str:
+    """«4644387-NOMBRE DE LA MARCA.pdf»: sin caracteres que no admite un nombre de archivo."""
+    marca = re.sub(r'[\\/:*?"<>|\x00-\x1f]+', " ", (marca or "").strip())
+    marca = re.sub(r"\s+", " ", marca).strip(" .")[:80]
+    return f"{acta}-{marca}.pdf" if marca else f"{acta}.pdf"
+
+
+def disposicion(acta: str, marca, descargar: bool = True) -> str:
+    """Content-Disposition con el nombre en ASCII (navegadores viejos) y en UTF-8 (tildes, ñ)."""
+    nombre = nombre_archivo(acta, marca)
+    ascii_ = unicodedata.normalize("NFKD", nombre).encode("ascii", "ignore").decode().replace('"', "")
+    modo = "attachment" if descargar else "inline"
+    return f'{modo}; filename="{ascii_}"; filename*=UTF-8\'\'{quote(nombre)}'
 
 
 def crear_router(verificar_login, conexion) -> APIRouter:
@@ -129,11 +145,17 @@ def crear_router(verificar_login, conexion) -> APIRouter:
         return {"ok": True}
 
     @router.get("/api/notificaciones-inpi/{id_notificacion}/pdf")
-    def pdf(id_notificacion: int, descargar: bool = False, usuario: str = Depends(verificar_login)):
+    def pdf(id_notificacion: int, descargar: bool = True, usuario: str = Depends(verificar_login)):
+        """El PDF guardado, como descarga con el nombre «<acta>-<marca>.pdf» (pedido del 19/11/2026)."""
         with conexion() as conn:
             with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-                cur.execute("""SELECT acta, tipo_codigo, tipo_nombre, pdf, adjunto_url
-                               FROM notificaciones_inpi WHERE id_notificacion = %s""", (id_notificacion,))
+                cur.execute("""SELECT n.acta, n.pdf, n.adjunto_url,
+                                      COALESCE(NULLIF(cm.denominacion, ''), NULLIF(m.denominacion_inpi, ''),
+                                               NULLIF(m.denominacion, '')) AS marca
+                               FROM notificaciones_inpi n
+                               LEFT JOIN cartera_marcas cm ON cm.acta = n.acta
+                               LEFT JOIN marcas m ON m.acta = n.acta
+                               WHERE n.id_notificacion = %s""", (id_notificacion,))
                 f = cur.fetchone()
         if not f:
             raise HTTPException(404, "No existe esa notificación")
@@ -141,12 +163,8 @@ def crear_router(verificar_login, conexion) -> APIRouter:
             if f["adjunto_url"]:
                 return RedirectResponse(f["adjunto_url"])
             raise HTTPException(404, "El INPI no mandó un PDF para esta notificación")
-        nombre_tipo = ni.tipo_de(f["tipo_codigo"] or "", f["tipo_nombre"] or "")[0]
-        base = unicodedata.normalize("NFKD", f"{nombre_tipo}-acta-{f['acta']}").encode("ascii", "ignore").decode()
-        archivo = re.sub(r"[^A-Za-z0-9_-]+", "-", base).strip("-").lower() + ".pdf"
-        modo = "attachment" if descargar else "inline"
         return Response(bytes(f["pdf"]), media_type="application/pdf",
-                        headers={"Content-Disposition": f'{modo}; filename="{archivo}"',
+                        headers={"Content-Disposition": disposicion(f["acta"], f["marca"], descargar),
                                  "Cache-Control": "private, max-age=3600"})
 
     @router.post("/api/notificaciones-inpi/actualizar")
