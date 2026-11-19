@@ -88,7 +88,8 @@ function tarjeta(t) {
   const inf = t.informes ? `<span class="sg-inf" title="${t.informes} informe${t.informes > 1 ? "s" : ""} de esta marca">📄 ${t.informes}</span>` : "";
   const sigue = t.estado !== "cerrado" && t.proxima_etapa
     ? `<div class="sg-sigue" title="Próxima etapa"><span class="prox">Prox.</span>${esc(t.proxima_etapa)}</div>` : "";
-  const acta = t.acta_efectiva ? `<span class="acta">Acta ${esc(t.acta_efectiva)}</span>` : `<span class="acta">Sin acta</span>`;
+  const extra = (t.actas_extra || []).length;
+  const acta = t.acta_efectiva ? `<span class="acta" ${extra ? `title="También: ${esc(t.actas_extra.join(", "))}"` : ""}>Acta ${esc(t.acta_efectiva)}${extra ? ` +${extra}` : ""}</span>` : `<span class="acta">Sin acta</span>`;
   return `<button type="button" class="sg-card ${t.estado === "cerrado" ? "cerrado" : ""}" data-id="${t.id}" style="--sg-color:${s.color}">
     <div class="marca">${esc(t.marca)}</div>
     <div class="cliente">${esc(t.cliente)}</div>
@@ -192,8 +193,11 @@ function bloqueExpediente(d) {
   const t = d.trabajo, ex = d.expediente;
   let datos = "";
   if (!ex) {
-    datos = `<div class="sg-exp-aviso">Sin número de acta todavía. El panel la busca sola todos los días en las solicitudes nuevas del INPI (también las que presentamos con agente) y la carga cuando es seguro que es esta marca.
-      <div class="sg-buscar-acta"><button type="button" class="sg-btn sg-btn-mini" data-buscar-acta>🔎 Buscar el acta en el INPI</button></div>
+    const conflicto = t.servicio === "vista" || t.servicio === "oposicion";
+    datos = `<div class="sg-exp-aviso">${conflicto
+      ? `Sin número de acta todavía. El panel busca solo las actas de este cliente con ${t.servicio === "vista" ? "vista" : "oposición"} (por su CUIT, su nombre como titular y sus marcas de Clientes) y carga las que tienen el mismo nombre de marca, con la fecha de notificación si ya la tiene.`
+      : `Sin número de acta todavía. El panel la busca sola todos los días en las solicitudes nuevas del INPI (también las que presentamos con agente) y la carga cuando es seguro que es esta marca.`}
+      <div class="sg-buscar-acta"><button type="button" class="sg-btn sg-btn-mini" data-buscar-acta>${conflicto ? `🔎 Buscar las actas con ${t.servicio === "vista" ? "vista" : "oposición"}` : "🔎 Buscar el acta en el INPI"}</button></div>
       <div id="resultado-acta"></div></div>`;
   } else if (!ex.en_cartera) {
     datos = `<p class="sg-exp-aviso">Acta <b>${esc(ex.acta)}</b>. Esta marca todavía no está en Clientes → Marcas, por eso no hay datos del INPI. Agregala ahí (en la ficha del cliente) y el expediente se completa solo.</p>`;
@@ -268,7 +272,7 @@ function pintarFicha(d) {
       <div class="sg-bloque"><h3>Datos <span class="der sg-guardado" id="guardado">✓ Guardado</span></h3>
         <div class="sg-datos">
           <label>Servicio <select data-campo="servicio">${opServ}</select></label>
-          <label>Acta <input type="text" inputmode="numeric" data-campo="acta" value="${esc(t.acta || "")}" placeholder="${t.acta_auto ? esc(t.acta_efectiva) + " (sola)" : "Sin presentar"}" /></label>
+          <label>Acta <input type="text" inputmode="numeric" data-campo="acta" value="${esc(t.acta || "")}" placeholder="${t.acta_auto ? esc(t.acta_efectiva) + " (sola)" : "Sin presentar"}" />${(t.actas_extra || []).length ? `<small class="sg-actas-extra">También: ${esc(t.actas_extra.join(", "))}</small>` : ""}</label>
           <label>Contratación <input type="date" data-campo="contratacion" value="${esc(t.contratacion || "")}" /></label>
           ${s.con_vencimiento ? `<label>Notificación <input type="date" data-campo="notificacion" value="${esc(t.notificacion || "")}" /></label>
           <label>Vencimiento <span class="calc">${t.vencimiento ? fecha(t.vencimiento, true) : "—"}</span></label>` : ""}

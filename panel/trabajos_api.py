@@ -10,6 +10,10 @@ API de la pantalla Seguimientos (/seguimientos): trabajos puntuales de cada clie
   DELETE /api/trabajos/{id}/bitacora/{bid} borrar una nota
   POST   /api/trabajos/{id}/buscar-acta    buscar el acta en la base y, si no, en vivo en el INPI
 
+Vista y oposición (desde el 19/11/2026): la marca ya tiene acta con una vista o una oposición, así que se
+buscan las actas de ESE cliente que la tienen (trabajos_core.elegir_actas_conflicto), se cargan todas las
+que tienen el mismo nombre (actas_extra si son varias) y, si falta, la fecha de notificación que ya leyó el panel.
+
 Detección del acta: al abrir el tablero (como mucho cada 10 minutos) se buscan en la base las actas
 de los trabajos que todavía no tienen (ver trabajos_core.elegir_acta); si una es segura se carga sola,
 se anota en la bitácora y, en un registro, la etapa pasa a «Marca publicada» y el acta se suma a la cartera
@@ -281,7 +285,8 @@ def crear_router(verificar_login, conexion) -> APIRouter:
 
     def _detectar(cur, solo_id=None):
         """Busca en la base el acta de los trabajos activos sin acta. Devuelve {id: (elegida, evaluadas, texto)}."""
-        cond = "t.acta IS NULL AND t.estado = 'activo'" + (" AND t.id = %s" if solo_id else "")
+        cond = ("t.acta IS NULL AND t.estado = 'activo' AND t.servicio NOT IN ('vista', 'oposicion')"
+                + (" AND t.id = %s" if solo_id else ""))
         cur.execute(f"SELECT t.id, t.marca, t.servicio, t.contratacion, t.cliente_id, c.nombre AS cliente_nombre, c.cuit AS cliente_cuit "
                     f"FROM trabajos t JOIN clientes c ON c.id = t.cliente_id WHERE {cond}", (solo_id,) if solo_id else None)
         trabajos = cur.fetchall()
@@ -298,6 +303,61 @@ def crear_router(verificar_login, conexion) -> APIRouter:
             res[t["id"]] = (elegida, evaluadas, texto)
         return res
 
+    def _candidatas_conflicto(cur, cliente):
+        """Actas del cliente con vista u oposición: en `marcas` (leads, boletines y pre-boletín: mismo CUIT,
+        mismo nombre de titular o actas de su cartera) y en su cartera (tuvo_oposicion)."""
+        cur.execute("SELECT acta FROM cartera_marcas WHERE cliente_id = %s", (cliente["id"],))
+        de_cartera = [f["acta"] for f in cur.fetchall()]
+        cuit = re.sub(r"\D", "", cliente.get("cuit") or "")
+        nombres = sorted({(cliente.get("nombre") or "").strip().upper(), tc.comparable(cliente.get("nombre"))} - {""})
+        out = []
+        consultas = [
+            ("""SELECT acta, COALESCE(NULLIF(denominacion_inpi, ''), denominacion) AS denominacion, clase, titular, cuit,
+                       tuvo_vista, vista_fecha_notificacion, tuvo_oposicion, oposicion_fecha_notificacion,
+                       'boletin' AS fuente
+                FROM marcas
+                WHERE (tuvo_vista IS TRUE OR tuvo_oposicion IS TRUE)
+                  AND ((%s <> '' AND regexp_replace(COALESCE(cuit, ''), '\\D', '', 'g') = %s)
+                       OR upper(btrim(titular)) = ANY(%s) OR acta = ANY(%s))""", (cuit, cuit, nombres, de_cartera)),
+            ("""SELECT acta, denominacion, clase, titular, cuit, NULL::boolean AS tuvo_vista, NULL::date AS vista_fecha_notificacion,
+                       tuvo_oposicion, NULL::date AS oposicion_fecha_notificacion, 'cartera' AS fuente
+                FROM cartera_marcas WHERE cliente_id = %s AND tuvo_oposicion IS TRUE""", (cliente["id"],)),
+        ]
+        for sql, val in consultas:
+            try:
+                cur.execute("SAVEPOINT conf")
+                cur.execute(sql, val)
+                out += [dict(f) for f in cur.fetchall()]
+                cur.execute("RELEASE SAVEPOINT conf")
+            except Exception as e:
+                cur.execute("ROLLBACK TO SAVEPOINT conf")
+                print(f"[seguimientos] actas con vista/oposición: {e}")
+        return out
+
+    def _detectar_conflictos(cur, solo_id=None):
+        """Vista y oposición sin acta: busca las actas del cliente con vista u oposición. {id: (elegidas, del_tipo, texto)}"""
+        cond = ("t.acta IS NULL AND t.estado = 'activo' AND t.servicio IN ('vista', 'oposicion')"
+                + (" AND t.id = %s" if solo_id else ""))
+        cur.execute(f"SELECT t.id, t.marca, t.servicio, t.notificacion, t.cliente_id, c.nombre, c.cuit "
+                    f"FROM trabajos t JOIN clientes c ON c.id = t.cliente_id WHERE {cond}", (solo_id,) if solo_id else None)
+        res = {}
+        for t in cur.fetchall():
+            cand = _candidatas_conflicto(cur, {"id": t["cliente_id"], "nombre": t["nombre"], "cuit": t["cuit"]})
+            elegidas, motivo, del_tipo = tc.elegir_actas_conflicto(t, cand)
+            texto = None
+            if elegidas:
+                notif = tc.notificacion_de(elegidas, t["servicio"])
+                texto = tc.texto_conflicto(elegidas, motivo, t["servicio"], notif if not t["notificacion"] else None)
+                cur.execute(
+                    "UPDATE trabajos SET acta = %s, actas_extra = %s, notificacion = COALESCE(notificacion, %s), "
+                    "modificado_en = now(), modificado_por = 'sistema' WHERE id = %s AND acta IS NULL",
+                    (elegidas[0]["acta"], [c["acta"] for c in elegidas[1:]] or None, notif, t["id"]))
+                if cur.rowcount:
+                    cur.execute("INSERT INTO trabajos_bitacora (trabajo_id, fecha, texto, usuario) VALUES (%s, %s, %s, 'sistema')",
+                                (t["id"], tc.hoy_ar(), texto))
+            res[t["id"]] = (elegidas, del_tipo, texto)
+        return res
+
     def _deteccion_periodica(conn, cur):
         global _ultima_deteccion
         if time.time() - _ultima_deteccion < CADA_DETECCION or not _candado_deteccion.acquire(blocking=False):
@@ -305,6 +365,7 @@ def crear_router(verificar_login, conexion) -> APIRouter:
         try:
             _ultima_deteccion = time.time()
             _detectar(cur)
+            _detectar_conflictos(cur)
             conn.commit()
         except Exception as e:
             conn.rollback()
@@ -401,6 +462,8 @@ def crear_router(verificar_login, conexion) -> APIRouter:
         if "estado" in campos:
             sets.append("cerrado_en = CASE WHEN %s = 'cerrado' THEN now() ELSE NULL END")
             extra.append(campos["estado"])
+        if "acta" in campos and not campos["acta"]:
+            sets.append("actas_extra = NULL")   # se borró el acta: también las otras que se habían detectado
         if campos.get("acta") and "etapa" not in campos:
             # Se cargó el acta: si era un registro todavía sin presentar, pasa a «Marca publicada».
             sets.append("etapa = CASE WHEN servicio = 'registro' AND etapa < %s THEN %s ELSE etapa END")
@@ -430,6 +493,21 @@ def crear_router(verificar_login, conexion) -> APIRouter:
             t = _uno(cur, tid)
             if t.get("acta"):
                 return {"asignada": t["acta"], "texto": "El trabajo ya tiene acta.", "candidatas": []}
+            if t["servicio"] in tc.SERVICIOS_CON_CONFLICTO:
+                elegidas, del_tipo, texto = _detectar_conflictos(cur, solo_id=tid).get(tid, ([], [], None))
+                conn.commit()
+                que = "vista" if t["servicio"] == "vista" else "oposición"
+                cands = [{"acta": c["acta"], "denominacion": c.get("denominacion"), "titular": c.get("titular"),
+                          "clase": c.get("clase"), "estado": f"con {que}", "fuente": c.get("fuente"),
+                          "segura": c in elegidas} for c in del_tipo]
+                if elegidas:
+                    return {"asignada": elegidas[0]["acta"], "texto": texto, "candidatas": cands}
+                if not del_tipo:
+                    texto = (f"No encontré actas de este cliente con {que} en el panel (se buscan por su CUIT, su "
+                             "nombre como titular y sus marcas de Clientes → Marcas). Cargá el acta a mano en Datos.")
+                else:
+                    texto = f"El cliente tiene {len(del_tipo)} actas con {que} y ninguna con el nombre «{t['marca']}»: elegí la correcta."
+                return {"asignada": None, "texto": texto, "candidatas": cands}
             res = _detectar(cur, solo_id=tid).get(tid)
             conn.commit()
             if res and res[0]:

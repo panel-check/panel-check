@@ -201,6 +201,8 @@ TABLAS = [
         cerrado_en     TIMESTAMPTZ
     )""",
     "CREATE INDEX IF NOT EXISTS idx_trabajos_cliente ON trabajos(cliente_id)",
+    # Otras actas del mismo trabajo (por ejemplo una oposición a la misma marca en varias clases).
+    "ALTER TABLE trabajos ADD COLUMN IF NOT EXISTS actas_extra TEXT[]",
     "CREATE INDEX IF NOT EXISTS idx_trabajos_estado ON trabajos(estado)",
     """CREATE TABLE IF NOT EXISTS trabajos_bitacora (
         id          BIGSERIAL PRIMARY KEY,
@@ -446,6 +448,59 @@ def texto_deteccion(elegida, evaluadas, origen) -> str:
     otras = [e["acta"] for e in evaluadas if e["segura"] and e["acta"] != elegida["acta"]]
     if otras:
         texto += f" También hay con el mismo nombre: actas {', '.join(otras)} (otra clase o tipo)."
+    return texto
+
+
+# ── Actas con vista u oposición del cliente (19/11/2026) ─────────────────────
+# Un trabajo de «Contestación de vista» u «Oposición + negociación» es sobre una marca que YA tiene acta
+# con una vista o una oposición. Se buscan las actas de ese cliente (mismo CUIT o mismo nombre de titular,
+# o su cartera) que tienen vista (tuvo_vista) u oposición (tuvo_oposicion), y:
+#   1. las que tienen el mismo nombre de marca que el trabajo (pueden ser varias: una por clase) → todas;
+#   2. si ninguna tiene el mismo nombre pero el cliente tiene UNA sola acta con ese problema → esa;
+#   3. si hay varias y ninguna coincide en nombre, no se asigna: la ficha las muestra para elegir.
+SERVICIOS_CON_CONFLICTO = {"vista": "vista", "oposicion": "oposicion"}
+
+
+def es_del_tipo(cand, sid) -> bool:
+    tipo = SERVICIOS_CON_CONFLICTO.get(sid)
+    if tipo == "vista":
+        return bool(cand.get("tuvo_vista")) or cand.get("fuente") == "cartera" and bool(cand.get("tuvo_oposicion"))
+    if tipo == "oposicion":
+        return bool(cand.get("tuvo_oposicion"))
+    return False
+
+
+def elegir_actas_conflicto(trabajo, candidatas):
+    """→ (elegidas, motivo, del_tipo). elegidas: lista ordenada por acta (la primera va al campo Acta)."""
+    sid = trabajo.get("servicio")
+    unicas = {}
+    for c in candidatas:
+        if c.get("acta") and es_del_tipo(c, sid):
+            unicas.setdefault(c["acta"], c)
+    del_tipo = sorted(unicas.values(), key=lambda c: c["acta"])
+    nombre = comparable(trabajo.get("marca"))
+    mismas = [c for c in del_tipo if nombre and comparable(c.get("denominacion")) == nombre]
+    if mismas:
+        return mismas, "mismo nombre de marca", del_tipo
+    if len(del_tipo) == 1:
+        return del_tipo, "única acta del cliente con " + ("vista" if sid == "vista" else "oposición"), del_tipo
+    return [], None, del_tipo
+
+
+def notificacion_de(actas, sid):
+    """Fecha de notificación más temprana que el panel ya leyó del INPI (para calcular el vencimiento)."""
+    campo = "vista_fecha_notificacion" if sid == "vista" else "oposicion_fecha_notificacion"
+    fechas = sorted(f for f in (a_fecha(a.get(campo)) for a in actas) if f)
+    return fechas[0] if fechas else None
+
+
+def texto_conflicto(elegidas, motivo, sid, notif=None) -> str:
+    que = "vista" if sid == "vista" else "oposición"
+    actas = ", ".join(c["acta"] + (f" (cl. {c['clase']})" if c.get("clase") else "") for c in elegidas)
+    texto = (f"Acta {actas} detectada sola: es la del cliente con {que} ({motivo})." if len(elegidas) == 1 else
+             f"Actas {actas} detectadas solas: son las del cliente con {que} ({motivo}).")
+    if notif:
+        texto += f" Notificación según el INPI: {notif.strftime('%d/%m/%Y')}."
     return texto
 
 
