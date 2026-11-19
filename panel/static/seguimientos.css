@@ -165,7 +165,8 @@
 .sg-linea .borrar { border: 0; background: none; color: #9aa1ab; cursor: pointer; font-size: 12px; padding: 0 4px; }
 .sg-linea .borrar:hover { color: var(--rojo); }
 .sg-nota-nueva { display: flex; gap: 8px; margin-bottom: 14px; }
-.sg-nota-nueva input { flex: 1; font: inherit; font-size: 14px; padding: 8px 10px; border: 1px solid var(--borde-control); border-radius: 9px; }
+.sg-nota-nueva { align-items: flex-end; }
+.sg-nota-nueva textarea { flex: 1; font: inherit; font-size: 14px; line-height: 1.4; padding: 8px 10px; border: 1px solid var(--borde-control); border-radius: 9px; resize: vertical; min-height: 38px; max-height: 320px; overflow-y: auto; }
 .sg-nota-nueva input:focus { outline: none; border-color: var(--azul); box-shadow: var(--foco); }
 .sg-pie { display: flex; gap: 8px; flex-wrap: wrap; justify-content: space-between; }
 
@@ -240,3 +241,9 @@
 .sg-inpi .est.den { color: #c0392b; }
 .sg-inpi-nota { margin: 10px 0 0; font-size: 12px; color: var(--gris, #6b7280); }
 .sg-actas-extra { font-weight: 400; font-size: 11.5px; color: var(--gris, #6b7280); }
+
+/* Notas largas de la bitácora: saltos de línea respetados y plegadas a 4 líneas */
+.sg-nota-txt { white-space: pre-wrap; overflow-wrap: anywhere; }
+.sg-nota-txt.plegada { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 4; line-clamp: 4; overflow: hidden; }
+.sg-ver-mas { border: 0; background: none; padding: 2px 0; font: inherit; font-size: 12.5px; font-weight: 600; color: var(--azul, #1d4ed8); cursor: pointer; }
+.sg-ver-mas:hover { text-decoration: underline; }

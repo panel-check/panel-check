@@ -172,6 +172,20 @@ function bloqueCuenta(t, s) {
     <div class="det"><b>${esc(a.texto)}</b><br>Vence el ${fecha(t.vencimiento, true)}<br>Notificado el ${fecha(t.notificacion)}</div></div>`;
 }
 
+// Texto de una nota: respeta los saltos de línea y, si es largo, se muestra plegado con «Ver más».
+function textoNota(texto) {
+  const t = String(texto || "");
+  const largo = t.length > 260 || t.split("\n").length > 4;
+  return `<div class="sg-nota-txt${largo ? " plegada" : ""}">${esc(t)}</div>${largo ? '<button type="button" class="sg-ver-mas" data-ver-mas>Ver más</button>' : ""}`;
+}
+
+// «/Date(1793715300000)/ - Vista de Marcas - None» (así viene del INPI) → «04/11/26 · Vista de Marcas».
+function detalleOposicion(v) {
+  if (!v) return "Sí";
+  return String(v).replace(/\/Date\((\d+)\)\//g, (_, ms) => fecha(new Date(Number(ms)).toLocaleDateString("sv-SE", { timeZone: "America/Argentina/Buenos_Aires" })))
+    .split(/\s+-\s+/).map((x) => x.trim()).filter((x) => x && x !== "None" && x !== "null").join(" · ") || "Sí";
+}
+
 function lineaTiempo(d) {
   const t = d.trabajo, ex = d.expediente;
   const items = [];
@@ -179,14 +193,14 @@ function lineaTiempo(d) {
   (ex?.novedades || []).forEach((n) => items.push({ fecha: n.detectado_en, orden: n.detectado_en, tipo: "INPI", color: "#7c3aed", texto: n.texto }));
   if (ex?.marca?.fecha_publicacion) items.push({ fecha: ex.marca.fecha_publicacion, orden: ex.marca.fecha_publicacion, tipo: "INPI", color: "#7c3aed", texto: "Publicada en el boletín" });
   if (ex?.marca?.fecha_presentacion) items.push({ fecha: ex.marca.fecha_presentacion, orden: ex.marca.fecha_presentacion, tipo: "INPI", color: "#7c3aed", texto: "Solicitud presentada" });
-  if (t.notificacion) items.push({ fecha: t.notificacion, orden: t.notificacion, tipo: "Plazo", color: "#ea580c", texto: `Notificación (${esc(t.servicio_nombre)})` });
+  if (t.notificacion) items.push({ fecha: t.notificacion, orden: t.notificacion, tipo: "Plazo", color: "#ea580c", texto: `Notificación (${t.servicio_nombre})` });
   if (t.contratacion) items.push({ fecha: t.contratacion, orden: t.contratacion, tipo: "Contratación", color: "#16a34a", texto: "Nos contrató" });
   items.sort((a, b) => String(b.fecha).localeCompare(String(a.fecha)) || String(b.orden).localeCompare(String(a.orden)));
   if (!items.length) return '<p class="sg-exp-aviso">Todavía no hay movimientos.</p>';
   return `<ul class="sg-linea">${items.map((i) => `<li style="--c:${i.color}">
       <div class="cuando"><span class="tag" style="color:${i.color}">${esc(i.tipo)}</span>${fecha(i.fecha)}${i.quien ? ` · ${esc(i.quien)}` : ""}
         ${i.id ? `<button type="button" class="borrar" data-borrar-nota="${i.id}" title="Borrar esta nota">✕</button>` : ""}</div>
-      <div>${esc(i.texto)}</div></li>`).join("")}</ul>`;
+      ${textoNota(i.texto)}</li>`).join("")}</ul>`;
 }
 
 function bloqueExpediente(d) {
@@ -212,11 +226,11 @@ function bloqueExpediente(d) {
       ${celda("Presentada", m.fecha_presentacion && fecha(m.fecha_presentacion))}
       ${celda("Publicada", m.fecha_publicacion && fecha(m.fecha_publicacion))}
       ${celda("Concedida", m.fecha_concesion && fecha(m.fecha_concesion))}
-      ${m.tuvo_oposicion ? celda("Oposición", m.detalle_oposicion || "Sí") : ""}
+      ${m.tuvo_oposicion ? celda("Oposición", detalleOposicion(m.detalle_oposicion)) : ""}
     </div>`;
   }
   return `<div class="sg-bloque"><h3>📂 Expediente y bitácora</h3>${datos}
-    <form class="sg-nota-nueva" id="form-nota"><input type="text" id="nota-texto" placeholder="Agregar una nota: «Le mandé el escrito para firmar»…" maxlength="4000" />
+    <form class="sg-nota-nueva" id="form-nota"><textarea id="nota-texto" rows="1" placeholder="Agregar una nota: «Le mandé el escrito para firmar»… (puede ser larga)" maxlength="50000"></textarea>
       <button type="submit" class="sg-btn sg-btn-mini">Agregar</button></form>
     ${lineaTiempo(d)}</div>`;
 }
@@ -450,13 +464,43 @@ document.addEventListener("change", (ev) => {
 document.addEventListener("submit", async (ev) => {
   if (ev.target.id === "form-nota") {
     ev.preventDefault();
-    const texto = $("nota-texto").value.trim();
+    const caja = $("nota-texto");
+    const texto = caja.value.trim();
     if (!texto) return;
+    const boton = ev.target.querySelector("button[type=submit]");
+    boton.disabled = true;
     try {
       await pedir(`/api/trabajos/${sg.abierto}/bitacora`, { method: "POST", body: { texto } });
+      caja.value = "";
       abrirFicha(sg.abierto);
-    } catch (e) { mostrarAviso(`No se guardó la nota: ${e.message}`, "aviso"); }
+    } catch (e) {
+      boton.disabled = false;   // el texto queda en la caja para reintentar
+      mostrarAviso(`No se guardó la nota: ${e.message}`, "aviso");
+    }
   }
+});
+
+// Caja de la nota: crece al escribir (hasta un tope, después scrollea). Enter hace salto de línea;
+// Cmd/Ctrl + Enter la agrega.
+document.addEventListener("input", (ev) => {
+  if (ev.target.id !== "nota-texto") return;
+  const c = ev.target;
+  c.style.height = "auto";
+  c.style.height = Math.min(c.scrollHeight + 2, 320) + "px";
+});
+document.addEventListener("keydown", (ev) => {
+  if (ev.target.id === "nota-texto" && ev.key === "Enter" && (ev.metaKey || ev.ctrlKey)) {
+    ev.preventDefault();
+    ev.target.form.requestSubmit();
+  }
+});
+// «Ver más / Ver menos» de las notas largas
+document.addEventListener("click", (ev) => {
+  const b = ev.target.closest("[data-ver-mas]");
+  if (!b) return;
+  const txt = b.previousElementSibling;
+  const abierta = txt.classList.toggle("plegada") === false;
+  b.textContent = abierta ? "Ver menos" : "Ver más";
 });
 
 $("velo").addEventListener("click", cerrarFicha);
