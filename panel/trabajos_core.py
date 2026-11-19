@@ -3,7 +3,7 @@ Seguimientos (/seguimientos): cada trabajo puntual que contrató un cliente.
 
 Un trabajo es cliente + marca + servicio (registro, oposición, vista...). No necesita
 número de acta: una marca que todavía no se presentó (por ejemplo TIMBEROS o MAPIAPPS de
-Leonardo, cliente 32) ya es un trabajo en etapa «Seña cobrada». Cuando se presenta se le
+Leonardo, cliente 32) ya es un trabajo en etapa «Seña pagada». Cuando se presenta se le
 carga el acta y el expediente se arma solo con lo que el panel ya lee del INPI para la
 cartera (cartera_marcas + cartera_novedades). Si no tiene acta pero el cliente tiene en
 la cartera una marca con el mismo nombre, se toma esa (acta «vinculada sola»).
@@ -27,17 +27,20 @@ NOTION_PROCESOS = "https://www.notion.so/f6a567ff9f074f22b8dccde2283af8c5"
 # Orden de las columnas del tablero: primero las que tienen vencimiento (vista, oposición).
 SERVICIOS = [
     {"id": "vista", "nombre": "Contestación de vista", "corto": "Vista", "color": "#7c3aed",
-     "plazo": ("dias", 30), "cumple_en": 3,   # con el escrito presentado el plazo ya está cumplido
-     "etapas": ["Seña cobrada", "Análisis", "Escrito presentado", "Resuelta"]},
+     "plazo": ("dias", 30), "cumple_en": 4,   # con el escrito presentado el plazo ya está cumplido
+     "etapas": ["Seña cobrada", "Formulario y poder", "Análisis", "Escrito presentado", "Resuelta"]},
     {"id": "oposicion", "nombre": "Oposición + negociación", "corto": "Oposición", "color": "#ea580c",
-     "plazo": ("meses", 3), "cumple_en": 5,   # con acuerdo o retiro ya no corre la negociación
-     "etapas": ["Seña cobrada", "Análisis", "Contacto con el oponente", "Negociando", "Acuerdo o retiro"]},
+     "plazo": ("meses", 3), "cumple_en": 6,   # con acuerdo o retiro ya no corre la negociación
+     "etapas": ["Seña cobrada", "Formulario y poder", "Análisis", "Contacto con el oponente", "Negociando", "Acuerdo o retiro"]},
     {"id": "oposicion_adm", "nombre": "Oposición administrativa", "corto": "Opo. administrativa", "color": "#dc2626",
      "plazo": None,
      "etapas": ["Seña cobrada", "Escrito presentado", "Esperando resolución", "Resuelta"]},
+    # Registro (19/11/2026): hasta «Informe enviado» se marca a mano; desde «Marca publicada» la etapa
+    # avanza sola con lo que el seguimiento diario de la cartera lee del INPI (ver etapa_registro).
     {"id": "registro", "nombre": "Registro de marca", "corto": "Registro", "color": "#2563eb",
-     "plazo": None,
-     "etapas": ["Seña cobrada", "Formulario y poder", "Presentada", "Publicada", "Concedida"]},
+     "plazo": None, "auto_desde": 4,
+     "etapas": ["Seña pagada", "Formulario y poder", "Informe enviado", "Marca publicada", "Marca en boletín",
+                "Marca en proyecto de resolución", "Concedida"]},
     {"id": "vigilancia", "nombre": "Vigilancia marcaria", "corto": "Vigilancia", "color": "#16a34a",
      "plazo": None,
      "etapas": ["Contratada", "Activa"]},
@@ -54,6 +57,7 @@ def servicios_publicos():
     """Lo que necesita la pantalla (sin tuplas)."""
     return [{"id": s["id"], "nombre": s["nombre"], "corto": s["corto"], "color": s["color"],
              "etapas": s["etapas"], "con_vencimiento": s["plazo"] is not None, "cumple_en": s.get("cumple_en"),
+             "auto_desde": s.get("auto_desde"),
              "plazo_texto": _plazo_texto(s["plazo"])} for s in SERVICIOS]
 
 
@@ -213,8 +217,9 @@ TABLAS = [
 # Pagos». El cliente sale del link «Ficha de cliente» de cada fila (panel/clientes?cliente=N).
 # Se inserta una sola vez (clave_carga) y solo si el cliente existe; después se edita en el panel.
 CARGA_INICIAL = [
+    # (etapas con la numeración del 19/11/2026)
     # clave, cliente_id, marca, servicio, etapa, contratación, notificación, acta, drive, comprobante, notas
-    ("planilla:BARRIOKEY", 31, "BARRIOKEY", "oposicion", 4, "2026-10-16", "2026-11-04", None,
+    ("planilla:BARRIOKEY", 31, "BARRIOKEY", "oposicion", 5, "2026-10-16", "2026-11-04", None,
      "https://docs.google.com/document/d/1R-lTO0TKtyMR6wYeknUizLytm11fatrq_dkymo1YYKA/edit?usp=drive_link",
      "https://mail.google.com/mail/u/2?ui=2&ik=568bf27d9b&attid=0.1&permmsgid=msg-f:1879219394474072262&th=1a1454152ea6d8c6&view=fimg&fur=ip&sz=s0-l75-ft&disp=emb&realattid=ii_1a14540c8f1dfc58af31",
      None),
@@ -227,7 +232,7 @@ CARGA_INICIAL = [
     ("planilla:MATEACIDO", 37, "MATEACIDO", "vista", 1, "2026-11-01", "2026-10-29", None,
      "https://drive.google.com/drive/u/0/folders/1hT2xl_q_JGFo6plXvvRm7LR7mY8E2-BE",
      "https://mail.google.com/mail/u/2/popout?ver=1rxqa29am4kag", None),
-    ("planilla:CANVA PADEL", 38, "CANVA PADEL", "oposicion", 4, "2026-11-01", "2026-10-14", "4775277",
+    ("planilla:CANVA PADEL", 38, "CANVA PADEL", "oposicion", 5, "2026-11-01", "2026-10-14", "4775277",
      "https://drive.google.com/drive/u/0/folders/1X0S_CJ8FuXg8YeDlSqx5ezbwPpK5Ialp",
      "https://web.whatsapp.com/02d525ec-1894-42b8-aaec-2431d42f1115",
      "Titular: ANTHAL SPORT SRL. Propuesta: coexistencia usando siempre CANVA PADEL completo y logo propio."),
@@ -248,9 +253,104 @@ CARGA_INICIAL = [
 ]
 
 
+# ── Etapas del registro según el INPI ───────────────────────────────────────
+# Número de etapa de Registro de marca (1 = «Seña pagada»).
+ETAPA_REG_PUBLICADA, ETAPA_REG_BOLETIN, ETAPA_REG_RESOLUCION, ETAPA_REG_CONCEDIDA = 4, 5, 6, 7
+
+
+def etapa_de_acta(m):
+    """Etapa del registro que corresponde a una acta de la cartera (cartera_marcas), o None si está
+    denegada/desistida (no hace avanzar nada):
+      - existe en el INPI (presentada, en estudio)           → «Marca publicada»
+      - tiene fecha de publicación o está en Publicación /
+        Notificaciones                                        → «Marca en boletín»
+      - está en División Resoluciones                         → «Marca en proyecto de resolución»
+      - estado del trámite «Concedida»                        → «Concedida»"""
+    import seguimiento_expediente as se
+    estado = (m.get("estado_tramite") or "").strip().lower()
+    if estado.startswith("concedid"):
+        return ETAPA_REG_CONCEDIDA
+    if estado.startswith(("denegad", "desist", "abandon", "caduc")):
+        return None
+    sector = se.sector_de(m.get("ubicacion_actual"))
+    if sector == "resoluciones":
+        return ETAPA_REG_RESOLUCION
+    if m.get("fecha_publicacion") or sector in ("publicacion", "notificaciones"):
+        return ETAPA_REG_BOLETIN
+    return ETAPA_REG_PUBLICADA
+
+
+def actas_del_trabajo(t, cartera):
+    """Actas de la cartera que son de este trabajo: la cargada en el trabajo y las del mismo cliente con
+    el mismo nombre de marca (o el mismo grupo de marcas), sin importar tildes ni mayúsculas. Así una
+    marca presentada en varias clases (varias actas) cuenta como un solo trabajo."""
+    nombre = comparable(t.get("marca"))
+    out, vistas = [], set()
+    for m in cartera:
+        propia = t.get("acta") and m.get("acta") == t.get("acta")
+        mismo = (m.get("cliente_id") == t.get("cliente_id") and nombre and
+                 nombre in (comparable(m.get("denominacion")), comparable(m.get("grupo_marca"))))
+        if (propia or mismo) and m["acta"] not in vistas:
+            vistas.add(m["acta"]); out.append(m)
+    return sorted(out, key=lambda m: (m.get("clase") or 0, m["acta"]))
+
+
+def etapa_registro(actas):
+    """Etapa del registro según el INPI para un conjunto de actas de la misma marca: la de la acta MÁS
+    ATRASADA (la marca recién está «Concedida» cuando lo están todas sus clases). Las denegadas no
+    cuentan. Devuelve {"etapa", "nombre", "actas": [{acta, clase, etapa, nombre}]} (etapa None si todas
+    están denegadas) o None si no hay actas."""
+    etapas = POR_ID["registro"]["etapas"]
+    detalle = []
+    for m in actas:
+        e = etapa_de_acta(m)
+        detalle.append({"acta": m["acta"], "clase": m.get("clase"), "etapa": e,
+                        "nombre": etapas[e - 1] if e else (m.get("estado_tramite") or "Denegada")})
+    if not detalle:
+        return None
+    validas = [d["etapa"] for d in detalle if d["etapa"]]
+    if not validas:
+        return {"etapa": None, "nombre": None, "actas": detalle}
+    e = min(validas)
+    return {"etapa": e, "nombre": etapas[e - 1], "actas": detalle}
+
+
+def texto_avance(nombre_etapa, info):
+    actas = [d["acta"] for d in info["actas"] if d["etapa"]]
+    if len(actas) == 1:
+        return f"Etapa actualizada sola según el INPI: «{nombre_etapa}» (acta {actas[0]})."
+    return (f"Etapa actualizada sola según el INPI: «{nombre_etapa}» (se toma la más atrasada de "
+            f"{len(actas)} actas: {', '.join(actas)}).")
+
+
+# Cambios de etapas (19/11/2026): se sumó «Formulario y poder» en vista y oposición y el registro pasó
+# de 5 a 7 etapas. Los trabajos ya cargados se renumeran una sola vez (tabla trabajos_migraciones).
+MIGRACIONES_ETAPAS = {
+    "etapas-2026-11-19": {
+        "vista": {2: 3, 3: 4, 4: 5},
+        "oposicion": {2: 3, 3: 4, 4: 5, 5: 6},
+        # Seña, Formulario y poder, Presentada, Publicada, Concedida → Seña, FyP, (Informe), Marca publicada,
+        # Marca en boletín, (Proyecto de resolución), Concedida
+        "registro": {3: 4, 4: 5, 5: 7},
+    },
+}
+
+
+def migrar_etapas(cur):
+    cur.execute("CREATE TABLE IF NOT EXISTS trabajos_migraciones (nombre TEXT PRIMARY KEY, hecha_en TIMESTAMPTZ NOT NULL DEFAULT now())")
+    for nombre, mapas in MIGRACIONES_ETAPAS.items():
+        cur.execute("INSERT INTO trabajos_migraciones (nombre) VALUES (%s) ON CONFLICT DO NOTHING", (nombre,))
+        if not cur.rowcount:
+            continue   # ya se hizo
+        for sid, mapa in mapas.items():
+            casos = " ".join(f"WHEN {int(a)} THEN {int(b)}" for a, b in mapa.items())
+            cur.execute(f"UPDATE trabajos SET etapa = CASE etapa {casos} ELSE etapa END WHERE servicio = %s", (sid,))
+
+
 def crear_tablas(cur):
     for sql in TABLAS:
         cur.execute(sql)
+    migrar_etapas(cur)   # antes de la carga inicial: CARGA_INICIAL ya usa la numeración nueva
     for (clave, cid, marca, sid, etapa, contr, notif, acta, drive, comp, notas) in CARGA_INICIAL:
         cur.execute(
             """INSERT INTO trabajos (clave_carga, cliente_id, marca, servicio, etapa, contratacion, notificacion,

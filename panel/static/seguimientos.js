@@ -236,9 +236,17 @@ function pintarFicha(d) {
   const pasos = s.etapas.map((e, i) => {
     const n = i + 1;
     const cls = n <= t.etapa ? "hecho" : "";
-    return `<li class="sg-paso ${cls} ${n === t.etapa ? "actual" : ""}" data-etapa="${n}" title="Marcar «${esc(e)}» como etapa actual">
-      <span class="bola">${n <= t.etapa ? "✓" : ""}</span><span class="nombre">${esc(e)}</span></li>`;
+    const auto = s.auto_desde && n >= s.auto_desde;
+    return `<li class="sg-paso ${cls} ${n === t.etapa ? "actual" : ""}" data-etapa="${n}" title="${auto ? `Se marca sola cuando el INPI lo muestra (también se puede marcar a mano)` : `Marcar «${esc(e)}» como etapa actual`}">
+      <span class="bola">${n <= t.etapa ? "✓" : ""}</span><span class="nombre">${esc(e)}</span>${auto ? '<span class="sg-auto">INPI</span>' : ""}</li>`;
   }).join("");
+  const inpi = d.inpi;
+  const bloqueInpi = !s.auto_desde ? "" : !inpi || !inpi.actas.length
+    ? `<p class="sg-inpi-nota">Desde «${esc(s.etapas[s.auto_desde - 1])}» la etapa avanza sola con lo que el panel lee del INPI. Para eso el trabajo necesita su acta: se busca sola o se carga en Datos.</p>`
+    : `<div class="sg-inpi"><div class="sg-inpi-tit">Según el INPI${inpi.actas.length > 1 ? ` · ${inpi.actas.length} actas (cuenta la más atrasada)` : ""}</div>
+        <ul>${inpi.actas.map((a) => `<li><span class="acta">Acta ${esc(a.acta)}${a.clase ? ` · cl. ${a.clase}` : ""}</span>
+          <span class="est ${a.etapa ? "" : "den"}">${a.pendiente ? "Pendiente de leer en el INPI" : esc(a.nombre)}</span></li>`).join("")}</ul>
+        ${inpi.actas.length === 1 ? `<p class="sg-inpi-nota">¿La marca tiene más clases? Las otras actas se suman solas si están en Clientes → Marcas con el mismo nombre.</p>` : ""}</div>`;
   const opServ = d.servicios.map((x) => `<option value="${x.id}" ${x.id === t.servicio ? "selected" : ""}>${esc(x.nombre)}</option>`).join("");
   const enlace = (url, txt) => (url ? `<a class="sg-btn sg-btn-suave sg-btn-mini" href="${esc(url)}" target="_blank" rel="noopener">${txt}</a>` : "");
   f.innerHTML = `
@@ -256,7 +264,7 @@ function pintarFicha(d) {
     <div class="sg-f-cuerpo">
       ${bloqueCuenta(t, s)}
       <div class="sg-bloque"><h3>Etapas <span class="der">${t.proxima_etapa ? `Sigue: <b>${esc(t.proxima_etapa)}</b>` : "✓ Todas completas"}</span></h3>
-        <ol class="sg-pasos">${pasos}</ol></div>
+        <ol class="sg-pasos">${pasos}</ol>${bloqueInpi}</div>
       <div class="sg-bloque"><h3>Datos <span class="der sg-guardado" id="guardado">✓ Guardado</span></h3>
         <div class="sg-datos">
           <label>Servicio <select data-campo="servicio">${opServ}</select></label>

@@ -12,7 +12,12 @@ API de la pantalla Seguimientos (/seguimientos): trabajos puntuales de cada clie
 
 Detección del acta: al abrir el tablero (como mucho cada 10 minutos) se buscan en la base las actas
 de los trabajos que todavía no tienen (ver trabajos_core.elegir_acta); si una es segura se carga sola,
-se anota en la bitácora y, en un registro, la etapa pasa a «Presentada».
+se anota en la bitácora y, en un registro, la etapa pasa a «Marca publicada» y el acta se suma a la cartera
+del cliente (Clientes → Marcas) para que el seguimiento diario la lea en el INPI.
+
+Etapas del registro según el INPI (desde el 19/11/2026): cada vez que se abre el tablero o una ficha, los
+registros activos toman la etapa que corresponde a sus actas en la cartera (trabajos_core.etapa_registro: la
+más atrasada si la marca tiene varias actas). Solo avanzan, nunca retroceden, y queda anotado en la bitácora.
 
 La lógica (servicios, etapas, vencimientos, alertas, orden) está en trabajos_core.py.
 """
@@ -32,7 +37,7 @@ import trabajos_core as tc
 RE_ACTA = re.compile(r"^\d{4,9}$")
 CADA_DETECCION = 600          # segundos entre detecciones automáticas al abrir el tablero
 MATRICULAS_FIJAS = {"2906"}   # matrícula de Pame (además de las de Clientes → Ajustes → Matrículas)
-ETAPA_PRESENTADA = 3          # «Presentada» en Registro de marca
+ETAPA_PRESENTADA = tc.ETAPA_REG_PUBLICADA   # «Marca publicada» en Registro de marca (ya tiene acta)
 _ultima_deteccion = 0.0
 _candado_deteccion = threading.Lock()
 
@@ -206,6 +211,61 @@ def crear_router(verificar_login, conexion) -> APIRouter:
                 print(f"[seguimientos] candidatas de {fuente}: {e}")
         return out
 
+    def _a_cartera(cur, cliente_id, acta, marca, usuario):
+        """Suma el acta de un registro a la cartera del cliente (si no está) para que el seguimiento diario
+        (scripts/revisar_cartera.py) lea su ubicación y estado en el INPI. Queda pendiente de consultar."""
+        try:
+            cur.execute("SAVEPOINT a_cartera")
+            cur.execute("SELECT 1 FROM cartera_marcas WHERE acta = %s", (acta,))
+            if not cur.fetchone():
+                import cartera
+                cartera.alta_marca_cartera(cur, cliente_id, acta, {"estado_consulta": "pendiente",
+                                           "error": "cargada desde Seguimientos, todavía sin consultar"},
+                                           usuario, origen_carga="seguimientos")
+                cur.execute("UPDATE cartera_marcas SET denominacion = COALESCE(denominacion, %s) WHERE acta = %s",
+                            (marca, acta))
+            cur.execute("RELEASE SAVEPOINT a_cartera")
+        except Exception as e:
+            cur.execute("ROLLBACK TO SAVEPOINT a_cartera")
+            print(f"[seguimientos] acta {acta} a la cartera: {e}")
+
+    def _cartera_de(cur, trabajos):
+        clientes = sorted({t["cliente_id"] for t in trabajos})
+        actas = sorted({t["acta"] for t in trabajos if t.get("acta")})
+        cur.execute(
+            """SELECT acta, cliente_id, denominacion, grupo_marca, clase, estado_tramite, fecha_publicacion,
+                      ubicacion_actual, ubicacion_fecha, consultado_en
+               FROM cartera_marcas WHERE cliente_id = ANY(%s) OR acta = ANY(%s)""", (clientes, actas))
+        return cur.fetchall()
+
+    def _sincronizar_registros(cur, solo_id=None):
+        """Los registros activos avanzan solos a la etapa que dice el INPI (nunca retroceden)."""
+        cond = "servicio = 'registro' AND estado = 'activo'" + (" AND id = %s" if solo_id else "")
+        cur.execute(f"SELECT id, cliente_id, marca, acta, etapa FROM trabajos WHERE {cond}", (solo_id,) if solo_id else None)
+        trabajos = cur.fetchall()
+        if not trabajos:
+            return
+        cartera_filas = _cartera_de(cur, trabajos)
+        etapas = tc.POR_ID["registro"]["etapas"]
+        for t in trabajos:
+            info = tc.etapa_registro(tc.actas_del_trabajo(t, cartera_filas))
+            if info and info["etapa"] and info["etapa"] > (t["etapa"] or 0):
+                cur.execute("UPDATE trabajos SET etapa = %s, modificado_en = now(), modificado_por = 'sistema' "
+                            "WHERE id = %s AND etapa < %s", (info["etapa"], t["id"], info["etapa"]))
+                if cur.rowcount:
+                    cur.execute("INSERT INTO trabajos_bitacora (trabajo_id, fecha, texto, usuario) VALUES (%s, %s, %s, 'sistema')",
+                                (t["id"], tc.hoy_ar(), tc.texto_avance(etapas[info["etapa"] - 1], info)))
+
+    def _sincronizar_seguro(conn, cur, solo_id=None):
+        try:
+            cur.execute("SAVEPOINT sinc")
+            _sincronizar_registros(cur, solo_id)
+            cur.execute("RELEASE SAVEPOINT sinc")
+            conn.commit()
+        except Exception as e:
+            cur.execute("ROLLBACK TO SAVEPOINT sinc")
+            print(f"[seguimientos] etapas según el INPI: {e}")
+
     def _asignar(cur, t, elegida, evaluadas, origen):
         texto = tc.texto_deteccion(elegida, evaluadas, origen)
         cur.execute(
@@ -215,6 +275,8 @@ def crear_router(verificar_login, conexion) -> APIRouter:
         if cur.rowcount:
             cur.execute("INSERT INTO trabajos_bitacora (trabajo_id, fecha, texto, usuario) VALUES (%s, %s, %s, 'sistema')",
                         (t["id"], tc.hoy_ar(), texto))
+            if t.get("servicio") == "registro":
+                _a_cartera(cur, t["cliente_id"], elegida["acta"], t["marca"], "sistema")
         return texto
 
     def _detectar(cur, solo_id=None):
@@ -262,6 +324,7 @@ def crear_router(verificar_login, conexion) -> APIRouter:
         donde = (" WHERE " + " AND ".join(cond)) if cond else ""
         with conexion() as conn, rcur(conn) as cur:
             _deteccion_periodica(conn, cur)
+            _sincronizar_seguro(conn, cur)
             cur.execute(SQL_LISTA + donde, val)
             hoy = tc.hoy_ar()
             filas = tc.ordenar([tc.completar(dict(f), hoy) for f in cur.fetchall()])
@@ -273,7 +336,15 @@ def crear_router(verificar_login, conexion) -> APIRouter:
     @router.get("/api/trabajos/{tid}")
     def ficha(tid: int, _: str = Depends(verificar_login)):
         with conexion() as conn, rcur(conn) as cur:
+            _sincronizar_seguro(conn, cur, tid)
             t = _uno(cur, tid)
+            inpi = None
+            if t["servicio"] == "registro":
+                actas = tc.actas_del_trabajo(t, _cartera_de(cur, [t]))
+                inpi = tc.etapa_registro(actas) or {"etapa": None, "nombre": None, "actas": []}
+                pend = {m["acta"] for m in actas if not m.get("consultado_en")}
+                for d in inpi["actas"]:
+                    d["pendiente"] = d["acta"] in pend
             expediente = None
             if t.get("acta_efectiva"):
                 cur.execute(
@@ -296,7 +367,7 @@ def crear_router(verificar_login, conexion) -> APIRouter:
                 "SELECT id, tipo, marca, generado_en, generado_por FROM informes_viabilidad "
                 "WHERE cliente_id = %s AND archivado_en IS NULL ORDER BY generado_en DESC LIMIT 50", (t["cliente_id"],))
             informes, otros_informes = tc.separar_informes(t, cur.fetchall())
-        return {"trabajo": t, "expediente": expediente, "bitacora": bitacora,
+        return {"trabajo": t, "expediente": expediente, "bitacora": bitacora, "inpi": inpi,
                 "informes": informes, "otros_informes": otros_informes,
                 "servicios": tc.servicios_publicos(), "notion_procesos": tc.NOTION_PROCESOS}
 
@@ -331,7 +402,7 @@ def crear_router(verificar_login, conexion) -> APIRouter:
             sets.append("cerrado_en = CASE WHEN %s = 'cerrado' THEN now() ELSE NULL END")
             extra.append(campos["estado"])
         if campos.get("acta") and "etapa" not in campos:
-            # Se cargó el acta: si era un registro todavía sin presentar, pasa a «Presentada».
+            # Se cargó el acta: si era un registro todavía sin presentar, pasa a «Marca publicada».
             sets.append("etapa = CASE WHEN servicio = 'registro' AND etapa < %s THEN %s ELSE etapa END")
             extra += [ETAPA_PRESENTADA, ETAPA_PRESENTADA]
         val = list(campos.values()) + [usuario] + extra
@@ -343,6 +414,11 @@ def crear_router(verificar_login, conexion) -> APIRouter:
             cur.execute(f"UPDATE trabajos SET {', '.join(sets)} WHERE id = %s", val + [tid])
             if cur.rowcount == 0:
                 raise HTTPException(status_code=404, detail="No existe ese trabajo")
+            if campos.get("acta"):
+                cur.execute("SELECT cliente_id, marca, servicio FROM trabajos WHERE id = %s", (tid,))
+                t = cur.fetchone()
+                if t["servicio"] == "registro":
+                    _a_cartera(cur, t["cliente_id"], campos["acta"], t["marca"], usuario)
             conn.commit()
             return {"trabajo": _uno(cur, tid)}
 
