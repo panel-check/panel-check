@@ -1,4 +1,6 @@
-"""Campanita 🔔 del encabezado: notificaciones del INPI a Pame (ver notificaciones_inpi.py).
+"""Campanita 🔔 del encabezado: notificaciones del INPI a Pame (ver notificaciones_inpi.py) y, desde el
+19/11/2026 (pedido de Pame), los movimientos de las actas de clientes que guarda la revisión diaria de la cartera
+(tabla cartera_novedades).
 
   GET  /api/notificaciones-inpi                 lista (las más nuevas primero) + cuáles son nuevas para mí
   GET  /api/notificaciones-inpi/resumen         cuántas nuevas tengo (el número de la campanita)
@@ -39,31 +41,58 @@ def crear_router(verificar_login, conexion) -> APIRouter:
         r = cur.fetchone()
         return r["visto_hasta"] if r else None
 
+    # Sin fila en notificaciones_inpi_visto (primera vez que el usuario abre la campanita) cuentan como nuevas
+    # solo las de los últimos 2 días, para no arrancar con todo el historial de movimientos sin leer.
+    DESDE_SIN_VISTO = "now() - interval '2 days'"
+
     @router.get("/api/notificaciones-inpi")
-    def listar(limite: int = Query(60, ge=1, le=500), tipo: str = "", acta: str = "",
+    def listar(limite: int = Query(80, ge=1, le=500), tipo: str = "", acta: str = "", origen: str = "",
                usuario: str = Depends(verificar_login)):
+        """origen: '' (todo), 'inpi' (notificaciones del INPI) o 'mov' (movimientos de actas de clientes).
+        tipo: código del INPI (1, 14, 15, 4239) — solo para origen inpi."""
+        items = []
         with conexion() as conn:
             with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
                 visto = _visto_hasta(cur, usuario)
-                where, params = [], []
-                if tipo:
-                    where.append("n.tipo_codigo = %s")
-                    params.append(tipo)
-                if acta:
-                    where.append("n.acta = %s")
-                    params.append(acta)
-                sql = ni.SELECT_DETALLE + (" WHERE " + " AND ".join(where) if where else "")
-                cur.execute(sql + " ORDER BY n.fecha_carga DESC NULLS LAST, n.id_notificacion DESC LIMIT %s",
-                            params + [limite])
-                items = []
-                for f in cur.fetchall():
-                    d = _json(f)
-                    d["nueva"] = (not f["carga_inicial"]) and (visto is None or f["creado_en"] > visto)
-                    items.append(d)
+                cur.execute("SELECT COALESCE(%s, " + DESDE_SIN_VISTO + ") AS corte", (visto,))
+                corte = cur.fetchone()["corte"]
+                if origen in ("", "inpi"):
+                    where, params = [], []
+                    if tipo:
+                        where.append("n.tipo_codigo = %s")
+                        params.append(tipo)
+                    if acta:
+                        where.append("n.acta = %s")
+                        params.append(acta)
+                    sql = ni.SELECT_DETALLE + (" WHERE " + " AND ".join(where) if where else "")
+                    cur.execute(sql + " ORDER BY n.fecha_carga DESC NULLS LAST, n.id_notificacion DESC LIMIT %s",
+                                params + [limite])
+                    for f in cur.fetchall():
+                        d = _json(f)
+                        d["origen"] = "inpi"
+                        d["fecha"] = d.get("fecha_carga")
+                        d["nueva"] = (not f["carga_inicial"]) and f["creado_en"] > corte
+                        items.append(d)
+                if origen in ("", "mov") and not tipo:
+                    where, params = [], []
+                    if acta:
+                        where.append("nv.acta = %s")
+                        params.append(acta)
+                    sql = ni.SELECT_MOVIMIENTOS + (" WHERE " + " AND ".join(where) if where else "")
+                    cur.execute(sql + " ORDER BY nv.detectado_en DESC, nv.id DESC LIMIT %s", params + [limite])
+                    for f in cur.fetchall():
+                        d = ni.describir_movimiento(dict(f))
+                        d["origen"] = "mov"
+                        d["fecha"] = f["detectado_en"].isoformat()
+                        d["nueva"] = f["detectado_en"] > corte
+                        d.pop("detectado_en", None)
+                        items.append(d)
+                items.sort(key=lambda d: d.get("fecha") or "", reverse=True)
+                items = items[:limite]
                 cur.execute("""SELECT creado_en, metricas FROM registro_corridas
                                WHERE proceso = %s ORDER BY creado_en DESC LIMIT 1""", (WORKFLOW,))
                 u = cur.fetchone()
-                cur.execute("SELECT count(*) AS n FROM notificaciones_inpi")
+                cur.execute("SELECT (SELECT count(*) FROM notificaciones_inpi) + (SELECT count(*) FROM cartera_novedades) AS n")
                 total = cur.fetchone()["n"]
         return {"items": items, "total": total,
                 "ultima_actualizacion": u["creado_en"].isoformat() if u else None,
@@ -75,14 +104,17 @@ def crear_router(verificar_login, conexion) -> APIRouter:
             with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
                 visto = _visto_hasta(cur, usuario)
                 cur.execute(
-                    """SELECT count(*) AS nuevas,
-                              count(*) FILTER (WHERE tipo_codigo = '1') AS titulos
-                       FROM notificaciones_inpi
-                       WHERE NOT carga_inicial AND creado_en > COALESCE(%s, '-infinity'::timestamptz)""",
+                    "WITH c AS (SELECT COALESCE(%s, " + DESDE_SIN_VISTO + """) AS corte)
+                       SELECT (SELECT count(*) FROM notificaciones_inpi, c
+                               WHERE NOT carga_inicial AND creado_en > c.corte) AS inpi,
+                              (SELECT count(*) FROM notificaciones_inpi, c
+                               WHERE NOT carga_inicial AND creado_en > c.corte AND tipo_codigo = '1') AS titulos,
+                              (SELECT count(*) FROM cartera_novedades, c WHERE detectado_en > c.corte) AS movimientos""",
                     (visto,),
                 )
                 r = cur.fetchone()
-        return {"nuevas": r["nuevas"], "titulos": r["titulos"]}
+        return {"nuevas": r["inpi"] + r["movimientos"], "inpi": r["inpi"], "titulos": r["titulos"],
+                "movimientos": r["movimientos"]}
 
     @router.post("/api/notificaciones-inpi/visto")
     def marcar_visto(usuario: str = Depends(verificar_login)):
