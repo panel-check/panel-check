@@ -96,7 +96,7 @@ def estructura(xml_texto: str) -> list[str]:
             conteo[r] += 1
             texto = (hijo.text or "").strip()
             largo[r] = max(largo.get(r, 0), len(texto))
-            if texto and re.search(r"tipo|codigo|cod|estado|direccion|faultcode|resultado|error", _tag(hijo), re.I) \
+            if texto and re.search(r"tipo|codigo|cod|estado|direccion|faultcode|resultado|error|nombrenotificacion", _tag(hijo), re.I) \
                     and len(texto) <= 60:
                 valores.setdefault(r, Counter())[texto] += 1
             recorrer(hijo, r)
@@ -111,6 +111,50 @@ def estructura(xml_texto: str) -> list[str]:
             extra += "  valores: " + ", ".join(f"{v} ({c})" for v, c in valores[r].most_common(25))
         lineas.append(f"{r}  ×{n}  largo máx {largo[r]}{extra}")
     return lineas
+
+
+def _enmascarar(texto: str) -> str:
+    """Deja ver la forma de un valor sin mostrarlo: dígitos → #, letras → x (salvo extensión y dominio)."""
+    m = re.match(r"(https?://[^/]+)?(.*?)(\.[A-Za-z0-9]{2,4})?$", texto)
+    base, medio, ext = (m.group(1) or ""), m.group(2), (m.group(3) or "")
+    return base + re.sub(r"[A-Za-z]", "x", re.sub(r"\d", "#", medio)) + ext
+
+
+def probar_adjuntos(xml_texto: str, max_descargas: int = 2) -> list[tuple[str, bytes]]:
+    """Muestra la forma del campo Adjunto, la relación código ↔ nombre de notificación y prueba bajar el PDF."""
+    try:
+        root = ET.fromstring(xml_texto)
+    except ET.ParseError:
+        return []
+    filas = []
+    for n in root.iter():
+        if _tag(n) == "Notificaciones_Archivos":
+            filas.append({_tag(h): (h.text or "").strip() for h in n})
+    pares = Counter((f.get("id_NotificacionesporDireccion"), f.get("NombreNotificacion")) for f in filas)
+    print("  Código ↔ nombre de notificación:")
+    for (cod, nom), c in pares.most_common():
+        print(f"    {cod} = {nom}  ({c})")
+    formas = Counter(_enmascarar(f.get("Adjunto", "")) for f in filas)
+    print("  Forma del campo Adjunto:")
+    for forma, c in formas.most_common(5):
+        print(f"    {forma}  ({c})")
+    print("  Forma de Fecha_Carga: " + ", ".join(sorted({_enmascarar(f.get('Fecha_Carga', '')) for f in filas})[:3]))
+    bajados = []
+    for f in filas[:max_descargas]:
+        adj = f.get("Adjunto", "")
+        if not adj.lower().startswith("http"):
+            print("    (el Adjunto no es una URL: no se prueba la descarga)")
+            break
+        try:
+            r = requests.get(adj, timeout=(20, 120))
+            tipo = r.headers.get("Content-Type", "")
+            print(f"    descarga: HTTP {r.status_code}, {tipo}, {len(r.content)} bytes, empieza con %PDF: {r.content[:4] == b'%PDF'}")
+            if r.status_code == 200 and r.content[:4] == b"%PDF":
+                bajados.append((f"notificacion_{f.get('Id_Notificacion', len(bajados))}.pdf", r.content))
+        except requests.RequestException as e:
+            print(f"    descarga: error {type(e).__name__}")
+        time.sleep(3)
+    return bajados
 
 
 def recortar_y_extraer(xml_texto: str) -> tuple[str, list[tuple[str, bytes]]]:
@@ -134,8 +178,8 @@ def recortar_y_extraer(xml_texto: str) -> tuple[str, list[tuple[str, bytes]]]:
 
 def mandar_mail(asunto: str, cuerpo: str, adjuntos: list[tuple[str, bytes]]) -> None:
     clave = os.environ.get("RESEND_API_KEY")
-    destino = [d.strip() for d in (os.environ.get("NOTIFICAR_A") or "").split(",") if d.strip()]
-    remitente = os.environ.get("RESEND_FROM")
+    destino = [d.strip() for d in (os.environ.get("NOTIFICAR_A") or "marcas@komunikacion.com.ar").split(",") if d.strip()]
+    remitente = os.environ.get("RESEND_FROM") or "Avisos Panel <avisos@quieroregistrarmimarca.com.ar>"
     if not (clave and destino and remitente):
         print("No hay RESEND_API_KEY / RESEND_FROM / NOTIFICAR_A: no se manda el mail.")
         return
@@ -178,7 +222,9 @@ def main():
         print(f"\n=== {operacion}: HTTP {estado}, {len(texto)} caracteres, {time.time() - t0:.1f} s ===")
         for linea in estructura(texto):
             print("  " + linea)
+        archivos_url = probar_adjuntos(texto) if estado == 200 else []
         recortado, archivos = recortar_y_extraer(texto)
+        archivos = archivos_url + archivos
         adjuntos_mail += archivos[: MAX_PDF_MAIL - len(adjuntos_mail)]
         cuerpo_mail.append(f"===== {operacion} (HTTP {estado}) =====\n\n{recortado}\n")
         time.sleep(3)
