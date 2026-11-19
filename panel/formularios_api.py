@@ -41,6 +41,7 @@ import mails_core
 import mails_cola
 import poderes
 import toma_intervencion as ti
+import desistimiento as ds
 
 STATIC = os.path.join(os.path.dirname(__file__), "static")
 MAX_ENVIO = 32 * 1024 * 1024  # tope del pedido entero (3 archivos de 10 MB + texto)
@@ -81,6 +82,22 @@ class DatosToma(BaseModel):
 
 class PedidoTomas(BaseModel):
     items: list[DatosToma]
+
+
+class DatosDesiste(BaseModel):
+    acta: str
+    marca: str
+    clase: Optional[str] = ""
+    tipo: Optional[str] = ""
+    titular: str
+    identificacion: Optional[str] = ""
+    domicilio: Optional[str] = ""
+    genero: Optional[str] = ""
+    fecha: Optional[str] = ""
+
+
+class PedidoDesiste(BaseModel):
+    items: list[DatosDesiste]
 
 
 class Apoderado(BaseModel):
@@ -659,6 +676,58 @@ def crear_router(verificar_login, conexion) -> APIRouter:
         else:
             contenido, mime = ti.generar_zip(items, apoderado, formato), "application/zip"
             nombre = "Tomas_de_intervencion_" + (re.sub(r"[^A-Za-z0-9]+", "_", cli["nombre"]).strip("_")[:40] or "cliente") + ".zip"
+        return Response(content=contenido, media_type=mime,
+                        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(nombre)}"})
+
+    @router.get("/api/clientes/{cliente_id}/desiste")
+    def propuesta_desiste(cliente_id: int, _: str = Depends(verificar_login)):
+        """Marcas del cliente con los datos sugeridos para el escrito de desistimiento (DESISTE)."""
+        hoy = _dt.datetime.now(_dt.timezone(_dt.timedelta(hours=-3))).date()
+        with conexion() as conn:
+            with rcur(conn) as cur:
+                cur.execute("SELECT * FROM clientes WHERE id = %s", (cliente_id,))
+                c = cur.fetchone()
+                if not c:
+                    raise HTTPException(status_code=404, detail="No existe ese cliente")
+                cur.execute("SELECT * FROM cartera_marcas WHERE cliente_id = %s ORDER BY denominacion, acta", (cliente_id,))
+                marcas = cur.fetchall()
+                apoderado = leer_apoderado(cur)
+        out = []
+        for m in marcas:
+            d = ds.propuesta(m, c, hoy)
+            d["estado"] = m.get("estado_tramite") or ""
+            out.append(d)
+        return {"marcas": out, "apoderada": ds._nombre_apoderada(apoderado), "matricula": ti.matricula(apoderado)}
+
+    @router.post("/api/clientes/{cliente_id}/desiste")
+    def generar_desiste(cliente_id: int, body: PedidoDesiste, formato: str = "pdf", _: str = Depends(verificar_login)):
+        """Un escrito DESISTE por marca; si se piden varias, devuelve un ZIP."""
+        items = []
+        for it in body.items:
+            d = {k: (getattr(it, k) or "").strip() for k in DatosDesiste.model_fields}
+            if not d["acta"] or not d["marca"] or not d["titular"]:
+                raise HTTPException(status_code=400, detail="Falta el acta, la marca o el titular")
+            if any(len(v) > 400 for v in d.values()):
+                raise HTTPException(status_code=400, detail="Algún dato es demasiado largo")
+            items.append(d)
+        if not items or len(items) > 50:
+            raise HTTPException(status_code=400, detail="Elegí entre 1 y 50 marcas")
+        with conexion() as conn:
+            with rcur(conn) as cur:
+                cur.execute("SELECT nombre FROM clientes WHERE id = %s", (cliente_id,))
+                cli = cur.fetchone()
+                if not cli:
+                    raise HTTPException(status_code=404, detail="No existe ese cliente")
+                apoderado = leer_apoderado(cur)
+        formato = "docx" if formato == "docx" else "pdf"
+        if len(items) == 1:
+            gen = ds.generar_docx if formato == "docx" else ds.generar_pdf
+            contenido, nombre = gen(items[0], apoderado), ds.nombre_archivo(items[0], formato)
+            mime = ("application/vnd.openxmlformats-officedocument.wordprocessingml.document" if formato == "docx"
+                    else "application/pdf")
+        else:
+            contenido, mime = ds.generar_zip(items, apoderado, formato), "application/zip"
+            nombre = "Desiste_" + (re.sub(r"[^A-Za-z0-9]+", "_", cli["nombre"]).strip("_")[:40] or "cliente") + ".zip"
         return Response(content=contenido, media_type=mime,
                         headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(nombre)}"})
 
