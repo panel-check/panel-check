@@ -54,7 +54,7 @@ CARRIL_INPI = frozenset({
     "pipeline.yml", "probar_verificador.yml", "probar_vistas_preboletin.yml", "reintentar_sin_email.yml",
     "reintentar_sin_verificar.yml", "repasar_vistas.yml", "revisar_cartera.yml", "revisar_estado.yml",
     "revisar_oposiciones.yml", "verificar_orden_publicacion.yml", "vistas_madrugada.yml", "diagnostico_ubicaciones.yml",
-    "seguimiento_expediente.yml",
+    "seguimiento_expediente.yml", "probar_notificaciones_ws.yml",
 })
 
 # Qué corre y cuándo. `cron`: 5 campos en UTC (minuto hora * * días-de-la-semana, 0 = domingo), como en GitHub.
@@ -92,6 +92,8 @@ PROGRAMADOS = [
     {"workflow": "avisos_manana.yml", "cron": "30 10 * * *", "gracia": 240},
     # 14:00 miércoles  Repaso de vistas
     {"workflow": "repasar_vistas.yml", "cron": "0 17 * * 3", "gracia": 360},
+    # 08:20, 13:20 y 19:20  Notificaciones del INPI a Pame (campanita del panel; no usa el carril de INPI)
+    {"workflow": "notificaciones_inpi.yml", "cron": "20 11,16,22 * * *", "gracia": 120},
     # Cada 15 minutos  Avisos por Telegram (no usa el carril de INPI; si una pasada no sale, la siguiente se pone al día)
     {"workflow": "avisos_telegram.yml", "cron": "*/15 * * * *", "gracia": 10},
 ]

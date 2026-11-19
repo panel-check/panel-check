@@ -75,6 +75,8 @@ import calendario_core
 import conceptos_vigilancia
 import programador
 import seguimiento_expediente
+import notificaciones_inpi
+import notificaciones_inpi_api
 import seguimiento_api
 import trabajos_api
 import trabajos_core
@@ -218,6 +220,16 @@ def migrar_columnas_panel():
             conn.commit()
     except Exception as e:
         print(f"[startup] tablas de vigilancia de expediente salteadas (no bloqueante): {e}")
+
+    # Notificaciones del INPI (campanita 🔔, 19/11/2026): tablas propias, no tocan `marcas`.
+    try:
+        with conexion() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SET lock_timeout = '3s'")
+                notificaciones_inpi.asegurar_tablas(cur)
+            conn.commit()
+    except Exception as e:
+        print(f"[startup] tablas de notificaciones INPI salteadas (no bloqueante): {e}")
 
     # Tablas del CRM de leads (sección /crm): tampoco tocan `marcas`.
     try:
@@ -979,6 +991,25 @@ GRUPOS_AUTOMATIZACIONES = [
                 "procesos": [
                     {"workflow_file": "seguimiento_expediente.yml",
                      "cron": programador.cron_de("seguimiento_expediente.yml")},
+                ],
+            },
+            {
+                "nombre": "Notificaciones INPI",
+                "descripcion": "Trae del webservice de Autogestión del INPI las notificaciones a Pame (títulos "
+                               "digitales, vistas, vistas a la oposición, recibos), guarda el PDF de cada una y las "
+                               "muestra en la campanita 🔔 del encabezado. Avisa por Telegram los títulos y las vistas.",
+                "horario": "Todos los días, 08:20, 13:20 y 19:20 hs",
+                "metricas": [
+                    {"sql": "SELECT COUNT(*) FROM notificaciones_inpi",
+                     "etiqueta": "notificaciones guardadas", "destacada": True},
+                    {"sql": "SELECT COUNT(*) FROM notificaciones_inpi WHERE tipo_codigo = '1'",
+                     "etiqueta": "títulos digitales"},
+                    {"sql": "SELECT COUNT(*) FROM notificaciones_inpi WHERE pdf IS NULL AND adjunto_url <> ''",
+                     "etiqueta": "PDF pendientes de bajar"},
+                ],
+                "procesos": [
+                    {"workflow_file": "notificaciones_inpi.yml",
+                     "cron": programador.cron_de("notificaciones_inpi.yml")},
                 ],
             },
         ],
@@ -4435,6 +4466,7 @@ app.include_router(informes_api.crear_router(
 app.include_router(verificador_api.crear_router(verificar_login, conexion))
 app.include_router(presentacion_api.crear_router(conexion))   # presentación de oposición (página privada de la web)
 app.include_router(seguimiento_api.crear_router(verificar_login, conexion))     # vigilancia de expediente (página del titular en la web)
+app.include_router(notificaciones_inpi_api.crear_router(verificar_login, conexion))  # campanita 🔔: notificaciones del INPI
 app.include_router(trabajos_api.crear_router(verificar_login, conexion))        # Seguimientos: trabajos puntuales de los clientes
 app.include_router(buscador_inpi_api.crear_router(verificar_login, conexion))
 app.include_router(accesos_api.crear_router(verificar_login, conexion, CLAVES_ACCESO_RAPIDO, _contar_consulta))
