@@ -221,7 +221,7 @@ function bloqueInformes(d) {
       <small>${fecha(i.generado_en)}${i.generado_por ? ` · ${esc(i.generado_por)}` : ""}</small></li>`;
   const suyos = d.informes || [], otros = d.otros_informes || [];
   if (!suyos.length && !otros.length) return "";
-  return `<div class="sg-bloque"><h3>📄 Informes <span class="der"><a href="/clientes?cliente=${d.trabajo.cliente_id}" target="_blank" rel="noopener">Ver en el cliente →</a></span></h3>
+  return `<div class="sg-bloque"><h3>📄 Informes <span class="der"><a href="/clientes?cliente=${d.trabajo.cliente_id}&ctab=informes" data-cliente-popup="${d.trabajo.cliente_id}" data-ctab="informes">Ver en el cliente →</a></span></h3>
     ${suyos.length ? `<ul class="sg-informes">${suyos.map(item).join("")}</ul>` : '<p class="sg-exp-aviso">No hay informes de esta marca.</p>'}
     ${otros.length ? `<details class="sg-otros"><summary>Otros informes del cliente (${otros.length})</summary><ul class="sg-informes">${otros.map(item).join("")}</ul></details>` : ""}
   </div>`;
@@ -244,8 +244,8 @@ function pintarFicha(d) {
     <div class="sg-f-cab">
       <button class="cerrar" type="button" data-cerrar aria-label="Cerrar">×</button>
       <span class="sg-f-serv">● ${esc(s.nombre)}</span>
-      <div class="sg-f-marca">${esc(t.marca)}</div>
-      <div class="sg-f-cliente"><a href="/clientes?cliente=${t.cliente_id}" target="_blank" rel="noopener">${esc(t.cliente)}</a>${t.cliente_telefono ? ` · ${esc(t.cliente_telefono)}` : ""}${t.cliente_email ? ` · ${esc(t.cliente_email)}` : ""}</div>
+      <div class="sg-f-marca"><span class="nombre" data-editar-marca title="Clic para editar el nombre de la marca">${esc(t.marca)}</span><button type="button" class="sg-f-lapiz" data-editar-marca title="Editar el nombre de la marca" aria-label="Editar el nombre de la marca">✎</button></div>
+      <div class="sg-f-cliente"><a href="/clientes?cliente=${t.cliente_id}" data-cliente-popup="${t.cliente_id}" title="Ver la ficha del cliente">${esc(t.cliente)}</a>${t.cliente_telefono ? ` · ${esc(t.cliente_telefono)}` : ""}${t.cliente_email ? ` · ${esc(t.cliente_email)}` : ""}</div>
       <div class="sg-f-links">
         ${enlace(t.carpeta_drive, "📁 Carpeta Drive")}
         ${enlace(t.comprobante, "🧾 Comprobante")}
@@ -447,7 +447,65 @@ document.addEventListener("submit", async (ev) => {
 });
 
 $("velo").addEventListener("click", cerrarFicha);
-document.addEventListener("keydown", (ev) => { if (ev.key === "Escape" && sg.abierto) cerrarFicha(); });
+document.addEventListener("keydown", (ev) => { if (ev.key === "Escape" && sg.abierto && !popupClienteAbierto()) cerrarFicha(); });
+
+// ── Nombre de la marca editable ─────────────────────────────────
+document.addEventListener("click", (ev) => {
+  if (!ev.target.closest("#ficha [data-editar-marca]")) return;
+  const caja = $("ficha").querySelector(".sg-f-marca");
+  if (!caja || caja.querySelector("input")) return;
+  const actual = caja.querySelector(".nombre").textContent;
+  caja.innerHTML = `<input type="text" class="sg-f-marca-input" maxlength="200" value="${esc(actual)}" aria-label="Nombre de la marca" />`;
+  const inp = caja.querySelector("input");
+  inp.focus(); inp.select();
+  let listo = false;
+  const terminar = (guardarlo) => {
+    if (listo) return; listo = true;
+    const nuevo = inp.value.trim();
+    if (guardarlo && nuevo && nuevo.toUpperCase() !== actual.toUpperCase()) return guardar({ marca: nuevo });
+    abrirFicha(sg.abierto);   // sin cambios: vuelve a mostrar el nombre
+  };
+  inp.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") { e.preventDefault(); terminar(true); }
+    if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); terminar(false); }
+  });
+  inp.addEventListener("blur", () => terminar(true));
+});
+
+// ── Ficha del cliente en un popup (la misma de Clientes, embebida) ─
+function popupClienteAbierto() { const c = $("popcli"); return !!(c && !c.hidden); }
+function abrirClientePopup(id, ctab) {
+  let c = $("popcli");
+  if (!c) {
+    c = document.createElement("div");
+    c.id = "popcli"; c.className = "sg-popcli";
+    c.innerHTML = '<p class="sg-popcli-carga">Cargando la ficha del cliente…</p><iframe title="Ficha del cliente"></iframe>';
+    document.body.appendChild(c);
+  }
+  const fr = c.querySelector("iframe");
+  c.classList.remove("listo");
+  fr.onload = () => { if (fr.src !== "about:blank") c.classList.add("listo"); };
+  fr.src = `/clientes?cliente=${id}&embebido=1${ctab ? `&ctab=${ctab}` : ""}`;
+  c.hidden = false;
+}
+function cerrarClientePopup() {
+  const c = $("popcli");
+  if (!c || c.hidden) return;
+  c.hidden = true;
+  c.querySelector("iframe").src = "about:blank";
+  if (sg.abierto) abrirFicha(sg.abierto);   // por si se cambió el teléfono, el mail o un informe
+  cargar();
+}
+document.addEventListener("click", (ev) => {
+  const a = ev.target.closest("[data-cliente-popup]");
+  if (!a || ev.metaKey || ev.ctrlKey || ev.shiftKey || ev.button !== 0) return;   // con Cmd/Ctrl se sigue abriendo en otra pestaña
+  ev.preventDefault();
+  abrirClientePopup(a.dataset.clientePopup, a.dataset.ctab);
+});
+window.addEventListener("message", (ev) => {
+  if (ev.origin === location.origin && ev.data && ev.data.tipo === "panel-cerrar-cliente") cerrarClientePopup();
+});
+document.addEventListener("keydown", (ev) => { if (ev.key === "Escape" && popupClienteAbierto()) cerrarClientePopup(); });
 
 let timerBuscar = null;
 $("buscar").addEventListener("input", (ev) => {

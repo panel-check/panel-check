@@ -8,6 +8,15 @@
 <link rel="apple-touch-icon" href="/static/apple-touch-icon.png" />
 <link rel="stylesheet" href="/static/comun.css?v=nc1" />
 <link rel="stylesheet" href="/static/informes_comun.css?v=arch1" />
+<script>
+  // ?embebido=1: se muestra solo la ficha del cliente, dentro de un popup de otra pantalla (Seguimientos)
+  if (new URLSearchParams(location.search).has("embebido")) document.documentElement.classList.add("embebido");
+</script>
+<style>
+  html.embebido, html.embebido body { background: transparent !important; }
+  html.embebido body > *:not(.modal-fondo) { display: none !important; }
+  html.embebido .modal-fondo { background: transparent; }
+</style>
 <script src="/static/sesion.js" defer></script>
 <script src="/static/menu.js?v=sg2" defer></script>
 </head>
@@ -80,7 +89,7 @@
 <script src="/static/crm.js?v=nc1"></script>
 <script src="/static/niza.js"></script>
 <script src="/static/informes_comun.js?v=arch1"></script>
-<script src="/static/clientes.js?v=nc1"></script>
+<script src="/static/clientes.js?v=emb1"></script>
 <script src="/static/ficha_marca.js"></script>
 </body>
 </html>
