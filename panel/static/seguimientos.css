@@ -166,7 +166,7 @@
 .sg-linea .borrar:hover { color: var(--rojo); }
 .sg-nota-nueva { display: flex; gap: 8px; margin-bottom: 14px; }
 .sg-nota-nueva { align-items: flex-end; }
-.sg-nota-nueva textarea { flex: 1; font: inherit; font-size: 14px; line-height: 1.4; padding: 8px 10px; border: 1px solid var(--borde-control); border-radius: 9px; resize: vertical; min-height: 38px; max-height: 320px; overflow-y: auto; }
+.sg-nota-nueva textarea { flex: 1; font: inherit; font-size: 14px; line-height: 1.4; padding: 9px 12px; height: 40px; border: 1px solid var(--borde-control); border-radius: 9px; resize: vertical; min-height: 38px; max-height: 320px; overflow-y: auto; }
 .sg-nota-nueva input:focus { outline: none; border-color: var(--azul); box-shadow: var(--foco); }
 .sg-pie { display: flex; gap: 8px; flex-wrap: wrap; justify-content: space-between; }
 
@@ -244,6 +244,8 @@
 
 /* Notas largas de la bitácora: saltos de línea respetados y plegadas a 4 líneas */
 .sg-nota-txt { white-space: pre-wrap; overflow-wrap: anywhere; }
+.sg-nota-txt b { font-weight: 700; }
+.sg-nota-nueva textarea::placeholder { color: #9aa1ab; }
 .sg-nota-txt.plegada { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 4; line-clamp: 4; overflow: hidden; }
 .sg-ver-mas { border: 0; background: none; padding: 2px 0; font: inherit; font-size: 12.5px; font-weight: 600; color: var(--azul, #1d4ed8); cursor: pointer; }
 .sg-ver-mas:hover { text-decoration: underline; }
