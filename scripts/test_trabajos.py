@@ -53,16 +53,16 @@ class Alerta(unittest.TestCase):
 
 class PlazoCumplido(unittest.TestCase):
     def test_vista_con_escrito_presentado(self):
-        a = tc.alerta("vista", "2026-10-10", hoy=HOY, etapa=3)        # vencida, pero ya se contestó
+        a = tc.alerta("vista", "2026-10-10", hoy=HOY, etapa=4)        # vencida, pero ya se contestó
         self.assertEqual((a["nivel"], a["texto"]), ("cumplido", "✓ Escrito presentado"))
         self.assertEqual(tc.alerta("vista", "2026-10-29", hoy=HOY, etapa=2)["nivel"], "verde")
 
     def test_oposicion_con_acuerdo(self):
-        self.assertEqual(tc.alerta("oposicion", "2026-11-04", hoy=HOY, etapa=5)["nivel"], "cumplido")
-        self.assertEqual(tc.alerta("oposicion", "2026-11-04", hoy=HOY, etapa=4)["nivel"], "verde")
+        self.assertEqual(tc.alerta("oposicion", "2026-11-04", hoy=HOY, etapa=6)["nivel"], "cumplido")
+        self.assertEqual(tc.alerta("oposicion", "2026-11-04", hoy=HOY, etapa=5)["nivel"], "verde")
 
     def test_cumplidos_van_despues_de_los_pendientes(self):
-        filas = [tc.completar({"marca": "HECHA", "servicio": "vista", "notificacion": "2026-10-20", "estado": "activo", "etapa": 3}, HOY),
+        filas = [tc.completar({"marca": "HECHA", "servicio": "vista", "notificacion": "2026-10-20", "estado": "activo", "etapa": 4}, HOY),
                  tc.completar({"marca": "SIN", "servicio": "vista", "notificacion": None, "estado": "activo", "etapa": 1}, HOY),
                  tc.completar({"marca": "PEND", "servicio": "vista", "notificacion": "2026-11-05", "estado": "activo", "etapa": 1}, HOY)]
         self.assertEqual([t["marca"] for t in tc.ordenar(filas)], ["PEND", "SIN", "HECHA"])
@@ -102,12 +102,12 @@ class Varios(unittest.TestCase):
         self.assertEqual(tc.marca_limpia(" vision soberana "), "VISION SOBERANA")
 
     def test_etapas(self):
-        t = tc.completar({"servicio": "oposicion", "etapa": 4, "estado": "activo"}, HOY)
-        self.assertEqual((t["etapa_nombre"], t["proxima_etapa"], t["etapas_total"]), ("Negociando", "Acuerdo o retiro", 5))
+        t = tc.completar({"servicio": "oposicion", "etapa": 5, "estado": "activo"}, HOY)
+        self.assertEqual((t["etapa_nombre"], t["proxima_etapa"], t["etapas_total"]), ("Negociando", "Acuerdo o retiro", 6))
         t = tc.completar({"servicio": "registro", "etapa": 0, "estado": "activo"}, HOY)
         self.assertEqual(t["etapa_nombre"], "Esperando seña")
         t = tc.completar({"servicio": "vista", "etapa": 99, "estado": "activo"}, HOY)
-        self.assertEqual((t["etapa"], t["proxima_etapa"]), (4, None))
+        self.assertEqual((t["etapa"], t["proxima_etapa"]), (5, None))
 
     def test_carga_inicial_coherente(self):
         claves = [c[0] for c in tc.CARGA_INICIAL]
@@ -127,14 +127,20 @@ class Varios(unittest.TestCase):
         ejecutadas = []
 
         class Cur:
+            rowcount = 1
             def execute(self, sql, params=None):
                 ejecutadas.append((sql, params))
 
         tc.crear_tablas(Cur())
         self.assertTrue(any("CREATE TABLE IF NOT EXISTS trabajos (" in s for s, _ in ejecutadas))
-        inserts = [p for s, p in ejecutadas if s.strip().startswith("INSERT INTO trabajos")]
+        inserts = [p for s, p in ejecutadas if s.strip().startswith("INSERT INTO trabajos ")]
         self.assertEqual(len(inserts), len(tc.CARGA_INICIAL))
-        self.assertTrue(all("ON CONFLICT (clave_carga) DO NOTHING" in s for s, _ in ejecutadas if "INSERT" in s))
+        self.assertTrue(all("ON CONFLICT (clave_carga) DO NOTHING" in s for s, _ in ejecutadas if s.strip().startswith("INSERT INTO trabajos ")))
+        # la renumeración de etapas va antes de la carga inicial (que ya usa la numeración nueva)
+        orden = [s.strip().split()[0:3] for s, _ in ejecutadas]
+        i_mig = next(i for i, (s, _) in enumerate(ejecutadas) if s.startswith("UPDATE trabajos SET etapa"))
+        i_carga = next(i for i, (s, _) in enumerate(ejecutadas) if s.strip().startswith("INSERT INTO trabajos "))
+        self.assertLess(i_mig, i_carga)
 
 
 class DeteccionActa(unittest.TestCase):
@@ -180,6 +186,69 @@ class DeteccionActa(unittest.TestCase):
 
     def test_patron_sql(self):
         self.assertEqual(tc.patron_ilike("Cine Catástrofe"), "%C_N_%C_T_STR_F_%")
+
+
+
+class EtapasRegistroInpi(unittest.TestCase):
+    def test_nombres_de_etapas(self):
+        self.assertEqual(tc.POR_ID["registro"]["etapas"],
+                         ["Seña pagada", "Formulario y poder", "Informe enviado", "Marca publicada", "Marca en boletín",
+                          "Marca en proyecto de resolución", "Concedida"])
+        self.assertEqual(tc.POR_ID["oposicion"]["etapas"][:3], ["Seña cobrada", "Formulario y poder", "Análisis"])
+        self.assertEqual(tc.POR_ID["vista"]["etapas"][:3], ["Seña cobrada", "Formulario y poder", "Análisis"])
+        # el plazo se cumple con el escrito presentado / acuerdo o retiro (numeración nueva)
+        self.assertEqual(tc.POR_ID["vista"]["etapas"][tc.POR_ID["vista"]["cumple_en"] - 1], "Escrito presentado")
+        self.assertEqual(tc.POR_ID["oposicion"]["etapas"][tc.POR_ID["oposicion"]["cumple_en"] - 1], "Acuerdo o retiro")
+
+    def test_etapa_de_acta(self):
+        self.assertEqual(tc.etapa_de_acta({"ubicacion_actual": "Sector Estudio Fondo 583/25"}), 4)
+        self.assertEqual(tc.etapa_de_acta({}), 4)                                    # recién cargada, sin leer
+        self.assertEqual(tc.etapa_de_acta({"fecha_publicacion": "2026-10-01"}), 5)
+        self.assertEqual(tc.etapa_de_acta({"ubicacion_actual": "División Publicación"}), 5)
+        self.assertEqual(tc.etapa_de_acta({"ubicacion_actual": "División Notificaciones", "fecha_publicacion": "2026-10-01"}), 5)
+        self.assertEqual(tc.etapa_de_acta({"ubicacion_actual": "División Resoluciones", "fecha_publicacion": "2026-10-01"}), 6)
+        self.assertEqual(tc.etapa_de_acta({"ubicacion_actual": "División Resoluciones", "estado_tramite": "Concedida"}), 7)
+        self.assertIsNone(tc.etapa_de_acta({"estado_tramite": "Denegada"}))
+
+    def test_varias_actas_cuenta_la_mas_atrasada(self):
+        cartera = [
+            {"acta": "4790682", "cliente_id": 7, "denominacion": "MAS", "clase": 36, "estado_tramite": "Concedida"},
+            {"acta": "4790681", "cliente_id": 7, "denominacion": "Más", "clase": 35, "fecha_publicacion": "2026-10-01"},
+            {"acta": "4790683", "cliente_id": 7, "denominacion": "MAS", "clase": 9, "estado_tramite": "Denegada"},
+            {"acta": "4790684", "cliente_id": 7, "denominacion": "OTRA MARCA", "clase": 35},
+            {"acta": "4790685", "cliente_id": 8, "denominacion": "MAS", "clase": 35},          # otro cliente
+            {"acta": "4790686", "cliente_id": 7, "denominacion": "LBV", "grupo_marca": "MÁS", "clase": 41},
+        ]
+        actas = tc.actas_del_trabajo({"cliente_id": 7, "marca": "MÁS", "acta": None}, cartera)
+        self.assertEqual([a["acta"] for a in actas], ["4790683", "4790681", "4790682", "4790686"])
+        info = tc.etapa_registro(actas)
+        self.assertEqual((info["etapa"], info["nombre"]), (4, "Marca publicada"))   # la 4790686 recién presentada
+        info = tc.etapa_registro(actas[:3])
+        self.assertEqual(info["etapa"], 5)                                         # la denegada no cuenta
+        self.assertIn("más atrasada de 2 actas", tc.texto_avance(info["nombre"], info))
+        self.assertIsNone(tc.etapa_registro([]))
+        self.assertIsNone(tc.etapa_registro([cartera[2]])["etapa"])
+
+    def test_acta_propia_aunque_tenga_otro_nombre(self):
+        cartera = [{"acta": "123456", "cliente_id": 7, "denominacion": None, "clase": 35}]
+        self.assertEqual(len(tc.actas_del_trabajo({"cliente_id": 7, "marca": "AKRO LAB", "acta": "123456"}, cartera)), 1)
+
+    def test_migracion_una_sola_vez(self):
+        class Cur:
+            def __init__(s): s.sql, s.hechas, s.rowcount = [], set(), 0
+            def execute(s, sql, val=None):
+                s.sql.append((sql, val))
+                if sql.startswith("INSERT INTO trabajos_migraciones"):
+                    s.rowcount = 0 if val[0] in s.hechas else 1
+                    s.hechas.add(val[0])
+        cur = Cur()
+        tc.migrar_etapas(cur)
+        updates = [x for x in cur.sql if x[0].startswith("UPDATE trabajos")]
+        self.assertEqual(len(updates), 3)
+        reg = [u for u in updates if u[1] == ("registro",)][0][0]
+        self.assertIn("WHEN 3 THEN 4", reg); self.assertIn("WHEN 5 THEN 7", reg)
+        n = len(cur.sql); tc.migrar_etapas(cur)
+        self.assertFalse([x for x in cur.sql[n:] if x[0].startswith("UPDATE")])   # la segunda vez no toca nada
 
 
 if __name__ == "__main__":

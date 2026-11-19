@@ -241,19 +241,6 @@
     if (!boton) return;
     // En la propia pantalla /comentarios no hace falta el panel: el botón queda marcado y listo.
     if (location.pathname === "/comentarios") return;
-    // Mismo texto, pero en INPI en vivo (pantalla /buscador-inpi): acta, CUIT o denominación.
-    // Sin texto abre el buscador avanzado de INPI. Ctrl/Cmd+clic: en otra pestaña.
-    function buscarEnInpi(nuevaPestana) {
-      const texto = campo.value.trim();
-      const url = "/buscador-inpi" + (texto ? `?q=${encodeURIComponent(texto)}` : "");
-      campo.value = "";
-      abrir(false);
-      if (nuevaPestana) window.open(url, "_blank", "noopener");
-      else location.href = url;
-    }
-    botonInpi.addEventListener("click", (e) => { e.stopPropagation(); buscarEnInpi(e.ctrlKey || e.metaKey); });
-    botonInpi.addEventListener("auxclick", (e) => { if (e.button === 1) { e.stopPropagation(); buscarEnInpi(true); } });
-
     boton.addEventListener("click", (e) => {
       e.stopPropagation();
       abrirChat(!panelAbierto());

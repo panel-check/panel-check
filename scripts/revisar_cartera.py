@@ -1,7 +1,7 @@
 """
 Seguimiento de las marcas de la cartera de clientes contra INPI.
 
-Para cada marca de un cliente activo vuelve a leer el expediente (mismo
+Para cada marca de un cliente activo (o con un trabajo activo en Seguimientos) vuelve a leer el expediente (mismo
 "Resultado" que usa el resto del sistema + Grilla Digital) y guarda lo que
 cambió: estado del trámite, concesión y vencimiento, oposición o vista, fecha
 de publicación, cambio de titular y movimientos nuevos del expediente. Cada
@@ -47,7 +47,9 @@ SQL_PENDIENTES = """
     SELECT cm.acta, cm.cuit, cm.denominacion, cm.consultado_en, cm.estado_tramite
     FROM cartera_marcas cm
     JOIN clientes c ON c.id = cm.cliente_id
-    WHERE c.activo
+    WHERE (c.activo
+           -- o con un trabajo activo en Seguimientos (la etapa del registro sale de lo que se lee acá)
+           OR EXISTS (SELECT 1 FROM trabajos t WHERE t.cliente_id = cm.cliente_id AND t.estado = 'activo'))
       AND cm.acta ~ '^[0-9]+$'
       AND (
             %(todas)s

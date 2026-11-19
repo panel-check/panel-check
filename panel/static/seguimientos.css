@@ -228,3 +228,14 @@
 .sg-popcli-carga { position: absolute; top: 45%; width: 100%; text-align: center; color: #fff; font-weight: 600; }
 .sg-popcli.listo .sg-popcli-carga { display: none; }
 .sg-f-cuerpo { position: relative; z-index: 0; isolation: isolate; }   /* nada del cuerpo puede quedar encima de la cabecera fija */
+
+/* Etapas que avanzan solas según el INPI (registro) */
+.sg-paso .sg-auto { margin-left: auto; font-size: 10.5px; font-weight: 700; letter-spacing: .3px; color: var(--gris, #6b7280); border: 1px solid #e5e7eb; border-radius: 999px; padding: 1px 7px; }
+.sg-inpi { margin-top: 12px; padding: 10px 12px; background: #f6f8fb; border-radius: 10px; font-size: 13px; }
+.sg-inpi-tit { font-weight: 700; font-size: 12px; color: var(--gris, #6b7280); text-transform: uppercase; letter-spacing: .3px; margin-bottom: 6px; }
+.sg-inpi ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.sg-inpi li { display: flex; justify-content: space-between; gap: 10px; }
+.sg-inpi .acta { color: var(--gris, #6b7280); font-variant-numeric: tabular-nums; }
+.sg-inpi .est { font-weight: 600; text-align: right; }
+.sg-inpi .est.den { color: #c0392b; }
+.sg-inpi-nota { margin: 10px 0 0; font-size: 12px; color: var(--gris, #6b7280); }
