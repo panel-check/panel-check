@@ -251,5 +251,38 @@ class EtapasRegistroInpi(unittest.TestCase):
         self.assertFalse([x for x in cur.sql[n:] if x[0].startswith("UPDATE")])   # la segunda vez no toca nada
 
 
+
+class ActasConVistaUOposicion(unittest.TestCase):
+    CAND = [
+        {"acta": "4811636", "denominacion": "VISION SOBERANA", "clase": 41, "tuvo_vista": True, "vista_fecha_notificacion": "2026-11-05", "fuente": "boletin"},
+        {"acta": "4811635", "denominacion": "Visión Soberana", "clase": 35, "tuvo_vista": True, "vista_fecha_notificacion": "2026-11-04", "fuente": "boletin"},
+        {"acta": "4700001", "denominacion": "OTRA", "clase": 9, "tuvo_oposicion": True, "oposicion_fecha_notificacion": "2026-10-14", "fuente": "boletin"},
+        {"acta": "4700002", "denominacion": "SIN NADA", "clase": 9, "fuente": "boletin"},
+    ]
+
+    def test_varias_actas_mismo_nombre(self):
+        el, motivo, del_tipo = tc.elegir_actas_conflicto({"servicio": "vista", "marca": "VISION SOBERANA"}, self.CAND)
+        self.assertEqual([c["acta"] for c in el], ["4811635", "4811636"])
+        self.assertEqual(motivo, "mismo nombre de marca")
+        self.assertEqual(tc.notificacion_de(el, "vista"), dt.date(2026, 11, 4))   # la más temprana
+        self.assertIn("Actas 4811635 (cl. 35), 4811636 (cl. 41) detectadas solas", tc.texto_conflicto(el, motivo, "vista"))
+
+    def test_unica_del_tipo_aunque_cambie_el_nombre(self):
+        el, motivo, _ = tc.elegir_actas_conflicto({"servicio": "oposicion", "marca": "MÁS"}, self.CAND)
+        self.assertEqual(([c["acta"] for c in el], motivo), (["4700001"], "única acta del cliente con oposición"))
+        self.assertEqual(tc.notificacion_de(el, "oposicion"), dt.date(2026, 10, 14))
+
+    def test_varias_sin_coincidencia_no_asigna(self):
+        el, motivo, del_tipo = tc.elegir_actas_conflicto({"servicio": "vista", "marca": "OTRA COSA"}, self.CAND)
+        self.assertEqual((el, motivo), ([], None))
+        self.assertEqual(len(del_tipo), 2)
+
+    def test_cartera_con_oposicion_cuenta_para_los_dos(self):
+        cart = [{"acta": "1", "denominacion": "X", "tuvo_oposicion": True, "fuente": "cartera"}]
+        self.assertEqual(len(tc.elegir_actas_conflicto({"servicio": "vista", "marca": "X"}, cart)[0]), 1)
+        self.assertEqual(len(tc.elegir_actas_conflicto({"servicio": "oposicion", "marca": "X"}, cart)[0]), 1)
+        self.assertEqual(tc.elegir_actas_conflicto({"servicio": "registro", "marca": "X"}, cart)[0], [])
+
+
 if __name__ == "__main__":
     unittest.main()
