@@ -434,7 +434,9 @@ function urlCliente(id) {
   const q = p.toString();
   return q ? `/clientes?${q}` : "/clientes";
 }
+const EMBEBIDO = document.documentElement.classList.contains("embebido");
 function cerrarModal() {
+  if (EMBEBIDO) { window.parent.postMessage({ tipo: "panel-cerrar-cliente" }, location.origin); return; }
   $("modal-cliente").classList.remove("abierto"); est.clienteAbierto = null;
   history.replaceState(null, "", urlCliente(null));
 }
@@ -1796,13 +1798,14 @@ document.querySelectorAll("#pestanas button").forEach(b => b.addEventListener("c
 (async function () {
   const p = new URLSearchParams(location.search);
   const v = VISTAS.includes(p.get("vista")) ? p.get("vista") : "marcas";
-  cargarResumen();
-  cambiarVista(v, { sinURL: true });
+  if (EMBEBIDO) est.vista = v;   // embebida solo se muestra la ficha: no se cargan las listas
+  else { cargarResumen(); cambiarVista(v, { sinURL: true }); }
   if (p.get("cliente")) {
     // ?ctab=informes (desde Más → Informes) abre la ficha directo en esa solapa
     if (["datos", "poderes", "informes", "formularios"].includes(p.get("ctab"))) { est.clienteTab = p.get("ctab"); est.clienteTabId = +p.get("cliente"); }
     abrirCliente(+p.get("cliente"));
   }
+  if (EMBEBIDO) return;
   cargarBadgeFormularios();
   // el badge de "Por matrícula" se llena sin entrar a la pestaña
   try { const r = await api("/api/cartera/por-matricula"); $("badge-matricula").textContent = r.grupos.length ? String(r.grupos.length) : ""; } catch (_) {}
