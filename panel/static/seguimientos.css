@@ -227,3 +227,4 @@
 .sg-popcli.listo iframe { opacity: 1; }
 .sg-popcli-carga { position: absolute; top: 45%; width: 100%; text-align: center; color: #fff; font-weight: 600; }
 .sg-popcli.listo .sg-popcli-carga { display: none; }
+.sg-f-cuerpo { position: relative; z-index: 0; isolation: isolate; }   /* nada del cuerpo puede quedar encima de la cabecera fija */
