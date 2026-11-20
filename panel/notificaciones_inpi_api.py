@@ -94,21 +94,20 @@ def crear_router(verificar_login, conexion) -> APIRouter:
                     if acta:
                         where.append("nv.acta = %s")
                         params.append(acta)
-                    sql = ni.SELECT_MOVIMIENTOS + (" WHERE " + " AND ".join(where) if where else "")
-                    cur.execute(sql + " ORDER BY nv.detectado_en DESC, nv.id DESC LIMIT %s", params + [limite])
-                    for f in cur.fetchall():
-                        d = ni.describir_movimiento(dict(f))
+                    sql = ni.SELECT_MOVIMIENTOS + (" AND " + " AND ".join(where) if where else "")
+                    # Se trae de más porque la mayoría de los movimientos de trámite no se muestran.
+                    cur.execute(sql + " ORDER BY nv.detectado_en DESC, nv.id DESC LIMIT %s", params + [limite * 8])
+                    for d in ni.filtrar_movimientos(cur.fetchall())[:limite]:
                         d["origen"] = "mov"
-                        d["fecha"] = f["detectado_en"].isoformat()
-                        d["nueva"] = f["detectado_en"] > corte
-                        d.pop("detectado_en", None)
+                        d["nueva"] = d["detectado_en"] > corte
+                        d["fecha"] = d.pop("detectado_en").isoformat()
                         items.append(d)
                 items.sort(key=lambda d: d.get("fecha") or "", reverse=True)
                 items = items[:limite]
                 cur.execute("""SELECT creado_en, metricas FROM registro_corridas
                                WHERE proceso = %s ORDER BY creado_en DESC LIMIT 1""", (WORKFLOW,))
                 u = cur.fetchone()
-                cur.execute("SELECT (SELECT count(*) FROM notificaciones_inpi) + (SELECT count(*) FROM cartera_novedades) AS n")
+                cur.execute("SELECT (SELECT count(*) FROM notificaciones_inpi) + (SELECT count(*) FROM cartera_novedades) AS n")  # solo para el mensaje de lista vacía
                 total = cur.fetchone()["n"]
         return {"items": items, "total": total,
                 "ultima_actualizacion": u["creado_en"].isoformat() if u else None,
@@ -125,10 +124,13 @@ def crear_router(verificar_login, conexion) -> APIRouter:
                                WHERE NOT carga_inicial AND creado_en > c.corte) AS inpi,
                               (SELECT count(*) FROM notificaciones_inpi, c
                                WHERE NOT carga_inicial AND creado_en > c.corte AND tipo_codigo = '1') AS titulos,
-                              (SELECT count(*) FROM cartera_novedades, c WHERE detectado_en > c.corte) AS movimientos""",
+                              (SELECT corte FROM c) AS corte""",
                     (visto,),
                 )
-                r = cur.fetchone()
+                r = dict(cur.fetchone())
+                # Movimientos: se cuentan solo los que la campanita muestra (mismo filtro que la lista).
+                cur.execute(ni.SELECT_MOVIMIENTOS + " AND nv.detectado_en > %s", (r["corte"],))
+                r["movimientos"] = len(ni.filtrar_movimientos(cur.fetchall()))
         return {"nuevas": r["inpi"] + r["movimientos"], "inpi": r["inpi"], "titulos": r["titulos"],
                 "movimientos": r["movimientos"]}
 

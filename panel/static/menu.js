@@ -920,7 +920,8 @@
       <div class="nc-cuerpo">
         <div class="nc-l1"><strong>${esc(n.tipo)}</strong>${n.nueva ? '<span class="nc-nueva">nueva</span>' : ""}<span class="nc-fecha">${fechaCorta(n.fecha)}</span></div>
         <div class="nc-l2">${marca}${clase} · <span class="nc-acta">acta ${esc(n.acta)}</span></div>
-        <div class="nc-texto">${esc(n.texto)}</div>
+        ${n.explicacion ? `<div class="nc-texto">${esc(n.explicacion)}</div>` : ""}
+        <div class="nc-detalle">${esc(n.detalle || n.texto)}</div>
         <div class="nc-l3">${quien}</div>
       </div>
     </li>`;
