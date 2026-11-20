@@ -250,3 +250,8 @@
 .sg-nota-txt.plegada { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 4; line-clamp: 4; overflow: hidden; }
 .sg-ver-mas { border: 0; background: none; padding: 2px 0; font: inherit; font-size: 12.5px; font-weight: 600; color: var(--azul, #1d4ed8); cursor: pointer; }
 .sg-ver-mas:hover { text-decoration: underline; }
+.sg-link-acta { color: var(--azul, #1d4ed8); text-decoration: none; }
+.sg-link-acta:hover { text-decoration: underline; }
+.sg-acta-links { display: block; margin-top: 2px; font-size: 12px; }
+.sg-acta-links a { color: var(--gris, #6b7280); }
+.sg-quieto { font-weight: 400; color: var(--gris, #6b7280); }
