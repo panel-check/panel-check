@@ -210,6 +210,12 @@ function lineaTiempo(d) {
       ${textoNota(i.texto)}</li>`).join("")}</ul>`;
 }
 
+// Número de acta que abre la ficha del expediente en el portal del INPI (abrirActa de comun.js: es un
+// POST, porque por GET el INPI muestra la ficha recortada).
+function linkActa(acta) {
+  return `<a href="#" class="sg-link-acta" data-acta-inpi="${esc(acta)}" title="Abrir el acta en el INPI">${esc(acta)} ↗</a>`;
+}
+
 function bloqueExpediente(d) {
   const t = d.trabajo, ex = d.expediente;
   let datos = "";
@@ -221,12 +227,13 @@ function bloqueExpediente(d) {
       <div class="sg-buscar-acta"><button type="button" class="sg-btn sg-btn-mini" data-buscar-acta>${conflicto ? `🔎 Buscar las actas con ${t.servicio === "vista" ? "vista" : "oposición"}` : "🔎 Buscar el acta en el INPI"}</button></div>
       <div id="resultado-acta"></div></div>`;
   } else if (!ex.en_cartera) {
-    datos = `<p class="sg-exp-aviso">Acta <b>${esc(ex.acta)}</b>. Esta marca todavía no está en Clientes → Marcas, por eso no hay datos del INPI. Agregala ahí (en la ficha del cliente) y el expediente se completa solo.</p>`;
+    datos = `<p class="sg-exp-aviso">Acta <b>${linkActa(ex.acta)}</b>. Esta marca todavía no está en Clientes → Marcas, por eso no hay datos del INPI. Agregala ahí (en la ficha del cliente) y el expediente se completa solo.</p>`;
   } else {
     const m = ex.marca;
     const celda = (k, v) => (v ? `<div><span>${k}</span><b>${esc(v)}</b></div>` : "");
     datos = `<div class="sg-exp-datos">
-      ${celda("Acta", m.acta + (ex.automatica ? " (vinculada sola por el nombre)" : ""))}
+      <div><span>Acta</span><b>${linkActa(m.acta)}${ex.automatica ? ` <small class="sg-quieto">(vinculada sola por el nombre)</small>` : ""}</b>
+        <small class="sg-acta-links"><a href="#" data-grilla-inpi="${esc(m.acta)}">Grilla digital ↗</a></small></div>
       ${celda("Estado del trámite", m.estado_tramite)}
       ${celda("Último movimiento", [m.ultimo_movimiento, m.ultimo_movimiento_fecha && fecha(m.ultimo_movimiento_fecha)].filter(Boolean).join(" · "))}
       ${celda("Clase", m.clase)}${celda("Titular", m.titular)}
@@ -295,7 +302,7 @@ function pintarFicha(d) {
       <div class="sg-bloque"><h3>Datos <span class="der sg-guardado" id="guardado">✓ Guardado</span></h3>
         <div class="sg-datos">
           <label>Servicio <select data-campo="servicio">${opServ}</select></label>
-          <label>Acta <input type="text" inputmode="numeric" data-campo="acta" value="${esc(t.acta || "")}" placeholder="${t.acta_auto ? esc(t.acta_efectiva) + " (sola)" : "Sin presentar"}" />${(t.actas_extra || []).length ? `<small class="sg-actas-extra">También: ${esc(t.actas_extra.join(", "))}</small>` : ""}</label>
+          <label>Acta <input type="text" inputmode="numeric" data-campo="acta" value="${esc(t.acta || "")}" placeholder="${t.acta_auto ? esc(t.acta_efectiva) + " (sola)" : "Sin presentar"}" />${(t.actas_extra || []).length ? `<small class="sg-actas-extra">También: ${t.actas_extra.map(linkActa).join(", ")}</small>` : ""}</label>
           <label>Contratación <input type="date" data-campo="contratacion" value="${esc(t.contratacion || "")}" /></label>
           ${s.con_vencimiento ? `<label>Notificación <input type="date" data-campo="notificacion" value="${esc(t.notificacion || "")}" /></label>
           <label>Vencimiento <span class="calc">${t.vencimiento ? fecha(t.vencimiento, true) : "—"}</span></label>` : ""}
@@ -501,6 +508,15 @@ document.addEventListener("keydown", (ev) => {
     ev.target.form.requestSubmit();
   }
 });
+// Actas: abren el expediente o la Grilla Digital en el portal del INPI (pestaña nueva)
+document.addEventListener("click", (ev) => {
+  const a = ev.target.closest("[data-acta-inpi], [data-grilla-inpi]");
+  if (!a) return;
+  ev.preventDefault();
+  if (a.dataset.actaInpi) abrirActa(a.dataset.actaInpi);
+  else abrirGrilla(a.dataset.grillaInpi);
+});
+
 // «Ver más / Ver menos» de las notas largas
 document.addEventListener("click", (ev) => {
   const b = ev.target.closest("[data-ver-mas]");
