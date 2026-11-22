@@ -8,6 +8,8 @@ exactamente lo que sale por mail.
 """
 
 import html
+
+import mails_marco as mm
 from datetime import date, timedelta
 from urllib.parse import quote
 
@@ -45,30 +47,21 @@ def armar_html_oposiciones(filas, panel_url):
         if r.get("estado_oposicion_detalle"):
             estado = f"<div style='color:#b42318;font-size:13px;font-weight:600;margin-top:4px'>{e(r['estado_oposicion_detalle'])}</div>"
         tarjetas.append(f"""
-        <tr><td style="padding:14px 16px;border-bottom:1px solid #eaecf0">
+        <tr><td style="padding:14px 24px;border-top:1px solid #eaecf0">
           <div style="font-size:12px;font-weight:600;color:{color};text-transform:uppercase;letter-spacing:.04em">{tipo}</div>
           <div style="font-size:16px;font-weight:600;color:#101828;margin:2px 0">{e(nombre)}</div>
           <div style="color:#475467;font-size:13px">Acta {e(r['acta'])} · Clase {e(r.get('clase'))} · Publicada {e(fecha)}</div>
           <div style="color:#475467;font-size:13px">Titular: {e(r.get('titular'))} · {e(r.get('email'))}</div>
           {oponente}
           {estado}
-          <a href="{html.escape(link)}" style="display:inline-block;margin-top:10px;padding:8px 14px;background:#1d4ed8;color:#ffffff;text-decoration:none;border-radius:6px;font-size:14px;font-weight:600">Ver lead</a>
+          <a href="{html.escape(link)}" style="display:inline-block;margin-top:10px;padding:8px 14px;background:#015197;color:#ffffff;text-decoration:none;border-radius:8px;font-size:14px;font-weight:600">Ver lead</a>
         </td></tr>""")
     n = len(filas)
     titulo = f"{n} lead{'s' if n != 1 else ''} con oposición o vista nueva"
-    return titulo, f"""<!doctype html>
-<html><body style="margin:0;background:#f2f4f7;font-family:Arial,Helvetica,sans-serif">
-<table width="100%" cellpadding="0" cellspacing="0" style="background:#f2f4f7;padding:24px 0"><tr><td align="center">
-<table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:#ffffff;border-radius:8px;overflow:hidden">
-  <tr><td style="padding:20px 16px;border-bottom:1px solid #eaecf0">
-    <div style="font-size:20px;font-weight:700;color:#101828">{html.escape(titulo)}</div>
-    <div style="color:#475467;font-size:14px;margin-top:4px">Solicitantes sin apoderado que recibieron una oposición de tercero o una vista de INPI desde el último aviso.</div>
-  </td></tr>
-  {''.join(tarjetas)}
-  <tr><td style="padding:14px 16px;color:#98a2b3;font-size:12px">
-    Aviso automático del panel · <a href="{html.escape(panel_url)}" style="color:#98a2b3">abrir panel</a>
-  </td></tr>
-</table></td></tr></table></body></html>"""
+    return titulo, mm.marco(
+        "".join(tarjetas), etiqueta="Oposiciones y vistas", titulo=titulo,
+        subtitulo="Solicitantes sin apoderado que recibieron una oposición de tercero o una vista de INPI desde el último aviso.",
+        panel_url=panel_url)
 
 
 def _e(v):
@@ -79,50 +72,72 @@ def _fecha(f):
     return f.strftime("%d/%m/%Y") if hasattr(f, "strftime") else (f or "—")
 
 
+def _fila_item(cabeza: str, titulo: str, detalle: str = "", color: str = "#475467") -> str:
+    """Fila de un aviso: etiqueta chica de color, título y detalle."""
+    return (f'<tr><td style="padding:12px 24px;border-top:1px solid #eaecf0">'
+            + (f'<div style="font-size:11px;font-weight:700;color:{color};text-transform:uppercase;letter-spacing:.05em">{cabeza}</div>' if cabeza else "")
+            + f'<div style="font-size:15px;font-weight:700;color:#101828;margin-top:2px">{titulo}</div>'
+            + (f'<div style="color:#475467;font-size:13px;line-height:1.5;margin-top:2px">{detalle}</div>' if detalle else "")
+            + "</td></tr>")
+
+
 def armar_html_cartera(alertas, plazos, novedades, panel_url):
-    secciones = []
+    filas = []
     if alertas:
-        filas = []
+        filas.append(mm.seccion("Vigilancia: alertas nuevas"))
         for a in alertas:
             if a["tipo"] == "otro_agente":
-                filas.append(f"""<tr><td style="padding:12px 16px;border-bottom:1px solid #eaecf0">
-                  <div style="font-size:12px;font-weight:600;color:#6d28d9;text-transform:uppercase">Cliente con otro agente</div>
-                  <div style="font-size:15px;font-weight:600;color:#101828">{_e(a['cliente_nombre'])} presentó «{_e(a['denominacion_nueva'])}»</div>
-                  <div style="color:#475467;font-size:13px">Acta {_e(a['acta_nueva'])} · clase {_e(a['clase_nueva'])} · {_e(a['agente_nuevo'])} · {_e(a['fuente_nueva'])}</div></td></tr>""")
+                filas.append(_fila_item(
+                    "Cliente con otro agente",
+                    f"{_e(a['cliente_nombre'])} presentó «{_e(a['denominacion_nueva'])}»",
+                    f"Acta {_e(a['acta_nueva'])} · clase {_e(a['clase_nueva'])} · {_e(a['agente_nuevo'])} · {_e(a['fuente_nueva'])}",
+                    "#6d28d9"))
             else:
                 color = "#b42318" if a["nivel"] == "alta" else "#b54708"
                 contrato = "" if a["vigilancia_contratada"] else " · <em>sin vigilancia contratada</em>"
-                filas.append(f"""<tr><td style="padding:12px 16px;border-bottom:1px solid #eaecf0">
-                  <div style="font-size:12px;font-weight:600;color:{color};text-transform:uppercase">Parecido {_e(a['nivel'])} · {a['puntaje']}%</div>
-                  <div style="font-size:15px;font-weight:600;color:#101828">«{_e(a['denominacion_nueva'])}» se parece a «{_e(a['denominacion_cliente'])}»</div>
-                  <div style="color:#475467;font-size:13px">Cliente: {_e(a['cliente_nombre'])}{contrato}<br>
-                    Nueva: acta {_e(a['acta_nueva'])}, clase {_e(a['clase_nueva'])}, {_e(a['agente_nuevo'])} · {_e(a['fuente_nueva'])}<br>
-                    De la cartera: acta {_e(a['acta_cliente'])}, clase {_e(a['clase_cliente'])} · {_e(a['motivos'])}</div></td></tr>""")
-        secciones.append(("Vigilancia: alertas nuevas", filas))
+                filas.append(_fila_item(
+                    f"Parecido {_e(a['nivel'])} · {a['puntaje']}%",
+                    f"«{_e(a['denominacion_nueva'])}» se parece a «{_e(a['denominacion_cliente'])}»",
+                    f"Cliente: {_e(a['cliente_nombre'])}{contrato}<br>"
+                    f"Nueva: acta {_e(a['acta_nueva'])}, clase {_e(a['clase_nueva'])}, {_e(a['agente_nuevo'])} · {_e(a['fuente_nueva'])}<br>"
+                    f"De la cartera: acta {_e(a['acta_cliente'])}, clase {_e(a['clase_cliente'])} · {_e(a['motivos'])}",
+                    color))
     if plazos:
-        filas = []
+        filas.append(mm.seccion("Plazos que se acercan"))
         for p, u, _ in plazos:
             color = "#b42318" if p["dias"] <= 7 else "#b54708"
             dias = "hoy" if p["dias"] == 0 else ("mañana" if p["dias"] == 1 else f"en {p['dias']} días")
-            filas.append(f"""<tr><td style="padding:12px 16px;border-bottom:1px solid #eaecf0">
-              <div style="font-size:12px;font-weight:600;color:{color};text-transform:uppercase">{_fecha(p['fecha'])} · {dias}</div>
-              <div style="font-size:15px;font-weight:600;color:#101828">{_e(p['titulo'])}</div>
-              <div style="color:#475467;font-size:13px">{_e(p.get('cliente'))}{' · ' + _e(p['marca']) if p.get('marca') else ''}{' · acta ' + _e(p['acta']) if p.get('acta') else ''}<br>{_e(p.get('detalle'))}</div></td></tr>""")
-        secciones.append(("Plazos que se acercan", filas))
+            filas.append(_fila_item(
+                f"{_fecha(p['fecha'])} · {dias}", _e(p["titulo"]),
+                f"{_e(p.get('cliente'))}{' · ' + _e(p['marca']) if p.get('marca') else ''}"
+                f"{' · acta ' + _e(p['acta']) if p.get('acta') else ''}<br>{_e(p.get('detalle'))}",
+                color))
     if novedades:
-        filas = []
-        ultimo = None
+        filas.append(mm.seccion("Novedades en los expedientes"))
+        # Agrupadas por marca: una tarjeta por acta con sus novedades adentro.
+        grupos = {}
         for n in novedades:
-            cab = f"{n['cliente_nombre']} · {n['denominacion'] or 'acta ' + n['acta']}"
-            if cab != ultimo:
-                filas.append(f"""<tr><td style="padding:10px 16px 0;font-size:14px;font-weight:600;color:#101828">{_e(cab)} <span style="color:#98a2b3;font-weight:400">(acta {_e(n['acta'])})</span></td></tr>""")
-                ultimo = cab
-            if n.get("icono"):  # ya clasificada (notificaciones_inpi.filtrar_para_mail)
-                extra = " · ".join(x for x in (n.get("explicacion"), n.get("detalle")) if x)
-                filas.append(f"""<tr><td style="padding:2px 16px 4px 28px;color:#475467;font-size:13px">{n['icono']} <strong style="color:#101828">{_e(n['tipo'])}</strong>{(' — ' + _e(extra)) if extra else ''}</td></tr>""")
-            else:
-                filas.append(f"""<tr><td style="padding:2px 16px 4px 28px;color:#475467;font-size:13px">• {_e(n['texto'])}</td></tr>""")
-        secciones.append(("Novedades en los expedientes", filas))
+            grupos.setdefault((n.get("cliente_nombre"), n.get("denominacion"), n["acta"]), []).append(n)
+        for (cliente, marca, acta), items in grupos.items():
+            lineas = []
+            for n in items:
+                if n.get("icono"):  # ya clasificada (notificaciones_inpi.filtrar_para_mail)
+                    extra = " · ".join(_e(x) for x in (n.get("explicacion"), n.get("detalle")) if x)
+                    lineas.append(
+                        f'<tr><td style="padding:6px 0 0;vertical-align:top;width:24px;font-size:15px">{n["icono"]}</td>'
+                        f'<td style="padding:6px 0 0;font-size:14px;color:#101828"><strong>{_e(n["tipo"])}</strong>'
+                        + (f'<div style="font-size:13px;color:#475467;line-height:1.45">{extra}</div>' if extra else "")
+                        + "</td></tr>")
+                else:
+                    lineas.append(f'<tr><td style="padding:6px 0 0;width:24px">•</td>'
+                                  f'<td style="padding:6px 0 0;font-size:13px;color:#475467">{_e(n["texto"])}</td></tr>')
+            filas.append(
+                f'<tr><td style="padding:12px 24px;border-top:1px solid #eaecf0">'
+                f'<div style="font-size:15px;font-weight:700;color:#101828">{_e(marca or "acta " + acta)}'
+                f' <span style="font-weight:400;color:#98a2b3;font-size:13px">acta {_e(acta)}</span></div>'
+                f'<div style="font-size:13px;color:#475467">{_e(cliente)}</div>'
+                f'<table role="presentation" cellpadding="0" cellspacing="0" style="margin-top:4px">{"".join(lineas)}</table>'
+                f"</td></tr>")
 
     partes = []
     if alertas:
@@ -132,36 +147,28 @@ def armar_html_cartera(alertas, plazos, novedades, panel_url):
     if novedades:
         partes.append(f"{len(novedades)} novedad{'es' if len(novedades) != 1 else ''}")
     titulo = "Cartera y vigilancia: " + " · ".join(partes)
-    cuerpo_secciones = "".join(
-        f"""<tr><td style="padding:14px 16px 6px;font-size:13px;font-weight:700;color:#344054;text-transform:uppercase;letter-spacing:.04em;background:#f9fafb">{html.escape(t)}</td></tr>{''.join(f)}"""
-        for t, f in secciones
-    )
-    link = f"{panel_url}/clientes?vista=vigilancia"
-    return titulo, f"""<!doctype html>
-<html><body style="margin:0;background:#f2f4f7;font-family:Arial,Helvetica,sans-serif">
-<table width="100%" cellpadding="0" cellspacing="0" style="background:#f2f4f7;padding:24px 0"><tr><td align="center">
-<table width="640" cellpadding="0" cellspacing="0" style="max-width:640px;width:100%;background:#ffffff;border-radius:8px;overflow:hidden">
-  <tr><td style="padding:20px 16px;border-bottom:1px solid #eaecf0">
-    <div style="font-size:20px;font-weight:700;color:#101828">{html.escape(titulo)}</div>
-    <a href="{html.escape(link)}" style="display:inline-block;margin-top:10px;padding:8px 14px;background:#1d4ed8;color:#ffffff;text-decoration:none;border-radius:6px;font-size:14px;font-weight:600">Abrir Clientes y vigilancia</a>
-  </td></tr>
-  {cuerpo_secciones}
-  <tr><td style="padding:14px 16px;color:#98a2b3;font-size:12px">Fechas orientativas: confirmar siempre en el expediente. Aviso automático del panel · <a href="{html.escape(panel_url)}" style="color:#98a2b3">abrir panel</a></td></tr>
-</table></td></tr></table></body></html>"""
+    return titulo, mm.marco(
+        "".join(filas), etiqueta="Cartera y vigilancia", titulo=titulo,
+        subtitulo="Lo nuevo en las marcas de los clientes desde el último aviso.",
+        botones=[("Abrir Clientes y vigilancia", f"{panel_url}/clientes?vista=vigilancia")],
+        pie="Fechas orientativas: confirmar siempre en el expediente.", panel_url=panel_url)
 
 
 def armar_mail_bloqueo(proceso, motivo, ok, bloqueadas, link=""):
     """Aviso de bloqueo masivo del WAF de INPI -> (asunto, html)."""
-    cuerpo = (
-        f"<p><b>INPI está bloqueando las consultas del sistema.</b></p>"
-        f"<p>Proceso: <b>{proceso}</b><br>Detalle: {motivo}<br>"
-        f"Consultas OK en esta corrida: {ok} — bloqueadas: {bloqueadas}</p>"
-        f"<p>Las marcas afectadas quedaron como “no verificadas” y los reintentos las vuelven a "
-        f"probar solas. Si este aviso se repite en varias corridas seguidas, es un bloqueo "
-        f"sostenido: conviene pausar los workflows un día y bajar el ritmo de consultas.</p>"
-        + (f'<p><a href="{link}">Ver la corrida en GitHub</a></p>' if link else "")
+    e = html.escape
+    cuerpo = mm.bloque(
+        f'<table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;background:#fef3f2;border:1px solid #fecdca;border-radius:8px">'
+        f'<tr><td style="padding:12px 14px;font-size:14px;line-height:1.6;color:#101828">'
+        f'Proceso: <b>{e(str(proceso))}</b><br>Detalle: {e(str(motivo))}<br>'
+        f'Consultas OK en esta corrida: <b>{ok}</b> · bloqueadas: <b style="color:#b42318">{bloqueadas}</b></td></tr></table>'
+        f'<p style="margin:14px 0 0">Las marcas afectadas quedaron como «no verificadas» y los reintentos las vuelven a '
+        f'probar solas. Si este aviso se repite en varias corridas seguidas, es un bloqueo '
+        f'sostenido: conviene pausar los workflows un día y bajar el ritmo de consultas.</p>'
     )
-    return f"⚠️ INPI está bloqueando consultas ({proceso})", cuerpo
+    asunto = f"⚠️ INPI está bloqueando consultas ({proceso})"
+    return asunto, mm.marco(cuerpo, etiqueta="Sistema", titulo="INPI está bloqueando las consultas del sistema",
+                            botones=[("Ver la corrida en GitHub", link)] if link else (), color_etiqueta="#b42318")
 
 
 def armar_mail_vistas_sin_entender(items, link=""):
@@ -181,17 +188,18 @@ def armar_mail_vistas_sin_entender(items, link=""):
             + "</td></tr>"
         )
     n = len(items)
-    cuerpo = (
-        f"<p><b>{n} vista{'s' if n != 1 else ''} que el sistema no supo interpretar del todo.</b></p>"
-        f"<p>El lector de PDF no encontró el tipo, el artículo o el plazo. La vista quedó guardada con lo que "
+    cuerpo = mm.bloque(
+        f"<p style=\"margin:0 0 10px\">El lector de PDF no encontró el tipo, el artículo o el plazo. La vista quedó guardada con lo que "
         f"se pudo leer (y el texto completo, para poder corregir el lector); conviene mirarla a mano en la Grilla "
         f"y avisar para ajustar la lectura.</p>"
         f"<table cellpadding=\"0\" cellspacing=\"0\" style=\"width:100%;border-collapse:collapse;font-size:14px\">"
         f"<tr><th align=\"left\" style=\"padding:8px\">Marca</th><th align=\"left\" style=\"padding:8px\">Qué no se entendió</th></tr>"
         f"{filas}</table>"
-        + (f'<p><a href="{html.escape(link)}">Ver la corrida en GitHub</a></p>' if link else "")
     )
-    return f"🔎 {n} vista{'s' if n != 1 else ''} que el sistema no supo leer", cuerpo
+    titulo = f"{n} vista{'s' if n != 1 else ''} que el sistema no supo interpretar del todo"
+    return f"🔎 {n} vista{'s' if n != 1 else ''} que el sistema no supo leer", mm.marco(
+        cuerpo, etiqueta="Vistas", titulo=titulo, botones=[("Ver la corrida en GitHub", link)] if link else (),
+        color_etiqueta="#b54708")
 
 
 # ── Ejemplos para la vista previa de la pestaña "Mails" ───────────────────

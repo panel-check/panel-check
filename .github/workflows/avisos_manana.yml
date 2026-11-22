@@ -8,6 +8,11 @@ on:
     # horario los avisos de lo que pasó durante la noche. No consulta INPI (solo
     # lee la base y manda mails), por eso no usa el carril de INPI.
   workflow_dispatch:
+    inputs:
+      reenviar_cartera:
+        description: "Solo reenviar el último mail de Cartera y vigilancia con el formato actual (no marca nada)"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -50,16 +55,22 @@ jobs:
       # pidió no mandarlo más, era innecesario. El script notificar_oposiciones.py
       # sigue en el repo para uso manual, pero ya no corre solo.)
       - name: Avisar alertas, plazos y novedades de la cartera
-        if: always()
+        if: always() && !inputs.reenviar_cartera
         run: |
           cd scripts
           python3 notificar_cartera.py
+
+      - name: Reenviar el último mail de Cartera y vigilancia
+        if: inputs.reenviar_cartera
+        run: |
+          cd scripts
+          python3 notificar_cartera.py --reenviar-ultimo
 
       # Respaldo del aviso por mail de los formularios para clientes
       # (Clientes → Formularios): el panel lo manda al instante si tiene
       # RESEND_API_KEY; si no pudo, sale acá.
       - name: Avisar formularios de clientes pendientes
-        if: always()
+        if: always() && !inputs.reenviar_cartera
         run: |
           cd scripts
           python3 notificar_formularios.py

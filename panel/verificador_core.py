@@ -435,14 +435,15 @@ def armar_mail_aviso(v: dict, panel_url: str) -> tuple:
         _fila("Teléfono", esc(telefono)),
         _fila("Web o redes", esc(web)),
     ])
-    cuerpo = (
-        '<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#222">'
-        '<p>Alguien consultó una marca en la web de Smarties.</p>'
-        f'<table style="border-collapse:collapse">{filas}</table>'
-        + (f'<p style="margin:14px 0 4px"><strong>Marcas encontradas en INPI</strong></p><ul style="margin:0">{lista}</ul>' if lista else "")
-        + f'<p style="margin-top:18px"><a href="{esc(panel_url)}/consultas-web">Ver en el panel (Más → Consultas web)</a></p>'
-        '</div>'
-    )
+    import mails_marco as mm
+    cuerpo = mm.marco(
+        mm.bloque(f'<table role="presentation" style="border-collapse:collapse;width:100%">{filas}</table>')
+        + (mm.seccion("Marcas encontradas en INPI")
+           + mm.bloque(f'<ul style="margin:0;padding-left:18px;color:#475467;font-size:13px;line-height:1.6">{lista}</ul>')
+           if lista else ""),
+        etiqueta="Consulta desde la web", titulo=f"Consultaron «{v.get('marca') or ''}» en la web",
+        subtitulo=f"Resultado del verificador: <strong>{esc(veredicto)}</strong>",
+        botones=[("Ver en el panel", f"{panel_url}/consultas-web")], panel_url=panel_url)
     texto = "\n".join(x for x in [
         "Alguien consultó una marca en la web de Smarties.",
         f"Marca: {v.get('marca') or ''}", f"Resultado: {veredicto}", f"Actividad: {v.get('actividad') or ''}",

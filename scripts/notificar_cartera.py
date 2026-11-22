@@ -31,6 +31,8 @@ Uso:
     python3 notificar_cartera.py              # envía y marca como avisado
     python3 notificar_cartera.py --dry-run    # arma el HTML en /tmp sin enviar ni marcar
     python3 notificar_cartera.py --solo-marcar
+    python3 notificar_cartera.py --reenviar-ultimo   # vuelve a mandar las novedades del último mail, con el
+                                                     # formato actual, sin marcar nada
 """
 
 import argparse
@@ -167,6 +169,8 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--dry-run", action="store_true", help="no envía ni marca; guarda el HTML en /tmp")
     ap.add_argument("--solo-marcar", action="store_true", help="marca todo como avisado sin enviar")
+    ap.add_argument("--reenviar-ultimo", action="store_true",
+                    help="vuelve a mandar las novedades del último mail con el formato actual (no marca nada)")
     args = ap.parse_args()
 
     dsn = os.environ.get("DATABASE_URL") or os.environ.get("DATABASE_PUBLIC_URL")
@@ -185,6 +189,21 @@ def main():
             cartera.crear_tablas(cur)
         conn.commit()
         hoy = cartera.hoy_ar()
+        if args.reenviar_ultimo:
+            with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                cur.execute(SQL_NOVEDADES.replace("n.notificado_en IS NULL",
+                                                  "n.notificado_en = (SELECT max(notificado_en) FROM cartera_novedades)"),
+                            (list(TIPOS_NOVEDAD_MAIL),))
+                ultimas = cur.fetchall()
+            novedades = notificaciones_inpi.filtrar_para_mail(ultimas)
+            print(f"Reenvío del último mail: {len(novedades)} novedades para el mail (de {len(ultimas)}).")
+            if not novedades:
+                print("No hay novedades para reenviar.")
+                return
+            asunto, cuerpo = armar_html([], [], novedades, panel_url)
+            mail_id = enviar_resend(api_key, remitente, destinatarios, "(Reenvío) " + asunto, cuerpo, cfg_mail["responder_a"])
+            print(f"Mail reenviado (id {mail_id}) a {len(destinatarios)} destinatario(s).")
+            return
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
             alertas = alertas_pendientes(cur)
             plazos = plazos_a_avisar(cur, hoy)
