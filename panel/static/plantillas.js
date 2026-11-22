@@ -134,7 +134,9 @@
     try {
       const d = await pedir("/api/plantillas");
       const lista = orden(ctx, d.plantillas);
-      estado = { ...d, plantillas: lista, ctx, valores: valoresDe(ctx), elegida: ctx.plantilla_id || lista[0]?.id, editado: null, todas: false };
+      const et = Number(ctx.etapa ?? -1);
+      const primera = lista.find((x) => !(ctx.servicio && et >= 0 && x.servicio === ctx.servicio && x.para_etapa != null && x.para_etapa < et)) || lista[0];
+      estado = { ...d, plantillas: lista, ctx, valores: valoresDe(ctx), elegida: ctx.plantilla_id || primera?.id, editado: null, todas: false, verPasadas: false };
       pintar();
     } catch (e) {
       m.firstElementChild.innerHTML = `<p class="pl-cargando">No se pudieron cargar las plantillas: ${esc(e.message)}</p>`;
@@ -148,9 +150,14 @@
     const { ctx } = estado;
     const p = elegida();
     const sid = ctx.servicio;
-    const propias = estado.plantillas.filter((x) => !sid || x.servicio === sid || x.servicio === "general");
-    const lista = estado.todas || !sid ? estado.plantillas : propias;
     const et = Number(ctx.etapa ?? -1);
+    // Las plantillas de etapas que el trabajo ya pasó (por ejemplo el presupuesto cuando ya pagó la seña) no se
+    // muestran: quedan detrás de «Ver las de etapas anteriores».
+    const pasada = (x) => sid && et >= 0 && x.servicio === sid && x.para_etapa != null && x.para_etapa < et;
+    const pasadas = estado.plantillas.filter(pasada);
+    const propias = estado.plantillas.filter((x) => (!sid || x.servicio === sid || x.servicio === "general") && !pasada(x));
+    const lista = (estado.todas || !sid ? estado.plantillas : propias.concat(estado.verPasadas ? pasadas : []))
+      .filter((x) => estado.todas || estado.verPasadas || !pasada(x) || x.id === estado.elegida);
     const item = (x) => `<button type="button" class="pl-item ${x.id === estado.elegida ? "activa" : ""}" data-pl-elegir="${x.id}">
         <span class="tit">${x.canal === "whatsapp" ? "💬" : "✉️"} ${esc(x.titulo)}</span>
         ${sid && x.servicio === sid && (x.para_etapa === et || x.para_etapa === et + 1) ? '<span class="pl-sug">Sugerida</span>' : ""}
@@ -161,6 +168,7 @@
         <button type="button" class="pl-x" data-pl-cerrar aria-label="Cerrar">×</button></div>
       <div class="pl-cuerpo">
         <aside class="pl-lista">${lista.map(item).join("") || '<p class="pl-vacio">No hay plantillas.</p>'}
+          ${pasadas.length && !estado.todas ? `<button type="button" class="pl-mas" data-pl-pasadas>${estado.verPasadas ? "Ocultar las de etapas anteriores" : `Ver las de etapas anteriores (${pasadas.length})`}</button>` : ""}
           ${sid && propias.length < estado.plantillas.length ? `<button type="button" class="pl-mas" data-pl-todas>${estado.todas ? "Ver solo las de este servicio" : "Ver todas las plantillas"}</button>` : ""}
           <a class="pl-mas" href="/mails?tab=clientes" target="_blank" rel="noopener">Editar plantillas ↗</a></aside>
         <section class="pl-armado">${p ? `
@@ -195,10 +203,11 @@
   }
 
   async function alClic(ev) {
-    const b = ev.target.closest("[data-pl-elegir], [data-pl-cerrar], [data-pl-todas], [data-pl-copiar], [data-pl-gmail], [data-pl-wa]");
+    const b = ev.target.closest("[data-pl-elegir], [data-pl-cerrar], [data-pl-todas], [data-pl-pasadas], [data-pl-copiar], [data-pl-gmail], [data-pl-wa]");
     if (!b) return;
     if (b.dataset.plCerrar !== undefined) return cerrar();
     if (b.dataset.plTodas !== undefined) { estado.todas = !estado.todas; return pintar(); }
+    if (b.dataset.plPasadas !== undefined) { estado.verPasadas = !estado.verPasadas; return pintar(); }
     if (b.dataset.plElegir) { estado.elegida = Number(b.dataset.plElegir); return pintar(); }
     const p = elegida();
     const texto = cuerpoFinal();
