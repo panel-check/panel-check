@@ -103,12 +103,23 @@ function tarjeta(t) {
 
 // Última columna: los clientes que tienen la vigilancia marcaria contratada de verdad (Clientes → «Vigilancia
 // contratada»), más los trabajos de vigilancia que haya cargados. Un clic abre la ficha del cliente encima.
+// Cartel al pasar el mouse: las marcas vigiladas, una por renglón con sus clases (MARCA · clases 9, 35).
+function tituloVigilancia(c) {
+  const porMarca = new Map();
+  for (const m of c.marcas_lista || []) {
+    const d = (m.d || "(sin denominación)").trim();
+    if (!porMarca.has(d)) porMarca.set(d, []);
+    if (m.c != null && !porMarca.get(d).includes(m.c)) porMarca.get(d).push(m.c);
+  }
+  const lineas = [...porMarca].map(([d, cl]) => `• ${d}${cl.length ? ` · clase${cl.length > 1 ? "s" : ""} ${cl.join(", ")}` : ""}`);
+  return lineas.length ? `Marcas vigiladas:\n${lineas.join("\n")}\n\nClic para ver las alertas` : `Ver las alertas de ${c.nombre}`;
+}
 function tarjetaVigilancia(c) {
   const alertas = c.alertas_nuevas
     ? `<span class="sg-alerta rojo"><span class="dot"></span>${c.alertas_nuevas} alerta${c.alertas_nuevas > 1 ? "s" : ""} sin revisar</span>`
     : `<span class="sg-alerta verde"><span class="dot"></span>Sin alertas nuevas</span>`;
   const curso = c.alertas_en_curso ? `<span class="sg-vig-dato">${c.alertas_en_curso} en seguimiento</span>` : "";
-  return `<button type="button" class="sg-card sg-vig" data-vig-cliente="${c.id}" title="Ver las alertas de ${esc(c.nombre)}">
+  return `<button type="button" class="sg-card sg-vig" data-vig-cliente="${c.id}" title="${esc(tituloVigilancia(c))}">
     <div class="marca">${esc(c.nombre)}</div>
     <div class="cliente">${c.marcas} marca${c.marcas === 1 ? "" : "s"} vigilada${c.marcas === 1 ? "" : "s"}${c.vigilancia_desde ? ` · desde el ${fecha(c.vigilancia_desde)}` : ""}</div>
     <div class="fila">${alertas}${curso}</div>
