@@ -107,7 +107,7 @@ function tarjetaVigilancia(c) {
     ? `<span class="sg-alerta rojo"><span class="dot"></span>${c.alertas_nuevas} alerta${c.alertas_nuevas > 1 ? "s" : ""} sin revisar</span>`
     : `<span class="sg-alerta verde"><span class="dot"></span>Sin alertas nuevas</span>`;
   const curso = c.alertas_en_curso ? `<span class="sg-vig-dato">${c.alertas_en_curso} en seguimiento</span>` : "";
-  return `<button type="button" class="sg-card sg-vig" data-cliente-popup="${c.id}" title="Ver la ficha de ${esc(c.nombre)}">
+  return `<button type="button" class="sg-card sg-vig" data-vig-cliente="${c.id}" title="Ver las alertas de ${esc(c.nombre)}">
     <div class="marca">${esc(c.nombre)}</div>
     <div class="cliente">${c.marcas} marca${c.marcas === 1 ? "" : "s"} vigilada${c.marcas === 1 ? "" : "s"}${c.vigilancia_desde ? ` · desde el ${fecha(c.vigilancia_desde)}` : ""}</div>
     <div class="fila">${alertas}${curso}</div>
@@ -161,6 +161,7 @@ function campoLink(campo, nombre, valor, placeholder, cargado) {
 }
 
 async function abrirFicha(id) {
+  if (typeof id === "string" && id.startsWith("vig:")) return abrirVigilancia(Number(id.slice(4)));
   const f = $("ficha");
   // Si la ficha ya está abierta con este trabajo, se refresca sin vaciarla
   // (así no parpadea en blanco al cambiar una etapa o un dato).
@@ -180,6 +181,132 @@ async function abrirFicha(id) {
     f.innerHTML = `<div class="sg-f-cab"><button class="cerrar" type="button" data-cerrar aria-label="Cerrar">×</button><p>No se pudo abrir: ${esc(e.message)}</p></div>`;
   }
 }
+
+// ── Ficha de Vigilancia marcaria (panel lateral, como los trabajos) ─────────────
+// Muestra las alertas del cliente con los mismos botones que en Clientes (POST /api/cartera/alertas/{id}).
+// El nombre del cliente abre su ficha completa encima.
+const VIG = {
+  estados: { nueva: "Nueva", monitorear: "Monitorear", oponer: "Oponer", opuesta: "Oposición presentada", descartada: "Descartada", descartada_ia: "Descartada por IA" },
+  veredictos: { identica: ["rojo", "Idéntica"], confundible: ["rojo", "Confundible"], cercana: ["amarillo", "Cercana"], no_confundible: ["", "No confundible"] },
+  relacion: { misma: ["rojo", "Misma clase"], relacionada: ["amarillo", "Clase conexa"], distinta: ["", "Clase distinta"] },
+  tipos: { D: "Denominativa", M: "Mixta", F: "Figurativa", T: "Tridimensional" },
+};
+const ABIERTAS = ["nueva", "monitorear", "oponer"];
+
+async function abrirVigilancia(cid) {
+  const f = $("ficha");
+  const clave = `vig:${cid}`;
+  const refresco = sg.abierto === clave && f.classList.contains("abierta") && !f.querySelector(".sg-cargando");
+  sg.abierto = clave;
+  if (!refresco) f.innerHTML = '<div class="sg-f-cab"><p class="sg-cargando">Cargando…</p></div>';
+  f.classList.add("abierta"); f.setAttribute("aria-hidden", "false");
+  $("velo").hidden = false;
+  history.replaceState(null, "", `/seguimientos?vigilancia=${cid}`);
+  try {
+    const d = await pedir(`/api/clientes/${cid}`);
+    if (sg.abierto !== clave) return;
+    const scroll = f.scrollTop;
+    pintarVigilancia(d);
+    if (refresco) f.scrollTop = scroll;
+  } catch (e) {
+    f.innerHTML = `<div class="sg-f-cab"><button class="cerrar" type="button" data-cerrar aria-label="Cerrar">×</button><p>No se pudo abrir: ${esc(e.message)}</p></div>`;
+  }
+}
+
+function alertaVig(a) {
+  const abierta = ABIERTAS.includes(a.estado);
+  const otro = a.tipo === "otro_agente";
+  const nivel = a.nivel === "alta" ? "rojo" : a.nivel === "media" ? "amarillo" : "";
+  const rel = VIG.relacion[a.relacion_clases];
+  const ver = VIG.veredictos[a.ia_veredicto];
+  const actasCli = (Array.isArray(a.actas_cliente) && a.actas_cliente.length ? a.actas_cliente : [{ acta: a.acta_cliente, clase: a.clase_cliente }])
+    .filter((x) => x.acta);
+  const botones = a.estado === "descartada_ia"
+    ? [["nueva", "No estoy de acuerdo"]]
+    : (otro ? [["monitorear", "Lo sigo"], ["opuesta", "Ya lo hablé"], ["descartada", "Descartar"]]
+      : [["monitorear", "Monitorear"], ["oponer", "Hay que oponer"], ["opuesta", "Oposición presentada"], ["descartada", "Descartar"]])
+      .filter(([e]) => e !== a.estado).concat(!abierta ? [["nueva", "Reabrir"]] : []);
+  const plazo = !otro && a.plazo_oposicion
+    ? `<div class="sg-vig-plazo ${a.dias_oposicion !== null && a.dias_oposicion <= 7 ? "urgente" : ""}">⚠ ${a.dias_oposicion >= 0 ? "Plazo para oponerse hasta el" : "El plazo para oponerse cerró el"} <b>${fecha(a.plazo_oposicion)}</b>${a.dias_oposicion >= 0 ? ` (${a.dias_oposicion === 0 ? "hoy" : `${a.dias_oposicion} día${a.dias_oposicion === 1 ? "" : "s"}`})` : ""}</div>`
+    : (!otro && abierta ? `<div class="sg-vig-plazo temprana">Todavía no salió en el boletín: el plazo de 30 días para oponerse empieza cuando se publique.</div>` : "");
+  return `<div class="sg-vig-alerta ${abierta ? "" : "cerrada"}" data-alerta-vig="${a.id}">
+    <div class="cab">
+      ${otro ? '<span class="sg-tag azul">🔀 Otro agente</span>' : `<span class="sg-tag ${nivel}">${esc((a.nivel || "").toUpperCase())}</span><b class="pct">${a.puntaje ?? ""}%</b>${rel ? `<span class="sg-tag ${rel[0]}">${rel[1]}</span>` : ""}`}
+      <span class="sg-tag ${abierta ? "azul" : ""}">${esc(VIG.estados[a.estado] || a.estado)}</span>
+      <span class="cuando">${fecha(a.creada_en)}</span>
+    </div>
+    ${otro ? `<div class="txt"><b>${esc(a.titular_nuevo || "El cliente")}</b> presentó <b>${esc(a.denominacion_nueva || "una marca")}</b> (clase ${esc(a.clase_nueva ?? "?")}, acta ${linkActa(a.acta_nueva)})${a.agente_nuevo ? ` · ${esc(a.agente_nuevo)}` : ""}.</div>`
+      : `<div class="cols">
+      <div><small>Marca del cliente</small><b>${esc(a.denominacion_cliente || "")}</b>
+        <span class="dato">${actasCli.map((x) => `cl. ${esc(x.clase ?? "?")} · ${linkActa(x.acta)}`).join("<br>")}</span></div>
+      <div><small>Solicitud nueva</small><b>${esc(a.denominacion_nueva || "(sin nombre)")}</b>
+        <span class="dato">cl. ${esc(a.clase_nueva ?? "?")} · ${linkActa(a.acta_nueva)}${a.tipo_nuevo ? ` · ${esc(VIG.tipos[a.tipo_nuevo] || a.tipo_nuevo)}` : ""}<br>
+        ${esc(a.titular_nuevo || "")}${a.agente_nuevo ? ` · ${esc(a.agente_nuevo)}` : ""}${a.fecha_presentacion_nueva ? `<br>presentada ${fecha(a.fecha_presentacion_nueva)}` : ""}</span></div>
+    </div>
+    ${a.ia_veredicto ? `<div class="ia"><span class="sg-tag ${ver ? ver[0] : ""}">🤖 ${esc(ver ? ver[1] : a.ia_veredicto)}</span> ${textoNota(a.ia_razon || "")}</div>` : ""}`}
+    ${plazo}
+    <div class="acciones">${botones.map(([e, txt]) => `<button type="button" class="sg-btn sg-btn-mini ${e === "descartada" ? "sg-btn-peligro" : "sg-btn-suave"}" data-alerta-estado="${e}">${txt}</button>`).join("")}
+      <input class="nota" data-alerta-nota placeholder="nota (se guarda al salir del campo)" value="${esc(a.nota || "")}"></div>
+  </div>`;
+}
+
+function pintarVigilancia(d) {
+  const c = d.cliente;
+  const s = servicioDe("vigilancia");
+  const f = $("ficha");
+  f.style.setProperty("--sg-color", s.color);
+  const alertas = (d.alertas || []).filter((a) => a.estado !== "pendiente_ia");
+  const abiertas = alertas.filter((a) => ABIERTAS.includes(a.estado));
+  const nuevas = abiertas.filter((a) => a.estado === "nueva").length;
+  const revisadas = alertas.filter((a) => !ABIERTAS.includes(a.estado));
+  const vigiladas = (d.marcas || []).filter((m) => m.vigilar !== false);
+  const verRev = sg.vigRevisadas === c.id;
+  f.innerHTML = `
+    <div class="sg-f-cab">
+      <button class="cerrar" type="button" data-cerrar aria-label="Cerrar">×</button>
+      <span class="sg-f-serv">● ${esc(s.nombre)}</span>
+      <div class="sg-f-marca"><span class="nombre">${esc(c.nombre)}</span></div>
+      <div class="sg-f-cliente"><a href="/clientes?cliente=${c.id}" data-cliente-popup="${c.id}" title="Ver la ficha completa del cliente">Ver la ficha del cliente</a>${c.telefono ? ` · ${esc(c.telefono)}` : ""}${c.email ? ` · ${esc(c.email)}` : ""}</div>
+    </div>
+    <div class="sg-f-cuerpo">
+      <div class="sg-cuenta ${nuevas ? "rojo" : "verde"}"><div class="det"><b>${nuevas ? `${nuevas} alerta${nuevas > 1 ? "s" : ""} sin revisar` : "Sin alertas nuevas"}</b><br>
+        ${vigiladas.length} marca${vigiladas.length === 1 ? "" : "s"} vigilada${vigiladas.length === 1 ? "" : "s"}${c.vigilancia_desde ? ` · contratada el ${fecha(c.vigilancia_desde)}` : ""}${abiertas.length > nuevas ? ` · ${abiertas.length - nuevas} en seguimiento` : ""}</div></div>
+      <div class="sg-bloque"><h3>🛡️ Alertas abiertas <span class="der">${abiertas.length}</span></h3>
+        ${abiertas.length ? abiertas.map(alertaVig).join("") : '<p class="sg-vacio-chico">No hay alertas abiertas.</p>'}</div>
+      ${revisadas.length ? `<div class="sg-bloque"><h3 class="plegable" data-vig-revisadas>Revisadas <span class="der">${revisadas.length} <span class="mas">${verRev ? "−" : "+"}</span></span></h3>
+        ${verRev ? revisadas.slice(0, 40).map(alertaVig).join("") : ""}</div>` : ""}
+      <div class="sg-bloque"><h3>Marcas vigiladas <span class="der">${vigiladas.length}</span></h3>
+        <ul class="sg-vig-marcas">${vigiladas.map((m) => `<li><b>${esc(m.denominacion || "(sin nombre)")}</b><span>cl. ${esc(m.clase ?? "?")} · ${linkActa(m.acta)}</span></li>`).join("") || '<li class="sg-vacio-chico">Sin marcas vigiladas.</li>'}</ul></div>
+    </div>`;
+}
+
+document.addEventListener("click", async (ev) => {
+  const card = ev.target.closest("[data-vig-cliente]");
+  if (card) return abrirVigilancia(Number(card.dataset.vigCliente));
+  if (ev.target.closest("[data-vig-revisadas]")) {
+    const cid = Number(String(sg.abierto).slice(4));
+    sg.vigRevisadas = sg.vigRevisadas === cid ? null : cid;
+    return abrirVigilancia(cid);
+  }
+  const b = ev.target.closest("[data-alerta-estado]");
+  if (!b) return;
+  const id = b.closest("[data-alerta-vig]").dataset.alertaVig;
+  b.disabled = true;
+  try {
+    await pedir(`/api/cartera/alertas/${id}`, { method: "POST", body: { estado: b.dataset.alertaEstado } });
+    abrirVigilancia(Number(String(sg.abierto).slice(4)));
+    cargar();
+  } catch (e) { b.disabled = false; mostrarAviso(`No se pudo cambiar la alerta: ${e.message}`, "aviso"); }
+});
+document.addEventListener("change", async (ev) => {
+  const n = ev.target.closest("[data-alerta-nota]");
+  if (!n) return;
+  const id = n.closest("[data-alerta-vig]").dataset.alertaVig;
+  try {
+    await pedir(`/api/cartera/alertas/${id}`, { method: "POST", body: { nota: n.value } });
+    mostrarAviso("Nota guardada", "ok");
+  } catch (e) { mostrarAviso(`No se guardó la nota: ${e.message}`, "aviso"); }
+});
 
 function cerrarFicha() {
   sg.abierto = null;
@@ -697,6 +824,8 @@ document.addEventListener("click", (ev) => {
 
 (async function iniciar() {
   await cargar();
-  const id = Number(new URLSearchParams(location.search).get("trabajo"));
+  const p = new URLSearchParams(location.search);
+  const id = Number(p.get("trabajo"));
   if (id) abrirFicha(id);
+  else if (Number(p.get("vigilancia"))) abrirVigilancia(Number(p.get("vigilancia")));
 })();
