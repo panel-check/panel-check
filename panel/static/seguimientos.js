@@ -254,6 +254,7 @@ function alertaVig(a) {
 }
 
 function pintarVigilancia(d) {
+  sg.ficha = { vigilancia: d };
   const c = d.cliente;
   const s = servicioDe("vigilancia");
   const f = $("ficha");
@@ -270,6 +271,7 @@ function pintarVigilancia(d) {
       <span class="sg-f-serv">● ${esc(s.nombre)}</span>
       <div class="sg-f-marca"><span class="nombre">${esc(c.nombre)}</span></div>
       <div class="sg-f-cliente"><a href="/clientes?cliente=${c.id}" data-cliente-popup="${c.id}" title="Ver la ficha completa del cliente">Ver la ficha del cliente</a>${c.telefono ? ` · ${esc(c.telefono)}` : ""}${c.email ? ` · ${esc(c.email)}` : ""}</div>
+      <div class="sg-f-links"><button type="button" class="sg-btn sg-btn-mini" data-armar-mail title="Armar un mail o WhatsApp con una plantilla y los datos del cliente">✉️ Mail</button></div>
     </div>
     <div class="sg-f-cuerpo">
       <div class="sg-cuenta ${nuevas ? "rojo" : "verde"}"><div class="det"><b>${nuevas ? `${nuevas} alerta${nuevas > 1 ? "s" : ""} sin revisar` : "Sin alertas nuevas"}</b><br>
@@ -456,6 +458,7 @@ function bloqueInformes(d) {
 }
 
 function pintarFicha(d) {
+  sg.ficha = d;
   const t = d.trabajo;
   const s = servicioDe(t.servicio);
   const f = $("ficha");
@@ -486,7 +489,8 @@ function pintarFicha(d) {
       <div class="sg-f-links">
         ${enlace(t.carpeta_drive, "📁 Carpeta Drive")}
         ${enlace(t.comprobante, "🧾 Comprobante")}
-        ${enlace(d.notion_procesos, "📋 Procesos y mails")}
+        <button type="button" class="sg-btn sg-btn-mini" data-armar-mail title="Armar un mail o WhatsApp con una plantilla y los datos de este trabajo ya completados">✉️ Mail</button>
+        <a class="sg-btn sg-btn-suave sg-btn-mini" href="/procesos" target="_blank" rel="noopener">📋 Procesos y plantillas</a>
       </div>
     </div>
     <div class="sg-f-cuerpo">
@@ -733,6 +737,33 @@ document.addEventListener("click", async (ev) => {
   tg.setAttribute("aria-expanded", abierta);
   tg.querySelector(".mas").textContent = abierta ? "−" : "+";
   sg.solsAbiertas = abierta ? sg.abierto : null;
+});
+
+// ✉️ Mail: arma el mail con una plantilla (plantillas.js) y los datos del trabajo o del cliente ya completados
+function contextoMail() {
+  const d = sg.ficha || {};
+  if (d.vigilancia) {
+    const c = d.vigilancia.cliente;
+    const marcas = (d.vigilancia.marcas || []).filter((m) => m.vigilar !== false);
+    const nombres = [...new Set(marcas.map((m) => m.denominacion).filter(Boolean))];
+    return { titulo: `Vigilancia · ${c.nombre}`, servicio: "vigilancia", nombre: c.contacto || c.nombre, email: c.email, telefono: c.telefono,
+      marca: nombres.length === 1 ? nombres[0] : "", clases: [...new Set(marcas.map((m) => m.clase).filter((x) => x != null))].join(", ") };
+  }
+  const t = d.trabajo;
+  const sols = d.solicitudes || [];
+  const ppal = sols.find((m) => m.acta === t.acta_efectiva) || sols[0] || {};
+  const ex = d.expediente?.marca || {};
+  return {
+    titulo: `${t.marca} · ${t.cliente}`, servicio: t.servicio, etapa: t.etapa,
+    nombre: t.cliente_contacto || t.cliente, email: t.cliente_email, telefono: t.cliente_telefono,
+    marca: t.marca, acta: t.acta_efectiva, clase: ppal.clase ?? ex.clase, tipo: ppal.tipo_texto || ex.tipo,
+    clases: [...new Set(sols.map((m) => m.clase).filter((x) => x != null))].join(", ") || (ppal.clase ?? ex.clase),
+    fecha_publicacion: ex.fecha_publicacion, fecha_concesion: ex.fecha_concesion, fecha_vencimiento: ex.fecha_vencimiento_marca,
+  };
+}
+document.addEventListener("click", (ev) => {
+  if (!ev.target.closest("[data-armar-mail]")) return;
+  if (window.Plantillas) Plantillas.abrir(contextoMail());
 });
 
 // «Ver más / Ver menos» de las notas largas

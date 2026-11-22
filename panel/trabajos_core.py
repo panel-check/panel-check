@@ -22,7 +22,9 @@ import re
 import unicodedata
 
 # Procesos y plantillas de mails (Notion, página «Smarties + KOM»).
-NOTION_PROCESOS = "https://www.notion.so/f6a567ff9f074f22b8dccde2283af8c5"
+# Procesos y plantillas de mails: desde el 22/11/2026 están en el panel (/procesos); antes, en Notion
+# (https://www.notion.so/f6a567ff9f074f22b8dccde2283af8c5). Se mantiene el nombre de la variable.
+NOTION_PROCESOS = "/procesos"
 
 # Orden de las columnas del tablero: primero las que tienen vencimiento (vista, oposición).
 SERVICIOS = [

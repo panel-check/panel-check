@@ -149,7 +149,7 @@ def _campos(body, parcial):
 # el mismo nombre (la más reciente). Así el expediente aparece solo para las marcas que ya
 # están en Clientes → Marcas.
 SQL_LISTA = """
-    SELECT t.*, c.nombre AS cliente, c.cuit AS cliente_cuit, c.email AS cliente_email, c.telefono AS cliente_telefono,
+    SELECT t.*, c.nombre AS cliente, c.cuit AS cliente_cuit, c.contacto AS cliente_contacto, c.email AS cliente_email, c.telefono AS cliente_telefono,
            COALESCE(t.acta, cm.acta) AS acta_efectiva, (t.acta IS NULL AND cm.acta IS NOT NULL) AS acta_auto,
            cm.estado_tramite, cm.ultimo_movimiento, cm.ultimo_movimiento_fecha,
            (SELECT COUNT(*) FROM informes_viabilidad i
