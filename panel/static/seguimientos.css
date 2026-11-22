@@ -182,10 +182,34 @@
 .sg-error { color: var(--rojo); font-size: 13px; margin: 0; }
 .sg-modal-botones { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
 
+.sg-tabs-movil { display: none; }
 @media (max-width: 640px) {
-  .sg { padding: 12px 10px 30px; }
-  .sg-acciones input[type=search] { min-width: 0; flex: 1; }
-  .sg-tablero { grid-auto-flow: row; grid-auto-columns: auto; }
+  .sg { padding: 12px 10px 90px; }
+  /* Barra de arriba compacta: buscador a lo ancho; abajo Activos/Cerrados/Todos, 📋 y ＋ Nuevo */
+  .sg-top { gap: 10px; margin-bottom: 10px; }
+  .sg-resumen { width: 100%; }
+  .sg-acciones { display: grid !important; grid-template-columns: 1fr auto auto; gap: 8px; width: 100%; }
+  .sg-acciones input[type=search] { grid-column: 1 / -1; min-width: 0; width: 100%; box-sizing: border-box; }
+  .sg-acciones .sg-estado { min-width: 0; }
+  .sg-acciones .sg-estado button { flex: 1; padding-left: 6px; padding-right: 6px; }
+  .sg-acciones .sg-btn { padding-left: 12px; padding-right: 12px; }
+  .txt-largo { display: none; }
+  /* Una columna a la vez, elegida con las pestañas */
+  .sg-tablero { display: block; overflow: visible; }
+  .sg-tabs-movil { display: flex; gap: 6px; overflow-x: auto; padding: 2px 0 10px; margin: 0 -10px 4px; padding-left: 10px; padding-right: 10px; scrollbar-width: none; }
+  .sg-tabs-movil::-webkit-scrollbar { display: none; }
+  .sg-tabs-movil button { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 6px; border: 1px solid #dfe3ea; background: #fff; border-radius: 999px; padding: 7px 12px; font: inherit; font-size: 13.5px; font-weight: 600; color: var(--texto, #111827); }
+  .sg-tabs-movil button .punto { width: 8px; height: 8px; border-radius: 50%; background: var(--sg-color); }
+  .sg-tabs-movil button b { font-size: 12px; color: var(--gris, #6b7280); font-weight: 700; }
+  .sg-tabs-movil button.activa { border-color: var(--sg-color); background: color-mix(in srgb, var(--sg-color) 10%, white); }
+  .sg-tablero .sg-col { display: none; padding: 0; background: none; }
+  .sg-tablero[data-col-movil="vista"] .sg-col[data-col="vista"],
+  .sg-tablero[data-col-movil="oposicion"] .sg-col[data-col="oposicion"],
+  .sg-tablero[data-col-movil="oposicion_adm"] .sg-col[data-col="oposicion_adm"],
+  .sg-tablero[data-col-movil="registro"] .sg-col[data-col="registro"],
+  .sg-tablero[data-col-movil="vigilancia"] .sg-col[data-col="vigilancia"] { display: block; }
+  .sg-tablero .sg-col-cab { display: none; }
+  .sg-tablero .sg-col-sub { margin: 0 2px 8px; }
   .sg-datos, .sg-exp-datos { grid-template-columns: 1fr; }
 }
 
