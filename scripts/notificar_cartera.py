@@ -9,8 +9,13 @@ Junta en un solo mail lo que todavía no se avisó:
      término (90/60/30/7), cierre del plazo de oposición a una marca parecida
      detectada por la vigilancia (14/7/3), y oposición o vista recibida.
      Cada plazo se avisa una vez por umbral (tabla cartera_avisos_plazo).
-  3. Novedades de los expedientes (concesión, oposición, publicación, cambio
-     de titular, movimientos nuevos).
+  3. Novedades de los expedientes, con el mismo criterio que la campanita del
+     panel (cambio de ubicación del expediente, oposición, vista, notificación
+     de la oposición, concedida/denegada) más los avances del trámite (toma de
+     intervención, poder, contestación de vista). Sin formularios ni recibos
+     sueltos, y una sola línea por acta y avance aunque el INPI lo cargue dos
+     veces (notificaciones_inpi.filtrar_para_mail, desde el 22/11/2026). Las
+     novedades que no van en el mail igual quedan marcadas como avisadas.
 
 Si no hay nada nuevo no manda nada. Al enviar, marca todo como avisado.
 
@@ -41,6 +46,7 @@ import requests
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "panel"))
 import cartera  # noqa: E402
 import mails_core  # noqa: E402
+import notificaciones_inpi  # noqa: E402
 
 from registro import registrar  # noqa: E402
 
@@ -75,7 +81,8 @@ SQL_PUBLICACION_NUEVA = """
 """
 
 SQL_NOVEDADES = """
-    SELECT n.id, n.acta, n.tipo, n.texto, n.detectado_en, c.nombre AS cliente_nombre, cm.denominacion
+    SELECT n.id, n.acta, n.tipo, n.texto, n.detectado_en, c.nombre AS cliente_nombre, cm.denominacion,
+           COALESCE(cm.tuvo_oposicion, false) AS tuvo_oposicion
     FROM cartera_novedades n
     LEFT JOIN clientes c ON c.id = n.cliente_id
     LEFT JOIN cartera_marcas cm ON cm.acta = n.acta
@@ -182,12 +189,26 @@ def main():
             alertas = alertas_pendientes(cur)
             plazos = plazos_a_avisar(cur, hoy)
             cur.execute(SQL_NOVEDADES, (list(TIPOS_NOVEDAD_MAIL),))
-            novedades = cur.fetchall()
+            pendientes = cur.fetchall()
         conn.commit()
-        print(f"Sin avisar: {len(alertas)} alertas, {len(plazos)} plazos, {len(novedades)} novedades.")
+        # Lo que va en el mail (filtrado y sin repetidos); todas las pendientes se marcan como avisadas igual.
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute("""SELECT n.id, n.acta, n.tipo, n.texto, n.detectado_en,
+                                  COALESCE(cm.tuvo_oposicion, false) AS tuvo_oposicion
+                           FROM cartera_novedades n LEFT JOIN cartera_marcas cm ON cm.acta = n.acta
+                           WHERE n.notificado_en > now() - interval '15 days' AND n.acta = ANY(%s)""",
+                        (list({p["acta"] for p in pendientes}),))
+            ya_avisadas = cur.fetchall()
+        conn.commit()
+        novedades = notificaciones_inpi.filtrar_para_mail(pendientes, ya_avisadas)
+        print(f"Sin avisar: {len(alertas)} alertas, {len(plazos)} plazos, {len(novedades)} novedades para el mail "
+              f"(de {len(pendientes)} registradas).")
         enviado = 0
-        if alertas or plazos or novedades:
-            if not args.solo_marcar:
+        if args.dry_run and not (alertas or plazos or novedades):
+            print("[dry-run] Nada para el mail. No se marcó nada.")
+            return
+        if alertas or plazos or novedades or pendientes:
+            if not args.solo_marcar and (alertas or plazos or novedades):
                 asunto, cuerpo = armar_html(alertas, plazos, novedades, panel_url)
                 if args.dry_run:
                     ruta = "/tmp/notificacion_cartera.html"
@@ -206,8 +227,8 @@ def main():
                         "INSERT INTO cartera_avisos_plazo (acta, tipo, fecha, umbral) VALUES (%s, %s, %s, %s) ON CONFLICT DO NOTHING",
                         (acta_aviso, p["tipo"], p["fecha"], u),
                     )
-                if novedades:
-                    cur.execute("UPDATE cartera_novedades SET notificado_en = now() WHERE id = ANY(%s)", ([n["id"] for n in novedades],))
+                if pendientes:
+                    cur.execute("UPDATE cartera_novedades SET notificado_en = now() WHERE id = ANY(%s)", ([n["id"] for n in pendientes],))
             conn.commit()
         registrar("vigilancia.yml", {  # el mail es un paso del workflow vigilancia.yml
             "alertas_avisadas": len(alertas), "plazos_avisados": len(plazos), "novedades_avisadas": len(novedades),

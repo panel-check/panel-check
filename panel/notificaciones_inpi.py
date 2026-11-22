@@ -335,3 +335,63 @@ def filtrar_movimientos(filas: list[dict]) -> list[dict]:
         salida.append(c)
     return sorted(salida, key=lambda c: (c["detectado_en"].timestamp() if c.get("detectado_en") else 0,
                                          c.get("id") or 0), reverse=True)
+
+
+# ── Mail diario «Cartera y vigilancia» (scripts/notificar_cartera.py) ───────
+# Criterio del 22/11/2026: el mail lleva lo mismo que la campanita (ubicación, vista, oposición, concedida…)
+# y además los avances del trámite que hace el estudio: toma de intervención, poder y contestación de vista.
+# Formularios, recibos sueltos y escritos genéricos no van. El INPI a veces carga dos veces lo mismo (y cada
+# presentación trae su «Recibo de Ingreso — …» aparte): se deja una sola línea por acta, avance y fecha.
+AVANCES = [
+    # (clave, palabras a buscar en el texto sin tildes, título, ícono)
+    ("contestacion_vista", ("contestacion de vista",), "Se contestó la vista", "✍️"),
+    ("toma_intervencion", ("toma de intervencion", "toma intervencion"), "Se tomó intervención", "🙋"),
+    ("poder", ("poder",), "Se presentó el poder", "📝"),
+]
+
+
+def clasificar_para_mail(f: dict):
+    """Como clasificar_movimiento, más los avances del trámite. None si no va en el mail."""
+    c = clasificar_movimiento(f)
+    if c:
+        return c
+    if f.get("tipo") != "movimiento":
+        return None
+    texto = _fechas_inpi(f.get("texto") or "")
+    limpio = _sin_tildes(texto)
+    if "ratifica" in limpio:
+        return None
+    m = _re.search(r"(\d{2}/\d{2}/\d{4})", texto)
+    for clave, palabras, titulo, icono in AVANCES:
+        if any(_re.search(r"\b" + _re.escape(p) + r"\b", limpio) for p in palabras):
+            return {**f, "tipo_mov": "avance", "tipo": titulo, "icono": icono, "explicacion": "",
+                    "detalle": f"En el expediente el {m.group(1)}" if m else "",
+                    "_grupo": f"avance:{clave}:{m.group(1) if m else ''}"}
+    return None
+
+
+def _clave_mail(c: dict, grupo):
+    avance = (grupo or "").startswith("avance:")
+    return (c["acta"], grupo or (c["tipo"], c.get("detalle")),
+            None if avance or not c.get("detectado_en") else c["detectado_en"].date())
+
+
+def filtrar_para_mail(filas: list[dict], ya_avisadas: list[dict] = ()) -> list[dict]:
+    """Lista para el mail, sin repetidos (misma acta + mismo avance/oposición/vista + mismo día), en el
+    orden en que vienen las filas (cliente, acta, fecha). ya_avisadas: novedades de los últimos días que ya
+    salieron en un mail anterior, para no repetir una carga doble del INPI que llegó en otra corrida."""
+    vistos, salida = set(), []
+    for f in ya_avisadas:
+        c = clasificar_para_mail(dict(f))
+        if c:
+            vistos.add(_clave_mail(c, c.pop("_grupo", None)))
+    for f in filas:
+        c = clasificar_para_mail(dict(f))
+        if not c:
+            continue
+        clave = _clave_mail(c, c.pop("_grupo", None))
+        if clave in vistos:
+            continue
+        vistos.add(clave)
+        salida.append(c)
+    return salida
