@@ -149,7 +149,7 @@ def _campos(body, parcial):
 # el mismo nombre (la más reciente). Así el expediente aparece solo para las marcas que ya
 # están en Clientes → Marcas.
 SQL_LISTA = """
-    SELECT t.*, c.nombre AS cliente, c.email AS cliente_email, c.telefono AS cliente_telefono,
+    SELECT t.*, c.nombre AS cliente, c.cuit AS cliente_cuit, c.email AS cliente_email, c.telefono AS cliente_telefono,
            COALESCE(t.acta, cm.acta) AS acta_efectiva, (t.acta IS NULL AND cm.acta IS NOT NULL) AS acta_auto,
            cm.estado_tramite, cm.ultimo_movimiento, cm.ultimo_movimiento_fecha,
            (SELECT COUNT(*) FROM informes_viabilidad i
@@ -303,48 +303,76 @@ def crear_router(verificar_login, conexion) -> APIRouter:
             res[t["id"]] = (elegida, evaluadas, texto)
         return res
 
-    def _candidatas_conflicto(cur, cliente):
-        """Actas del cliente con vista u oposición: en `marcas` (leads, boletines y pre-boletín: mismo CUIT,
-        mismo nombre de titular o actas de su cartera) y en su cartera (tuvo_oposicion)."""
-        cur.execute("SELECT acta FROM cartera_marcas WHERE cliente_id = %s", (cliente["id"],))
-        de_cartera = [f["acta"] for f in cur.fetchall()]
-        cuit = re.sub(r"\D", "", cliente.get("cuit") or "")
-        nombres = sorted({(cliente.get("nombre") or "").strip().upper(), tc.comparable(cliente.get("nombre"))} - {""})
-        out = []
+    def _solicitudes_cliente(cur, cliente):
+        """Todas las solicitudes del cliente que conoce el panel, fusionadas por acta: base de leads `marcas`
+        (boletines y pre-boletín) y `solicitudes_escaneadas` (todo lo que entra al INPI, con o sin agente)
+        por su CUIT o su nombre como titular, y su cartera (Clientes → Marcas)."""
+        # Además del CUIT y el nombre de la ficha, se usan el CUIT y el titular tal como figuran en el INPI en
+        # las marcas que el cliente ya tiene en la cartera (el INPI suele escribir «APELLIDO NOMBRE»).
+        cur.execute("SELECT acta, cuit, titular FROM cartera_marcas WHERE cliente_id = %s", (cliente["id"],))
+        cart = cur.fetchall()
+        de_cartera = [f["acta"] for f in cart]
+        cuits = sorted({re.sub(r"\D", "", c or "") for c in [cliente.get("cuit"), *(f["cuit"] for f in cart)]} - {""})
+        nombres = sorted({x for n in [cliente.get("nombre"), *(f["titular"] for f in cart)] if n
+                          for x in ((n or "").strip().upper(), tc.comparable(n))} - {""})
+        por_titular = """(regexp_replace(COALESCE(cuit, ''), '\\D', '', 'g') = ANY(%s)
+                          OR upper(btrim(titular)) = ANY(%s) OR acta = ANY(%s))"""
+        val = (cuits, nombres, de_cartera)
         consultas = [
-            ("""SELECT acta, COALESCE(NULLIF(denominacion_inpi, ''), denominacion) AS denominacion, clase, titular, cuit,
-                       tuvo_vista, vista_fecha_notificacion, tuvo_oposicion, oposicion_fecha_notificacion,
-                       'boletin' AS fuente
-                FROM marcas
-                WHERE (tuvo_vista IS TRUE OR tuvo_oposicion IS TRUE)
-                  AND ((%s <> '' AND regexp_replace(COALESCE(cuit, ''), '\\D', '', 'g') = %s)
-                       OR upper(btrim(titular)) = ANY(%s) OR acta = ANY(%s))""", (cuit, cuit, nombres, de_cartera)),
-            ("""SELECT acta, denominacion, clase, titular, cuit, NULL::boolean AS tuvo_vista, NULL::date AS vista_fecha_notificacion,
-                       tuvo_oposicion, NULL::date AS oposicion_fecha_notificacion, 'cartera' AS fuente
-                FROM cartera_marcas WHERE cliente_id = %s AND tuvo_oposicion IS TRUE""", (cliente["id"],)),
+            (f"""SELECT acta, COALESCE(NULLIF(denominacion_inpi, ''), denominacion) AS denominacion, clase, titular, cuit,
+                        tuvo_vista, vista_fecha_notificacion, tuvo_oposicion, oposicion_fecha_notificacion,
+                        'boletin' AS fuente
+                 FROM marcas WHERE {por_titular}""", val),
+            (f"""SELECT acta, denominacion, clase, titular, cuit, fecha_presentacion, 'escaneo' AS fuente
+                 FROM solicitudes_escaneadas WHERE {por_titular}""", val),
+            ("""SELECT acta, denominacion, clase, titular, cuit, fecha_presentacion, estado_tramite, tuvo_oposicion,
+                       detalle_oposicion, ultimo_movimiento, ultimo_movimiento_fecha, 'cartera' AS fuente
+                FROM cartera_marcas WHERE cliente_id = %s""", (cliente["id"],)),
         ]
-        for sql, val in consultas:
+        filas = []
+        for sql, v in consultas:
             try:
-                cur.execute("SAVEPOINT conf")
-                cur.execute(sql, val)
-                out += [dict(f) for f in cur.fetchall()]
-                cur.execute("RELEASE SAVEPOINT conf")
+                cur.execute("SAVEPOINT sol")
+                cur.execute(sql, v)
+                filas += [dict(f) for f in cur.fetchall()]
+                cur.execute("RELEASE SAVEPOINT sol")
             except Exception as e:
-                cur.execute("ROLLBACK TO SAVEPOINT conf")
-                print(f"[seguimientos] actas con vista/oposición: {e}")
-        return out
+                cur.execute("ROLLBACK TO SAVEPOINT sol")
+                print(f"[seguimientos] solicitudes del cliente: {e}")
+        return tc.fusionar_solicitudes(filas)
 
     def _detectar_conflictos(cur, solo_id=None):
-        """Vista y oposición sin acta: busca las actas del cliente con vista u oposición. {id: (elegidas, del_tipo, texto)}"""
-        cond = ("t.acta IS NULL AND t.estado = 'activo' AND t.servicio IN ('vista', 'oposicion')"
-                + (" AND t.id = %s" if solo_id else ""))
-        cur.execute(f"SELECT t.id, t.marca, t.servicio, t.notificacion, t.cliente_id, c.nombre, c.cuit "
+        """Vista y oposición: las actas son las del cliente con vista u oposición. {id: (elegidas, del_tipo, texto)}
+        - sin acta: se cargan las de mismo nombre (o la única con ese problema) y la notificación si falta;
+        - con acta pero SIN el problema (por ejemplo cargada desde la planilla con otra clase de la marca):
+          si otra solicitud del mismo nombre lo tiene, pasa a ser el acta principal y la anterior queda en
+          «También»."""
+        cond = ("t.estado = 'activo' AND t.servicio IN ('vista', 'oposicion')" + (" AND t.id = %s" if solo_id else ""))
+        cur.execute(f"SELECT t.id, t.marca, t.servicio, t.notificacion, t.acta, t.actas_extra, t.cliente_id, c.nombre, c.cuit "
                     f"FROM trabajos t JOIN clientes c ON c.id = t.cliente_id WHERE {cond}", (solo_id,) if solo_id else None)
         res = {}
         for t in cur.fetchall():
-            cand = _candidatas_conflicto(cur, {"id": t["cliente_id"], "nombre": t["nombre"], "cuit": t["cuit"]})
-            elegidas, motivo, del_tipo = tc.elegir_actas_conflicto(t, cand)
+            sol = _solicitudes_cliente(cur, {"id": t["cliente_id"], "nombre": t["nombre"], "cuit": t["cuit"]})
+            elegidas, motivo, del_tipo = tc.elegir_actas_conflicto(t, sol)
             texto = None
+            if t["acta"]:
+                con_problema = {c["acta"] for c in del_tipo}
+                if motivo == "mismo nombre de marca" and t["acta"] not in con_problema:
+                    otras = [a for a in [t["acta"], *(t["actas_extra"] or [])] if a not in {c["acta"] for c in elegidas}]
+                    extra = [c["acta"] for c in elegidas[1:]] + otras
+                    notif = tc.notificacion_de(elegidas, t["servicio"])
+                    que = "vista" if t["servicio"] == "vista" else "oposición"
+                    texto = (f"Acta principal cambiada sola a {elegidas[0]['acta']}: es la solicitud de «{t['marca']}» con {que}. "
+                             f"La {t['acta']} queda entre las otras solicitudes de la marca.")
+                    cur.execute("UPDATE trabajos SET acta = %s, actas_extra = %s, notificacion = COALESCE(notificacion, %s), "
+                                "modificado_en = now(), modificado_por = 'sistema' WHERE id = %s AND acta = %s",
+                                (elegidas[0]["acta"], extra or None, notif, t["id"], t["acta"]))
+                    if cur.rowcount:
+                        cur.execute("INSERT INTO trabajos_bitacora (trabajo_id, fecha, texto, usuario) VALUES (%s, %s, %s, 'sistema')",
+                                    (t["id"], tc.hoy_ar(), texto))
+                        _a_cartera(cur, t["cliente_id"], elegidas[0]["acta"], t["marca"], "sistema")
+                res[t["id"]] = (elegidas, del_tipo, texto)
+                continue
             if elegidas:
                 notif = tc.notificacion_de(elegidas, t["servicio"])
                 texto = tc.texto_conflicto(elegidas, motivo, t["servicio"], notif if not t["notificacion"] else None)
@@ -355,6 +383,7 @@ def crear_router(verificar_login, conexion) -> APIRouter:
                 if cur.rowcount:
                     cur.execute("INSERT INTO trabajos_bitacora (trabajo_id, fecha, texto, usuario) VALUES (%s, %s, %s, 'sistema')",
                                 (t["id"], tc.hoy_ar(), texto))
+                    _a_cartera(cur, t["cliente_id"], elegidas[0]["acta"], t["marca"], "sistema")
             res[t["id"]] = (elegidas, del_tipo, texto)
         return res
 
@@ -398,7 +427,18 @@ def crear_router(verificar_login, conexion) -> APIRouter:
     def ficha(tid: int, _: str = Depends(verificar_login)):
         with conexion() as conn, rcur(conn) as cur:
             _sincronizar_seguro(conn, cur, tid)
+            try:   # vista/oposición: que el acta principal sea la que tiene el problema (al momento, no cada 10 min)
+                cur.execute("SAVEPOINT conf_ficha")
+                _detectar_conflictos(cur, solo_id=tid)
+                cur.execute("RELEASE SAVEPOINT conf_ficha")
+                conn.commit()
+            except Exception as e:
+                cur.execute("ROLLBACK TO SAVEPOINT conf_ficha")
+                print(f"[seguimientos] actas con vista/oposición (ficha {tid}): {e}")
             t = _uno(cur, tid)
+            # Todas las solicitudes de la marca (una por clase), primero la que tiene la vista u oposición
+            solicitudes = tc.solicitudes_de_marca(t, _solicitudes_cliente(
+                cur, {"id": t["cliente_id"], "nombre": t.get("cliente"), "cuit": t.get("cliente_cuit")}))
             inpi = None
             if t["servicio"] == "registro":
                 actas = tc.actas_del_trabajo(t, _cartera_de(cur, [t]))
@@ -428,7 +468,7 @@ def crear_router(verificar_login, conexion) -> APIRouter:
                 "SELECT id, tipo, marca, generado_en, generado_por FROM informes_viabilidad "
                 "WHERE cliente_id = %s AND archivado_en IS NULL ORDER BY generado_en DESC LIMIT 50", (t["cliente_id"],))
             informes, otros_informes = tc.separar_informes(t, cur.fetchall())
-        return {"trabajo": t, "expediente": expediente, "bitacora": bitacora, "inpi": inpi,
+        return {"trabajo": t, "expediente": expediente, "bitacora": bitacora, "inpi": inpi, "solicitudes": solicitudes,
                 "informes": informes, "otros_informes": otros_informes,
                 "servicios": tc.servicios_publicos(), "notion_procesos": tc.NOTION_PROCESOS}
 
@@ -480,7 +520,7 @@ def crear_router(verificar_login, conexion) -> APIRouter:
             if campos.get("acta"):
                 cur.execute("SELECT cliente_id, marca, servicio FROM trabajos WHERE id = %s", (tid,))
                 t = cur.fetchone()
-                if t["servicio"] == "registro":
+                if t["servicio"] in ("registro", "vista", "oposicion"):
                     _a_cartera(cur, t["cliente_id"], campos["acta"], t["marca"], usuario)
             conn.commit()
             return {"trabajo": _uno(cur, tid)}

@@ -462,12 +462,55 @@ SERVICIOS_CON_CONFLICTO = {"vista": "vista", "oposicion": "oposicion"}
 
 
 def es_del_tipo(cand, sid) -> bool:
+    """¿Esta acta tiene el problema del servicio? Una acta que solo está en la cartera con oposición y sin
+    más detalle (el INPI no siempre separa vista de oposición) sirve para los dos."""
     tipo = SERVICIOS_CON_CONFLICTO.get(sid)
     if tipo == "vista":
-        return bool(cand.get("tuvo_vista")) or cand.get("fuente") == "cartera" and bool(cand.get("tuvo_oposicion"))
+        return bool(cand.get("tuvo_vista")) or (cand.get("fuente") == "cartera" and bool(cand.get("tuvo_oposicion")))
     if tipo == "oposicion":
         return bool(cand.get("tuvo_oposicion"))
     return False
+
+
+def fusionar_solicitudes(filas):
+    """Junta por acta lo que se sabe de cada solicitud del cliente (base de leads `marcas`, solicitudes
+    escaneadas y cartera). Las marcas de vista/oposición se suman (alcanza con que una fuente lo diga)."""
+    por_acta = {}
+    for f in filas:
+        a = f.get("acta")
+        if not a:
+            continue
+        m = por_acta.setdefault(a, {"acta": a, "fuentes": set()})
+        m["fuentes"].add(f.get("fuente"))
+        for k, v in f.items():
+            if k == "fuente" or v in (None, ""):
+                continue
+            if k == "tuvo_oposicion" and f.get("fuente") == "cartera" and "vista" in (f.get("detalle_oposicion") or "").lower():
+                m["tuvo_vista"] = True      # en la cartera, «… - Vista de Marcas - …» es una vista, no una oposición
+            elif k in ("tuvo_vista", "tuvo_oposicion"):
+                m[k] = bool(m.get(k)) or bool(v)
+            elif k not in m or f.get("fuente") == "cartera":   # la cartera manda en estado y movimientos
+                m[k] = v
+    for m in por_acta.values():
+        # «cartera» solo si es la única fuente (así es_del_tipo sabe que el dato no distingue vista de oposición)
+        m["fuente"] = "cartera" if m["fuentes"] == {"cartera"} else ("boletin" if "boletin" in m["fuentes"] else next(iter(m["fuentes"])))
+        m["en_cartera"] = "cartera" in m["fuentes"]
+        m["fuentes"] = sorted(x for x in m["fuentes"] if x)
+    return list(por_acta.values())
+
+
+def solicitudes_de_marca(trabajo, solicitudes):
+    """Todas las solicitudes de la marca del trabajo: las del cliente con el mismo nombre (una por clase) y
+    las actas que el trabajo ya tiene cargadas. Primero las que tienen el problema del servicio (la vista o
+    la oposición por la que contrataron), después por acta."""
+    nombre = comparable(trabajo.get("marca"))
+    propias = {trabajo.get("acta"), *(trabajo.get("actas_extra") or [])} - {None, ""}
+    sid = trabajo.get("servicio")
+    out = [m for m in solicitudes
+           if m["acta"] in propias or (nombre and comparable(m.get("denominacion")) == nombre)]
+    for m in out:
+        m["con_problema"] = es_del_tipo(m, sid)
+    return sorted(out, key=lambda m: (not m["con_problema"], m["acta"]))
 
 
 def elegir_actas_conflicto(trabajo, candidatas):
