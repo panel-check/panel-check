@@ -329,5 +329,26 @@ class SolicitudesDeLaMarca(unittest.TestCase):
         self.assertFalse(tc.es_del_tipo(sols[0], "oposicion"))
 
 
+
+class NosOponemos(unittest.TestCase):
+    def test_primero_30_dias_despues_3_meses(self):
+        t = tc.completar({"servicio": "oposicion", "etapa": 0, "estado": "activo", "alerta_id": 9,
+                          "plazo_presentar": "2026-12-04"}, HOY)
+        self.assertEqual((t["vencimiento"], t["vence_presentar"], t["alerta"]["nivel"]), (dt.date(2026, 12, 4), True, "verde"))
+        t = tc.completar({"servicio": "oposicion", "etapa": 3, "estado": "activo", "alerta_id": 9,
+                          "plazo_presentar": "2026-12-04", "notificacion": "2026-12-20"}, HOY)
+        self.assertEqual((t["vencimiento"], t["vence_presentar"]), (dt.date(2027, 3, 20), False))
+
+    def test_sin_publicar_todavia(self):
+        t = tc.completar({"servicio": "oposicion", "etapa": 0, "estado": "activo", "alerta_id": 9}, HOY)
+        self.assertEqual((t["alerta"]["nivel"], t["alerta"]["texto"]), ("falta", "Esperando la publicación"))
+        self.assertEqual(tc.plazo_para_oponerse("2026-11-04"), dt.date(2026, 12, 4))
+
+    def test_oposicion_comun_no_cambia(self):
+        t = tc.completar({"servicio": "oposicion", "etapa": 1, "estado": "activo", "plazo_presentar": "2026-12-04"}, HOY)
+        self.assertEqual(t["alerta"]["nivel"], "falta")   # sin alerta de origen, el plazo de presentar no cuenta
+        self.assertFalse(t["nos_oponemos"])
+
+
 if __name__ == "__main__":
     unittest.main()

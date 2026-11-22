@@ -92,11 +92,16 @@ def sumar_meses(d, meses):
     return d.replace(year=anio, month=mes, day=min(d.day, calendar.monthrange(anio, mes)[1]))
 
 
-def vencimiento(sid, notificacion):
-    """Fecha en que vence el plazo del trabajo, o None si el servicio no tiene o falta la notificación."""
+def vencimiento(sid, notificacion, plazo_presentar=None):
+    """Fecha en que vence el plazo del trabajo, o None si el servicio no tiene o falta la notificación.
+    Oposición que presentamos nosotros (sale de una alerta de vigilancia, 22/11/2026): mientras no haya
+    notificación, vence el plazo para presentarla (30 días corridos desde la publicación de la marca nueva);
+    con la notificación cargada pasa a los 3 meses de negociación, como cualquier oposición."""
     s, n = servicio(sid), a_fecha(notificacion)
-    if not s or not s["plazo"] or not n:
+    if not s or not s["plazo"]:
         return None
+    if not n:
+        return a_fecha(plazo_presentar) if sid == "oposicion" else None
     unidad, cant = s["plazo"]
     return sumar_meses(n, cant) if unidad == "meses" else n + _dt.timedelta(days=cant)
 
@@ -107,7 +112,7 @@ def plazo_cumplido(sid, etapa) -> bool:
     return bool(s and s.get("cumple_en") and int(etapa or 0) >= s["cumple_en"])
 
 
-def alerta(sid, notificacion, estado="activo", hoy=None, etapa=0):
+def alerta(sid, notificacion, estado="activo", hoy=None, etapa=0, plazo_presentar=None, nos_oponemos=False):
     """{nivel, texto, dias}. Niveles: vencido, rojo (≤3 días), amarillo (≤7), verde,
     falta (servicio con plazo sin notificación cargada), cumplido (la etapa ya cumplió el plazo),
     ninguno (sin vencimiento), cerrado."""
@@ -119,8 +124,10 @@ def alerta(sid, notificacion, estado="activo", hoy=None, etapa=0):
         return {"nivel": "ninguno", "texto": "Sin vencimiento", "dias": None}
     if plazo_cumplido(sid, etapa):
         return {"nivel": "cumplido", "texto": "✓ " + s["etapas"][s["cumple_en"] - 1], "dias": None}
-    v = vencimiento(sid, notificacion)
+    v = vencimiento(sid, notificacion, plazo_presentar)
     if not v:
+        if nos_oponemos:
+            return {"nivel": "falta", "texto": "Esperando la publicación", "dias": None}
         return {"nivel": "falta", "texto": "Cargar notificación", "dias": None}
     d = (v - hoy).days
     if d < 0:
@@ -171,8 +178,12 @@ def completar(t, hoy=None):
     t["etapa"] = etapa
     t["etapa_nombre"] = etapas[etapa - 1] if etapa else "Esperando seña"
     t["proxima_etapa"] = etapas[etapa] if etapa < len(etapas) else None
-    t["vencimiento"] = vencimiento(t.get("servicio"), t.get("notificacion"))
-    t["alerta"] = alerta(t.get("servicio"), t.get("notificacion"), t.get("estado") or "activo", hoy, etapa)
+    nos_oponemos = bool(t.get("alerta_id"))
+    t["nos_oponemos"] = nos_oponemos
+    t["vencimiento"] = vencimiento(t.get("servicio"), t.get("notificacion"), t.get("plazo_presentar"))
+    t["vence_presentar"] = bool(nos_oponemos and not t.get("notificacion") and t["vencimiento"])
+    t["alerta"] = alerta(t.get("servicio"), t.get("notificacion"), t.get("estado") or "activo", hoy, etapa,
+                         t.get("plazo_presentar"), nos_oponemos)
     return t
 
 
@@ -203,6 +214,13 @@ TABLAS = [
     "CREATE INDEX IF NOT EXISTS idx_trabajos_cliente ON trabajos(cliente_id)",
     # Otras actas del mismo trabajo (por ejemplo una oposición a la misma marca en varias clases).
     "ALTER TABLE trabajos ADD COLUMN IF NOT EXISTS actas_extra TEXT[]",
+    # Oposición que presentamos nosotros, creada con «Hay que oponer» en una alerta de vigilancia (22/11/2026):
+    # la alerta de origen, la marca nueva a la que nos oponemos y hasta cuándo se puede presentar.
+    "ALTER TABLE trabajos ADD COLUMN IF NOT EXISTS alerta_id INTEGER",
+    "ALTER TABLE trabajos ADD COLUMN IF NOT EXISTS acta_contraria TEXT",
+    "ALTER TABLE trabajos ADD COLUMN IF NOT EXISTS contraparte TEXT",
+    "ALTER TABLE trabajos ADD COLUMN IF NOT EXISTS plazo_presentar DATE",
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_trabajos_alerta ON trabajos(alerta_id) WHERE alerta_id IS NOT NULL",
     "CREATE INDEX IF NOT EXISTS idx_trabajos_estado ON trabajos(estado)",
     """CREATE TABLE IF NOT EXISTS trabajos_bitacora (
         id          BIGSERIAL PRIMARY KEY,
@@ -459,6 +477,14 @@ def texto_deteccion(elegida, evaluadas, origen) -> str:
 #   2. si ninguna tiene el mismo nombre pero el cliente tiene UNA sola acta con ese problema → esa;
 #   3. si hay varias y ninguna coincide en nombre, no se asigna: la ficha las muestra para elegir.
 SERVICIOS_CON_CONFLICTO = {"vista": "vista", "oposicion": "oposicion"}
+
+
+VENTANA_OPOSICION_DIAS = 30   # para oponerse a una marca publicada (Art. 13, Ley 22.362)
+
+
+def plazo_para_oponerse(publicacion):
+    p = a_fecha(publicacion)
+    return p + _dt.timedelta(days=VENTANA_OPOSICION_DIAS) if p else None
 
 
 def es_del_tipo(cand, sid) -> bool:

@@ -851,9 +851,11 @@ function htmlAlerta(a, { sinCliente = false } = {}) {
     relacionada: ["aviso", "Clase conexa", "Clase distinta pero relacionada (tabla de Ajustes → Clases relacionadas)"],
     distinta: ["", "Clase distinta", "Clases sin relación: alerta porque el nombre es casi idéntico o la marca se vigila en todas las clases"] };
   const rel = !otro && REL[a.relacion_clases] ? `<span class="cl-tag ${REL[a.relacion_clases][0]}" title="${esc(REL[a.relacion_clases][2])}">${REL[a.relacion_clases][1]}</span>` : "";
+  // Desde el 22/11/2026: «Hay que oponer» crea el trabajo en Seguimientos → Oposición + negociación (o lleva a él);
+  // se sacaron «Monitorear» y «Oposición presentada».
   const botones = otro
-    ? [["monitorear", "Lo sigo"], ["opuesta", "Ya lo hablé"], ["descartada", "Descartar"]]
-    : [["monitorear", "Monitorear"], ["oponer", "Hay que oponer"], ["opuesta", "Oposición presentada"], ["descartada", "Descartar"]];
+    ? [["descartada", "Descartar"]]
+    : [["oponer", a.estado === "oponer" ? "Ver el trabajo de oposición →" : "Hay que oponer"], ["descartada", "Descartar"]];
   return `
     <div class="vg-card ${otro ? "vg-otro" : "vg-" + esc(a.nivel)} ${abierta ? "" : "vg-cerrada"}" data-alerta="${a.id}">
       <div class="vg-cab">
@@ -879,7 +881,7 @@ function htmlAlerta(a, { sinCliente = false } = {}) {
       ${plazo}
       <div class="vg-acciones">
         ${descIA ? `<button type="button" class="cl-btn sec mini" data-estado="nueva" title="Vuelve a las alertas abiertas y queda marcada para calibrar la IA">No estoy de acuerdo</button>`
-          : botones.filter(([e]) => e !== a.estado).map(([e, t]) => `<button type="button" class="cl-btn ${e === "descartada" ? "peligro" : "sec"} mini" data-estado="${e}">${t}</button>`).join("")}
+          : botones.filter(([e]) => e !== a.estado || e === "oponer").map(([e, t]) => `<button type="button" class="cl-btn ${e === "descartada" ? "peligro" : "sec"} mini" data-estado="${e}">${t}</button>`).join("")}
         ${!descIA && a.estado !== "nueva" && abierta === false ? `<button type="button" class="cl-btn sec mini" data-estado="nueva">Reabrir</button>` : ""}
         <input class="cl-inline-input" data-nota placeholder="nota (se guarda al salir del campo)" value="${esc(a.nota || "")}">
       </div>
@@ -891,7 +893,15 @@ function conectarAlertas(cont, recargar) {
   cont.querySelectorAll(".vg-card").forEach(card => {
     const id = card.dataset.alerta;
     card.querySelectorAll("[data-estado]").forEach(b => b.addEventListener("click", async () => {
-      try { await apiJson(`/api/cartera/alertas/${id}`, "POST", { estado: b.dataset.estado }); cargarResumen(); await recargar(); }
+      try {
+        if (b.dataset.estado === "oponer") {
+          const r = await apiJson(`/api/trabajos/desde-alerta/${id}`, "POST", {});
+          // a la ficha del trabajo en Seguimientos (si la ficha del cliente está dentro de Seguimientos, en esa misma pantalla)
+          (window.top || window).location.href = `/seguimientos?trabajo=${r.id}`;
+          return;
+        }
+        await apiJson(`/api/cartera/alertas/${id}`, "POST", { estado: b.dataset.estado }); cargarResumen(); await recargar();
+      }
       catch (e) { alert(e.message); }
     }));
     const nota = card.querySelector("[data-nota]");
