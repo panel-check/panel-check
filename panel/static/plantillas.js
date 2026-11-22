@@ -180,7 +180,9 @@
           <div class="pl-vista" id="pl-vista">${html(cuerpoFinal())}</div>
           <div class="pl-acciones">
             <button type="button" class="pl-btn pl-ppal" data-pl-copiar="cuerpo">📋 Copiar ${p.canal === "whatsapp" ? "mensaje" : "texto del mail"}</button>
-            ${p.canal === "mail" ? '<button type="button" class="pl-btn" data-pl-gmail title="Abre un mail nuevo en Gmail con el destinatario y el asunto, y deja el texto copiado para pegar (Cmd/Ctrl + V)">Abrir en Gmail ↗</button>'
+            ${p.canal === "mail" ? `<button type="button" class="pl-btn" data-pl-gmail title="Abre un mail nuevo en Gmail con el destinatario, el asunto y el texto">Abrir en Gmail ↗</button>
+              <label class="pl-cuenta" title="Con qué cuenta de Gmail se abre (el número que aparece en mail.google.com/mail/u/N, o el mail de la cuenta). Queda guardado en esta computadora.">Cuenta
+                <select data-pl-cuenta>${[0, 1, 2, 3, 4, 5].map((n) => `<option value="${n}" ${String(n) === cuentaGmail() ? "selected" : ""}>/u/${n}</option>`).join("")}</select></label>`
               : (ctx.telefono ? '<button type="button" class="pl-btn" data-pl-wa>Abrir WhatsApp ↗</button>' : "")}
             <span class="pl-aviso" id="pl-aviso"></span>
           </div>` : '<p class="pl-vacio">Elegí una plantilla.</p>'}
@@ -190,6 +192,18 @@
 
   function cuerpoFinal() { const p = elegida(); return p ? completar(p.cuerpo, estado.valores) : ""; }
   function aviso(t) { const a = document.getElementById("pl-aviso"); if (a) { a.textContent = t; clearTimeout(aviso._t); aviso._t = setTimeout(() => { a.textContent = ""; }, 2500); } }
+
+  // Cuenta de Gmail con la que se abre el mail (mail.google.com/mail/u/N). Cada uno la elige una vez y queda
+  // guardada en su navegador.
+  function cuentaGmail() {
+    try { return localStorage.getItem("plantillas.cuentaGmail") || "2"; } catch (_) { return "2"; }
+  }
+  document.addEventListener("change", (ev) => {
+    const sel = ev.target.closest("[data-pl-cuenta]");
+    if (!sel) return;
+    try { localStorage.setItem("plantillas.cuentaGmail", sel.value); } catch (_) { /* sin almacenamiento */ }
+    aviso(`Se va a abrir con la cuenta /u/${sel.value}`);
+  });
 
   function alEscribir(ev) {
     const d = ev.target.closest("[data-pl-dato]");
@@ -219,11 +233,14 @@
       return aviso(ok ? (faltan ? `Copiado (quedan ${faltan} dato${faltan > 1 ? "s" : ""} sin completar)` : "Copiado: pegalo en Gmail con Cmd/Ctrl + V") : "No se pudo copiar");
     }
     if (b.dataset.plGmail !== undefined) {
+      // Gmail recibe por el link el texto sin formato (sin negritas ni tabla); la versión con formato queda
+      // además copiada, por si se quiere pegar encima (Cmd/Ctrl + A y Cmd/Ctrl + V en el cuerpo).
       await copiar(html(texto), plano(texto));
       const para = document.querySelector("[data-pl-para]").value.trim();
       const asunto = document.querySelector("[data-pl-asunto]").value.trim();
-      window.open(`https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(para)}&su=${encodeURIComponent(asunto)}`, "_blank", "noopener");
-      return aviso("Texto copiado: pegalo en el mail con Cmd/Ctrl + V");
+      const q = `view=cm&fs=1&to=${encodeURIComponent(para)}&su=${encodeURIComponent(asunto)}&body=${encodeURIComponent(plano(texto))}`;
+      window.open(`https://mail.google.com/mail/u/${encodeURIComponent(cuentaGmail())}/?${q}`, "_blank", "noopener");
+      return aviso("Abierto en Gmail con el texto (la versión con negritas quedó copiada)");
     }
     if (b.dataset.plWa !== undefined) {
       let tel = String(estado.ctx.telefono || "").replace(/\D/g, "").replace(/^0/, "");

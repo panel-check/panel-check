@@ -67,3 +67,5 @@ mark.pl-falta { background: #fff3bf; color: inherit; border-radius: 3px; padding
 .pr-pie { display: flex; gap: 8px; align-items: center; }
 .pr-pie .borrar { margin-left: auto; color: #c0392b; border-color: #f1c4bf; }
 @media (max-width: 900px) { .pr-editor { grid-template-columns: 1fr; } }
+.pl-cuenta { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: var(--gris, #6b7280); }
+.pl-cuenta select { font: inherit; font-size: 12.5px; padding: 4px 6px; border: 1px solid #d5d9e0; border-radius: 7px; background: #fff; }
