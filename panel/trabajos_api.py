@@ -319,13 +319,13 @@ def crear_router(verificar_login, conexion) -> APIRouter:
                           OR upper(btrim(titular)) = ANY(%s) OR acta = ANY(%s))"""
         val = (cuits, nombres, de_cartera)
         consultas = [
-            (f"""SELECT acta, COALESCE(NULLIF(denominacion_inpi, ''), denominacion) AS denominacion, clase, titular, cuit,
+            (f"""SELECT acta, COALESCE(NULLIF(denominacion_inpi, ''), denominacion) AS denominacion, clase, tipo, titular, cuit,
                         tuvo_vista, vista_fecha_notificacion, tuvo_oposicion, oposicion_fecha_notificacion,
                         'boletin' AS fuente
                  FROM marcas WHERE {por_titular}""", val),
-            (f"""SELECT acta, denominacion, clase, titular, cuit, fecha_presentacion, 'escaneo' AS fuente
+            (f"""SELECT acta, denominacion, clase, tipo, titular, cuit, fecha_presentacion, 'escaneo' AS fuente
                  FROM solicitudes_escaneadas WHERE {por_titular}""", val),
-            ("""SELECT acta, denominacion, clase, titular, cuit, fecha_presentacion, estado_tramite, tuvo_oposicion,
+            ("""SELECT acta, denominacion, clase, tipo, titular, cuit, fecha_presentacion, estado_tramite, tuvo_oposicion,
                        detalle_oposicion, ultimo_movimiento, ultimo_movimiento_fecha, 'cartera' AS fuente
                 FROM cartera_marcas WHERE cliente_id = %s""", (cliente["id"],)),
         ]

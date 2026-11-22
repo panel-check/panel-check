@@ -499,6 +499,21 @@ def fusionar_solicitudes(filas):
     return list(por_acta.values())
 
 
+TIPOS_MARCA = {"D": "DENOMINATIVA", "M": "MIXTA", "F": "FIGURATIVA", "T": "TRIDIMENSIONAL"}
+
+
+def tipo_texto(tipo):
+    """«M» / «Mixta» / «MIXTA» → «MIXTA» (en la base el tipo viene como letra o como palabra, según la fuente)."""
+    t = (tipo or "").strip().upper()
+    return TIPOS_MARCA.get(t, t) or None
+
+
+def texto_solicitud(marca, m):
+    """Como lo ponemos en los mails: «MÁS (clase 36, acta 4790681, MIXTA)»."""
+    partes = [f"clase {m['clase']}" if m.get("clase") else None, f"acta {m['acta']}", tipo_texto(m.get("tipo"))]
+    return f"{(marca or '').strip()} ({', '.join(p for p in partes if p)})"
+
+
 def solicitudes_de_marca(trabajo, solicitudes):
     """Todas las solicitudes de la marca del trabajo: las del cliente con el mismo nombre (una por clase) y
     las actas que el trabajo ya tiene cargadas. Primero las que tienen el problema del servicio (la vista o
@@ -510,6 +525,8 @@ def solicitudes_de_marca(trabajo, solicitudes):
            if m["acta"] in propias or (nombre and comparable(m.get("denominacion")) == nombre)]
     for m in out:
         m["con_problema"] = es_del_tipo(m, sid)
+        m["tipo_texto"] = tipo_texto(m.get("tipo"))
+        m["para_copiar"] = texto_solicitud(trabajo.get("marca") or m.get("denominacion"), m)
     return sorted(out, key=lambda m: (not m["con_problema"], m["acta"]))
 
 
