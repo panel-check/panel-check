@@ -93,6 +93,7 @@ function tarjeta(t) {
   return `<button type="button" class="sg-card ${t.estado === "cerrado" ? "cerrado" : ""}" data-id="${t.id}" style="--sg-color:${s.color}">
     <div class="marca">${esc(t.marca)}</div>
     <div class="cliente">${esc(t.cliente)}</div>
+    ${t.nos_oponemos ? `<div class="sg-contra" title="Oposición que presentamos nosotros (sale de una alerta de vigilancia)">Nos oponemos a <b>${esc(t.contraparte || "marca nueva")}</b></div>` : ""}
     <div class="fila">${t.alerta?.nivel === "ninguno" ? `<span class="contratado">Contratado el ${fecha(t.contratacion)}</span>` : chipAlerta(t.alerta) + venc}${inf}</div>
     <div class="sg-avance"><div class="barra">${barra}</div>
       <div class="txt"><span><b>${esc(t.etapa_nombre)}</b>${t.etapas_total ? ` · ${t.etapa}/${t.etapas_total}` : ""}</span>${acta}</div></div>
@@ -221,11 +222,13 @@ function alertaVig(a) {
   const ver = VIG.veredictos[a.ia_veredicto];
   const actasCli = (Array.isArray(a.actas_cliente) && a.actas_cliente.length ? a.actas_cliente : [{ acta: a.acta_cliente, clase: a.clase_cliente }])
     .filter((x) => x.acta);
+  // «Hay que oponer» crea el trabajo en Oposición + negociación (o lleva a él si ya existe); «Descartar» la cierra.
+  const trabajo = (sg.datos?.trabajos || []).find((t) => t.alerta_id === a.id);
   const botones = a.estado === "descartada_ia"
     ? [["nueva", "No estoy de acuerdo"]]
-    : (otro ? [["monitorear", "Lo sigo"], ["opuesta", "Ya lo hablé"], ["descartada", "Descartar"]]
-      : [["monitorear", "Monitorear"], ["oponer", "Hay que oponer"], ["opuesta", "Oposición presentada"], ["descartada", "Descartar"]])
-      .filter(([e]) => e !== a.estado).concat(!abierta ? [["nueva", "Reabrir"]] : []);
+    : (otro ? [["descartada", "Descartar"]]
+      : [["oponer", trabajo ? "Ver el trabajo de oposición →" : "Hay que oponer"], ["descartada", "Descartar"]])
+      .filter(([e]) => e !== a.estado || e === "oponer").concat(!abierta ? [["nueva", "Reabrir"]] : []);
   const plazo = !otro && a.plazo_oposicion
     ? `<div class="sg-vig-plazo ${a.dias_oposicion !== null && a.dias_oposicion <= 7 ? "urgente" : ""}">⚠ ${a.dias_oposicion >= 0 ? "Plazo para oponerse hasta el" : "El plazo para oponerse cerró el"} <b>${fecha(a.plazo_oposicion)}</b>${a.dias_oposicion >= 0 ? ` (${a.dias_oposicion === 0 ? "hoy" : `${a.dias_oposicion} día${a.dias_oposicion === 1 ? "" : "s"}`})` : ""}</div>`
     : (!otro && abierta ? `<div class="sg-vig-plazo temprana">Todavía no salió en el boletín: el plazo de 30 días para oponerse empieza cuando se publique.</div>` : "");
@@ -293,6 +296,12 @@ document.addEventListener("click", async (ev) => {
   const id = b.closest("[data-alerta-vig]").dataset.alertaVig;
   b.disabled = true;
   try {
+    if (b.dataset.alertaEstado === "oponer") {
+      const r = await pedir(`/api/trabajos/desde-alerta/${id}`, { method: "POST" });
+      if (r.creado) mostrarAviso("Se creó el trabajo en Oposición + negociación", "ok");
+      await cargar();
+      return abrirFicha(r.id);
+    }
     await pedir(`/api/cartera/alertas/${id}`, { method: "POST", body: { estado: b.dataset.alertaEstado } });
     abrirVigilancia(Number(String(sg.abierto).slice(4)));
     cargar();
@@ -329,8 +338,12 @@ function bloqueCuenta(t, s) {
   if (a.nivel === "cerrado") return caja("cerrado", "Trabajo cerrado", "Ya no cuenta para los vencimientos.");
   if (a.nivel === "cumplido")
     return caja("cumplido", `✓ ${esc(a.texto.replace("✓ ", ""))}`, t.vencimiento ? `El plazo vencía el ${fechaLarga(t.vencimiento)}` : "");
+  if (a.nivel === "falta" && t.nos_oponemos)
+    return caja("falta", `«${esc(t.contraparte || "La marca")}» todavía no salió publicada`, "Los 30 días corridos para presentar la oposición empiezan con la publicación: el panel los carga solo.");
   if (a.nivel === "falta")
     return caja("falta", "Falta la fecha de notificación", `Cargala en Datos y el vencimiento se calcula solo (${esc(s.plazo_texto)}).`);
+  if (t.vence_presentar)
+    return caja(a.nivel, `${esc(a.texto)} <span class="fecha">(${fechaLarga(t.vencimiento)})</span>`, "Plazo para presentar la oposición · 30 días corridos desde la publicación. Con la notificación cargada pasa a los 3 meses de negociación.");
   return caja(a.nivel, `${esc(a.texto)} <span class="fecha">(${fechaLarga(t.vencimiento)})</span>`, `Notificado el ${fecha(t.notificacion)}`);
 }
 
@@ -469,6 +482,7 @@ function pintarFicha(d) {
       <span class="sg-f-serv">● ${esc(s.nombre)}</span>
       <div class="sg-f-marca"><span class="nombre" data-editar-marca title="Clic para editar el nombre de la marca">${esc(t.marca)}</span><button type="button" class="sg-f-lapiz" data-editar-marca title="Editar el nombre de la marca" aria-label="Editar el nombre de la marca">✎</button></div>
       <div class="sg-f-cliente"><a href="/clientes?cliente=${t.cliente_id}" data-cliente-popup="${t.cliente_id}" title="Ver la ficha del cliente">${esc(t.cliente)}</a>${t.cliente_telefono ? ` · ${esc(t.cliente_telefono)}` : ""}${t.cliente_email ? ` · ${esc(t.cliente_email)}` : ""}</div>
+      ${t.nos_oponemos ? `<div class="sg-f-contra">Nos oponemos a <b>${esc(t.contraparte || "la marca nueva")}</b>${t.acta_contraria ? ` · acta ${linkActa(t.acta_contraria)}` : ""} <small>(desde una alerta de vigilancia)</small></div>` : ""}
       <div class="sg-f-links">
         ${enlace(t.carpeta_drive, "📁 Carpeta Drive")}
         ${enlace(t.comprobante, "🧾 Comprobante")}

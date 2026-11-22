@@ -260,10 +260,32 @@ def crear_router(verificar_login, conexion) -> APIRouter:
                     cur.execute("INSERT INTO trabajos_bitacora (trabajo_id, fecha, texto, usuario) VALUES (%s, %s, %s, 'sistema')",
                                 (t["id"], tc.hoy_ar(), tc.texto_avance(etapas[info["etapa"] - 1], info)))
 
+    SQL_PUBLICACION = """(SELECT CASE WHEN m.boletin IS NULL THEN m.fecha_publicacion
+                                      ELSE COALESCE(m.fecha_publicacion, b.fecha, b.procesado_en::date) END
+                            FROM marcas m LEFT JOIN boletines b ON b.numero = m.boletin WHERE m.acta = %s)"""
+
+    def _sincronizar_oposiciones(cur, solo_id=None):
+        """Oposiciones que presentamos nosotros sin plazo todavía: cuando la marca nueva sale en el boletín,
+        el plazo para presentarla (30 días corridos) se completa solo y queda en la bitácora."""
+        cond = "alerta_id IS NOT NULL AND plazo_presentar IS NULL AND estado = 'activo'" + (" AND id = %s" if solo_id else "")
+        cur.execute(f"SELECT id, acta_contraria, contraparte FROM trabajos WHERE {cond}", (solo_id,) if solo_id else None)
+        for t in cur.fetchall():
+            cur.execute("SELECT " + SQL_PUBLICACION + " AS pub", (t["acta_contraria"],))
+            pub = (cur.fetchone() or {}).get("pub")
+            plazo = tc.plazo_para_oponerse(pub)
+            if plazo:
+                cur.execute("UPDATE trabajos SET plazo_presentar = %s, modificado_en = now(), modificado_por = 'sistema' "
+                            "WHERE id = %s AND plazo_presentar IS NULL", (plazo, t["id"]))
+                cur.execute("INSERT INTO trabajos_bitacora (trabajo_id, fecha, texto, usuario) VALUES (%s, %s, %s, 'sistema')",
+                            (t["id"], tc.hoy_ar(), f"«{t['contraparte'] or 'La marca'}» salió publicada el "
+                             f"{tc.a_fecha(pub).strftime('%d/%m/%Y')}: hay tiempo para presentar la oposición hasta el "
+                             f"{plazo.strftime('%d/%m/%Y')}."))
+
     def _sincronizar_seguro(conn, cur, solo_id=None):
         try:
             cur.execute("SAVEPOINT sinc")
             _sincronizar_registros(cur, solo_id)
+            _sincronizar_oposiciones(cur, solo_id)
             cur.execute("RELEASE SAVEPOINT sinc")
             conn.commit()
         except Exception as e:
@@ -347,7 +369,9 @@ def crear_router(verificar_login, conexion) -> APIRouter:
         - con acta pero SIN el problema (por ejemplo cargada desde la planilla con otra clase de la marca):
           si otra solicitud del mismo nombre lo tiene, pasa a ser el acta principal y la anterior queda en
           «También»."""
-        cond = ("t.estado = 'activo' AND t.servicio IN ('vista', 'oposicion')" + (" AND t.id = %s" if solo_id else ""))
+        # (las oposiciones que presentamos nosotros, creadas desde una alerta, no: su acta es la marca del cliente)
+        cond = ("t.estado = 'activo' AND t.servicio IN ('vista', 'oposicion') AND t.alerta_id IS NULL"
+                + (" AND t.id = %s" if solo_id else ""))
         cur.execute(f"SELECT t.id, t.marca, t.servicio, t.notificacion, t.acta, t.actas_extra, t.cliente_id, c.nombre, c.cuit "
                     f"FROM trabajos t JOIN clientes c ON c.id = t.cliente_id WHERE {cond}", (solo_id,) if solo_id else None)
         res = {}
@@ -401,6 +425,49 @@ def crear_router(verificar_login, conexion) -> APIRouter:
             print(f"[seguimientos] detección de actas: {e}")
         finally:
             _candado_deteccion.release()
+
+    @router.post("/api/trabajos/desde-alerta/{alerta_id}")
+    def desde_alerta(alerta_id: int, usuario: str = Depends(verificar_login)):
+        """«Hay que oponer» en una alerta de vigilancia: la alerta pasa a «Oponer» y se crea (una sola vez) el
+        trabajo en «Oposición + negociación», con la marca del cliente, la marca nueva a la que nos oponemos y el
+        plazo para presentar la oposición (30 días corridos desde su publicación)."""
+        with conexion() as conn, rcur(conn) as cur:
+            cur.execute("SELECT id FROM trabajos WHERE alerta_id = %s", (alerta_id,))
+            ya = cur.fetchone()
+            cur.execute(
+                f"""SELECT a.id, a.cliente_id, a.acta_cliente, a.acta_nueva, a.denominacion_nueva, a.clase_nueva,
+                          cm.denominacion AS denominacion_cliente, cm.cliente_id AS cliente_marca,
+                          {SQL_PUBLICACION.replace('%s', 'a.acta_nueva')} AS publicacion
+                   FROM vigilancia_alertas a LEFT JOIN cartera_marcas cm ON cm.acta = a.acta_cliente
+                   WHERE a.id = %s""", (alerta_id,))
+            a = cur.fetchone()
+            if not a:
+                raise HTTPException(status_code=404, detail="No existe esa alerta")
+            cur.execute("UPDATE vigilancia_alertas SET estado = 'oponer', decidido_por = %s, decidido_en = now() "
+                        "WHERE id = %s AND estado <> 'oponer'", (usuario, alerta_id))
+            if ya:
+                conn.commit()
+                return {"id": ya["id"], "creado": False}
+            cliente_id = a["cliente_id"] or a["cliente_marca"]
+            if not cliente_id:
+                raise HTTPException(status_code=400, detail="La alerta no tiene cliente")
+            plazo = tc.plazo_para_oponerse(a["publicacion"])
+            marca = a["denominacion_cliente"] or "(marca del cliente)"
+            cur.execute(
+                """INSERT INTO trabajos (cliente_id, marca, servicio, acta, etapa, estado, contratacion, alerta_id,
+                                         acta_contraria, contraparte, plazo_presentar, alta_por, modificado_por)
+                   VALUES (%s, %s, 'oposicion', %s, 0, 'activo', %s, %s, %s, %s, %s, %s, %s) RETURNING id""",
+                (cliente_id, marca, a["acta_cliente"], tc.hoy_ar(), alerta_id, a["acta_nueva"],
+                 a["denominacion_nueva"], plazo, usuario, usuario))
+            tid = cur.fetchone()["id"]
+            texto = (f"Creado desde una alerta de vigilancia: nos oponemos a «{a['denominacion_nueva'] or 'marca sin nombre'}» "
+                     f"(clase {a['clase_nueva'] if a['clase_nueva'] is not None else '?'}, acta {a['acta_nueva']}). "
+                     + (f"Plazo para presentar la oposición: hasta el {plazo.strftime('%d/%m/%Y')}."
+                        if plazo else "Todavía no salió publicada: el plazo de 30 días empieza con la publicación."))
+            cur.execute("INSERT INTO trabajos_bitacora (trabajo_id, fecha, texto, usuario) VALUES (%s, %s, %s, %s)",
+                        (tid, tc.hoy_ar(), texto, usuario))
+            conn.commit()
+        return {"id": tid, "creado": True}
 
     @router.get("/api/trabajos")
     def listar(estado: str = "activo", q: str = "", _: str = Depends(verificar_login)):
