@@ -306,6 +306,14 @@ class SolicitudesDeLaMarca(unittest.TestCase):
         m35 = [m for m in lista if m["acta"] == "4811635"][0]
         self.assertEqual((m35["estado_tramite"], m35["fecha_presentacion"], m35["en_cartera"]), ("En trámite", "2026-10-16", True))
 
+    def test_texto_para_copiar(self):
+        self.assertEqual(tc.texto_solicitud("MÁS", {"acta": "4790681", "clase": 36, "tipo": "M"}), "MÁS (clase 36, acta 4790681, MIXTA)")
+        self.assertEqual(tc.texto_solicitud("MÁS", {"acta": "4790681", "clase": 36, "tipo": "Denominativa"}), "MÁS (clase 36, acta 4790681, DENOMINATIVA)")
+        self.assertEqual(tc.texto_solicitud("X", {"acta": "1"}), "X (acta 1)")
+        filas = [dict(f, tipo="M") for f in self.FILAS]
+        lista = tc.solicitudes_de_marca({"servicio": "vista", "marca": "Mateácido", "acta": "4811635"}, tc.fusionar_solicitudes(filas))
+        self.assertEqual(lista[0]["para_copiar"], "Mateácido (clase 43, acta 4811637, MIXTA)")
+
     def test_la_principal_pasa_a_ser_la_de_la_vista(self):
         sols = tc.fusionar_solicitudes(self.FILAS)
         el, motivo, del_tipo = tc.elegir_actas_conflicto({"servicio": "vista", "marca": "MATEACIDO"}, sols)

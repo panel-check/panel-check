@@ -229,11 +229,15 @@ function listaSolicitudes(d) {
       ? `<span class="sg-sol-tag">${que}${notif ? ` · notif. ${fecha(notif)}` : ""}</span>`
       : `<span class="sg-sol-estado">${esc(m.estado_tramite || m.ultimo_movimiento || (m.tuvo_vista ? "Con vista" : m.tuvo_oposicion ? "Con oposición" : "Sin vista ni oposición"))}</span>`;
     return `<li class="${m.con_problema ? "con-problema" : ""}">
-      <div class="izq"><span>${linkActa(m.acta)}${m.acta === t.acta_efectiva ? ' <small class="sg-sol-ppal">principal</small>' : ""}</span>
-        <small>${[m.clase ? `cl. ${m.clase}` : "", m.fecha_presentacion ? `presentada ${fecha(m.fecha_presentacion)}` : ""].filter(Boolean).join(" · ")}</small></div>
+      <div class="izq"><span>${linkActa(m.acta)}${m.acta === t.acta_efectiva ? ' <small class="sg-sol-ppal">principal</small>' : ""}
+        <button type="button" class="sg-copiar" data-copiar="${esc(m.para_copiar)}" title="Copiar «${esc(m.para_copiar)}»" aria-label="Copiar para el mail">⧉</button></span>
+        <small>${[m.clase ? `cl. ${m.clase}` : "", m.tipo_texto ? m.tipo_texto.toLowerCase() : "", m.fecha_presentacion ? `presentada ${fecha(m.fecha_presentacion)}` : ""].filter(Boolean).join(" · ")}</small></div>
       ${estado}</li>`;
   };
-  return `<div class="sg-sols"><div class="sg-sols-tit">Solicitudes de ${esc(t.marca)} (${sols.length})</div>
+  const abierta = sg.solsAbiertas === t.id;
+  return `<div class="sg-sols ${abierta ? "abierta" : ""}">
+    <button type="button" class="sg-sols-tit" data-sols-toggle aria-expanded="${abierta}">
+      <span>Solicitudes de ${esc(t.marca)} (${sols.length})</span><span class="mas" aria-hidden="true">${abierta ? "−" : "+"}</span></button>
     <ul>${sols.map(fila).join("")}</ul></div>`;
 }
 
@@ -536,6 +540,28 @@ document.addEventListener("click", (ev) => {
   ev.preventDefault();
   if (a.dataset.actaInpi) abrirActa(a.dataset.actaInpi);
   else abrirGrilla(a.dataset.grillaInpi);
+});
+
+// Solicitudes de la marca: se abren con el «+» (y quedan abiertas mientras se mira ese trabajo)
+document.addEventListener("click", async (ev) => {
+  const cp = ev.target.closest("[data-copiar]");
+  if (cp) {
+    ev.preventDefault();
+    try {
+      await navigator.clipboard.writeText(cp.dataset.copiar);
+      cp.textContent = "✓"; cp.classList.add("ok");
+      mostrarAviso(`Copiado: ${cp.dataset.copiar}`, "ok");
+      setTimeout(() => { cp.textContent = "⧉"; cp.classList.remove("ok"); }, 1500);
+    } catch { mostrarAviso("No se pudo copiar (el navegador no dio permiso).", "aviso"); }
+    return;
+  }
+  const tg = ev.target.closest("[data-sols-toggle]");
+  if (!tg) return;
+  const caja = tg.closest(".sg-sols");
+  const abierta = caja.classList.toggle("abierta");
+  tg.setAttribute("aria-expanded", abierta);
+  tg.querySelector(".mas").textContent = abierta ? "−" : "+";
+  sg.solsAbiertas = abierta ? sg.abierto : null;
 });
 
 // «Ver más / Ver menos» de las notas largas
