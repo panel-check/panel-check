@@ -123,12 +123,34 @@ function columnaVigilancia(s, trabajos) {
     "Clientes que la tienen contratada · alertas nuevas primero");
 }
 function columnaSimple(s, html, n, sub = "Más nuevos arriba") {
-  return `<section class="sg-col" style="--sg-color:${s.color}">
+  return `<section class="sg-col" data-col="${s.id}" data-n="${n}" style="--sg-color:${s.color}">
       <div class="sg-col-cab"><span class="punto" style="background:${s.color}"></span>${esc(s.nombre)}<span class="cant">${n}</span></div>
       <div class="sg-col-sub">${sub}</div>
       <div class="sg-cards">${html || '<div class="sg-col-vacia">Ningún cliente tiene la vigilancia contratada</div>'}</div>
     </section>`;
 }
+
+// En el celular las columnas no se apilan: arriba hay una pestaña por servicio y se ve una columna a la vez.
+function pestanasMovil(cols) {
+  const tmp = document.createElement("div");
+  tmp.innerHTML = cols;
+  const lista = [...tmp.querySelectorAll(".sg-col")].map((c) => ({ id: c.dataset.col, n: Number(c.dataset.n || 0) }));
+  if (!lista.some((c) => c.id === sg.colMovil)) sg.colMovil = (lista.find((c) => c.n > 0) || lista[0])?.id;
+  $("tablero").dataset.colMovil = sg.colMovil || "";
+  return `<nav class="sg-tabs-movil" aria-label="Servicios">${lista.map((c) => {
+    const s = servicioDe(c.id);
+    return `<button type="button" data-col-movil="${c.id}" class="${c.id === sg.colMovil ? "activa" : ""}" style="--sg-color:${s.color}">
+      <span class="punto"></span>${esc(s.corto || s.nombre)}<b>${c.n}</b></button>`;
+  }).join("")}</nav>`;
+}
+document.addEventListener("click", (ev) => {
+  const b = ev.target.closest("[data-col-movil]");
+  if (!b) return;
+  sg.colMovil = b.dataset.colMovil;
+  $("tablero").dataset.colMovil = sg.colMovil;
+  document.querySelectorAll("[data-col-movil]").forEach((x) => x.classList.toggle("activa", x === b));
+  window.scrollTo({ top: 0, behavior: "smooth" });
+});
 
 function pintar() {
   const todos = sg.datos.trabajos;
@@ -140,13 +162,13 @@ function pintar() {
     // Las columnas de servicios que no se usan no ocupan lugar (salvo que no haya nada cargado).
     if (!suyos.length && (sg.filtro || sg.q || !todos.some((t) => t.servicio === s.id))) return "";
     const sub = s.con_vencimiento ? `Ordenado por vencimiento · ${esc(s.plazo_texto)} desde la notificación` : "Más nuevos arriba";
-    return `<section class="sg-col" style="--sg-color:${s.color}">
+    return `<section class="sg-col" data-col="${s.id}" data-n="${suyos.length}" style="--sg-color:${s.color}">
       <div class="sg-col-cab"><span class="punto" style="background:${s.color}"></span>${esc(s.nombre)}<span class="cant">${suyos.length}</span></div>
       <div class="sg-col-sub">${sub}</div>
       <div class="sg-cards">${suyos.map(tarjeta).join("") || '<div class="sg-col-vacia">Nada por acá</div>'}</div>
     </section>`;
   }).join("");
-  $("tablero").innerHTML = cols || `<p class="sg-vacio-total">${sg.q || sg.filtro ? "No hay trabajos con ese filtro." : "Todavía no hay trabajos. Creá el primero con «＋ Nuevo trabajo»."}</p>`;
+  $("tablero").innerHTML = cols ? pestanasMovil(cols) + cols : `<p class="sg-vacio-total">${sg.q || sg.filtro ? "No hay trabajos con ese filtro." : "Todavía no hay trabajos. Creá el primero con «＋ Nuevo trabajo»."}</p>`;
 }
 
 // ── Ficha ───────────────────────────────────────────────────────
