@@ -512,7 +512,7 @@ function pintarFicha(d) {
         ${enlace(t.carpeta_drive, "📁 Carpeta Drive")}
         ${enlace(t.comprobante, "🧾 Comprobante")}
         <button type="button" class="sg-btn sg-btn-mini" data-armar-mail title="Armar un mail o WhatsApp con una plantilla y los datos de este trabajo ya completados">✉️ Mail</button>
-        <a class="sg-btn sg-btn-suave sg-btn-mini" href="/procesos" target="_blank" rel="noopener">📋 Procesos y plantillas</a>
+        <a class="sg-btn sg-btn-suave sg-btn-mini" href="/mails?tab=clientes" target="_blank" rel="noopener" title="Plantillas para clientes (en Mails)">📋 Plantillas</a>
       </div>
     </div>
     <div class="sg-f-cuerpo">

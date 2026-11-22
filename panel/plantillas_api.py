@@ -1,5 +1,5 @@
 """
-API de Procesos y plantillas de mails (/procesos), desde el 22/11/2026 (antes estaban en Notion).
+API de las plantillas para clientes (Mails → «Plantillas para clientes»), desde el 22/11/2026 (antes en Notion).
 
   GET    /api/plantillas          todas (más las listas de servicios y canales)
   POST   /api/plantillas          nueva

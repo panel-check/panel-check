@@ -61,7 +61,7 @@ import psycopg2
 import psycopg2.extras
 import requests
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
-from fastapi.responses import FileResponse, HTMLResponse, Response
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -266,7 +266,7 @@ def migrar_columnas_panel():
     except Exception as e:
         print(f"[startup] tablas de seguimientos salteadas (no bloqueante): {e}")
 
-    # Procesos y plantillas de mails (/procesos): la primera vez carga las 14 plantillas que estaban en Notion.
+    # Plantillas para clientes (Mails → «Plantillas para clientes»): la primera vez carga las 14 plantillas que estaban en Notion.
     try:
         with conexion() as conn:
             with conn.cursor() as cur:
@@ -4410,9 +4410,10 @@ def pagina_seguimientos(_: str = Depends(verificar_pagina)):
 
 
 @app.get("/procesos")
-def pagina_procesos(_: str = Depends(verificar_pagina)):
-    """Procesos y plantillas de mails (antes en Notion): ver, editar y copiar."""
-    return FileResponse(os.path.join(os.path.dirname(__file__), "static", "procesos.html"))
+def pagina_procesos():
+    """Las plantillas para clientes (antes en Notion) viven en Mails → «Plantillas para clientes» desde el
+    22/11/2026; /procesos queda como atajo a esa pestaña."""
+    return RedirectResponse("/mails?tab=clientes", status_code=302)
 
 
 @app.get("/mails")

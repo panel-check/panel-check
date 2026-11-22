@@ -1,4 +1,4 @@
-/* Procesos y plantillas (/procesos): lista por servicio, editor con vista previa y armado de mails.
+/* Plantillas para clientes (pestaña de /mails): lista por servicio, editor con vista previa y armado de mails.
  * Formato y armado en plantillas.js; API en plantillas_api.py. */
 (function () {
   const $ = (id) => document.getElementById(id);
