@@ -720,21 +720,16 @@ def armar_mail(resp: dict, cliente: dict, archivos: list, panel_url: str, cambio
     if archivos:
         nota_adj = ("Los archivos van adjuntos a este mail." if total <= MAX_ADJUNTOS_MAIL
                     else "Los archivos son muy pesados para adjuntarlos: descargalos desde la ficha del cliente.")
-    cuerpo = f"""<!doctype html><html><body style="margin:0;background:#f5f6f8;font-family:Arial,sans-serif">
-<table width="100%" cellpadding="0" cellspacing="0" style="background:#f5f6f8;padding:20px 0"><tr><td align="center">
-<table width="620" cellpadding="0" cellspacing="0" style="background:#fff;border:1px solid #e2e5ea;border-radius:10px;max-width:620px">
-  <tr><td style="padding:18px 20px;border-bottom:1px solid #e2e5ea">
-    <div style="font-size:12px;color:#6b7280;text-transform:uppercase;letter-spacing:.04em">Formulario {e(tipo)}</div>
-    <div style="font-size:20px;font-weight:bold;color:#1f2430;margin-top:4px">{e(nombre)}</div>
-    <div style="font-size:14px;color:#374151;margin-top:6px">{estado_cli}</div>
-  </td></tr>
-  {bloque_cambios}
-  <tr><td style="padding:10px 10px"><table width="100%" cellpadding="0" cellspacing="0">{filas}</table></td></tr>
-  <tr><td style="padding:6px 20px 20px">
-    <a href="{e(link)}" style="display:inline-block;background:#015197;color:#fff;text-decoration:none;padding:10px 16px;border-radius:8px;font-weight:bold;font-size:14px">Abrir ficha del cliente</a>
-    {f'<div style="font-size:12px;color:#6b7280;margin-top:10px">{nota_adj}</div>' if nota_adj else ''}
-  </td></tr>
-</table></td></tr></table></body></html>"""
+    import mails_marco as mm
+    contenido = (
+        bloque_cambios.replace("padding:12px 20px 0", "padding:12px 24px 0")
+        + f'<tr><td style="padding:6px 14px 10px"><table width="100%" cellpadding="0" cellspacing="0">{filas}</table></td></tr>'
+        + (f'<tr><td style="padding:0 24px 14px;font-size:12px;color:#6b7280">{nota_adj}</td></tr>' if nota_adj else "")
+    )
+    cuerpo = mm.marco(
+        contenido, etiqueta=f"Formulario {tipo}" + (" · corregido" if corregido else ""), titulo=nombre,
+        subtitulo=estado_cli + (f"<br>Marca: <strong>{e(marca)}</strong>" if marca else ""),
+        botones=[("Abrir ficha del cliente", link)], panel_url=panel_url)
     adjuntos = []
     if archivos and total <= MAX_ADJUNTOS_MAIL:
         adjuntos = [{"filename": a["nombre"], "content": base64.b64encode(bytes(a["contenido"])).decode()} for a in archivos]

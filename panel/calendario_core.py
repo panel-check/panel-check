@@ -1066,15 +1066,12 @@ def armar_agenda(fecha: _dt.date, eventos: list, panel_url: str = "", seguimient
             '<tr><td style="padding:12px 16px 4px;font-size:12px;font-weight:700;color:#9a4d00;letter-spacing:.06em">RECORDATORIOS</td></tr>'
             + "".join(filas_seg))
     lineas.append(f"Calendario: {panel}")
-    html_ = f"""<!doctype html>
-<html><body style="margin:0;background:#f2f4f7;font-family:Arial,Helvetica,sans-serif">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td align="center" style="padding:16px">
-<table role="presentation" width="560" cellpadding="0" cellspacing="0" style="max-width:560px;width:100%;background:#ffffff;border:1px solid #eaecf0;border-radius:8px">
-  <tr><td style="padding:16px;border-bottom:1px solid #eaecf0"><div style="font-size:12px;font-weight:700;color:#475467;letter-spacing:.06em">AGENDA</div>
-    <div style="font-size:18px;font-weight:700;color:#101828;margin-top:2px">{e(titulo)}</div></td></tr>
-  {''.join(bloques)}
-  <tr><td style="padding:12px 16px;color:#98a2b3;font-size:12px">Horarios en hora de Argentina. Aviso automático del panel · <a href="{e(panel)}" style="color:#98a2b3">abrir el calendario</a></td></tr>
-</table></td></tr></table></body></html>"""
+    import mails_marco as mm
+    html_ = mm.marco(
+        "".join(b.replace("padding:12px 16px 4px", "padding:14px 24px 4px").replace("padding:10px 16px", "padding:10px 24px")
+                for b in bloques),
+        etiqueta="Agenda", titulo=titulo, botones=[("Abrir el calendario", panel)] if panel else (),
+        pie="Horarios en hora de Argentina.", ancho=600)
     return asunto, html_, "\n".join(lineas)
 
 
