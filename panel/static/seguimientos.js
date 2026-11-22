@@ -216,6 +216,27 @@ function linkActa(acta) {
   return `<a href="#" class="sg-link-acta" data-acta-inpi="${esc(acta)}" title="Abrir el acta en el INPI">${esc(acta)} ↗</a>`;
 }
 
+// Todas las solicitudes de la marca (una por clase). Primero la que tiene la vista u oposición por la
+// que contrataron; la principal (la del expediente de arriba) va marcada.
+function listaSolicitudes(d) {
+  const sols = d.solicitudes || [];
+  const t = d.trabajo;
+  if (!sols.length || (sols.length === 1 && sols[0].acta === t.acta_efectiva)) return "";
+  const que = t.servicio === "vista" ? "Vista" : t.servicio === "oposicion" ? "Oposición" : "";
+  const fila = (m) => {
+    const notif = t.servicio === "vista" ? m.vista_fecha_notificacion : m.oposicion_fecha_notificacion;
+    const estado = m.con_problema && que
+      ? `<span class="sg-sol-tag">${que}${notif ? ` · notif. ${fecha(notif)}` : ""}</span>`
+      : `<span class="sg-sol-estado">${esc(m.estado_tramite || m.ultimo_movimiento || (m.tuvo_vista ? "Con vista" : m.tuvo_oposicion ? "Con oposición" : "Sin vista ni oposición"))}</span>`;
+    return `<li class="${m.con_problema ? "con-problema" : ""}">
+      <div class="izq"><span>${linkActa(m.acta)}${m.acta === t.acta_efectiva ? ' <small class="sg-sol-ppal">principal</small>' : ""}</span>
+        <small>${[m.clase ? `cl. ${m.clase}` : "", m.fecha_presentacion ? `presentada ${fecha(m.fecha_presentacion)}` : ""].filter(Boolean).join(" · ")}</small></div>
+      ${estado}</li>`;
+  };
+  return `<div class="sg-sols"><div class="sg-sols-tit">Solicitudes de ${esc(t.marca)} (${sols.length})</div>
+    <ul>${sols.map(fila).join("")}</ul></div>`;
+}
+
 function bloqueExpediente(d) {
   const t = d.trabajo, ex = d.expediente;
   let datos = "";
@@ -243,7 +264,7 @@ function bloqueExpediente(d) {
       ${m.tuvo_oposicion ? celda("Oposición", detalleOposicion(m.detalle_oposicion)) : ""}
     </div>`;
   }
-  return `<div class="sg-bloque"><h3>📂 Expediente y bitácora</h3>${datos}
+  return `<div class="sg-bloque"><h3>📂 Expediente y bitácora</h3>${datos}${listaSolicitudes(d)}
     <form class="sg-nota-nueva" id="form-nota"><textarea id="nota-texto" rows="1" placeholder="Agregar una nota…" title="Enter: salto de línea · Cmd/Ctrl + Enter: guardar · *texto* en negrita" maxlength="50000"></textarea>
       <button type="submit" class="sg-btn sg-btn-mini">Agregar</button></form>
     ${lineaTiempo(d)}</div>`;

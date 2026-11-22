@@ -284,5 +284,42 @@ class ActasConVistaUOposicion(unittest.TestCase):
         self.assertEqual(tc.elegir_actas_conflicto({"servicio": "registro", "marca": "X"}, cart)[0], [])
 
 
+
+class SolicitudesDeLaMarca(unittest.TestCase):
+    # MATEACIDO: 3 solicitudes, solo la 4811637 recibió vista; el trabajo arrancó con la 4811635 (de la planilla)
+    FILAS = [
+        {"acta": "4811635", "denominacion": "MATEACIDO", "clase": 41, "estado_tramite": "En trámite", "tuvo_oposicion": False, "fuente": "cartera"},
+        {"acta": "4811635", "denominacion": "MATEACIDO", "clase": 41, "fecha_presentacion": "2026-10-16", "fuente": "escaneo"},
+        {"acta": "4811636", "denominacion": "MATEACIDO", "clase": 35, "fecha_presentacion": "2026-10-16", "fuente": "escaneo"},
+        {"acta": "4811637", "denominacion": "MATEACIDO", "clase": 43, "fecha_presentacion": "2026-10-16", "fuente": "escaneo"},
+        {"acta": "4811637", "denominacion": "MATEACIDO", "clase": 43, "tuvo_vista": True, "vista_fecha_notificacion": "2026-10-29", "fuente": "boletin"},
+        {"acta": "4700000", "denominacion": "OTRA MARCA", "clase": 9, "fuente": "escaneo"},
+    ]
+
+    def test_fusion_y_orden(self):
+        sols = tc.fusionar_solicitudes(self.FILAS)
+        self.assertEqual(len(sols), 4)
+        t = {"servicio": "vista", "marca": "Mateácido", "acta": "4811635", "actas_extra": None}
+        lista = tc.solicitudes_de_marca(t, sols)
+        self.assertEqual([m["acta"] for m in lista], ["4811637", "4811635", "4811636"])   # la de la vista primero
+        self.assertTrue(lista[0]["con_problema"]); self.assertFalse(lista[1]["con_problema"])
+        m35 = [m for m in lista if m["acta"] == "4811635"][0]
+        self.assertEqual((m35["estado_tramite"], m35["fecha_presentacion"], m35["en_cartera"]), ("En trámite", "2026-10-16", True))
+
+    def test_la_principal_pasa_a_ser_la_de_la_vista(self):
+        sols = tc.fusionar_solicitudes(self.FILAS)
+        el, motivo, del_tipo = tc.elegir_actas_conflicto({"servicio": "vista", "marca": "MATEACIDO"}, sols)
+        self.assertEqual(([c["acta"] for c in el], motivo), (["4811637"], "mismo nombre de marca"))
+        self.assertNotIn("4811635", {c["acta"] for c in del_tipo})   # la cargada no tiene vista → se cambia
+        self.assertEqual(tc.notificacion_de(el, "vista"), dt.date(2026, 10, 29))
+
+    def test_vista_de_marcas_en_la_cartera_es_vista_no_oposicion(self):
+        sols = tc.fusionar_solicitudes([{"acta": "1", "denominacion": "X", "tuvo_oposicion": True,
+                                         "detalle_oposicion": "/Date(1793715300000)/ - Vista de Marcas - None", "fuente": "cartera"}])
+        self.assertTrue(sols[0].get("tuvo_vista"))
+        self.assertTrue(tc.es_del_tipo(sols[0], "vista"))
+        self.assertFalse(tc.es_del_tipo(sols[0], "oposicion"))
+
+
 if __name__ == "__main__":
     unittest.main()
