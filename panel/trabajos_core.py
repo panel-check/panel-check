@@ -180,10 +180,11 @@ def completar(t, hoy=None):
     t["proxima_etapa"] = etapas[etapa] if etapa < len(etapas) else None
     nos_oponemos = bool(t.get("alerta_id"))
     t["nos_oponemos"] = nos_oponemos
-    t["vencimiento"] = vencimiento(t.get("servicio"), t.get("notificacion"), t.get("plazo_presentar"))
+    presentar = t.get("plazo_presentar") if nos_oponemos else None   # solo cuenta en las oposiciones que presentamos
+    t["vencimiento"] = vencimiento(t.get("servicio"), t.get("notificacion"), presentar)
     t["vence_presentar"] = bool(nos_oponemos and not t.get("notificacion") and t["vencimiento"])
     t["alerta"] = alerta(t.get("servicio"), t.get("notificacion"), t.get("estado") or "activo", hoy, etapa,
-                         t.get("plazo_presentar"), nos_oponemos)
+                         presentar, nos_oponemos)
     return t
 
 
