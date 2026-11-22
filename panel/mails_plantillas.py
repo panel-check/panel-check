@@ -117,7 +117,11 @@ def armar_html_cartera(alertas, plazos, novedades, panel_url):
             if cab != ultimo:
                 filas.append(f"""<tr><td style="padding:10px 16px 0;font-size:14px;font-weight:600;color:#101828">{_e(cab)} <span style="color:#98a2b3;font-weight:400">(acta {_e(n['acta'])})</span></td></tr>""")
                 ultimo = cab
-            filas.append(f"""<tr><td style="padding:2px 16px 4px 28px;color:#475467;font-size:13px">• {_e(n['texto'])}</td></tr>""")
+            if n.get("icono"):  # ya clasificada (notificaciones_inpi.filtrar_para_mail)
+                extra = " · ".join(x for x in (n.get("explicacion"), n.get("detalle")) if x)
+                filas.append(f"""<tr><td style="padding:2px 16px 4px 28px;color:#475467;font-size:13px">{n['icono']} <strong style="color:#101828">{_e(n['tipo'])}</strong>{(' — ' + _e(extra)) if extra else ''}</td></tr>""")
+            else:
+                filas.append(f"""<tr><td style="padding:2px 16px 4px 28px;color:#475467;font-size:13px">• {_e(n['texto'])}</td></tr>""")
         secciones.append(("Novedades en los expedientes", filas))
 
     partes = []
@@ -226,8 +230,10 @@ def ejemplo(clave, panel_url):
               "tipo": "oposicion_vigilancia"}, 7, "3901234>4797800"),
         ]
         novedades = [
-            {"cliente_nombre": "Estudio Aurora", "denominacion": "AURORA", "acta": "4600123", "texto": "Marca concedida"},
-            {"cliente_nombre": "Estudio Aurora", "denominacion": "AURORA", "acta": "4600123", "texto": "Nuevo movimiento: Pago de tasa"},
+            {"cliente_nombre": "Estudio Aurora", "denominacion": "AURORA", "acta": "4600123", "icono": "🏅",
+             "tipo": "Concedida", "explicacion": "El INPI concedió la marca.", "detalle": ""},
+            {"cliente_nombre": "Estudio Aurora", "denominacion": "AURORA", "acta": "4600123", "icono": "✍️",
+             "tipo": "Se contestó la vista", "explicacion": "", "detalle": "En el expediente el 20/11/2026"},
         ]
         return armar_html_cartera(alertas, plazos, novedades, panel_url)
     if clave == "bloqueo":
