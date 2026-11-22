@@ -80,6 +80,8 @@ import notificaciones_inpi_api
 import seguimiento_api
 import trabajos_api
 import trabajos_core
+import plantillas_api
+import plantillas_core
 import cartera
 import seguridad
 import cartera_api
@@ -263,6 +265,16 @@ def migrar_columnas_panel():
             conn.commit()
     except Exception as e:
         print(f"[startup] tablas de seguimientos salteadas (no bloqueante): {e}")
+
+    # Procesos y plantillas de mails (/procesos): la primera vez carga las 14 plantillas que estaban en Notion.
+    try:
+        with conexion() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SET lock_timeout = '3s'")
+                plantillas_core.crear_tablas(cur)
+            conn.commit()
+    except Exception as e:
+        print(f"[startup] tabla de plantillas salteada (no bloqueante): {e}")
 
     # Vigilancia: borra las alertas con el plazo de oposición vencido y une las duplicadas
     # (una por marca del cliente). Idempotente; también lo hace cada corrida de vigilancia.
@@ -4397,6 +4409,12 @@ def pagina_seguimientos(_: str = Depends(verificar_pagina)):
     return FileResponse(os.path.join(os.path.dirname(__file__), "static", "seguimientos.html"))
 
 
+@app.get("/procesos")
+def pagina_procesos(_: str = Depends(verificar_pagina)):
+    """Procesos y plantillas de mails (antes en Notion): ver, editar y copiar."""
+    return FileResponse(os.path.join(os.path.dirname(__file__), "static", "procesos.html"))
+
+
 @app.get("/mails")
 def pagina_mails(_: str = Depends(verificar_pagina)):
     return FileResponse(os.path.join(os.path.dirname(__file__), "static", "mails.html"))
@@ -4467,6 +4485,7 @@ app.include_router(verificador_api.crear_router(verificar_login, conexion))
 app.include_router(presentacion_api.crear_router(conexion))   # presentación de oposición (página privada de la web)
 app.include_router(seguimiento_api.crear_router(verificar_login, conexion))     # vigilancia de expediente (página del titular en la web)
 app.include_router(notificaciones_inpi_api.crear_router(verificar_login, conexion))  # campanita 🔔: notificaciones del INPI
+app.include_router(plantillas_api.crear_router(verificar_login, conexion))      # Procesos y plantillas de mails
 app.include_router(trabajos_api.crear_router(verificar_login, conexion))        # Seguimientos: trabajos puntuales de los clientes
 app.include_router(buscador_inpi_api.crear_router(verificar_login, conexion))
 app.include_router(accesos_api.crear_router(verificar_login, conexion, CLAVES_ACCESO_RAPIDO, _contar_consulta))
