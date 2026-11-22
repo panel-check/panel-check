@@ -1,5 +1,5 @@
 /* Plantillas de mails (22/11/2026): formato del texto, datos a completar y el «armador» de mails que se
- * abre desde la ficha de un trabajo, la de vigilancia o /procesos. Se copia con formato (negritas, listas,
+ * abre desde la ficha de un trabajo, la de vigilancia o Mails → «Plantillas para clientes». Se copia con formato (negritas, listas,
  * tabla) para pegar directo en Gmail. Expone window.Plantillas. Ver panel/plantillas_core.py. */
 (function () {
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -162,7 +162,7 @@
       <div class="pl-cuerpo">
         <aside class="pl-lista">${lista.map(item).join("") || '<p class="pl-vacio">No hay plantillas.</p>'}
           ${sid && propias.length < estado.plantillas.length ? `<button type="button" class="pl-mas" data-pl-todas>${estado.todas ? "Ver solo las de este servicio" : "Ver todas las plantillas"}</button>` : ""}
-          <a class="pl-mas" href="/procesos" target="_blank" rel="noopener">Editar plantillas ↗</a></aside>
+          <a class="pl-mas" href="/mails?tab=clientes" target="_blank" rel="noopener">Editar plantillas ↗</a></aside>
         <section class="pl-armado">${p ? `
           ${p.cuando ? `<p class="pl-cuando">${esc(p.cuando)}</p>` : ""}
           ${p.canal === "mail" ? `<div class="pl-campo"><span>Para</span><input data-pl-para value="${esc(ctx.email || "")}" placeholder="mail del cliente"><button type="button" class="pl-btn" data-pl-copiar="para">Copiar</button></div>

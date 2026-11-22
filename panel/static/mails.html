@@ -7,6 +7,7 @@
 <link rel="icon" type="image/png" href="/static/favicon.png" />
 <link rel="apple-touch-icon" href="/static/apple-touch-icon.png" />
 <link rel="stylesheet" href="/static/comun.css?v=nc1" />
+<link rel="stylesheet" href="/static/plantillas.css?v=pl2" />
 <style>
   .contenido { max-width: 1080px; margin: 24px auto 60px; padding: 0 20px; }
   .env-filtros { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
@@ -216,6 +217,7 @@
   <div class="tabs-mails" id="tabs">
     <button type="button" data-tab="enviados" class="activo">Enviados</button>
     <button type="button" data-tab="mails">Mails y plantillas</button>
+    <button type="button" data-tab="clientes">Plantillas para clientes</button>
     <button type="button" data-tab="bajas">Bajas</button>
   </div>
 
@@ -260,6 +262,18 @@
     </div>
   </div>
 
+  <div id="tab-clientes" hidden>
+  <div class="pr-barra">
+    <input type="search" id="pr-buscar" placeholder="Buscar plantilla…" aria-label="Buscar plantilla" />
+    <div class="der">
+      <button type="button" class="pl-btn" id="pr-armar">✉️ Armar un mail</button>
+      <button type="button" class="pl-btn pl-ppal" id="pr-nueva">＋ Nueva plantilla</button>
+    </div>
+  </div>
+  <p class="intro">Las plantillas de mails y mensajes que usamos con los <strong>clientes</strong>, por servicio (antes estaban en Notion, después en /procesos). No se mandan desde el panel: se arman y se copian para pegar en Gmail. Desde la ficha de cada trabajo en <a href="/seguimientos">Seguimientos</a>, el botón <b>✉️ Mail</b> arma el mail con los datos del cliente ya completados, listo para copiar y pegar en Gmail.</p>
+  <div class="pr-grid" id="pr-lista"><p class="pl-cargando">Cargando…</p></div>
+  </div>
+
   <div id="tab-bajas" hidden>
     <p class="intro">Personas a las que no se les escribe más. Cuando alguien responde <strong>BAJA</strong> a un mail de prospectos,
       se agrega acá; el envío a prospectos tiene que consultar esta lista antes de mandar cada mail.</p>
@@ -275,7 +289,42 @@
   </div>
 </div>
 
+<div class="pl-fondo" id="pr-modal" hidden>
+  <div class="pl-caja">
+    <div class="pl-cab"><b id="pr-modal-tit">Plantilla</b><button type="button" class="pl-x" id="pr-cerrar" aria-label="Cerrar">×</button></div>
+    <form class="pl-armado" id="pr-form">
+      <div class="pr-editor">
+        <div class="col">
+          <label>Título <input id="pr-titulo" required maxlength="200" /></label>
+          <div class="pr-fila">
+            <label>Servicio <select id="pr-servicio"></select></label>
+            <label>Se manda en la etapa <select id="pr-etapa"></select></label>
+            <label>Canal <select id="pr-canal"></select></label>
+          </div>
+          <label>Asunto <input id="pr-asunto" maxlength="300" placeholder="(sin asunto)" /></label>
+          <label>Cuándo usarla <input id="pr-cuando" maxlength="1000" /></label>
+          <label>Texto <textarea id="pr-cuerpo" spellcheck="true"></textarea></label>
+          <div class="pr-ayuda"><b>Formato:</b> un renglón en blanco separa párrafos · <code>**negrita**</code> · <code>_cursiva_</code> · líneas que empiezan con <code>- </code> forman una lista · una tabla se escribe con <code>|</code> (la primera fila es el encabezado).<br>
+            <b>Datos a completar:</b> entre corchetes, por ejemplo <code>[nombre]</code>, <code>[marca]</code>, <code>[clase]</code>, <code>[clases]</code>, <code>[acta]</code>, <code>[tipo]</code>, <code>[fecha de publicación]</code>, <code>[fecha de concesión]</code>, <code>[fecha de vencimiento]</code>: el panel los completa solo con los datos del trabajo. Cualquier otro (<code>[honorarios]</code>, <code>[oponente]</code>…) se pide al armar el mail.</div>
+        </div>
+        <div class="col">
+          <label>Vista previa</label>
+          <div class="pl-vista" id="pr-vista"></div>
+        </div>
+      </div>
+      <div class="pr-pie">
+        <button type="submit" class="pl-btn pl-ppal">Guardar</button>
+        <button type="button" class="pl-btn" id="pr-usar">✉️ Armar mail con esta</button>
+        <span class="pl-aviso" id="pr-aviso"></span>
+        <button type="button" class="pl-btn borrar" id="pr-borrar">🗑 Borrar</button>
+      </div>
+    </form>
+  </div>
+</div>
+
 <script src="/static/comun.js?v=nc1"></script>
+<script src="/static/plantillas.js?v=pl2"></script>
+<script src="/static/procesos.js?v=pl2"></script>
 <script>
 let datos = null;
 let yo = null;
@@ -969,17 +1018,20 @@ document.getElementById("baja-agregar").addEventListener("click", async () => {
   } catch (e) { msg.textContent = e.message; msg.className = "msg err"; }
 });
 
-document.querySelectorAll("#tabs button").forEach(b => b.addEventListener("click", () => {
+function abrirTab(tab) {
+  const b = document.querySelector(`#tabs button[data-tab="${tab}"]`) || document.querySelector('#tabs button[data-tab="enviados"]');
   document.querySelectorAll("#tabs button").forEach(x => x.classList.toggle("activo", x === b));
-  document.getElementById("tab-enviados").hidden = b.dataset.tab !== "enviados";
-  document.getElementById("tab-mails").hidden = b.dataset.tab !== "mails";
-  document.getElementById("tab-bajas").hidden = b.dataset.tab !== "bajas";
+  for (const t of ["enviados", "mails", "clientes", "bajas"]) document.getElementById("tab-" + t).hidden = b.dataset.tab !== t;
   if (b.dataset.tab === "bajas") cargarBajas();
   if (b.dataset.tab === "enviados") cargarEnviados(false);
-}));
+  // la pestaña queda en la dirección (/mails?tab=clientes) para poder volver o compartir el link
+  history.replaceState(null, "", b.dataset.tab === "enviados" ? "/mails" : `/mails?tab=${b.dataset.tab}`);
+}
+document.querySelectorAll("#tabs button").forEach(b => b.addEventListener("click", () => abrirTab(b.dataset.tab)));
 
 cargar();
-cargarEnviados(false);
+const tabInicial = new URLSearchParams(location.search).get("tab");
+if (tabInicial && tabInicial !== "enviados") abrirTab(tabInicial); else cargarEnviados(false);
 </script>
 </body>
 </html>

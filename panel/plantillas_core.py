@@ -1,5 +1,5 @@
 """Procesos y plantillas de mails (22/11/2026): lo que estaba en Notion («Procedimientos + Plantillas de
-mails») pasa al panel, en la tabla `plantillas`, y se edita en /procesos.
+mails») pasa al panel, en la tabla `plantillas`, y se edita en Mails → «Plantillas para clientes».
 
 Formato del cuerpo (texto simple, se copia a Gmail con formato):
 - un renglón en blanco separa párrafos; un salto de línea simple es un salto de línea dentro del párrafo;
