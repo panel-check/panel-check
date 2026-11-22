@@ -276,3 +276,34 @@
 
 /* Columna Vigilancia marcaria: clientes con la vigilancia contratada */
 .sg-card.sg-vig .sg-vig-dato { font-size: 12px; color: var(--gris, #6b7280); }
+
+/* Ficha de Vigilancia marcaria (panel lateral) */
+.sg-tag { display: inline-flex; align-items: center; font-size: 11.5px; font-weight: 700; padding: 2px 8px; border-radius: 999px; background: #f1f3f6; color: #4b5563; white-space: nowrap; }
+.sg-tag.rojo { background: #fee2e2; color: #991b1b; }
+.sg-tag.amarillo { background: #fef3c7; color: #92400e; }
+.sg-tag.azul { background: #e8effd; color: #1d4ed8; }
+.sg-vacio-chico { color: #9aa1ab; font-size: 13px; margin: 4px 0; }
+.sg-vig-alerta { border: 1px solid #e7e9ee; border-left: 4px solid #e7e9ee; border-radius: 10px; padding: 10px 12px; margin-top: 10px; font-size: 13.5px; }
+.sg-vig-alerta:has(.sg-tag.rojo) { border-left-color: #ef4444; }
+.sg-vig-alerta.cerrada { opacity: .75; }
+.sg-vig-alerta .cab { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.sg-vig-alerta .cab .pct { font-size: 14px; }
+.sg-vig-alerta .cab .cuando { margin-left: auto; color: var(--gris, #6b7280); font-size: 12px; }
+.sg-vig-alerta .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 8px; }
+.sg-vig-alerta .cols small { display: block; font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .3px; color: var(--gris, #6b7280); }
+.sg-vig-alerta .cols b { display: block; font-size: 14.5px; }
+.sg-vig-alerta .cols .dato { display: block; color: var(--gris, #6b7280); font-size: 12.5px; line-height: 1.45; }
+.sg-vig-alerta .ia { margin-top: 8px; padding: 8px 10px; background: #f6f8fb; border-radius: 8px; font-size: 13px; }
+.sg-vig-alerta .ia .sg-nota-txt { display: inline; }
+.sg-vig-alerta .ia .sg-nota-txt.plegada { display: -webkit-box; }
+.sg-vig-plazo { margin-top: 8px; font-size: 12.5px; color: #92400e; background: #fffbeb; border-radius: 8px; padding: 6px 10px; }
+.sg-vig-plazo.urgente { color: #991b1b; background: #fef2f2; }
+.sg-vig-plazo.temprana { color: var(--gris, #6b7280); background: #f6f8fb; }
+.sg-vig-alerta .acciones { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; align-items: center; }
+.sg-vig-alerta .acciones .nota { flex: 1; min-width: 160px; font: inherit; font-size: 13px; padding: 5px 9px; border: 1px solid var(--borde-control, #d5d9e0); border-radius: 8px; }
+.sg-bloque h3.plegable { cursor: pointer; }
+.sg-bloque h3 .mas { display: inline-grid; place-items: center; width: 20px; height: 20px; margin-left: 6px; border: 1px solid #e2e5ea; border-radius: 6px; background: #fff; font-size: 15px; }
+.sg-vig-marcas { list-style: none; margin: 0; padding: 0; }
+.sg-vig-marcas li { display: flex; justify-content: space-between; gap: 10px; padding: 6px 0; border-top: 1px solid #f0f1f4; font-size: 13.5px; }
+.sg-vig-marcas li:first-child { border-top: 0; }
+.sg-vig-marcas li span { color: var(--gris, #6b7280); font-size: 12.5px; }
