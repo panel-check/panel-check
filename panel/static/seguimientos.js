@@ -100,12 +100,42 @@ function tarjeta(t) {
   </button>`;
 }
 
+// Última columna: los clientes que tienen la vigilancia marcaria contratada de verdad (Clientes → «Vigilancia
+// contratada»), más los trabajos de vigilancia que haya cargados. Un clic abre la ficha del cliente encima.
+function tarjetaVigilancia(c) {
+  const alertas = c.alertas_nuevas
+    ? `<span class="sg-alerta rojo"><span class="dot"></span>${c.alertas_nuevas} alerta${c.alertas_nuevas > 1 ? "s" : ""} sin revisar</span>`
+    : `<span class="sg-alerta verde"><span class="dot"></span>Sin alertas nuevas</span>`;
+  const curso = c.alertas_en_curso ? `<span class="sg-vig-dato">${c.alertas_en_curso} en seguimiento</span>` : "";
+  return `<button type="button" class="sg-card sg-vig" data-cliente-popup="${c.id}" title="Ver la ficha de ${esc(c.nombre)}">
+    <div class="marca">${esc(c.nombre)}</div>
+    <div class="cliente">${c.marcas} marca${c.marcas === 1 ? "" : "s"} vigilada${c.marcas === 1 ? "" : "s"}${c.vigilancia_desde ? ` · desde el ${fecha(c.vigilancia_desde)}` : ""}</div>
+    <div class="fila">${alertas}${curso}</div>
+  </button>`;
+}
+function columnaVigilancia(s, trabajos) {
+  if (sg.filtro || sg.estado === "cerrado") return trabajos.length ? columnaSimple(s, trabajos.map(tarjeta).join(""), trabajos.length) : "";
+  const conTrabajo = new Set(trabajos.map((t) => t.cliente_id));
+  const clientes = (sg.datos.vigilancia || []).filter((c) => !conTrabajo.has(c.id));
+  if (!trabajos.length && !clientes.length && sg.q) return "";
+  return columnaSimple(s, trabajos.map(tarjeta).join("") + clientes.map(tarjetaVigilancia).join(""), trabajos.length + clientes.length,
+    "Clientes que la tienen contratada · alertas nuevas primero");
+}
+function columnaSimple(s, html, n, sub = "Más nuevos arriba") {
+  return `<section class="sg-col" style="--sg-color:${s.color}">
+      <div class="sg-col-cab"><span class="punto" style="background:${s.color}"></span>${esc(s.nombre)}<span class="cant">${n}</span></div>
+      <div class="sg-col-sub">${sub}</div>
+      <div class="sg-cards">${html || '<div class="sg-col-vacia">Ningún cliente tiene la vigilancia contratada</div>'}</div>
+    </section>`;
+}
+
 function pintar() {
   const todos = sg.datos.trabajos;
   pintarResumen(todos);
   const visibles = todos.filter(pasaFiltro);
   const cols = sg.datos.servicios.map((s) => {
     const suyos = visibles.filter((t) => t.servicio === s.id);
+    if (s.id === "vigilancia") return columnaVigilancia(s, suyos);
     // Las columnas de servicios que no se usan no ocupan lugar (salvo que no haya nada cargado).
     if (!suyos.length && (sg.filtro || sg.q || !todos.some((t) => t.servicio === s.id))) return "";
     const sub = s.con_vencimiento ? `Ordenado por vencimiento · ${esc(s.plazo_texto)} desde la notificación` : "Más nuevos arriba";
