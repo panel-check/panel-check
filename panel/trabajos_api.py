@@ -420,8 +420,35 @@ def crear_router(verificar_login, conexion) -> APIRouter:
             filas = tc.ordenar([tc.completar(dict(f), hoy) for f in cur.fetchall()])
             cur.execute("SELECT estado, COUNT(*) AS n FROM trabajos GROUP BY estado")
             cuentas = {f["estado"]: f["n"] for f in cur.fetchall()}
+            vigilancia = _clientes_con_vigilancia(cur, q)
         return {"hoy": hoy, "servicios": tc.servicios_publicos(), "trabajos": filas,
-                "cuentas": cuentas, "notion_procesos": tc.NOTION_PROCESOS}
+                "cuentas": cuentas, "notion_procesos": tc.NOTION_PROCESOS, "vigilancia": vigilancia}
+
+    def _clientes_con_vigilancia(cur, q=""):
+        """Columna «Vigilancia marcaria» del tablero: los clientes activos que tienen la vigilancia contratada de
+        verdad (Clientes → «Vigilancia contratada»), con cuántas marcas se vigilan y las alertas sin revisar."""
+        try:
+            cur.execute("SAVEPOINT vig")
+            cond, val = "", []
+            if q.strip():
+                cond, val = " AND c.nombre ILIKE %s", [f"%{q.strip()}%"]
+            cur.execute(
+                f"""SELECT c.id, c.nombre, c.vigilancia_desde,
+                          (SELECT COUNT(*) FROM cartera_marcas cm WHERE cm.cliente_id = c.id AND cm.vigilar) AS marcas,
+                          (SELECT COUNT(*) FROM vigilancia_alertas a WHERE a.cliente_id = c.id AND a.estado = 'nueva') AS alertas_nuevas,
+                          (SELECT COUNT(*) FROM vigilancia_alertas a WHERE a.cliente_id = c.id
+                             AND a.estado IN ('monitorear', 'oponer')) AS alertas_en_curso
+                   FROM clientes c
+                   WHERE c.activo AND c.vigilancia_contratada{cond}
+                   ORDER BY (SELECT COUNT(*) FROM vigilancia_alertas a WHERE a.cliente_id = c.id AND a.estado = 'nueva') DESC,
+                            c.nombre""", val)
+            out = cur.fetchall()
+            cur.execute("RELEASE SAVEPOINT vig")
+            return out
+        except Exception as e:
+            cur.execute("ROLLBACK TO SAVEPOINT vig")
+            print(f"[seguimientos] clientes con vigilancia: {e}")
+            return []
 
     @router.get("/api/trabajos/{tid}")
     def ficha(tid: int, _: str = Depends(verificar_login)):
