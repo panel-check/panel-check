@@ -267,6 +267,42 @@ def crear_router(verificar_login, conexion) -> APIRouter:
                     cur.execute("INSERT INTO trabajos_bitacora (trabajo_id, fecha, texto, usuario) VALUES (%s, %s, %s, 'sistema')",
                                 (t["id"], tc.hoy_ar(), tc.texto_avance(etapas[info["etapa"] - 1], info)))
 
+    def _sincronizar_tomas(cur, solo_id=None):
+        """Vista y oposición: cuando la grilla del expediente muestra que tomamos intervención (desde la
+        contratación), la etapa «Toma de intervención» se tilda sola, con una nota. Igual que el registro: no
+        retrocede nada y si alguien la vuelve atrás a mano no se vuelve a marcar (etapa_inpi). Las oposiciones
+        que presentamos nosotros (alerta_id) no cuentan: ahí el expediente es el de la otra marca."""
+        cond = ("servicio IN ('vista', 'oposicion') AND estado = 'activo' AND alerta_id IS NULL "
+                "AND COALESCE(etapa, 0) < %s AND COALESCE(etapa_inpi, 0) < %s") + (" AND id = %s" if solo_id else "")
+        params = [tc.ETAPA_TOMA, tc.ETAPA_TOMA] + ([solo_id] if solo_id else [])
+        cur.execute(f"SELECT id, cliente_id, marca, acta, actas_extra, contratacion FROM trabajos WHERE {cond}", params)
+        trabajos = cur.fetchall()
+        if not trabajos:
+            return
+        cartera = _cartera_de(cur, trabajos)
+        por_trabajo = {}
+        for t in trabajos:
+            actas = [a for a in [t.get("acta")] + list(t.get("actas_extra") or []) if a]
+            if not actas:   # sin acta cargada: la de la cartera del mismo cliente con el mismo nombre
+                actas = [m["acta"] for m in tc.actas_del_trabajo(t, cartera)]
+            por_trabajo[t["id"]] = actas
+        cur.execute("SELECT acta, grilla_claves FROM cartera_marcas WHERE acta = ANY(%s)",
+                    (sorted({a for v in por_trabajo.values() for a in v}),))
+        grillas = {r["acta"]: r["grilla_claves"] for r in cur.fetchall()}
+        nombre = tc.POR_ID["vista"]["etapas"][tc.ETAPA_TOMA - 1]
+        for t in trabajos:
+            actas = por_trabajo[t["id"]]
+            encontradas = [(f, a) for a in actas for f in [tc.toma_en_grilla(grillas.get(a), t.get("contratacion"))] if f]
+            if not encontradas:
+                continue
+            fecha, acta = min(encontradas)
+            cur.execute("UPDATE trabajos SET etapa = %s, etapa_inpi = %s, modificado_en = now(), modificado_por = 'sistema' "
+                        "WHERE id = %s AND COALESCE(etapa, 0) < %s", (tc.ETAPA_TOMA, tc.ETAPA_TOMA, t["id"], tc.ETAPA_TOMA))
+            if cur.rowcount:
+                cur.execute("INSERT INTO trabajos_bitacora (trabajo_id, fecha, texto, usuario) VALUES (%s, %s, %s, 'sistema')",
+                            (t["id"], tc.hoy_ar(), f"Etapa actualizada sola según el INPI: «{nombre}» (se tomó intervención "
+                             f"el {fecha.strftime('%d/%m/%Y')} en el acta {acta})."))
+
     def _borrar_notas_boletin(cur):
         """Una sola vez (24/11/2026), después de _corregir_boletin: borra las notas automáticas «Etapa actualizada
         sola según el INPI: «Marca en boletín»…» de los registros que NO están en boletín (quedaron del error del
@@ -332,6 +368,7 @@ def crear_router(verificar_login, conexion) -> APIRouter:
         try:
             cur.execute("SAVEPOINT sinc")
             _sincronizar_registros(cur, solo_id)
+            _sincronizar_tomas(cur, solo_id)
             _sincronizar_oposiciones(cur, solo_id)
             cur.execute("RELEASE SAVEPOINT sinc")
             conn.commit()
@@ -602,8 +639,10 @@ def crear_router(verificar_login, conexion) -> APIRouter:
                 cur.execute(
                     """SELECT tipo, texto, detectado_en FROM cartera_novedades
                        WHERE acta = %s ORDER BY detectado_en DESC LIMIT 40""", (t["acta_efectiva"],))
+                import notificaciones_inpi as ni   # el INPI carga dos veces la toma de intervención y el poder
                 expediente = {"acta": t["acta_efectiva"], "automatica": bool(t.get("acta_auto")),
-                              "en_cartera": bool(marca), "marca": marca, "novedades": cur.fetchall()}
+                              "en_cartera": bool(marca), "marca": marca,
+                              "novedades": ni.novedades_sin_repetir(cur.fetchall())}
             cur.execute(
                 "SELECT id, fecha, texto, usuario, creado_en FROM trabajos_bitacora "
                 "WHERE trabajo_id = %s ORDER BY fecha DESC, id DESC", (tid,))

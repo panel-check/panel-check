@@ -499,7 +499,7 @@ function pintarFicha(d) {
   const pasos = s.etapas.map((e, i) => {
     const n = i + 1;
     const cls = n <= t.etapa ? "hecho" : "";
-    const auto = s.auto_desde && n >= s.auto_desde;
+    const auto = (s.auto_desde && n >= s.auto_desde) || (s.auto_etapas || []).includes(n);
     return `<li class="sg-paso ${cls} ${n === t.etapa ? "actual" : ""}" data-etapa="${n}" title="${auto ? `Se marca sola cuando el INPI lo muestra (también se puede marcar a mano)` : `Marcar «${esc(e)}» como etapa actual`}">
       <span class="bola">${n <= t.etapa ? "✓" : ""}</span><span class="nombre">${esc(e)}</span>${auto ? '<span class="sg-auto">INPI</span>' : ""}</li>`;
   }).join("");

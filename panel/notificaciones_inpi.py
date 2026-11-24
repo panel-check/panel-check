@@ -395,3 +395,50 @@ def filtrar_para_mail(filas: list[dict], ya_avisadas: list[dict] = ()) -> list[d
         vistos.add(clave)
         salida.append(c)
     return salida
+
+
+# ── Movimientos sin repetir (ficha del trabajo en Seguimientos y alta de novedades de la cartera) ─────
+# Pedido del 24/11/2026: el INPI casi siempre carga dos veces la toma de intervención y el poder (y cada
+# presentación trae además su «Recibo de Ingreso — …»). Mismo criterio que el mail diario: una sola línea por
+# acta, avance (toma de intervención, poder, contestación de vista) y fecha; y los movimientos con el mismo
+# texto, una sola vez. Entre varias líneas del mismo avance queda la que no es el recibo.
+
+def avance_de(texto: str):
+    """Clave del avance del trámite que nombra el texto de un movimiento («toma_intervencion», «poder»,
+    «contestacion_vista») o None."""
+    limpio = _sin_tildes(_fechas_inpi(texto or ""))
+    if "ratifica" in limpio:
+        return None
+    for clave, palabras, _titulo, _icono in AVANCES:
+        if any(_re.search(r"\b" + _re.escape(p) + r"\b", limpio) for p in palabras):
+            return clave
+    return None
+
+
+def clave_novedad(tipo: str, texto: str):
+    """Lo que hace que dos novedades sean «la misma» para no repetirla."""
+    t = _fechas_inpi(texto or "")
+    if tipo == "movimiento":
+        av = avance_de(t)
+        if av:
+            m = _re.search(r"(\d{2}/\d{2}/\d{4})", t)
+            return ("avance", av, m.group(1) if m else "")
+    return ("texto", tipo, " ".join(_sin_tildes(t).split()))
+
+
+def _es_recibo(texto: str) -> bool:
+    return "recibo de ingreso" in _sin_tildes(texto or "")
+
+
+def novedades_sin_repetir(filas: list[dict]) -> list[dict]:
+    """Las novedades (dicts con «tipo» y «texto») sin repetidos, en el mismo orden. De un avance repetido
+    queda el movimiento y no su recibo."""
+    salida, pos = [], {}
+    for f in filas:
+        k = clave_novedad(f.get("tipo"), f.get("texto"))
+        if k not in pos:
+            pos[k] = len(salida)
+            salida.append(f)
+        elif _es_recibo(salida[pos[k]].get("texto")) and not _es_recibo(f.get("texto")):
+            salida[pos[k]] = f
+    return salida
