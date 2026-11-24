@@ -204,7 +204,9 @@ class EtapasRegistroInpi(unittest.TestCase):
         self.assertEqual(tc.etapa_de_acta({"ubicacion_actual": "Sector Estudio Fondo 583/25"}), 4)
         self.assertEqual(tc.etapa_de_acta({}), 4)                                    # recién cargada, sin leer
         self.assertEqual(tc.etapa_de_acta({"fecha_publicacion": "2026-10-01"}), 5)
-        self.assertEqual(tc.etapa_de_acta({"ubicacion_actual": "División Publicación"}), 5)
+        self.assertEqual(tc.etapa_de_acta({"ubicacion_actual": "División Publicación"}), 4)   # espera salir en el boletín
+        self.assertEqual(tc.etapa_de_acta({"fecha_publicacion": "2099-01-01"}), 4)            # fecha futura: todavía no salió
+        self.assertEqual(tc.etapa_de_acta({"ubicacion_actual": "División Notificaciones"}), 5)
         self.assertEqual(tc.etapa_de_acta({"ubicacion_actual": "División Notificaciones", "fecha_publicacion": "2026-10-01"}), 5)
         self.assertEqual(tc.etapa_de_acta({"ubicacion_actual": "División Resoluciones", "fecha_publicacion": "2026-10-01"}), 6)
         self.assertEqual(tc.etapa_de_acta({"ubicacion_actual": "División Resoluciones", "estado_tramite": "Concedida"}), 7)

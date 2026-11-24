@@ -223,6 +223,9 @@ TABLAS = [
     "ALTER TABLE trabajos ADD COLUMN IF NOT EXISTS acta_contraria TEXT",
     "ALTER TABLE trabajos ADD COLUMN IF NOT EXISTS contraparte TEXT",
     "ALTER TABLE trabajos ADD COLUMN IF NOT EXISTS plazo_presentar DATE",
+    # Registro: la última etapa a la que lo llevó el INPI (24/11/2026). Si alguien lo vuelve atrás a mano, el
+    # sistema no lo vuelve a adelantar hasta que el INPI muestre una etapa más avanzada que esa.
+    "ALTER TABLE trabajos ADD COLUMN IF NOT EXISTS etapa_inpi INTEGER",
     "CREATE UNIQUE INDEX IF NOT EXISTS idx_trabajos_alerta ON trabajos(alerta_id) WHERE alerta_id IS NOT NULL",
     "CREATE INDEX IF NOT EXISTS idx_trabajos_estado ON trabajos(estado)",
     """CREATE TABLE IF NOT EXISTS trabajos_bitacora (
@@ -284,9 +287,12 @@ ETAPA_REG_PUBLICADA, ETAPA_REG_BOLETIN, ETAPA_REG_RESOLUCION, ETAPA_REG_CONCEDID
 def etapa_de_acta(m):
     """Etapa del registro que corresponde a una acta de la cartera (cartera_marcas), o None si está
     denegada/desistida (no hace avanzar nada):
-      - existe en el INPI (presentada, en estudio)           → «Marca publicada»
-      - tiene fecha de publicación o está en Publicación /
-        Notificaciones                                        → «Marca en boletín»
+      - existe en el INPI (presentada, en estudio, o en el
+        sector Publicación esperando salir en el boletín)     → «Marca publicada»
+      - tiene fecha de publicación (ya pasada) o está en
+        Notificaciones (hubo oposición: ya salió)             → «Marca en boletín»
+    Ojo (24/11/2026): estar en el sector «Publicación» NO quiere decir que ya salió en el boletín: ahí
+    queda la marca esperando la publicación (caso TIMBEROS, presentada el 06/11 y marcada en boletín el 19/11).
       - está en División Resoluciones                         → «Marca en proyecto de resolución»
       - estado del trámite «Concedida»                        → «Concedida»"""
     import seguimiento_expediente as se
@@ -298,7 +304,8 @@ def etapa_de_acta(m):
     sector = se.sector_de(m.get("ubicacion_actual"))
     if sector == "resoluciones":
         return ETAPA_REG_RESOLUCION
-    if m.get("fecha_publicacion") or sector in ("publicacion", "notificaciones"):
+    pub = a_fecha(m.get("fecha_publicacion"))
+    if (pub and pub <= hoy_ar()) or sector == "notificaciones":
         return ETAPA_REG_BOLETIN
     return ETAPA_REG_PUBLICADA
 
