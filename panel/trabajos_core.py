@@ -28,12 +28,15 @@ NOTION_PROCESOS = "/mails?tab=clientes"
 
 # Orden de las columnas del tablero: primero las que tienen vencimiento (vista, oposición).
 SERVICIOS = [
+    # «Toma de intervención» (24/11/2026): se tilda sola cuando la grilla del expediente muestra que se tomó
+    # intervención (desde la contratación). auto_etapas = etapas que marca el sistema (además de a mano).
     {"id": "vista", "nombre": "Contestación de vista", "corto": "Vista", "color": "#7c3aed",
-     "plazo": ("dias", 30), "cumple_en": 4,   # con el escrito presentado el plazo ya está cumplido
-     "etapas": ["Seña cobrada", "Formulario y poder", "Análisis", "Escrito presentado", "Resuelta"]},
+     "plazo": ("dias", 30), "cumple_en": 5, "auto_etapas": [3],   # con el escrito presentado el plazo ya está cumplido
+     "etapas": ["Seña cobrada", "Formulario y poder", "Toma de intervención", "Análisis", "Escrito presentado", "Resuelta"]},
     {"id": "oposicion", "nombre": "Oposición + negociación", "corto": "Oposición", "color": "#ea580c",
-     "plazo": ("meses", 3), "cumple_en": 6,   # con acuerdo o retiro ya no corre la negociación
-     "etapas": ["Seña cobrada", "Formulario y poder", "Análisis", "Contacto con el oponente", "Negociando", "Acuerdo o retiro"]},
+     "plazo": ("meses", 3), "cumple_en": 7, "auto_etapas": [3],   # con acuerdo o retiro ya no corre la negociación
+     "etapas": ["Seña cobrada", "Formulario y poder", "Toma de intervención", "Análisis", "Contacto con el oponente",
+                "Negociando", "Acuerdo o retiro"]},
     {"id": "oposicion_adm", "nombre": "Oposición administrativa", "corto": "Opo. administrativa", "color": "#dc2626",
      "plazo": None,
      "etapas": ["Seña cobrada", "Escrito presentado", "Esperando resolución", "Resuelta"]},
@@ -59,7 +62,7 @@ def servicios_publicos():
     """Lo que necesita la pantalla (sin tuplas)."""
     return [{"id": s["id"], "nombre": s["nombre"], "corto": s["corto"], "color": s["color"],
              "etapas": s["etapas"], "con_vencimiento": s["plazo"] is not None, "cumple_en": s.get("cumple_en"),
-             "auto_desde": s.get("auto_desde"),
+             "auto_desde": s.get("auto_desde"), "auto_etapas": s.get("auto_etapas") or [],
              "plazo_texto": _plazo_texto(s["plazo"])} for s in SERVICIOS]
 
 
@@ -243,9 +246,9 @@ TABLAS = [
 # Pagos». El cliente sale del link «Ficha de cliente» de cada fila (panel/clientes?cliente=N).
 # Se inserta una sola vez (clave_carga) y solo si el cliente existe; después se edita en el panel.
 CARGA_INICIAL = [
-    # (etapas con la numeración del 19/11/2026)
+    # (etapas con la numeración del 24/11/2026)
     # clave, cliente_id, marca, servicio, etapa, contratación, notificación, acta, drive, comprobante, notas
-    ("planilla:BARRIOKEY", 31, "BARRIOKEY", "oposicion", 5, "2026-10-16", "2026-11-04", None,
+    ("planilla:BARRIOKEY", 31, "BARRIOKEY", "oposicion", 6, "2026-10-16", "2026-11-04", None,
      "https://docs.google.com/document/d/1R-lTO0TKtyMR6wYeknUizLytm11fatrq_dkymo1YYKA/edit?usp=drive_link",
      "https://mail.google.com/mail/u/2?ui=2&ik=568bf27d9b&attid=0.1&permmsgid=msg-f:1879219394474072262&th=1a1454152ea6d8c6&view=fimg&fur=ip&sz=s0-l75-ft&disp=emb&realattid=ii_1a14540c8f1dfc58af31",
      None),
@@ -258,7 +261,7 @@ CARGA_INICIAL = [
     ("planilla:MATEACIDO", 37, "MATEACIDO", "vista", 1, "2026-11-01", "2026-10-29", None,
      "https://drive.google.com/drive/u/0/folders/1hT2xl_q_JGFo6plXvvRm7LR7mY8E2-BE",
      "https://mail.google.com/mail/u/2/popout?ver=1rxqa29am4kag", None),
-    ("planilla:CANVA PADEL", 38, "CANVA PADEL", "oposicion", 5, "2026-11-01", "2026-10-14", "4775277",
+    ("planilla:CANVA PADEL", 38, "CANVA PADEL", "oposicion", 6, "2026-11-01", "2026-10-14", "4775277",
      "https://drive.google.com/drive/u/0/folders/1X0S_CJ8FuXg8YeDlSqx5ezbwPpK5Ialp",
      "https://web.whatsapp.com/02d525ec-1894-42b8-aaec-2431d42f1115",
      "Titular: ANTHAL SPORT SRL. Propuesta: coexistencia usando siempre CANVA PADEL completo y logo propio."),
@@ -362,6 +365,11 @@ MIGRACIONES_ETAPAS = {
         # Seña, Formulario y poder, Presentada, Publicada, Concedida → Seña, FyP, (Informe), Marca publicada,
         # Marca en boletín, (Proyecto de resolución), Concedida
         "registro": {3: 4, 4: 5, 5: 7},
+    },
+    # 24/11/2026: «Toma de intervención» entre «Formulario y poder» y «Análisis» en vista y oposición.
+    "etapas-2026-11-24": {
+        "vista": {3: 4, 4: 5, 5: 6},
+        "oposicion": {3: 4, 4: 5, 5: 6, 6: 7},
     },
 }
 
@@ -613,3 +621,32 @@ def separar_informes(trabajo, informes):
         i = {**i, "tipo_nombre": TIPOS_INFORME.get(i.get("tipo"), i.get("tipo"))}
         (suyos if comparable(i.get("marca")) == m else otros).append(i)
     return suyos, otros
+
+
+# ── Toma de intervención según el INPI (vista y oposición) ─────────────────────
+ETAPA_TOMA = 3   # «Toma de intervención» en vista y oposición
+SERVICIOS_TOMA = ("vista", "oposicion")
+
+
+def toma_en_grilla(claves, desde=None):
+    """Fecha (date) de la primera toma de intervención de la grilla del expediente (claves «fecha|índice|
+    referencia») desde la fecha «desde» (la contratación: una toma anterior es de otro agente), o None."""
+    import notificaciones_inpi as ni
+    fechas = []
+    for c in claves or []:
+        fecha, _, resto = str(c).partition("|")
+        if ni.avance_de(resto.replace("|", " ")) != "toma_intervencion":
+            continue
+        f = a_fecha(fecha) or _fecha_dmy(fecha)
+        if f and (not desde or f >= a_fecha(desde)):
+            fechas.append(f)
+        elif not f and not desde:
+            fechas.append(hoy_ar())
+    return min(fechas) if fechas else None
+
+
+def _fecha_dmy(txt):
+    try:
+        return _dt.datetime.strptime(str(txt).strip()[:10], "%d/%m/%Y").date()
+    except ValueError:
+        return None

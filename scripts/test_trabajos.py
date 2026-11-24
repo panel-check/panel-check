@@ -53,16 +53,16 @@ class Alerta(unittest.TestCase):
 
 class PlazoCumplido(unittest.TestCase):
     def test_vista_con_escrito_presentado(self):
-        a = tc.alerta("vista", "2026-10-10", hoy=HOY, etapa=4)        # vencida, pero ya se contestó
+        a = tc.alerta("vista", "2026-10-10", hoy=HOY, etapa=5)        # vencida, pero ya se contestó
         self.assertEqual((a["nivel"], a["texto"]), ("cumplido", "✓ Escrito presentado"))
         self.assertEqual(tc.alerta("vista", "2026-10-29", hoy=HOY, etapa=2)["nivel"], "verde")
 
     def test_oposicion_con_acuerdo(self):
-        self.assertEqual(tc.alerta("oposicion", "2026-11-04", hoy=HOY, etapa=6)["nivel"], "cumplido")
-        self.assertEqual(tc.alerta("oposicion", "2026-11-04", hoy=HOY, etapa=5)["nivel"], "verde")
+        self.assertEqual(tc.alerta("oposicion", "2026-11-04", hoy=HOY, etapa=7)["nivel"], "cumplido")
+        self.assertEqual(tc.alerta("oposicion", "2026-11-04", hoy=HOY, etapa=6)["nivel"], "verde")
 
     def test_cumplidos_van_despues_de_los_pendientes(self):
-        filas = [tc.completar({"marca": "HECHA", "servicio": "vista", "notificacion": "2026-10-20", "estado": "activo", "etapa": 4}, HOY),
+        filas = [tc.completar({"marca": "HECHA", "servicio": "vista", "notificacion": "2026-10-20", "estado": "activo", "etapa": 5}, HOY),
                  tc.completar({"marca": "SIN", "servicio": "vista", "notificacion": None, "estado": "activo", "etapa": 1}, HOY),
                  tc.completar({"marca": "PEND", "servicio": "vista", "notificacion": "2026-11-05", "estado": "activo", "etapa": 1}, HOY)]
         self.assertEqual([t["marca"] for t in tc.ordenar(filas)], ["PEND", "SIN", "HECHA"])
@@ -102,12 +102,12 @@ class Varios(unittest.TestCase):
         self.assertEqual(tc.marca_limpia(" vision soberana "), "VISION SOBERANA")
 
     def test_etapas(self):
-        t = tc.completar({"servicio": "oposicion", "etapa": 5, "estado": "activo"}, HOY)
-        self.assertEqual((t["etapa_nombre"], t["proxima_etapa"], t["etapas_total"]), ("Negociando", "Acuerdo o retiro", 6))
+        t = tc.completar({"servicio": "oposicion", "etapa": 6, "estado": "activo"}, HOY)
+        self.assertEqual((t["etapa_nombre"], t["proxima_etapa"], t["etapas_total"]), ("Negociando", "Acuerdo o retiro", 7))
         t = tc.completar({"servicio": "registro", "etapa": 0, "estado": "activo"}, HOY)
         self.assertEqual(t["etapa_nombre"], "Esperando seña")
         t = tc.completar({"servicio": "vista", "etapa": 99, "estado": "activo"}, HOY)
-        self.assertEqual((t["etapa"], t["proxima_etapa"]), (5, None))
+        self.assertEqual((t["etapa"], t["proxima_etapa"]), (6, None))
 
     def test_carga_inicial_coherente(self):
         claves = [c[0] for c in tc.CARGA_INICIAL]
@@ -194,8 +194,8 @@ class EtapasRegistroInpi(unittest.TestCase):
         self.assertEqual(tc.POR_ID["registro"]["etapas"],
                          ["Seña pagada", "Formulario y poder", "Informe enviado", "Marca publicada", "Marca en boletín",
                           "Marca en proyecto de resolución", "Concedida"])
-        self.assertEqual(tc.POR_ID["oposicion"]["etapas"][:3], ["Seña cobrada", "Formulario y poder", "Análisis"])
-        self.assertEqual(tc.POR_ID["vista"]["etapas"][:3], ["Seña cobrada", "Formulario y poder", "Análisis"])
+        self.assertEqual(tc.POR_ID["oposicion"]["etapas"][:4], ["Seña cobrada", "Formulario y poder", "Toma de intervención", "Análisis"])
+        self.assertEqual(tc.POR_ID["vista"]["etapas"][:4], ["Seña cobrada", "Formulario y poder", "Toma de intervención", "Análisis"])
         # el plazo se cumple con el escrito presentado / acuerdo o retiro (numeración nueva)
         self.assertEqual(tc.POR_ID["vista"]["etapas"][tc.POR_ID["vista"]["cumple_en"] - 1], "Escrito presentado")
         self.assertEqual(tc.POR_ID["oposicion"]["etapas"][tc.POR_ID["oposicion"]["cumple_en"] - 1], "Acuerdo o retiro")
@@ -246,7 +246,7 @@ class EtapasRegistroInpi(unittest.TestCase):
         cur = Cur()
         tc.migrar_etapas(cur)
         updates = [x for x in cur.sql if x[0].startswith("UPDATE trabajos")]
-        self.assertEqual(len(updates), 3)
+        self.assertEqual(len(updates), 5)
         reg = [u for u in updates if u[1] == ("registro",)][0][0]
         self.assertIn("WHEN 3 THEN 4", reg); self.assertIn("WHEN 5 THEN 7", reg)
         n = len(cur.sql); tc.migrar_etapas(cur)
@@ -350,6 +350,38 @@ class NosOponemos(unittest.TestCase):
         t = tc.completar({"servicio": "oposicion", "etapa": 1, "estado": "activo", "plazo_presentar": "2026-12-04"}, HOY)
         self.assertEqual(t["alerta"]["nivel"], "falta")   # sin alerta de origen, el plazo de presentar no cuenta
         self.assertFalse(t["nos_oponemos"])
+
+
+class TomaIntervencion(unittest.TestCase):
+    def test_toma_en_grilla(self):
+        g = ["2026-11-20|Toma Intervención|TOMA INTERVENCIÓN", "2026-11-20|Recibo de Ingreso|Toma de Intervención",
+             "2026-11-20|Otros|Poder", "2026-11-20|Formulario|"]
+        self.assertEqual(tc.toma_en_grilla(g, "2026-11-18"), tc.a_fecha("2026-11-20"))
+        self.assertIsNone(tc.toma_en_grilla(g, "2026-11-21"))           # toma anterior a la contratación: otro agente
+        self.assertIsNone(tc.toma_en_grilla(["2026-11-20|Otros|Poder"], None))
+        self.assertIsNone(tc.toma_en_grilla(None, None))
+
+    def test_novedades_sin_repetir(self):
+        import notificaciones_inpi as ni
+        pre = "Nuevo movimiento en el expediente: 20/11/2026 · "
+        filas = [{"tipo": "movimiento", "texto": pre + "Recibo de Ingreso — Toma de Intervención"},
+                 {"tipo": "movimiento", "texto": pre + "Toma Intervención — TOMA INTERVENCIÓN"},
+                 {"tipo": "movimiento", "texto": pre + "Formulario"},
+                 {"tipo": "movimiento", "texto": pre + "Otros — Poder"},
+                 {"tipo": "movimiento", "texto": pre + "Formulario"},
+                 {"tipo": "movimiento", "texto": pre + "Otros — Poder"},
+                 {"tipo": "movimiento", "texto": pre + "Recibo de Ingreso — Escritos de Marcas"},
+                 {"tipo": "movimiento", "texto": "Nuevo movimiento en el expediente: 25/11/2026 · Otros — Poder"}]
+        out = [f["texto"].replace(pre, "") for f in ni.novedades_sin_repetir(filas)]
+        self.assertEqual(out, ["Toma Intervención — TOMA INTERVENCIÓN", "Formulario", "Otros — Poder",
+                               "Recibo de Ingreso — Escritos de Marcas",
+                               "Nuevo movimiento en el expediente: 25/11/2026 · Otros — Poder"])
+
+    def test_etapa_automatica(self):
+        for sid in tc.SERVICIOS_TOMA:
+            s = tc.POR_ID[sid]
+            self.assertEqual(s["etapas"][tc.ETAPA_TOMA - 1], "Toma de intervención")
+            self.assertIn(tc.ETAPA_TOMA, s["auto_etapas"])
 
 
 if __name__ == "__main__":

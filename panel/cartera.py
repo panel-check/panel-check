@@ -774,6 +774,18 @@ def aplicar_expediente(cur, acta: str, info: dict) -> list:
         [v[c] for c in cols] + [acta],
     )
     guardar_logo_expediente(cur, acta, info)
+    # El INPI carga dos veces la toma de intervención y el poder (más su recibo): una sola novedad por acta,
+    # avance y fecha, y nunca una que ya estaba (24/11/2026; mismo criterio que el mail diario).
+    try:
+        import notificaciones_inpi as ni
+        cur.execute("SELECT tipo, texto FROM cartera_novedades WHERE acta = %s AND tipo = 'movimiento'", (acta,))
+        ya = {ni.clave_novedad(r["tipo"] if isinstance(r, dict) else r[0], r["texto"] if isinstance(r, dict) else r[1])
+              for r in cur.fetchall()}
+        filas = ni.novedades_sin_repetir([{"tipo": t, "texto": x} for t, x in novedades])
+        novedades = [(f["tipo"], f["texto"]) for f in filas
+                     if f["tipo"] != "movimiento" or ni.clave_novedad(f["tipo"], f["texto"]) not in ya]
+    except Exception as e:   # nunca frena la revisión por esto
+        print(f"[cartera] novedades sin repetir ({acta}): {e}")
     for tipo, texto in novedades:
         cur.execute(
             "INSERT INTO cartera_novedades (acta, cliente_id, tipo, texto) VALUES (%s, %s, %s, %s)",
