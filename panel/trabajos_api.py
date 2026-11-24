@@ -243,9 +243,12 @@ def crear_router(verificar_login, conexion) -> APIRouter:
         return cur.fetchall()
 
     def _sincronizar_registros(cur, solo_id=None):
-        """Los registros activos avanzan solos a la etapa que dice el INPI (nunca retroceden)."""
+        """Los registros activos avanzan solos a la etapa que dice el INPI. Nunca retroceden solos, y si alguien
+        los vuelve atrás a mano no se los adelanta de nuevo hasta que el INPI muestre una etapa más avanzada
+        que la última que aplicó el sistema (etapa_inpi): así no se repite la misma nota en la bitácora."""
+        _corregir_boletin(cur)
         cond = "servicio = 'registro' AND estado = 'activo'" + (" AND id = %s" if solo_id else "")
-        cur.execute(f"SELECT id, cliente_id, marca, acta, etapa FROM trabajos WHERE {cond}", (solo_id,) if solo_id else None)
+        cur.execute(f"SELECT id, cliente_id, marca, acta, etapa, etapa_inpi FROM trabajos WHERE {cond}", (solo_id,) if solo_id else None)
         trabajos = cur.fetchall()
         if not trabajos:
             return
@@ -253,12 +256,43 @@ def crear_router(verificar_login, conexion) -> APIRouter:
         etapas = tc.POR_ID["registro"]["etapas"]
         for t in trabajos:
             info = tc.etapa_registro(tc.actas_del_trabajo(t, cartera_filas))
-            if info and info["etapa"] and info["etapa"] > (t["etapa"] or 0):
+            if not (info and info["etapa"]) or info["etapa"] <= (t.get("etapa_inpi") or 0):
+                continue
+            cur.execute("UPDATE trabajos SET etapa_inpi = %s WHERE id = %s", (info["etapa"], t["id"]))
+            if info["etapa"] > (t["etapa"] or 0):
                 cur.execute("UPDATE trabajos SET etapa = %s, modificado_en = now(), modificado_por = 'sistema' "
                             "WHERE id = %s AND etapa < %s", (info["etapa"], t["id"], info["etapa"]))
                 if cur.rowcount:
                     cur.execute("INSERT INTO trabajos_bitacora (trabajo_id, fecha, texto, usuario) VALUES (%s, %s, %s, 'sistema')",
                                 (t["id"], tc.hoy_ar(), tc.texto_avance(etapas[info["etapa"] - 1], info)))
+
+    def _corregir_boletin(cur):
+        """Una sola vez (24/11/2026): hasta ahora el sector «Publicación» del INPI se tomaba como «Marca en
+        boletín». Los registros que el sistema pasó a boletín sin que la marca haya salido vuelven a la etapa
+        que corresponde, con una nota; y se borran las notas automáticas repetidas (quedó una por cada vez que
+        alguien lo volvió atrás a mano y el sistema lo adelantó de nuevo)."""
+        cur.execute("INSERT INTO trabajos_migraciones (nombre) VALUES ('registro-boletin-2026-11-24') ON CONFLICT DO NOTHING")
+        if not cur.rowcount:
+            return
+        cur.execute("""DELETE FROM trabajos_bitacora b USING trabajos_bitacora o
+                       WHERE b.usuario = 'sistema' AND o.usuario = 'sistema' AND b.trabajo_id = o.trabajo_id
+                         AND b.texto = o.texto AND b.texto LIKE 'Etapa actualizada sola según el INPI%%' AND b.id > o.id""")
+        cur.execute("SELECT id, cliente_id, marca, acta, etapa FROM trabajos "
+                    "WHERE servicio = 'registro' AND estado = 'activo' AND modificado_por = 'sistema' AND etapa = %s",
+                    (tc.ETAPA_REG_BOLETIN,))
+        trabajos = cur.fetchall()
+        if not trabajos:
+            return
+        cartera_filas = _cartera_de(cur, trabajos)
+        etapas = tc.POR_ID["registro"]["etapas"]
+        for t in trabajos:
+            info = tc.etapa_registro(tc.actas_del_trabajo(t, cartera_filas))
+            if info and info["etapa"] and info["etapa"] < t["etapa"]:
+                cur.execute("UPDATE trabajos SET etapa = %s, etapa_inpi = %s, modificado_en = now(), modificado_por = 'sistema' "
+                            "WHERE id = %s", (info["etapa"], info["etapa"], t["id"]))
+                cur.execute("INSERT INTO trabajos_bitacora (trabajo_id, fecha, texto, usuario) VALUES (%s, %s, %s, 'sistema')",
+                            (t["id"], tc.hoy_ar(), f"Etapa corregida: vuelve a «{etapas[info['etapa'] - 1]}». La marca todavía no "
+                             "salió en el boletín según el INPI (estar en el sector Publicación es esperar la publicación, no haber salido)."))
 
     SQL_PUBLICACION = """(SELECT CASE WHEN m.boletin IS NULL THEN m.fecha_publicacion
                                       ELSE COALESCE(m.fecha_publicacion, b.fecha, b.procesado_en::date) END
