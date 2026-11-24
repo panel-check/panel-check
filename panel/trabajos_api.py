@@ -247,6 +247,7 @@ def crear_router(verificar_login, conexion) -> APIRouter:
         los vuelve atrás a mano no se los adelanta de nuevo hasta que el INPI muestre una etapa más avanzada
         que la última que aplicó el sistema (etapa_inpi): así no se repite la misma nota en la bitácora."""
         _corregir_boletin(cur)
+        _borrar_notas_boletin(cur)
         cond = "servicio = 'registro' AND estado = 'activo'" + (" AND id = %s" if solo_id else "")
         cur.execute(f"SELECT id, cliente_id, marca, acta, etapa, etapa_inpi FROM trabajos WHERE {cond}", (solo_id,) if solo_id else None)
         trabajos = cur.fetchall()
@@ -265,6 +266,18 @@ def crear_router(verificar_login, conexion) -> APIRouter:
                 if cur.rowcount:
                     cur.execute("INSERT INTO trabajos_bitacora (trabajo_id, fecha, texto, usuario) VALUES (%s, %s, %s, 'sistema')",
                                 (t["id"], tc.hoy_ar(), tc.texto_avance(etapas[info["etapa"] - 1], info)))
+
+    def _borrar_notas_boletin(cur):
+        """Una sola vez (24/11/2026), después de _corregir_boletin: borra las notas automáticas «Etapa actualizada
+        sola según el INPI: «Marca en boletín»…» de los registros que NO están en boletín (quedaron del error del
+        sector Publicación). Las notas del equipo no se tocan."""
+        cur.execute("INSERT INTO trabajos_migraciones (nombre) VALUES ('registro-boletin-notas-2026-11-24') ON CONFLICT DO NOTHING")
+        if not cur.rowcount:
+            return
+        cur.execute("""DELETE FROM trabajos_bitacora b USING trabajos t
+                       WHERE b.trabajo_id = t.id AND b.usuario = 'sistema' AND t.servicio = 'registro' AND t.etapa < %s
+                         AND b.texto LIKE %s""",
+                    (tc.ETAPA_REG_BOLETIN, "Etapa actualizada sola según el INPI: «Marca en boletín»%"))
 
     def _corregir_boletin(cur):
         """Una sola vez (24/11/2026): hasta ahora el sector «Publicación» del INPI se tomaba como «Marca en
