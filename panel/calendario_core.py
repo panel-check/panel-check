@@ -45,7 +45,10 @@ AUTH_URI = "https://accounts.google.com/o/oauth2/v2/auth"
 # Todos los eventos del calendario interno se guardan con este calendar_id.
 CAL_PANEL = "panel"
 # Link fijo para todas las reuniones por videollamada con clientes (decisión con Pame, 06/11/2026).
-LINK_REUNION_DEFECTO = "https://calendar.app.google/MEWNwFCPrYv1pYgz5"
+# Desde el 26/11/2026 es la sala de Meet del estudio: antes era la página de reservas de Google
+# (LINK_REUNION_VIEJO), que no sirve para entrar a la videollamada.
+LINK_REUNION_DEFECTO = "https://meet.google.com/pog-wjju-vki"
+LINK_REUNION_VIEJO = "https://calendar.app.google/MEWNwFCPrYv1pYgz5"
 
 
 class CalendarioError(Exception):
@@ -152,6 +155,9 @@ def crear_tablas(cur):
     # Agregadas con la modalidad (07/10/2026): 'meet' | 'llamada' | 'presencial' y el link de la videollamada.
     cur.execute("ALTER TABLE calendario_eventos ADD COLUMN IF NOT EXISTS modalidad TEXT")
     cur.execute("ALTER TABLE calendario_eventos ADD COLUMN IF NOT EXISTS meet_url TEXT")
+    # 26/11/2026: las reuniones que quedaron guardadas con el link de reservas pasan a la sala de Meet.
+    cur.execute("UPDATE calendario_eventos SET meet_url = %s WHERE meet_url = %s",
+                (LINK_REUNION_DEFECTO, LINK_REUNION_VIEJO))
     # Mail de la persona a la que se le avisa (para poder avisarle también si después se cambia la fecha u hora).
     cur.execute("ALTER TABLE calendario_eventos ADD COLUMN IF NOT EXISTS email_aviso TEXT")
     # Recordatorios / seguimientos (08/10/2026): eventos de «todo el día».
