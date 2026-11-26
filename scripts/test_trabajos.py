@@ -373,9 +373,22 @@ class TomaIntervencion(unittest.TestCase):
                  {"tipo": "movimiento", "texto": pre + "Recibo de Ingreso — Escritos de Marcas"},
                  {"tipo": "movimiento", "texto": "Nuevo movimiento en el expediente: 25/11/2026 · Otros — Poder"}]
         out = [f["texto"].replace(pre, "") for f in ni.novedades_sin_repetir(filas)]
-        self.assertEqual(out, ["Toma Intervención — TOMA INTERVENCIÓN", "Formulario", "Otros — Poder",
+        self.assertEqual(out, ["Toma Intervención — TOMA INTERVENCIÓN", "Otros — Poder",
                                "Recibo de Ingreso — Escritos de Marcas",
                                "Nuevo movimiento en el expediente: 25/11/2026 · Otros — Poder"])
+
+    def test_sin_formulario_y_contestacion_unica(self):
+        import notificaciones_inpi as ni
+        pre = "Nuevo movimiento en el expediente: 13/11/2026 · "
+        filas = [{"tipo": "movimiento", "texto": pre + "Otros — Escrito de contestación de la vista"},
+                 {"tipo": "movimiento", "texto": pre + "Formulario"},
+                 {"tipo": "movimiento", "texto": pre + "Formulario — "},
+                 {"tipo": "movimiento", "texto": pre + "Recibo de Ingreso — Contestacion de vistas"},
+                 {"tipo": "movimiento", "texto": pre + "Formulario de cambio de domicilio"},
+                 {"tipo": "vista", "texto": "Formulario"}]
+        out = [f["texto"].replace(pre, "") for f in ni.novedades_sin_repetir(filas)]
+        self.assertEqual(out, ["Otros — Escrito de contestación de la vista", "Formulario de cambio de domicilio",
+                               "Formulario"])
 
     def test_etapa_automatica(self):
         for sid in tc.SERVICIOS_TOMA:
