@@ -734,9 +734,18 @@ document.addEventListener("change", (ev) => {
 });
 
 // ── Menciones en las notas (26/11/2026): «@» + usuario le avisa en su campanita 🔔 ──────────────
-const menciones = { usuarios: [], yo: null, lista: [], sel: 0 };
-fetch("/api/trabajos-usuarios", { credentials: "include" }).then((r) => (r.ok ? r.json() : null))
-  .then((d) => { if (d) { menciones.usuarios = d.usuarios || []; menciones.yo = d.yo; } }).catch(() => {});
+const menciones = { usuarios: [], yo: null, lista: [], sel: 0, cargado: false, pidiendo: null };
+function cargarUsuariosMencion() {
+  if (!menciones.pidiendo) {
+    menciones.pidiendo = fetch("/api/trabajos-usuarios", { credentials: "include" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (d) { menciones.usuarios = d.usuarios || []; menciones.yo = d.yo; menciones.cargado = true; } })
+      .catch(() => {})
+      .finally(() => { menciones.pidiendo = null; });
+  }
+  return menciones.pidiendo;
+}
+cargarUsuariosMencion();
 
 function cajaMenciones() {
   const form = $("form-nota");
@@ -752,15 +761,25 @@ function cajaMenciones() {
 }
 function cerrarMenciones() { const c = $("form-nota")?.querySelector(".sg-menciones"); if (c) c.hidden = true; menciones.lista = []; }
 function abiertoMenciones() { return menciones.lista.length > 0; }
+function visibleMenciones() { const c = $("form-nota")?.querySelector(".sg-menciones"); return !!(c && !c.hidden); }
 function buscarMencion(caja) {
   const antes = caja.value.slice(0, caja.selectionStart);
   const m = antes.match(/(^|[\s(¿¡,;:])@([\w.\-]*)$/);
   if (!m) return cerrarMenciones();
   const q = m[2].toLowerCase();
-  menciones.lista = menciones.usuarios.filter((u) => u.toLowerCase().startsWith(q));
-  if (!menciones.lista.length) return cerrarMenciones();
-  menciones.sel = Math.min(menciones.sel, menciones.lista.length - 1);
+  // Si la lista de usuarios todavía no llegó (o falló), se pide de nuevo y se vuelve a buscar.
+  if (!menciones.cargado) { cargarUsuariosMencion().then(() => { if (menciones.cargado && document.activeElement === caja) buscarMencion(caja); }); }
+  // Primero los que empiezan con lo escrito («@pa» → pame), después los que lo contienen.
+  const empiezan = menciones.usuarios.filter((u) => u.toLowerCase().startsWith(q));
+  const contienen = menciones.usuarios.filter((u) => !u.toLowerCase().startsWith(q) && u.toLowerCase().includes(q));
+  menciones.lista = [...empiezan, ...contienen];
   const c = cajaMenciones();
+  if (!menciones.lista.length) {
+    c.innerHTML = `<li class="ayuda">${menciones.cargado ? (q ? `Ningún usuario coincide con «${esc(q)}»` : "No hay otros usuarios en el panel") : "Buscando usuarios…"}</li>`;
+    c.hidden = false;
+    return;
+  }
+  menciones.sel = Math.min(menciones.sel, menciones.lista.length - 1);
   c.innerHTML = menciones.lista.map((u, i) => `<li role="option" data-mencion="${esc(u)}" class="${i === menciones.sel ? "sel" : ""}"><span class="ini">${esc(u[0].toUpperCase())}</span>@${esc(u)}</li>`).join("")
     + '<li class="ayuda">Le llega en su campanita 🔔</li>';
   c.hidden = false;
@@ -776,7 +795,11 @@ function elegirMencion(u) {
 }
 document.addEventListener("input", (ev) => { if (ev.target.id === "nota-texto") buscarMencion(ev.target); });
 document.addEventListener("keydown", (ev) => {
-  if (ev.target.id !== "nota-texto" || !abiertoMenciones()) return;
+  if (ev.target.id !== "nota-texto" || !visibleMenciones()) return;
+  if (!abiertoMenciones()) {   // solo el cartel de ayuda: Escape lo cierra, lo demás sigue normal
+    if (ev.key === "Escape") { ev.preventDefault(); ev.stopPropagation(); cerrarMenciones(); }
+    return;
+  }
   if (ev.key === "ArrowDown" || ev.key === "ArrowUp") {
     ev.preventDefault();
     const n = menciones.lista.length;
