@@ -421,6 +421,24 @@ function linkActa(acta) {
   return `<a href="#" class="sg-link-acta" data-acta-inpi="${esc(acta)}" title="Abrir el acta en el INPI">${esc(acta)} ↗</a>`;
 }
 
+// Texto para pegar en el mail: «MÁS (clase 36, acta 4790681, MIXTA)». Si el trabajo tiene varias actas,
+// todas juntas («… y …»); si todavía no hay datos del INPI, la marca con el acta que haya.
+function textoParaCopiar(d) {
+  const t = d.trabajo, sols = d.solicitudes || [];
+  const propias = new Set([t.acta_efectiva, ...(t.actas_extra || [])].filter(Boolean));
+  let elegidas = sols.filter((m) => propias.has(m.acta));
+  if (!elegidas.length) elegidas = sols.filter((m) => m.con_problema);
+  if (!elegidas.length && !propias.size) elegidas = sols;
+  const textos = elegidas.map((m) => m.para_copiar).filter(Boolean);
+  if (!textos.length && d.expediente?.para_copiar) return d.expediente.para_copiar;
+  if (!textos.length) return t.acta_efectiva ? `${t.marca} (acta ${t.acta_efectiva})` : t.marca;
+  return textos.length === 1 ? textos[0] : `${textos.slice(0, -1).join(", ")} y ${textos[textos.length - 1]}`;
+}
+
+function botonCopiar(texto) {
+  return `<button type="button" class="sg-copiar" data-copiar="${esc(texto)}" title="Copiar «${esc(texto)}»" aria-label="Copiar para el mail">⧉</button>`;
+}
+
 // Todas las solicitudes de la marca (una por clase). Primero la que tiene la vista u oposición por la
 // que contrataron; la principal (la del expediente de arriba) va marcada.
 function listaSolicitudes(d) {
@@ -435,7 +453,7 @@ function listaSolicitudes(d) {
       : `<span class="sg-sol-estado">${esc(m.estado_tramite || m.ultimo_movimiento || (m.tuvo_vista ? "Con vista" : m.tuvo_oposicion ? "Con oposición" : "Sin vista ni oposición"))}</span>`;
     return `<li class="${m.con_problema ? "con-problema" : ""}">
       <div class="izq"><span>${linkActa(m.acta)}${m.acta === t.acta_efectiva ? ' <small class="sg-sol-ppal">principal</small>' : ""}
-        <button type="button" class="sg-copiar" data-copiar="${esc(m.para_copiar)}" title="Copiar «${esc(m.para_copiar)}»" aria-label="Copiar para el mail">⧉</button></span>
+        ${botonCopiar(m.para_copiar)}</span>
         <small>${[m.clase ? `cl. ${m.clase}` : "", m.tipo_texto ? m.tipo_texto.toLowerCase() : "", m.fecha_presentacion ? `presentada ${fecha(m.fecha_presentacion)}` : ""].filter(Boolean).join(" · ")}</small></div>
       ${estado}</li>`;
   };
@@ -462,7 +480,7 @@ function bloqueExpediente(d) {
     const m = ex.marca;
     const celda = (k, v) => (v ? `<div><span>${k}</span><b>${esc(v)}</b></div>` : "");
     datos = `<div class="sg-exp-datos">
-      <div><span>Acta</span><b>${linkActa(m.acta)}${ex.automatica ? ` <small class="sg-quieto">(vinculada sola por el nombre)</small>` : ""}</b>
+      <div><span>Acta</span><b>${linkActa(m.acta)}${ex.para_copiar ? botonCopiar(ex.para_copiar) : ""}${ex.automatica ? ` <small class="sg-quieto">(vinculada sola por el nombre)</small>` : ""}</b>
         <small class="sg-acta-links"><a href="#" data-grilla-inpi="${esc(m.acta)}">Grilla digital ↗</a></small></div>
       ${celda("Estado del trámite", m.estado_tramite)}
       ${celda("Último movimiento", [m.ultimo_movimiento, m.ultimo_movimiento_fecha && fecha(m.ultimo_movimiento_fecha)].filter(Boolean).join(" · "))}
@@ -523,6 +541,7 @@ function pintarFicha(d) {
         ${enlace(t.carpeta_drive, "📁 Carpeta Drive")}
         ${enlace(t.comprobante, "🧾 Comprobante")}
         <button type="button" class="sg-btn sg-btn-mini" data-armar-mail title="Armar un mail o WhatsApp con una plantilla y los datos de este trabajo ya completados">✉️ Mail</button>
+        <button type="button" class="sg-btn sg-btn-suave sg-btn-mini" data-copiar="${esc(textoParaCopiar(d))}" data-etiqueta="⧉ Copiar marca" title="Copiar «${esc(textoParaCopiar(d))}» para pegar en un mail">⧉ Copiar marca</button>
         <a class="sg-btn sg-btn-suave sg-btn-mini" href="/mails?tab=clientes" target="_blank" rel="noopener" title="Plantillas para clientes (en Mails)">📋 Plantillas</a>
       </div>
     </div>
@@ -757,9 +776,10 @@ document.addEventListener("click", async (ev) => {
     ev.preventDefault();
     try {
       await navigator.clipboard.writeText(cp.dataset.copiar);
-      cp.textContent = "✓"; cp.classList.add("ok");
+      const etiqueta = cp.dataset.etiqueta || "⧉";
+      cp.textContent = cp.dataset.etiqueta ? "✓ Copiado" : "✓"; cp.classList.add("ok");
       mostrarAviso(`Copiado: ${cp.dataset.copiar}`, "ok");
-      setTimeout(() => { cp.textContent = "⧉"; cp.classList.remove("ok"); }, 1500);
+      setTimeout(() => { cp.textContent = etiqueta; cp.classList.remove("ok"); }, 1500);
     } catch { mostrarAviso("No se pudo copiar (el navegador no dio permiso).", "aviso"); }
     return;
   }

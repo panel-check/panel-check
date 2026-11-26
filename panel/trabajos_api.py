@@ -642,7 +642,10 @@ def crear_router(verificar_login, conexion) -> APIRouter:
                 import notificaciones_inpi as ni   # el INPI carga dos veces la toma de intervención y el poder
                 expediente = {"acta": t["acta_efectiva"], "automatica": bool(t.get("acta_auto")),
                               "en_cartera": bool(marca), "marca": marca,
-                              "novedades": ni.novedades_sin_repetir(cur.fetchall())}
+                              "novedades": ni.novedades_sin_repetir(cur.fetchall()),
+                              # «MÁS (clase 36, acta 4790681, MIXTA)», para el botón de copiar al lado del acta
+                              "para_copiar": tc.texto_solicitud(t.get("marca") or (marca or {}).get("denominacion"),
+                                                                marca) if marca else None}
             cur.execute(
                 "SELECT id, fecha, texto, usuario, creado_en FROM trabajos_bitacora "
                 "WHERE trabajo_id = %s ORDER BY fecha DESC, id DESC", (tid,))

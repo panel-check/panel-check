@@ -344,7 +344,8 @@ def filtrar_movimientos(filas: list[dict]) -> list[dict]:
 # presentación trae su «Recibo de Ingreso — …» aparte): se deja una sola línea por acta, avance y fecha.
 AVANCES = [
     # (clave, palabras a buscar en el texto sin tildes, título, ícono)
-    ("contestacion_vista", ("contestacion de vista",), "Se contestó la vista", "✍️"),
+    ("contestacion_vista", ("contestacion de vista", "contestacion de vistas", "contestacion de la vista",
+                            "contestacion vista"), "Se contestó la vista", "✍️"),
     ("toma_intervencion", ("toma de intervencion", "toma intervencion"), "Se tomó intervención", "🙋"),
     ("poder", ("poder",), "Se presentó el poder", "📝"),
 ]
@@ -430,11 +431,25 @@ def _es_recibo(texto: str) -> bool:
     return "recibo de ingreso" in _sin_tildes(texto or "")
 
 
+def es_solo_formulario(tipo: str, texto: str) -> bool:
+    """«Nuevo movimiento en el expediente: 13/11/2026 · Formulario» (sin nada más). Pedido del 26/11/2026: el
+    INPI carga un «Formulario» con cada presentación (contestación de vista, poder, toma de intervención), así
+    que no dice nada que no esté ya en otra línea."""
+    if tipo != "movimiento":
+        return False
+    t = _sin_tildes(_fechas_inpi(texto or ""))
+    t = _re.sub(r"^.*?expediente:\s*", "", t)
+    t = _re.sub(r"^\d{2}/\d{2}/\d{4}\s*[·\-—]?\s*", "", t).strip(" ·—-")
+    return _re.fullmatch(r"formulario(\s*[—\-]\s*(formulario)?)?", t) is not None
+
+
 def novedades_sin_repetir(filas: list[dict]) -> list[dict]:
     """Las novedades (dicts con «tipo» y «texto») sin repetidos, en el mismo orden. De un avance repetido
-    queda el movimiento y no su recibo."""
+    queda el movimiento y no su recibo. Los «Formulario» sueltos no se muestran (es_solo_formulario)."""
     salida, pos = [], {}
     for f in filas:
+        if es_solo_formulario(f.get("tipo"), f.get("texto")):
+            continue
         k = clave_novedad(f.get("tipo"), f.get("texto"))
         if k not in pos:
             pos[k] = len(salida)
