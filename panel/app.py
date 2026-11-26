@@ -4492,7 +4492,7 @@ app.include_router(buscador_inpi_api.crear_router(verificar_login, conexion))
 app.include_router(accesos_api.crear_router(verificar_login, conexion, CLAVES_ACCESO_RAPIDO, _contar_consulta))
 
 # Pestaña "Mails": cuenta de Resend, remitente, reply-to y plantillas de cada mail.
-def _crm_registrar_mail(cur, acta: str, usuario: str, texto: str):
+def _crm_registrar_mail(cur, acta: str, usuario: str, texto: str, revertir_gestor: bool = True):
     """Deja un mail mandado desde el panel como gestión «Mail» del titular en
     el CRM y marca el acta como contactada; si el lead estaba en «nuevo», pasa
     a «contactado» (mismo criterio que registrar una gestión a mano).
@@ -4501,10 +4501,13 @@ def _crm_registrar_mail(cur, acta: str, usuario: str, texto: str):
     con_gestor_manual, o automático por representacion_posterior_oposicion),
     el mail efectivamente mandado la desmarca sola y la vuelve a lead -- pedido
     el 14/10/2026: si ya le mandamos un mail, no tiene sentido seguir
-    mostrándola como «con agente»."""
+    mostrándola como «con agente».
+
+    revertir_gestor=False: mails a clientes (p. ej. «Confirmación de desistimiento
+    por oposición», 26/11/2026), donde el apoderado es el estudio: no se toca."""
     cur.execute("UPDATE marcas SET contactado = true, contactado_en = COALESCE(contactado_en, now()) WHERE acta = %s", (acta,))
     _propagar_contactado_misma_marca(cur, [acta], True)
-    revertidas = _revertir_con_gestor_manual(cur, [acta]) + _revertir_apoderado_automatico(cur, [acta])
+    revertidas = (_revertir_con_gestor_manual(cur, [acta]) + _revertir_apoderado_automatico(cur, [acta])) if revertir_gestor else 0
     _asegurar_claves(cur)
     cur.execute(f"WITH {_cte_marcas_con_clave(filtrar_actas=True)} SELECT clave FROM mk", ([acta],))
     fila = cur.fetchone()
