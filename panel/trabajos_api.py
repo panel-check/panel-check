@@ -7,7 +7,8 @@ API de la pantalla Seguimientos (/seguimientos): trabajos puntuales de cada clie
   PUT    /api/trabajos/{id}                cambiar datos, etapa, estado, plazos
   DELETE /api/trabajos/{id}                borrar
   POST   /api/trabajos/{id}/bitacora       agregar una nota a la bitácora
-  DELETE /api/trabajos/{id}/bitacora/{bid} borrar una nota
+  DELETE /api/trabajos/{id}/bitacora/{bid} borrar una nota (y sus menciones)
+  GET    /api/trabajos-usuarios            usuarios del panel para arrobar en una nota («@pame»)
   POST   /api/trabajos/{id}/buscar-acta    buscar el acta en la base y, si no, en vivo en el INPI
 
 Vista y oposición (desde el 19/11/2026): la marca ya tiene acta con una vista o una oposición, así que se
@@ -792,9 +793,22 @@ def crear_router(verificar_login, conexion) -> APIRouter:
                 "INSERT INTO trabajos_bitacora (trabajo_id, fecha, texto, usuario) VALUES (%s, %s, %s, %s) "
                 "RETURNING id, fecha, texto, usuario, creado_en", (tid, fecha, texto, usuario))
             nota = cur.fetchone()
+            # @usuario en la nota → aviso en su campanita 🔔 (26/11/2026)
+            cur.execute("SELECT usuario FROM usuarios_panel WHERE activo")
+            para = tc.menciones_en(texto, [r["usuario"] for r in cur.fetchall()], autor=usuario)
+            for u in para:
+                cur.execute("INSERT INTO trabajos_menciones (nota_id, trabajo_id, para, de) VALUES (%s, %s, %s, %s)",
+                            (nota["id"], tid, u, usuario))
             cur.execute("UPDATE trabajos SET modificado_en = now(), modificado_por = %s WHERE id = %s", (usuario, tid))
             conn.commit()
-            return {"nota": nota}
+            return {"nota": nota, "mencionados": para}
+
+    @router.get("/api/trabajos-usuarios")
+    def usuarios_para_mencionar(usuario: str = Depends(verificar_login)):
+        """Para el autocompletar de «@» en las notas: los usuarios activos, menos el que escribe."""
+        with conexion() as conn, rcur(conn) as cur:
+            cur.execute("SELECT usuario FROM usuarios_panel WHERE activo ORDER BY usuario")
+            return {"usuarios": [r["usuario"] for r in cur.fetchall() if r["usuario"] != usuario], "yo": usuario}
 
     @router.delete("/api/trabajos/{tid}/bitacora/{bid}")
     def borrar_nota(tid: int, bid: int, _: str = Depends(verificar_login)):

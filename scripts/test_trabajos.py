@@ -390,6 +390,15 @@ class TomaIntervencion(unittest.TestCase):
         self.assertEqual(out, ["Otros — Escrito de contestación de la vista", "Formulario de cambio de domicilio",
                                "Formulario"])
 
+    def test_menciones_en_notas(self):
+        us = ["pame", "tomi", "Pame.G"]
+        self.assertEqual(tc.menciones_en("Hola @Pame, mirá esto. @tomi", us, autor="tomi"), ["pame"])
+        self.assertEqual(tc.menciones_en("Le escribí a x@pame.com", us), [])
+        self.assertEqual(tc.menciones_en("@pame.g ok", us), ["Pame.G"])
+        self.assertEqual(tc.menciones_en("Gracias @pame.", us), ["pame"])
+        self.assertEqual(tc.menciones_en("@pamela no existe", us), [])
+        self.assertEqual(tc.menciones_en("@pame @PAME", us), ["pame"])
+
     def test_etapa_automatica(self):
         for sid in tc.SERVICIOS_TOMA:
             s = tc.POR_ID[sid]

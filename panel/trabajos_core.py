@@ -240,7 +240,31 @@ TABLAS = [
         creado_en   TIMESTAMPTZ NOT NULL DEFAULT now()
     )""",
     "CREATE INDEX IF NOT EXISTS idx_trabajos_bitacora ON trabajos_bitacora(trabajo_id, fecha DESC)",
+    # Menciones en las notas (26/11/2026): «@pame» en una nota de la bitácora le avisa en su campanita 🔔.
+    """CREATE TABLE IF NOT EXISTS trabajos_menciones (
+        id          BIGSERIAL PRIMARY KEY,
+        nota_id     BIGINT NOT NULL REFERENCES trabajos_bitacora(id) ON DELETE CASCADE,
+        trabajo_id  INTEGER NOT NULL REFERENCES trabajos(id) ON DELETE CASCADE,
+        para        TEXT NOT NULL,
+        de          TEXT,
+        creado_en   TIMESTAMPTZ NOT NULL DEFAULT now()
+    )""",
+    "CREATE INDEX IF NOT EXISTS idx_trabajos_menciones ON trabajos_menciones(para, creado_en DESC)",
 ]
+
+
+def menciones_en(texto, usuarios, autor=None):
+    """Usuarios del panel arrobados en una nota («@pame», sin importar mayúsculas), sin repetir y sin el autor.
+    Solo cuenta si la arroba no está pegada a una palabra (un mail como «x@pame.com» no es mención)."""
+    import re as _re
+    salida = []
+    for u in sorted({x for x in usuarios if x}, key=len, reverse=True):
+        if autor and u.lower() == autor.lower():
+            continue
+        if _re.search(r"(?<![\w@.])@" + _re.escape(u) + r"(?![\w@]|[.\-]\w)", texto or "", _re.IGNORECASE) \
+                and u not in salida:
+            salida.append(u)
+    return sorted(salida)
 
 # Carga inicial (18/11/2026): los trabajos que estaban en la hoja CLIENTES de la «Planilla
 # Pagos». El cliente sale del link «Ficha de cliente» de cada fila (panel/clientes?cliente=N).

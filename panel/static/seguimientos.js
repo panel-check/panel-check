@@ -387,7 +387,13 @@ function textoNota(texto) {
   const t = String(texto || "");
   const largo = t.length > 260 || t.split("\n").length > 4;
   // *texto* → negrita (como en WhatsApp). Se aplica después de escapar, así no se puede inyectar HTML.
-  const html = esc(t).replace(/\*([^*\n]+?)\*/g, "<b>$1</b>");
+  let html = esc(t).replace(/\*([^*\n]+?)\*/g, "<b>$1</b>");
+  // «@pame»: las menciones a usuarios del panel se resaltan (26/11/2026)
+  const todos = [...(menciones.usuarios || []), menciones.yo].filter(Boolean);
+  if (todos.length) {
+    const alt = todos.sort((a, b) => b.length - a.length).map((u) => u.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|");
+    html = html.replace(new RegExp(`(^|[^\\w@.])@(${alt})(?![\\w@]|[.\\-]\\w)`, "gi"), '$1<span class="sg-mencion">@$2</span>');
+  }
   return `<div class="sg-nota-txt${largo ? " plegada" : ""}">${html}</div>${largo ? '<button type="button" class="sg-ver-mas" data-ver-mas>Ver más</button>' : ""}`;
 }
 
@@ -492,7 +498,7 @@ function bloqueExpediente(d) {
     </div>`;
   }
   return `<div class="sg-bloque"><h3>📂 Expediente y bitácora</h3>${datos}${listaSolicitudes(d)}
-    <form class="sg-nota-nueva" id="form-nota"><textarea id="nota-texto" rows="1" placeholder="Agregar una nota…" title="Enter: salto de línea · Cmd/Ctrl + Enter: guardar · *texto* en negrita" maxlength="50000"></textarea>
+    <form class="sg-nota-nueva" id="form-nota"><textarea id="nota-texto" rows="1" placeholder="Agregar una nota… (@ para avisarle a alguien)" title="Enter: salto de línea · Cmd/Ctrl + Enter: guardar · *texto* en negrita · @usuario le avisa en su campanita" maxlength="50000"></textarea>
       <button type="submit" class="sg-btn sg-btn-mini">Agregar</button></form>
     ${lineaTiempo(d)}</div>`;
 }
@@ -727,6 +733,71 @@ document.addEventListener("change", (ev) => {
   guardar({ [campo]: valor }, ["servicio", "notificacion", "acta", "contratacion", "carpeta_drive", "comprobante"].includes(campo));
 });
 
+// ── Menciones en las notas (26/11/2026): «@» + usuario le avisa en su campanita 🔔 ──────────────
+const menciones = { usuarios: [], yo: null, lista: [], sel: 0 };
+fetch("/api/trabajos-usuarios", { credentials: "include" }).then((r) => (r.ok ? r.json() : null))
+  .then((d) => { if (d) { menciones.usuarios = d.usuarios || []; menciones.yo = d.yo; } }).catch(() => {});
+
+function cajaMenciones() {
+  const form = $("form-nota");
+  if (!form) return null;
+  let c = form.querySelector(".sg-menciones");
+  if (!c) {
+    c = document.createElement("ul");
+    c.className = "sg-menciones";
+    c.setAttribute("role", "listbox");
+    form.appendChild(c);
+  }
+  return c;
+}
+function cerrarMenciones() { const c = $("form-nota")?.querySelector(".sg-menciones"); if (c) c.hidden = true; menciones.lista = []; }
+function abiertoMenciones() { return menciones.lista.length > 0; }
+function buscarMencion(caja) {
+  const antes = caja.value.slice(0, caja.selectionStart);
+  const m = antes.match(/(^|[\s(¿¡,;:])@([\w.\-]*)$/);
+  if (!m) return cerrarMenciones();
+  const q = m[2].toLowerCase();
+  menciones.lista = menciones.usuarios.filter((u) => u.toLowerCase().startsWith(q));
+  if (!menciones.lista.length) return cerrarMenciones();
+  menciones.sel = Math.min(menciones.sel, menciones.lista.length - 1);
+  const c = cajaMenciones();
+  c.innerHTML = menciones.lista.map((u, i) => `<li role="option" data-mencion="${esc(u)}" class="${i === menciones.sel ? "sel" : ""}"><span class="ini">${esc(u[0].toUpperCase())}</span>@${esc(u)}</li>`).join("")
+    + '<li class="ayuda">Le llega en su campanita 🔔</li>';
+  c.hidden = false;
+}
+function elegirMencion(u) {
+  const caja = $("nota-texto");
+  const pos = caja.selectionStart;
+  const antes = caja.value.slice(0, pos).replace(/@([\w.\-]*)$/, `@${u} `);
+  caja.value = antes + caja.value.slice(pos);
+  caja.focus();
+  caja.setSelectionRange(antes.length, antes.length);
+  cerrarMenciones();
+}
+document.addEventListener("input", (ev) => { if (ev.target.id === "nota-texto") buscarMencion(ev.target); });
+document.addEventListener("keydown", (ev) => {
+  if (ev.target.id !== "nota-texto" || !abiertoMenciones()) return;
+  if (ev.key === "ArrowDown" || ev.key === "ArrowUp") {
+    ev.preventDefault();
+    const n = menciones.lista.length;
+    menciones.sel = (menciones.sel + (ev.key === "ArrowDown" ? 1 : n - 1)) % n;
+    buscarMencion(ev.target);
+  } else if ((ev.key === "Enter" && !ev.metaKey && !ev.ctrlKey) || ev.key === "Tab") {
+    ev.preventDefault();
+    ev.stopImmediatePropagation();
+    elegirMencion(menciones.lista[menciones.sel]);
+  } else if (ev.key === "Escape") {
+    ev.preventDefault();
+    ev.stopPropagation();
+    cerrarMenciones();
+  }
+}, true);
+document.addEventListener("mousedown", (ev) => {
+  const li = ev.target.closest("[data-mencion]");
+  if (li) { ev.preventDefault(); elegirMencion(li.dataset.mencion); }
+  else if (!ev.target.closest(".sg-menciones") && ev.target.id !== "nota-texto") cerrarMenciones();
+});
+
 document.addEventListener("submit", async (ev) => {
   if (ev.target.id === "form-nota") {
     ev.preventDefault();
@@ -736,8 +807,10 @@ document.addEventListener("submit", async (ev) => {
     const boton = ev.target.querySelector("button[type=submit]");
     boton.disabled = true;
     try {
-      await pedir(`/api/trabajos/${sg.abierto}/bitacora`, { method: "POST", body: { texto } });
+      const r = await pedir(`/api/trabajos/${sg.abierto}/bitacora`, { method: "POST", body: { texto } });
       caja.value = "";
+      cerrarMenciones();
+      if (r && (r.mencionados || []).length) mostrarAviso(`Le avisamos en la campanita a ${r.mencionados.map((u) => "@" + u).join(", ")}.`, "ok");
       abrirFicha(sg.abierto);
     } catch (e) {
       boton.disabled = false;   // el texto queda en la caja para reintentar

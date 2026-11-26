@@ -334,3 +334,13 @@
 .sg-card .sg-contra { font-size: 12.5px; color: var(--sg-color, #ea580c); margin-top: 3px; }
 .sg-f-contra { margin-top: 4px; font-size: 13.5px; color: var(--sg-color, #ea580c); }
 .sg-f-contra small { color: var(--gris, #6b7280); }
+
+/* Menciones en las notas (26/11/2026) */
+.sg-nota-nueva { position: relative; }
+.sg-menciones { position: absolute; left: 0; top: calc(100% + 4px); z-index: 30; min-width: 200px; margin: 0; padding: 4px; list-style: none; background: #fff; border: 1px solid var(--borde-control, #d1d5db); border-radius: 10px; box-shadow: 0 8px 24px rgba(15, 23, 42, .12); }
+.sg-menciones[hidden] { display: none; }
+.sg-menciones li[data-mencion] { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 7px; cursor: pointer; font-size: 14px; }
+.sg-menciones li[data-mencion].sel, .sg-menciones li[data-mencion]:hover { background: #eef2ff; }
+.sg-menciones .ini { width: 22px; height: 22px; border-radius: 50%; background: #2563eb; color: #fff; font-size: 11px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; }
+.sg-menciones .ayuda { padding: 4px 8px 2px; font-size: 11.5px; color: #6b7280; }
+.sg-mencion { color: #1d4ed8; background: #eef2ff; border-radius: 4px; padding: 0 3px; font-weight: 600; }
