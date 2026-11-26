@@ -868,14 +868,14 @@
 
   function campanaAbierta() { return !!(panelCampana && panelCampana.classList.contains("abierto")); }
 
-  function pintarCampana(n, titulos, movimientos) {
+  function pintarCampana(n, titulos, movimientos, menciones) {
     if (!campana) return;
     const badge = campana.querySelector(".nav-badge");
     badge.textContent = n > 0 ? (n > 9 ? "9+" : String(n)) : "";
     campana.classList.toggle("con-nuevos", n > 0);
     campana.title = n > 0
-      ? `Notificaciones — ${n} nueva${n !== 1 ? "s" : ""}${titulos ? ` · ${titulos} título${titulos !== 1 ? "s" : ""}` : ""}${movimientos ? ` · ${movimientos} movimiento${movimientos !== 1 ? "s" : ""} de clientes` : ""}`
-      : "Notificaciones del INPI y movimientos de clientes";
+      ? `Notificaciones — ${n} nueva${n !== 1 ? "s" : ""}${titulos ? ` · ${titulos} título${titulos !== 1 ? "s" : ""}` : ""}${movimientos ? ` · ${movimientos} movimiento${movimientos !== 1 ? "s" : ""} de clientes` : ""}${menciones ? ` · ${menciones} mención${menciones !== 1 ? "es" : ""}` : ""}`
+      : "Notificaciones del INPI, movimientos de clientes y menciones";
     campana.setAttribute("aria-label", campana.title);
   }
 
@@ -886,7 +886,7 @@
       const r = await fetch("/api/notificaciones-inpi/resumen", { credentials: "include" });
       if (!r.ok) return;
       const d = await r.json();
-      pintarCampana(d.nuevas || 0, d.titulos || 0, d.movimientos || 0);
+      pintarCampana(d.nuevas || 0, d.titulos || 0, d.movimientos || 0, d.menciones || 0);
     } catch (_) { /* sin red: la próxima vuelta */ }
     finally { consultandoCampana = false; }
   }
@@ -909,6 +909,19 @@
   }
 
   function itemCampana(n) {
+    if (n.origen === "men") {   // «@usuario» en una nota de Seguimientos (26/11/2026)
+      const link = `/seguimientos?trabajo=${encodeURIComponent(n.trabajo_id)}`;
+      return `<li class="nc-item men${n.nueva ? " nueva" : ""}">
+      <span class="nc-ico" aria-hidden="true">💬</span>
+      <div class="nc-cuerpo">
+        <div class="nc-l1"><strong>${esc(n.de)} te mencionó</strong>${n.nueva ? '<span class="nc-nueva">nueva</span>' : ""}<span class="nc-fecha">${fechaCorta(n.fecha)}</span></div>
+        <div class="nc-l2"><a href="${link}" title="Abrir el trabajo en Seguimientos">${esc(n.marca || "Trabajo")}</a> · ${esc(n.servicio || "")}</div>
+        <div class="nc-texto nc-mencion">${esc(n.texto)}</div>
+        ${n.cliente ? `<div class="nc-l3">${esc(n.cliente)}</div>` : ""}
+      </div>
+      <div class="nc-acciones"><a class="nc-pdf" href="${link}" title="Abrir la nota en Seguimientos">Ver</a></div>
+    </li>`;
+    }
     const marca = n.marca ? esc(n.marca) : `Acta ${esc(n.acta)}`;
     const clase = n.clase ? ` <span class="nc-clase">cl. ${esc(n.clase)}</span>` : "";
     const quien = n.cliente
@@ -970,6 +983,7 @@
       </div>
       <div class="nc-filtros" role="tablist">
         <button type="button" data-filtro="" class="activo">Todas</button>
+        <button type="button" data-filtro="origen=men">💬 Menciones</button>
         <button type="button" data-filtro="origen=mov">📂 Movimientos de clientes</button>
         <button type="button" data-filtro="origen=inpi">INPI</button>
         <button type="button" data-filtro="tipo=1">🏅 Títulos</button>

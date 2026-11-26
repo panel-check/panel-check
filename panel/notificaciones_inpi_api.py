@@ -1,6 +1,7 @@
 """Campanita 🔔 del encabezado: notificaciones del INPI a Pame (ver notificaciones_inpi.py) y, desde el
 19/11/2026 (pedido de Pame), los movimientos de las actas de clientes que guarda la revisión diaria de la cartera
-(tabla cartera_novedades).
+(tabla cartera_novedades). Desde el 26/11/2026 también las menciones: «@usuario» en una nota de un trabajo de
+Seguimientos (tabla trabajos_menciones) le aparece solo a ese usuario.
 
   GET  /api/notificaciones-inpi                 lista (las más nuevas primero) + cuáles son nuevas para mí
   GET  /api/notificaciones-inpi/resumen         cuántas nuevas tengo (el número de la campanita)
@@ -47,6 +48,26 @@ def disposicion(acta: str, marca, descargar: bool = True) -> str:
     ascii_ = unicodedata.normalize("NFKD", nombre).encode("ascii", "ignore").decode().replace('"', "")
     modo = "attachment" if descargar else "inline"
     return f'{modo}; filename="{ascii_}"; filename*=UTF-8\'\'{quote(nombre)}'
+
+
+SELECT_MENCIONES = """
+    SELECT mn.id, mn.trabajo_id, mn.de, mn.creado_en, b.texto, t.marca, t.servicio, t.cliente_id,
+           c.nombre AS cliente
+    FROM trabajos_menciones mn
+    JOIN trabajos_bitacora b ON b.id = mn.nota_id
+    JOIN trabajos t ON t.id = mn.trabajo_id
+    LEFT JOIN clientes c ON c.id = t.cliente_id
+    WHERE mn.para = %s"""
+
+
+def _mencion(f: dict) -> dict:
+    import trabajos_core as tc
+    texto = (f["texto"] or "").strip()
+    return {"origen": "men", "id": f["id"], "trabajo_id": f["trabajo_id"], "de": f["de"] or "alguien",
+            "marca": f["marca"], "cliente": f["cliente"], "cliente_id": f["cliente_id"],
+            "servicio": (tc.POR_ID.get(f["servicio"]) or {}).get("nombre", f["servicio"]),
+            "texto": texto[:400] + ("…" if len(texto) > 400 else ""), "icono": "💬",
+            "fecha": f["creado_en"].isoformat(), "_creado": f["creado_en"]}
 
 
 def crear_router(verificar_login, conexion) -> APIRouter:
@@ -102,13 +123,25 @@ def crear_router(verificar_login, conexion) -> APIRouter:
                         d["nueva"] = d["detectado_en"] > corte
                         d["fecha"] = d.pop("detectado_en").isoformat()
                         items.append(d)
+                if origen in ("", "men") and not tipo and not acta:
+                    try:
+                        cur.execute("SAVEPOINT men")
+                        cur.execute(SELECT_MENCIONES + " ORDER BY mn.creado_en DESC LIMIT %s", (usuario, limite))
+                        for f in cur.fetchall():
+                            d = _mencion(f)
+                            d["nueva"] = d.pop("_creado") > corte
+                            items.append(d)
+                        cur.execute("RELEASE SAVEPOINT men")
+                    except Exception as e:   # sin la tabla todavía (primer arranque): la campanita sigue andando
+                        cur.execute("ROLLBACK TO SAVEPOINT men")
+                        print(f"[campanita] menciones: {e}")
                 items.sort(key=lambda d: d.get("fecha") or "", reverse=True)
                 items = items[:limite]
                 cur.execute("""SELECT creado_en, metricas FROM registro_corridas
                                WHERE proceso = %s ORDER BY creado_en DESC LIMIT 1""", (WORKFLOW,))
                 u = cur.fetchone()
                 cur.execute("SELECT (SELECT count(*) FROM notificaciones_inpi) + (SELECT count(*) FROM cartera_novedades) AS n")  # solo para el mensaje de lista vacía
-                total = cur.fetchone()["n"]
+                total = cur.fetchone()["n"] + len([i for i in items if i.get("origen") == "men"])
         return {"items": items, "total": total,
                 "ultima_actualizacion": u["creado_en"].isoformat() if u else None,
                 "ultima_con_error": bool(u and (u["metricas"] or {}).get("error"))}
@@ -131,8 +164,17 @@ def crear_router(verificar_login, conexion) -> APIRouter:
                 # Movimientos: se cuentan solo los que la campanita muestra (mismo filtro que la lista).
                 cur.execute(ni.SELECT_MOVIMIENTOS + " AND nv.detectado_en > %s", (r["corte"],))
                 r["movimientos"] = len(ni.filtrar_movimientos(cur.fetchall()))
-        return {"nuevas": r["inpi"] + r["movimientos"], "inpi": r["inpi"], "titulos": r["titulos"],
-                "movimientos": r["movimientos"]}
+                r["menciones"] = 0
+                try:
+                    cur.execute("SAVEPOINT men")
+                    cur.execute("SELECT count(*) AS n FROM trabajos_menciones WHERE para = %s AND creado_en > %s",
+                                (usuario, r["corte"]))
+                    r["menciones"] = cur.fetchone()["n"]
+                    cur.execute("RELEASE SAVEPOINT men")
+                except Exception:
+                    cur.execute("ROLLBACK TO SAVEPOINT men")
+        return {"nuevas": r["inpi"] + r["movimientos"] + r["menciones"], "inpi": r["inpi"], "titulos": r["titulos"],
+                "movimientos": r["movimientos"], "menciones": r["menciones"]}
 
     @router.post("/api/notificaciones-inpi/visto")
     def marcar_visto(usuario: str = Depends(verificar_login)):
