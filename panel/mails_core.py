@@ -59,6 +59,10 @@ VARIABLES_PROSPECTO = {
     "marca": "Denominación de la marca",
     "acta": "Número de acta",
     "clase": "Clase de la solicitud",
+    "solicitud": "La solicitud como la citamos en los mails: «MARCA (clase N, acta N, TIPO)», p. ej. «MÁS (clase 36, acta 4790681, MIXTA)»",
+    "oponente": "Quién presentó la oposición (nombre del oponente), si está en el panel",
+    "marca_oponente": "La marca del oponente en la que se basa la oposición, si está en el panel",
+    "registro_oponente": "Número de registro de la marca del oponente, si está en el panel",
     "fecha": "Fecha de publicación en el Boletín (dd/mm/aaaa)",
     "honorarios": "Solo en el mail del presupuesto: honorarios (p. ej. «$180.000»)",
     "tasas": "Solo en el mail del presupuesto: valor de las tasas oficiales",
@@ -76,6 +80,10 @@ EJEMPLO_PROSPECTO = {
     "marca": "Luna Nueva",
     "acta": "4797123",
     "clase": "25",
+    "solicitud": "Luna Nueva (clase 25, acta 4797123, DENOMINATIVA)",
+    "oponente": "Empresa Ejemplo SA",
+    "marca_oponente": "LUNA",
+    "registro_oponente": "2.845.117",
     "honorarios": "$180.000",
     "tasas": "$40.569",
     "total": "$220.569",
@@ -234,6 +242,47 @@ Smarties Consultora
 Registro de Marcas Nacional e Internacional
 [www.smartiesconsultora.com.ar](https://www.smartiesconsultora.com.ar)
 WhatsApp: [+54 9 11 5589-0784](https://wa.me/""" + WHATSAPP_PAMELA + """)"""
+
+# «Confirmación de desistimiento por oposición»: copiada de la plantilla de Notion del mismo nombre
+# (Smarties + KOM → Procedimientos + Plantillas de mails, etapa 4. Seguimiento). Se completan solos el nombre,
+# la solicitud, el oponente y su marca/registro (si están en el panel; si no, quedan entre corchetes). Lo que
+# decide el estudio en cada caso (cantidad de oposiciones, chances, motivo, fecha límite y la alternativa
+# elegida) queda siempre entre corchetes para completarlo a mano antes de mandar.
+ASUNTO_DESISTIMIENTO_OPOSICION = "Marca {{marca}} – Oposiciones recibidas – Necesitamos tu confirmación"
+CUERPO_DESISTIMIENTO_OPOSICION = """{{destinatario}}, buenos días.
+
+Te escribo por la solicitud de la marca **{{solicitud}}**, que recibió [una oposición / N oposiciones] de {{oponente}}, titular de la marca {{marca_oponente}} (Registro N° {{registro_oponente}}).
+
+Analizamos el caso y, antes de avanzar, necesitamos que nos confirmes si querés desistir de la solicitud. Te explicamos qué pasa en cada caso para que puedas decidir.
+
+**1. Si desistís de la solicitud**
+
+- Presentamos el desistimiento ante el INPI y la solicitud queda abandonada. Las oposiciones pierden su objeto y el conflicto en el INPI termina.
+- No hay negociación, no se abre el procedimiento de oposición y no hay más costos para este expediente.
+- Se pierde la fecha de prioridad de esta solicitud y el desistimiento no se puede revertir. Si más adelante quisieras volver a pedir esta marca, habría que presentar una solicitud nueva, con fecha nueva, y podría recibir las mismas oposiciones.
+- Las tasas ya pagadas no se devuelven.
+- **Importante:** desistir no te habilita a seguir usando la marca. Si la seguís usando, {{oponente}} podría intimarte a que dejes de usarla, porque tiene un registro anterior. Por eso te recomendamos pensar en un cambio de marca o una variante distinta; podemos revisar su viabilidad antes de presentarla.
+
+**2. Si no desistís de la solicitud**
+
+La solicitud sigue en trámite y hay estos caminos posibles:
+
+- **Negociar con la oponente:** durante el plazo de negociación podemos pedirle que retire las oposiciones, sin condiciones o a cambio de un acuerdo de coexistencia (por ejemplo, limitando los productos o servicios de cada marca). Si acepta, la marca sigue hacia su concesión.
+- **Esperar a que la oponente ratifique:** cuando termina el plazo de negociación, el INPI intima a la oponente a ratificar las oposiciones. Si no las ratifica, se desestiman automáticamente y la marca sigue su trámite. A corto plazo es la opción más económica.
+- **Si la oponente ratifica:** se abre el Procedimiento Administrativo de Resolución de Oposiciones ante el INPI. Habría que presentar una defensa con argumentos y pruebas; después el INPI resuelve si las oposiciones tienen fundamento, y esa resolución se puede apelar ante la Justicia. Es un proceso más largo, formal y costoso. En nuestro análisis, las chances en este caso son [bajas / moderadas / altas] porque [motivo breve].
+- En cualquier etapa se puede seguir negociando un acuerdo con la oponente.
+
+**Lo que necesitamos de vos**
+
+Por favor, respondé este mail confirmando una de estas opciones:
+
+☐ **Acepto desistir** de la solicitud de la marca {{solicitud}}.
+
+☐ **No deseo desistir** y prefiero [negociar con la oponente / esperar a la ratificación / que conversemos las alternativas].
+
+Te pedimos la respuesta antes del [fecha], para poder actuar dentro de los plazos del trámite.
+
+Quedamos a disposición ante cualquier duda; si preferís, coordinamos una llamada."""
 
 ASUNTO_PRESUPUESTO_OPOSICION = "Presupuesto por la oposición a tu marca {{marca}}"
 CUERPO_PRESUPUESTO_OPOSICION = """Estimado/a {{nombre}}, muy buenas tardes.
@@ -450,6 +499,32 @@ CATALOGO = {
         "asunto": ASUNTO_VISTA,
         "cuerpo": CUERPO_VISTA,
         "editable": True,
+    },
+    "prospecto_desistimiento_oposicion": {
+        "grupo": "prospectos",
+        "nombre": "Confirmación de desistimiento por oposición",
+        "descripcion": "Mail al cliente cuya marca recibió oposiciones, para que confirme si desiste de la solicitud o sigue "
+                       "(explica qué pasa en cada caso, con las casillas «Acepto desistir» / «No deseo desistir» para que "
+                       "responda). Es la plantilla de Notion del mismo nombre. Se completan solos el nombre, la solicitud "
+                       "«MARCA (clase N, acta N, TIPO)», el oponente y su marca/registro si están en el panel; lo demás "
+                       "(cantidad de oposiciones, chances, motivo, fecha límite y la alternativa) queda entre corchetes y "
+                       "hay que completarlo antes de mandarlo. Solo se ofrece en la ficha del titular cuando la marca "
+                       "elegida tiene oposición. Sale como escrito a mano (sin encabezado, botón ni línea de baja).",
+        "cuenta": "prospectos",
+        "remitente": "Smarties Consultora <info@smartiesconsultora.com.ar>",
+        "responder_a": "info@smartiesconsultora.com.ar",
+        "destinatarios": "",
+        "encabezado": "OPOSICIONES RECIBIDAS",
+        "asunto": ASUNTO_DESISTIMIENTO_OPOSICION,
+        "cuerpo": CUERPO_DESISTIMIENTO_OPOSICION,
+        "editable": True,
+        "estilo": "simple",            # mail «de persona» a un cliente: sin encabezado, botón ni línea de baja
+        "requiere_oposicion": True,    # solo con una marca que tiene oposición (ficha del titular y envío)
+        "para_clientes": True,         # al mandarlo no se deshace «tiene gestor/apoderado» (el apoderado es Pame)
+        # Lo que no está en el panel queda entre corchetes, como en la plantilla de Notion.
+        "corchetes": {"destinatario": "[nombre]", "solicitud": "[MARCA (clase N, acta N, TIPO)]",
+                      "oponente": "[oponente]", "marca_oponente": "[marca del oponente]",
+                      "registro_oponente": "[número]", "marca": "[marca]"},
     },
     "prospecto_presupuesto_registro": {
         "grupo": "prospectos",
@@ -937,7 +1012,8 @@ def datos_de_marca(cur, acta: str):
     """Variables de la plantilla de prospectos con los datos REALES de una
     marca de la base ({titular, marca, acta, clase}), o None si no existe.
     Se usa para la vista previa y el envío de prueba con una marca elegida."""
-    cur.execute("""SELECT m.acta, m.clase, m.titular, m.denominacion, m.denominacion_inpi,
+    cur.execute("""SELECT m.acta, m.clase, m.titular, m.denominacion, m.denominacion_inpi, m.tipo,
+                          m.oponente_nombre, m.marca_oponente_denominacion, m.marca_oponente_numero_registro,
                           COALESCE(m.fecha_publicacion, b.fecha) AS fecha
                      FROM marcas m LEFT JOIN boletines b ON b.numero = m.boletin
                     WHERE m.acta = %s""", ((acta or "").strip(),))
@@ -953,7 +1029,52 @@ def datos_de_marca(cur, acta: str):
         "marca": f["denominacion_inpi"] or f["denominacion"] or "",
         "acta": f["acta"],
         "clase": "" if f["clase"] is None else str(f["clase"]),
+        "solicitud": texto_solicitud(f),
+        "oponente": (f.get("oponente_nombre") or "").strip(),
+        "marca_oponente": (f.get("marca_oponente_denominacion") or "").strip(),
+        "registro_oponente": (f.get("marca_oponente_numero_registro") or "").strip(),
     }
+
+
+TIPOS_MARCA = {"D": "DENOMINATIVA", "M": "MIXTA", "F": "FIGURATIVA", "T": "TRIDIMENSIONAL"}
+
+
+def texto_solicitud(f: dict) -> str:
+    """Como citamos una solicitud en los mails: «MÁS (clase 36, acta 4790681, MIXTA)» (mismo criterio que
+    trabajos_core.texto_solicitud). Sin denominación (figurativa) queda vacío y la plantilla pone el corchete."""
+    marca = (f.get("denominacion_inpi") or f.get("denominacion") or "").strip()
+    if not marca:
+        return ""
+    t = (f.get("tipo") or "").strip().upper()
+    partes = [f"clase {f['clase']}" if f.get("clase") not in (None, "") else None,
+              f"acta {f['acta']}" if f.get("acta") else None, TIPOS_MARCA.get(t, t) or None]
+    partes = [p for p in partes if p]
+    return f"{marca} ({', '.join(partes)})" if partes else marca
+
+
+def completar_corchetes(clave: str, datos: dict | None) -> dict | None:
+    """En las plantillas con «corchetes» (la de desistimiento), lo que la marca no tiene en el panel queda
+    escrito entre corchetes («[oponente]») para completarlo a mano, en vez de desaparecer del texto."""
+    faltan = (CATALOGO.get(clave) or {}).get("corchetes")
+    if not faltan or datos is None:
+        return datos
+    datos = dict(datos)
+    if "destinatario" in faltan and not str(datos.get("destinatario") or "").strip():
+        import nombres_ar
+        datos["destinatario"] = nombres_ar.destinatario(datos.get("titular", "")) or ""
+    for var, texto in faltan.items():
+        if not str(datos.get(var) or "").strip():
+            datos[var] = texto
+    return datos
+
+
+def tiene_oposicion(cur, acta: str) -> bool:
+    """¿La marca tiene una oposición cargada en el panel? (lo pide la plantilla de desistimiento)."""
+    cur.execute("SELECT tuvo_oposicion FROM marcas WHERE acta = %s", ((acta or "").strip(),))
+    f = cur.fetchone()
+    if not f:
+        return False
+    return (f["tuvo_oposicion"] if isinstance(f, dict) else f[0]) is True
 
 
 def datos_de_ejemplo_web(clave: str, datos: dict | None) -> dict | None:
@@ -1182,6 +1303,8 @@ def tipo_por_asunto(asunto: str, cuenta: str) -> str:
         # Mails a leads mandados por fuera del panel: se adivina por el asunto.
         if re.search(r"recibi[oó] una vista", a, re.I):
             return "prospecto_vista"
+        if re.search(r"necesitamos tu confirmaci|desist", a, re.I):
+            return "prospecto_desistimiento_oposicion"
         if re.search(r"oposici", a, re.I):
             return "prospecto_oposicion"
         if re.search(r"publicad", a, re.I):

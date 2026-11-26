@@ -108,6 +108,8 @@ def crear_router(verificar_login, verificar_admin, conexion, registrar_en_crm=No
                 "editable": bool(cat.get("editable")),
                 "adjunto": cat.get("adjunto"),
                 "solo_gmail": bool(cat.get("solo_gmail")),
+                "requiere_oposicion": bool(cat.get("requiere_oposicion")),
+                "para_clientes": bool(cat.get("para_clientes")),
                 "responder_a_automatico": cat.get("responder_a_automatico"),
                 "config": cfg,
             })
@@ -474,6 +476,10 @@ def crear_router(verificar_login, verificar_admin, conexion, registrar_en_crm=No
             datos = mc.datos_de_marca(cur, body.acta)
             if not datos:
                 raise HTTPException(status_code=404, detail=f"No existe la marca con acta {body.acta}")
+            if cat.get("requiere_oposicion") and not mc.tiene_oposicion(cur, body.acta):
+                raise HTTPException(status_code=400, detail=f"«{cat['nombre']}» es solo para una marca con oposición, "
+                                                            f"y el acta {body.acta} no tiene ninguna cargada.")
+            datos = mc.completar_corchetes(clave, datos)
             if mc.esta_de_baja(cur, destino):
                 raise HTTPException(status_code=400, detail=f"{destino} está en la lista de bajas: no se le escribe más.")
             cur.execute("SELECT e.enviado_en, e.enviado_por, c.estado AS cola_estado, c.intentar_desde, c.lote_id "
@@ -537,7 +543,11 @@ def crear_router(verificar_login, verificar_admin, conexion, registrar_en_crm=No
                     else:
                         texto_crm = (f"{accion} desde el panel: «{cat['nombre']}» a {destino} "
                                      f"(acta {body.acta}). Asunto: {asunto}")
-                    registrar_en_crm(cur, body.acta, usuario, texto_crm)
+                    if cat.get("para_clientes"):
+                        # Mail a un cliente (el apoderado es del estudio): no deshace «tiene gestor/apoderado».
+                        registrar_en_crm(cur, body.acta, usuario, texto_crm, revertir_gestor=False)
+                    else:
+                        registrar_en_crm(cur, body.acta, usuario, texto_crm)
                     conn.commit()
                 except Exception as e:  # noqa: BLE001 — el mail ya salió; el CRM no debe hacerlo fallar
                     conn.rollback()
@@ -599,7 +609,7 @@ def crear_router(verificar_login, verificar_admin, conexion, registrar_en_crm=No
             if body.encabezado is not None:
                 cfg["encabezado"] = " ".join(body.encabezado.split())[:60] or mc.CATALOGO[clave].get("encabezado")
         datos = _datos_marca(body.acta) if mc.CATALOGO[clave].get("editable") else None
-        datos = mc.datos_de_ejemplo_web(clave, datos)
+        datos = mc.completar_corchetes(clave, mc.datos_de_ejemplo_web(clave, datos))
         tipo_pres = mc.CATALOGO[clave].get("adjunto")
         if tipo_pres:
             # Montos y vigencia reales (los guardados + lo que haya escrito en pantalla) en vez de los de ejemplo.
@@ -629,7 +639,7 @@ def crear_router(verificar_login, verificar_admin, conexion, registrar_en_crm=No
             mc.validar_dominio(v["cuenta"], v["remitente"])
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
-        datos = mc.datos_de_ejemplo_web(clave, _datos_marca(body.acta)) or mc.EJEMPLO_PROSPECTO
+        datos = mc.completar_corchetes(clave, mc.datos_de_ejemplo_web(clave, _datos_marca(body.acta)) or mc.EJEMPLO_PROSPECTO)
         adjuntos = None
         if mc.CATALOGO[clave].get("adjunto"):
             # La prueba lleva también el PDF, con lo que hay en pantalla (lo que falte de transferencia sale como «—»).
