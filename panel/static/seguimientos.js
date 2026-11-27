@@ -813,6 +813,35 @@ async function buscarClientes(q) {
   } catch (_) { /* nada */ }
 }
 
+// Cliente nuevo desde el alta del trabajo (27/11/2026): se crea en Clientes con lo básico y queda elegido.
+// Los demás datos (DNI, domicilio…) se completan después en su ficha o con el formulario.
+document.addEventListener("click", async (ev) => {
+  if (ev.target.closest("[data-crear-cliente]")) {
+    const caja = $("n-crear-cliente");
+    caja.hidden = !caja.hidden;
+    if (!caja.hidden) {
+      const escrito = $("n-cliente").value.trim();
+      if (escrito && !clienteElegido()) $("nc-nombre").value = escrito;
+      $("nc-estado").textContent = ""; $("nc-nombre").focus();
+    }
+    return;
+  }
+  if (!ev.target.closest("#nc-crear")) return;
+  const nombre = $("nc-nombre").value.trim(), est = $("nc-estado");
+  if (!nombre) { est.textContent = "Falta el nombre."; $("nc-nombre").focus(); return; }
+  est.textContent = "Creando…";
+  try {
+    const r = await pedir("/api/clientes", { method: "POST", body: { nombre, cuit: $("nc-cuit").value.trim() || null,
+      email: $("nc-email").value.trim() || null, telefono: $("nc-telefono").value.trim() || null } });
+    $("n-cliente").value = `${r.cliente.nombre} · #${r.cliente.id}`;
+    $("n-crear-cliente").hidden = true;
+    $("n-cliente-ayuda").textContent = "✓ Cliente creado en Clientes. Completá el resto de sus datos en su ficha cuando puedas.";
+    $("n-cliente-ayuda").classList.add("ok");
+    ["nc-nombre", "nc-cuit", "nc-email", "nc-telefono"].forEach((id) => { $(id).value = ""; });
+    $("n-marca").focus();
+  } catch (e) { est.textContent = e.message; }
+});
+
 function clienteElegido() {
   const m = $("n-cliente").value.match(/#(\d+)\s*$/);
   return m ? Number(m[1]) : null;
@@ -825,8 +854,9 @@ function abrirNuevo() {
   $("n-servicio").innerHTML = sg.datos.servicios.map((s) => `<option value="${s.id}">${esc(s.nombre)}</option>`).join("");
   $("n-contratacion").value = sg.datos.hoy;
   actualizarNotif();
-  $("n-cliente-ayuda").textContent = "Tiene que ser un cliente de Clientes. Si no existe, crealo primero ahí.";
+  $("n-cliente-ayuda").innerHTML = 'Elegilo de la lista. Si es nuevo, <button type="button" class="sg-link-btn" data-crear-cliente>＋ crealo acá</button>.';
   $("n-cliente-ayuda").classList.remove("ok");
+  $("n-crear-cliente").hidden = true;
   buscarClientes("");
   $("modal-nuevo").showModal();
   $("n-cliente").focus();
@@ -1240,7 +1270,7 @@ $("n-cliente").addEventListener("input", (ev) => {
   const ayuda = $("n-cliente-ayuda");
   if (id) { ayuda.textContent = "✓ Cliente elegido"; ayuda.classList.add("ok"); return; }
   ayuda.classList.remove("ok");
-  ayuda.textContent = "Tiene que ser un cliente de Clientes. Si no existe, crealo primero ahí.";
+  ayuda.innerHTML = 'Elegilo de la lista. Si es nuevo, <button type="button" class="sg-link-btn" data-crear-cliente>＋ crealo acá</button>.';
   clearTimeout(timerClientes);
   timerClientes = setTimeout(() => buscarClientes(ev.target.value), 250);
 });

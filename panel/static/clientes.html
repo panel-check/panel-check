@@ -6,15 +6,16 @@
 <title>Clientes y vigilancia — Kom Marcas Inpi</title>
 <link rel="icon" type="image/png" href="/static/favicon.png" />
 <link rel="apple-touch-icon" href="/static/apple-touch-icon.png" />
-<link rel="stylesheet" href="/static/comun.css?v=his1" />
+<link rel="stylesheet" href="/static/comun.css?v=doc1" />
 <link rel="stylesheet" href="/static/informes_comun.css?v=arch1" />
+<link rel="stylesheet" href="/static/plantillas.css?v=pl4" />
 <script>
   // ?embebido=1: se muestra solo la ficha del cliente, dentro de un popup de otra pantalla (Seguimientos)
   if (new URLSearchParams(location.search).has("embebido")) document.documentElement.classList.add("embebido");
 </script>
 <style>
   html.embebido, html.embebido body { background: transparent !important; }
-  html.embebido body > *:not(.modal-fondo) { display: none !important; }
+  html.embebido body > *:not(.modal-fondo):not(.pl-fondo) { display: none !important; }
   html.embebido .modal-fondo { background: transparent; }
 </style>
 <script src="/static/sesion.js" defer></script>
@@ -89,8 +90,9 @@
 <script src="/static/crm.js?v=nc1"></script>
 <script src="/static/niza.js"></script>
 <script src="/static/informes_comun.js?v=arch1"></script>
+<script src="/static/plantillas.js?v=pl4"></script>
 <script src="/static/escritos.js?v=es1"></script>
-<script src="/static/clientes.js?v=his1"></script>
+<script src="/static/clientes.js?v=doc1"></script>
 <script src="/static/ficha_marca.js?v=tr1"></script>
 </body>
 </html>

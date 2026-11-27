@@ -9,7 +9,7 @@
 <link rel="stylesheet" href="/static/comun.css?v=nc1" />
 <script src="/static/sesion.js" defer></script>
 <script src="/static/menu.js?v=his1" defer></script>
-<link rel="stylesheet" href="/static/seguimientos.css?v=sg29" />
+<link rel="stylesheet" href="/static/seguimientos.css?v=sg30" />
 <link rel="stylesheet" href="/static/plantillas.css?v=pl4" />
 </head>
 <body>
@@ -70,8 +70,17 @@
     <label>Cliente
       <input type="text" id="n-cliente" list="n-clientes" placeholder="Escribí el nombre, CUIT o una marca del cliente" autocomplete="off" required />
       <datalist id="n-clientes"></datalist>
-      <small class="sg-ayuda-campo" id="n-cliente-ayuda">Tiene que ser un cliente de Clientes. Si no existe, crealo primero ahí.</small>
+      <small class="sg-ayuda-campo" id="n-cliente-ayuda">Elegilo de la lista. Si es nuevo, <button type="button" class="sg-link-btn" data-crear-cliente>＋ crealo acá</button>.</small>
     </label>
+    <div class="sg-crear-cliente" id="n-crear-cliente" hidden>
+      <b>Cliente nuevo</b>
+      <label>Nombre o razón social <input type="text" id="nc-nombre" /></label>
+      <div class="sg-crear-fila"><label>CUIT <input type="text" id="nc-cuit" placeholder="opcional" /></label>
+        <label>Teléfono <input type="text" id="nc-telefono" placeholder="opcional" /></label></div>
+      <label>Email <input type="email" id="nc-email" placeholder="opcional" /></label>
+      <div class="sg-crear-fila"><button type="button" class="sg-btn sg-btn-mini" id="nc-crear">Crear cliente</button>
+        <button type="button" class="sg-btn sg-btn-suave sg-btn-mini" data-crear-cliente>Cancelar</button><small class="sg-ayuda-campo" id="nc-estado"></small></div>
+    </div>
     <label>Marca <input type="text" id="n-marca" required placeholder="Ej.: TIMBEROS" /></label>
     <label>Servicio <select id="n-servicio" required></select></label>
     <div class="sg-fila2">
@@ -93,6 +102,6 @@
 <script src="/static/comun.js?v=nc1"></script>
 <script src="/static/plantillas.js?v=pl4"></script>
 <script src="/static/escritos.js?v=es1"></script>
-<script src="/static/seguimientos.js?v=sg35"></script>
+<script src="/static/seguimientos.js?v=sg36"></script>
 </body>
 </html>
