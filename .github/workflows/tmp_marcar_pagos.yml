@@ -1,0 +1,17 @@
+name: TMP marcar pagos vigilancia 2026
+on:
+  push:
+    branches: [claude/tmp-marcar-pagos-2026]
+jobs:
+  marcar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install psycopg2-binary==2.9.13
+      - run: python tmp_pagos/marcar.py
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL || secrets.DATABASE_PUBLIC_URL }}
+          APLICAR: "1"
