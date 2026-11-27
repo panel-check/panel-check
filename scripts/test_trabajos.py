@@ -432,6 +432,18 @@ class TomaIntervencion(unittest.TestCase):
         self.assertEqual(el, [])
         self.assertIn("a desistir", tc.texto_desistimiento(el or inpi[:1], "x"))
 
+    def test_tramite_sin_cargo(self):
+        t = tc.completar({"servicio": "desistimiento", "etapa": 0, "sin_cargo": True, "estado": "activo"})
+        self.assertEqual(t["etapas"][0], tc.ETAPA_SIN_CARGO)
+        self.assertEqual(t["etapa"], 1)
+        self.assertEqual(t["etapa_nombre"], tc.ETAPA_SIN_CARGO)
+        t = tc.completar({"servicio": "desistimiento", "etapa": 0, "estado": "activo"})
+        self.assertEqual(t["etapas"][0], "Seña cobrada")
+        self.assertEqual(t["etapa"], 0)
+        t = tc.completar({"servicio": "vista", "etapa": 1, "sin_cargo": True, "estado": "activo"})   # solo desistimiento
+        self.assertEqual(t["etapas"][0], "Seña cobrada")
+        self.assertTrue([x for x in tc.servicios_publicos() if x["id"] == "desistimiento"][0]["permite_sin_cargo"])
+
     def test_etapa_automatica(self):
         for sid in tc.SERVICIOS_TOMA:
             s = tc.POR_ID[sid]

@@ -42,8 +42,10 @@ SERVICIOS = [
      "etapas": ["Seña cobrada", "Escrito presentado", "Esperando resolución", "Resuelta"]},
     # Desistimiento (27/11/2026, caso APEX LAB): el cliente desiste de su solicitud ante el INPI. Sin plazo;
     # la toma de intervención se tilda sola igual que en vista y oposición.
+    # «Trámite sin cargo» (27/11/2026): un desistimiento se puede hacer sin cobrar seña; la primera etapa pasa a
+    # «Sin cargo (sin seña)» y queda hecha sola.
     {"id": "desistimiento", "nombre": "Desistimiento", "corto": "Desistimiento", "color": "#64748b",
-     "plazo": None, "auto_etapas": [3],
+     "plazo": None, "auto_etapas": [3], "sin_cargo": True,
      "etapas": ["Seña cobrada", "Formulario y poder", "Toma de intervención", "Desistimiento presentado",
                 "Desistimiento resuelto"]},
     # Registro (19/11/2026): hasta «Informe enviado» se marca a mano; desde «Marca publicada» la etapa
@@ -69,6 +71,7 @@ def servicios_publicos():
     return [{"id": s["id"], "nombre": s["nombre"], "corto": s["corto"], "color": s["color"],
              "etapas": s["etapas"], "con_vencimiento": s["plazo"] is not None, "cumple_en": s.get("cumple_en"),
              "auto_desde": s.get("auto_desde"), "auto_etapas": s.get("auto_etapas") or [],
+             "permite_sin_cargo": bool(s.get("sin_cargo")),
              "plazo_texto": _plazo_texto(s["plazo"])} for s in SERVICIOS]
 
 
@@ -179,11 +182,26 @@ def marca_limpia(marca):
     return re.sub(r"\s*\(.*?\)\s*", " ", marca or "").strip().upper()
 
 
+ETAPA_SIN_CARGO = "Sin cargo (sin seña)"
+
+
+def etapas_de(t):
+    """Las etapas del trabajo: las del servicio, con «Seña cobrada» cambiada si es un trámite sin cargo."""
+    s = servicio(t.get("servicio")) or {"etapas": []}
+    etapas = list(s["etapas"])
+    if t.get("sin_cargo") and s.get("sin_cargo") and etapas and etapas[0].lower().startswith("seña"):
+        etapas[0] = ETAPA_SIN_CARGO
+    return etapas
+
+
 def completar(t, hoy=None):
     """Agrega a una fila de trabajos los campos calculados que muestra la pantalla."""
     s = servicio(t.get("servicio")) or {"nombre": t.get("servicio"), "etapas": [], "plazo": None}
-    etapas = s["etapas"]
+    etapas = etapas_de(t)
     etapa = max(0, min(int(t.get("etapa") or 0), len(etapas)))
+    if t.get("sin_cargo") and etapas:
+        etapa = max(etapa, 1)   # sin seña que cobrar: la primera etapa ya está
+    t["etapas"] = etapas
     t["servicio_nombre"] = s["nombre"]
     t["etapas_total"] = len(etapas)
     t["etapa"] = etapa
@@ -235,6 +253,8 @@ TABLAS = [
     # Registro: la última etapa a la que lo llevó el INPI (24/11/2026). Si alguien lo vuelve atrás a mano, el
     # sistema no lo vuelve a adelantar hasta que el INPI muestre una etapa más avanzada que esa.
     "ALTER TABLE trabajos ADD COLUMN IF NOT EXISTS etapa_inpi INTEGER",
+    # Trámite sin cargo (27/11/2026): no se cobró seña (por ahora en Desistimiento).
+    "ALTER TABLE trabajos ADD COLUMN IF NOT EXISTS sin_cargo BOOLEAN NOT NULL DEFAULT false",
     "CREATE UNIQUE INDEX IF NOT EXISTS idx_trabajos_alerta ON trabajos(alerta_id) WHERE alerta_id IS NOT NULL",
     "CREATE INDEX IF NOT EXISTS idx_trabajos_estado ON trabajos(estado)",
     """CREATE TABLE IF NOT EXISTS trabajos_bitacora (
