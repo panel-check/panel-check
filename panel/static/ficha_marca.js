@@ -123,6 +123,7 @@ function fmInfo() {
       <div><small>Expedientes</small><strong>${ms.length}</strong></div>
       <div><small>Próximo plazo</small><strong>${proximo ? `${crmFecha(proximo.fecha)} · ${esc(crmUrgencia(proximo))}` : "—"}</strong></div>
     </div>
+    ${(d.trabajos || []).length && typeof htmlTrabajos === "function" ? `<h4>Trabajos en Seguimientos</h4>${htmlTrabajos(d.trabajos, d.servicios_trabajo, { conMarca: false })}` : ""}
     <h4>Expedientes INPI vinculados</h4>
     <div class="fm-exps">${ms.map(fmTarjeta).join("")}</div>
     <p class="crm-nota">Una marca puede tener varios expedientes (clases, logos, variantes). El estado, las fechas y la vigilancia son de cada expediente.</p>`;
@@ -249,6 +250,7 @@ function fmHistorial() {
 
 /* ── Eventos de cada pestaña ── */
 function fmConectar(cont) {
+  cont.querySelectorAll("[data-ir-trabajo]").forEach(b => b.addEventListener("click", () => irATrabajo(b.dataset.irTrabajo)));
   cont.querySelectorAll("[data-abrir]").forEach(a => a.addEventListener("click", () => abrirActa(a.dataset.abrir)));
   cont.querySelectorAll("[data-actualizar]").forEach(b => b.addEventListener("click", async () => {
     b.disabled = true;
