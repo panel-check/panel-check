@@ -106,6 +106,7 @@ def main():
 
         s = crear_sesion()
         ok = novedades = bloqueadas = errores = inexistentes = 0
+        sin_grilla = []   # actas con la ficha bien pero la grilla vacía (27/11/2026): sus movimientos quedan para la próxima
         bloqueo_seguido = 0
         revisadas = 0
         for i, fila in enumerate(pendientes, 1):
@@ -140,7 +141,10 @@ def main():
             if estado == "ok":
                 ok += 1
                 novedades += len(nuevas)
-                print(f"  [{i}/{len(pendientes)}] acta {acta}: ok" + (f", {len(nuevas)} novedad(es)" if nuevas else ""))
+                if info.get("grilla_error"):
+                    sin_grilla.append(acta)
+                print(f"  [{i}/{len(pendientes)}] acta {acta}: ok" + (f", {len(nuevas)} novedad(es)" if nuevas else "")
+                      + (" (la grilla no respondió: sus movimientos se miran la próxima corrida)" if info.get("grilla_error") else ""))
             elif estado == "no_existe":
                 inexistentes += 1
                 print(f"  [{i}/{len(pendientes)}] acta {acta}: INPI no la devuelve")
@@ -150,12 +154,15 @@ def main():
             time.sleep(args.delay)
 
         resumen = (f"Revisadas: {revisadas} de {len(pendientes)}. Actualizadas: {ok}. Novedades: {novedades}. "
-                   f"Bloqueadas: {bloqueadas}. Sin resultado: {inexistentes}. Con error: {errores}.")
+                   f"Bloqueadas: {bloqueadas}. Sin resultado: {inexistentes}. Con error: {errores}. "
+                   f"Sin grilla: {len(sin_grilla)}.")
+        if sin_grilla:
+            print(f"::warning::La grilla del INPI no respondió en {len(sin_grilla)} acta(s): {', '.join(sin_grilla)}")
         print(f"::notice::{resumen}")
         print(f"\n{resumen}")
         registrar("revisar_cartera.yml", {
             "revisadas": revisadas, "actualizadas": ok, "novedades": novedades,
-            "bloqueos": bloqueadas, "sin_resultado": inexistentes, "errores": errores,
+            "bloqueos": bloqueadas, "sin_resultado": inexistentes, "errores": errores, "sin_grilla": len(sin_grilla),
             "pendientes_restantes": max(len(pendientes) - revisadas, 0),
         }, conn)
     finally:

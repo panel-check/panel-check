@@ -726,6 +726,13 @@ def consultar_expediente(acta: str, s=None, timeout: int = 30, con_grilla: bool 
                 "ultimo_movimiento": None, "ultimo_movimiento_fecha": None})
     if con_grilla:
         archivos = _buscar_archivos_grilla(s, str(acta), timeout=timeout)
+        if not archivos:
+            # 27/11/2026: la grilla a veces vuelve vacía (WAF o un corte) aunque la ficha haya salido bien, y sin
+            # aviso: así se perdió dos noches el «Dictamen aconseja denegatoria fondo» de MATEACIDO. Toda acta
+            # tiene al menos el recibo de la solicitud, así que vacía = falló: se reintenta una vez y se avisa.
+            time.sleep(3)
+            archivos = _buscar_archivos_grilla(s, str(acta), timeout=timeout)
+            out["grilla_error"] = not archivos
         if archivos:
             out["fecha_publicacion"] = _fecha_publicacion_de_archivos(archivos)
             out["tuvo_oposicion"], out["detalle_oposicion"] = _detectar_oposicion(archivos, out["fecha_publicacion"])
