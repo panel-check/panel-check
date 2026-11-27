@@ -273,9 +273,9 @@ def crear_router(verificar_login, conexion) -> APIRouter:
         contratación), la etapa «Toma de intervención» se tilda sola, con una nota. Igual que el registro: no
         retrocede nada y si alguien la vuelve atrás a mano no se vuelve a marcar (etapa_inpi). Las oposiciones
         que presentamos nosotros (alerta_id) no cuentan: ahí el expediente es el de la otra marca."""
-        cond = ("servicio IN ('vista', 'oposicion') AND estado = 'activo' AND alerta_id IS NULL "
+        cond = ("servicio = ANY(%s) AND estado = 'activo' AND alerta_id IS NULL "
                 "AND COALESCE(etapa, 0) < %s AND COALESCE(etapa_inpi, 0) < %s") + (" AND id = %s" if solo_id else "")
-        params = [tc.ETAPA_TOMA, tc.ETAPA_TOMA] + ([solo_id] if solo_id else [])
+        params = [list(tc.SERVICIOS_TOMA), tc.ETAPA_TOMA, tc.ETAPA_TOMA] + ([solo_id] if solo_id else [])
         cur.execute(f"SELECT id, cliente_id, marca, acta, actas_extra, contratacion FROM trabajos WHERE {cond}", params)
         trabajos = cur.fetchall()
         if not trabajos:

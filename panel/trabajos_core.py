@@ -40,6 +40,12 @@ SERVICIOS = [
     {"id": "oposicion_adm", "nombre": "Oposición administrativa", "corto": "Opo. administrativa", "color": "#dc2626",
      "plazo": None,
      "etapas": ["Seña cobrada", "Escrito presentado", "Esperando resolución", "Resuelta"]},
+    # Desistimiento (27/11/2026, caso APEX LAB): el cliente desiste de su solicitud ante el INPI. Sin plazo;
+    # la toma de intervención se tilda sola igual que en vista y oposición.
+    {"id": "desistimiento", "nombre": "Desistimiento", "corto": "Desistimiento", "color": "#64748b",
+     "plazo": None, "auto_etapas": [3],
+     "etapas": ["Seña cobrada", "Formulario y poder", "Toma de intervención", "Desistimiento presentado",
+                "Desistimiento resuelto"]},
     # Registro (19/11/2026): hasta «Informe enviado» se marca a mano; desde «Marca publicada» la etapa
     # avanza sola con lo que el seguimiento diario de la cartera lee del INPI (ver etapa_registro).
     {"id": "registro", "nombre": "Registro de marca", "corto": "Registro", "color": "#2563eb",
@@ -649,7 +655,7 @@ def separar_informes(trabajo, informes):
 
 # ── Toma de intervención según el INPI (vista y oposición) ─────────────────────
 ETAPA_TOMA = 3   # «Toma de intervención» en vista y oposición
-SERVICIOS_TOMA = ("vista", "oposicion")
+SERVICIOS_TOMA = ("vista", "oposicion", "desistimiento")
 
 
 def toma_en_grilla(claves, desde=None):
