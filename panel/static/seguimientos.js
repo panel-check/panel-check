@@ -1261,4 +1261,15 @@ document.addEventListener("click", (ev) => {
   const id = Number(p.get("trabajo"));
   if (id) abrirFicha(id);
   else if (Number(p.get("vigilancia"))) abrirVigilancia(Number(p.get("vigilancia")));
+  else if (p.get("nuevo")) {
+    // Desde la ficha del cliente (Clientes → Trabajos → «＋ Nuevo trabajo»): el alta ya con el cliente elegido.
+    abrirNuevo();
+    if (Number(p.get("cliente"))) {
+      $("n-cliente").value = `${p.get("cliente_nombre") || "Cliente"} #${Number(p.get("cliente"))}`;
+      $("n-cliente-ayuda").textContent = "✓ Cliente elegido desde su ficha.";
+      $("n-cliente-ayuda").classList.add("ok");
+      $("n-marca").focus();
+    }
+    history.replaceState(null, "", "/seguimientos");
+  }
 })();

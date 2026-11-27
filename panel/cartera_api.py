@@ -331,8 +331,11 @@ def crear_router(verificar_login, conexion, crm) -> APIRouter:
 
     # ── Clientes ──────────────────────────────────────────────────────
     @router.get("/api/clientes")
-    def listar_clientes(q: str = "", activos: bool = True, referido: str = "", _: str = Depends(verificar_login)):
+    def listar_clientes(q: str = "", activos: bool = True, referido: str = "", con_trabajo: bool = False,
+                        _: str = Depends(verificar_login)):
         cond, val = [], []
+        if con_trabajo:   # solo los que tienen algún trabajo en curso en Seguimientos (27/11/2026)
+            cond.append("EXISTS (SELECT 1 FROM trabajos t WHERE t.cliente_id = c.id AND t.estado = 'activo')")
         if activos:
             cond.append("c.activo")
         if q.strip():
@@ -362,7 +365,10 @@ def crear_router(verificar_login, conexion, crm) -> APIRouter:
                           AND a.estado IN ('nueva','monitorear','oponer')) AS alertas_abiertas,
                       (SELECT COUNT(*) FROM cartera_marcas m WHERE m.cliente_id = c.id AND m.consultado_en IS NULL) AS sin_consultar,
                       (SELECT min(m.fecha_vencimiento_marca) FROM cartera_marcas m
-                          WHERE m.cliente_id = c.id AND m.fecha_vencimiento_marca >= current_date) AS proximo_vencimiento
+                          WHERE m.cliente_id = c.id AND m.fecha_vencimiento_marca >= current_date) AS proximo_vencimiento,
+                      (SELECT COALESCE(json_agg(json_build_object('s', x.servicio, 'n', x.n) ORDER BY x.n DESC), '[]'::json)
+                         FROM (SELECT servicio, COUNT(*) AS n FROM trabajos t WHERE t.cliente_id = c.id AND t.estado = 'activo'
+                               GROUP BY servicio) x) AS trabajos_activos
                     FROM clientes c {donde}
                     ORDER BY c.activo DESC, lower(c.nombre)
                     LIMIT 2000
@@ -370,7 +376,36 @@ def crear_router(verificar_login, conexion, crm) -> APIRouter:
                     val,
                 )
                 clientes = cur.fetchall()
-                return {"clientes": clientes, "origenes": cartera.ORIGENES_CLIENTE, "referidos": _referidos(cur)}
+                return {"clientes": clientes, "origenes": cartera.ORIGENES_CLIENTE, "referidos": _referidos(cur),
+                        "servicios": _servicios_trabajo()}
+
+    # ── Trabajos de Seguimientos vistos desde Clientes (27/11/2026) ──────────────────────────────────────
+    def _servicios_trabajo():
+        import trabajos_core as tc
+        return {s["id"]: {"nombre": s["nombre"], "corto": s.get("corto") or s["nombre"], "color": s["color"]}
+                for s in tc.servicios_publicos()}
+
+    def _trabajos_de(cur, cliente_id=None, actas=None):
+        """Los trabajos de Seguimientos de un cliente (o de unas actas), con etapa y vencimiento calculados.
+        Primero los activos; nunca frena la ficha."""
+        import trabajos_core as tc
+        try:
+            cur.execute("SAVEPOINT trab")
+            if actas:
+                cur.execute("SELECT * FROM trabajos WHERE acta = ANY(%s) OR actas_extra && %s::text[] "
+                            "ORDER BY (estado = 'activo') DESC, contratacion DESC NULLS LAST, id DESC", (list(actas), list(actas)))
+            else:
+                cur.execute("SELECT * FROM trabajos WHERE cliente_id = %s "
+                            "ORDER BY (estado = 'activo') DESC, contratacion DESC NULLS LAST, id DESC", (cliente_id,))
+            filas = [tc.completar(dict(f)) for f in cur.fetchall()]
+            cur.execute("RELEASE SAVEPOINT trab")
+        except Exception as e:
+            cur.execute("ROLLBACK TO SAVEPOINT trab")
+            print(f"[clientes] trabajos: {e}")
+            return []
+        campos = ("id", "marca", "servicio", "servicio_nombre", "estado", "etapa", "etapas_total", "etapa_nombre",
+                  "proxima_etapa", "alerta", "vencimiento", "acta", "actas_extra", "contratacion", "notificacion", "sin_cargo")
+        return [{k: f.get(k) for k in campos} for f in filas]
 
     def _campos_cliente(body, parcial=False):
         enviados = body.model_fields_set if parcial else None
@@ -534,7 +569,11 @@ def crear_router(verificar_login, conexion, crm) -> APIRouter:
         plazos += [p for p in (cartera.plazo_oposicion_alerta(a, hoy) for a in alertas
                                if a["estado"] in cartera.ESTADOS_ALERTA_ABIERTOS and a["tipo"] == "similitud") if p]
         plazos.sort(key=lambda p: p["fecha"])
+        with nueva_conexion() as conn:
+            with rcur(conn) as cur:
+                trabajos = _trabajos_de(cur, cliente_id=cliente_id)
         return {"cliente": cliente, "marcas": marcas, "novedades": novedades, "alertas": alertas,
+                "trabajos": trabajos, "servicios_trabajo": _servicios_trabajo(),
                 "plazos": plazos, "formularios": formularios, "poderes": poderes_cli, "informes": informes, "tipos_persona": formularios_core.TIPO_LEGIBLE,
                 "origenes": cartera.ORIGENES_CLIENTE, "estados_alerta": cartera.ESTADOS_ALERTA, "referidos": referidos}
 
@@ -1004,6 +1043,7 @@ def crear_router(verificar_login, conexion, crm) -> APIRouter:
                             "ORDER BY detectado_en DESC LIMIT 100", (lista,))
                 novedades = cur.fetchall()
                 alertas = _alertas(cur, {"actas": lista}, limite=200)
+                trabajos = _trabajos_de(cur, actas=lista)
                 tasa = presupuestos.leer_config(cur, "registro_marca")
                 conf = cartera.leer_config(cur)
         plazos = []
@@ -1014,6 +1054,7 @@ def crear_router(verificar_login, conexion, crm) -> APIRouter:
                                if a["estado"] in cartera.ESTADOS_ALERTA_ABIERTOS and a["tipo"] == "similitud") if p]
         plazos.sort(key=lambda p: p["fecha"])
         return {"cliente": cliente, "marcas": marcas, "novedades": novedades, "alertas": alertas, "plazos": plazos,
+                "trabajos": trabajos, "servicios_trabajo": _servicios_trabajo(),
                 "estados_alerta": cartera.ESTADOS_ALERTA, "umbral_general": conf["umbral"],
                 # Tasa de INPI por clase: es la misma que se carga en Mails → plantilla «Presupuesto de registro de marca»
                 "arancel": {"tasa_clase": tasa["tasas"], "mes": tasa.get("valores_mes") or ""}}

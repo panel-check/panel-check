@@ -136,6 +136,7 @@ async function pintarClientes() {
         <div class="cl-barra">
           <label>Buscar<input type="search" id="cl-q" placeholder="cliente, CUIT, email, marca o acta…" style="min-width:280px"></label>
           <label>Referido<select id="cl-referido"><option value="">Todos</option></select></label>
+          <label class="check" style="flex-direction:row;align-items:center;gap:6px" title="Solo los que tienen algún trabajo abierto en Seguimientos"><input type="checkbox" id="cl-con-trabajo"> Con trabajo en curso</label>
           <label class="check" style="flex-direction:row;align-items:center;gap:6px"><input type="checkbox" id="cl-inactivos"> Incluir inactivos</label>
           <button type="button" class="cl-btn" id="cl-nuevo">+ Nuevo cliente</button>
         </div>
@@ -144,6 +145,7 @@ async function pintarClientes() {
     let t;
     $("cl-q").addEventListener("input", () => { clearTimeout(t); t = setTimeout(pintarClientes, 250); });
     $("cl-inactivos").addEventListener("change", pintarClientes);
+    $("cl-con-trabajo").addEventListener("change", pintarClientes);
     $("cl-referido").addEventListener("change", pintarClientes);
     $("cl-nuevo").addEventListener("click", () => abrirModalNuevoCliente());
   }
@@ -151,7 +153,8 @@ async function pintarClientes() {
   const tabla = $("cl-tabla");
   try {
     const ref = $("cl-referido").value;
-    const r = await api(`/api/clientes?q=${encodeURIComponent(q)}&activos=${$("cl-inactivos").checked ? "false" : "true"}&referido=${encodeURIComponent(ref)}`);
+    const r = await api(`/api/clientes?q=${encodeURIComponent(q)}&activos=${$("cl-inactivos").checked ? "false" : "true"}&referido=${encodeURIComponent(ref)}${$("cl-con-trabajo").checked ? "&con_trabajo=true" : ""}`);
+    est.serviciosTrabajo = r.servicios || est.serviciosTrabajo || {};
     est.clientes = r.clientes; est.origenes = r.origenes; est.referidos = r.referidos || [];
     llenarSelectReferidos($("cl-referido"), est.referidos, ref);
     if (!r.clientes.length) {
@@ -159,10 +162,11 @@ async function pintarClientes() {
       return;
     }
     tabla.innerHTML = `<table class="cl-tabla"><thead><tr>
-        <th>Cliente</th><th>CUIT</th><th>Marcas</th><th>Vigilancia</th><th>Alertas</th><th>Próx. vencimiento</th><th>Origen</th><th></th></tr></thead><tbody>
+        <th>Cliente</th><th>CUIT</th><th>Trabajos en curso</th><th>Marcas</th><th>Vigilancia</th><th>Alertas</th><th>Próx. vencimiento</th><th>Origen</th><th></th></tr></thead><tbody>
       ${r.clientes.map(c => `<tr class="cl-click ${c.activo ? "" : "cl-inactivo"}" data-id="${c.id}">
         <td><strong>${esc(c.nombre)}</strong>${c.activo ? "" : ' <span class="cl-tag">inactivo</span>'}${c.referido ? " " + tagReferido(c.referido) : ""}<br><small class="crm-gris">${esc(c.email || "")}</small></td>
         <td>${esc(c.cuit || "—")}</td>
+        <td>${chipsTrabajos(c.trabajos_activos)}</td>
         <td>${c.marcas}${c.con_oposicion ? ` <span class="cl-tag aviso" title="Marcas con oposición o vista">⚖ ${c.con_oposicion}</span>` : ""}${c.sin_consultar ? ` <span class="cl-tag" title="Pendientes de consultar en INPI">⏳ ${c.sin_consultar}</span>` : ""}</td>
         <td>${c.marcas_pagas ? `<span class="cl-tag ok" title="Marcas con la vigilancia paga (se le cobra y se le manda el informe)">Paga ${c.marcas_pagas} de ${c.marcas}</span>` : '<span class="cl-tag" title="No paga la vigilancia de ninguna marca">No paga</span>'}<br><small class="crm-gris">vigilamos ${c.marcas_vigiladas || 0}</small></td>
         <td>${c.alertas_abiertas ? `<span class="cl-tag mal">${c.alertas_abiertas}</span>` : "—"}</td>
@@ -182,6 +186,34 @@ async function pintarClientes() {
   } catch (e) {
     tabla.innerHTML = `<p class="crm-error">No se pudo cargar (${esc(e.message)}).</p>`;
   }
+}
+
+// ── Trabajos de Seguimientos en Clientes (27/11/2026) ───────────────────────────────────────────────────
+function chipsTrabajos(lista) {
+  if (!lista || !lista.length) return '<span class="crm-gris">—</span>';
+  const sv = est.serviciosTrabajo || {};
+  return lista.map(x => { const s = sv[x.s] || { corto: x.s, color: "#64748b" };
+    return `<span class="cl-chip-trabajo" style="--c:${s.color}">${esc(s.corto)}${x.n > 1 ? ` · ${x.n}` : ""}</span>`; }).join(" ");
+}
+function irATrabajo(id) { (window.top || window).location.href = `/seguimientos?trabajo=${id}`; }
+function nuevoTrabajoPara(c) {
+  (window.top || window).location.href = `/seguimientos?nuevo=1&cliente=${c.id}&cliente_nombre=${encodeURIComponent(c.nombre)}`;
+}
+const NIVEL_TAG = { rojo: "mal", vencido: "mal", amarillo: "aviso", falta: "aviso", cumplido: "ok" };
+// Tarjetas de trabajos (ficha del cliente y ficha de la marca). Un clic abre la ficha del trabajo en Seguimientos.
+function htmlTrabajos(trabajos, servicios, { conMarca = true } = {}) {
+  if (!trabajos || !trabajos.length) return "";
+  return `<div class="cl-trabajos">${trabajos.map(t => {
+    const s = (servicios || {})[t.servicio] || { nombre: t.servicio_nombre || t.servicio, color: "#64748b" };
+    const a = t.alerta || {};
+    const total = t.etapas_total || 0;
+    return `<button type="button" class="cl-trabajo ${t.estado === "cerrado" ? "cerrado" : ""}" data-ir-trabajo="${t.id}" style="--c:${s.color}" title="Abrir en Seguimientos">
+      <span class="cab"><span class="serv">${esc(s.nombre)}</span>${t.estado === "cerrado" ? ' <span class="cl-tag">cerrado</span>' : ""}${t.sin_cargo ? ' <span class="cl-tag">sin cargo</span>' : ""}</span>
+      ${conMarca ? `<strong>${esc(t.marca)}</strong>` : ""}
+      <span class="barra">${Array.from({ length: total }, (_, i) => `<i class="${i < t.etapa ? "hecha" : ""}"></i>`).join("")}</span>
+      <span class="det">${esc(t.etapa_nombre || "")}${total ? ` · ${t.etapa}/${total}` : ""}${t.acta ? ` · acta ${esc(t.acta)}${(t.actas_extra || []).length ? ` +${t.actas_extra.length}` : ""}` : ""}</span>
+      ${a.texto && a.nivel !== "ninguno" && a.nivel !== "cerrado" ? `<span class="cl-tag ${NIVEL_TAG[a.nivel] || ""}">${esc(a.texto)}</span>` : ""}
+    </button>`; }).join("")}</div>`;
 }
 
 /* ── Marcas (vista plana de toda la cartera) ────────────────────── */
@@ -567,7 +599,8 @@ async function abrirCliente(id) {
       <li><span class="crm-gris">${fmtFechaHora(n.detectado_en)}</span> · acta ${esc(n.acta)} · ${esc(n.texto)}</li>`).join("")}</ul>` : '<p class="crm-gris">Sin novedades detectadas todavía.</p>';
 
   const alertasAbiertas = d.alertas.filter(a => ["nueva", "monitorear", "oponer"].includes(a.estado)).length;
-  const tabsCli = [["datos", "Datos"], ["poderes", "Poderes", (d.poderes || []).length], ["informes", "Informes", (d.informes || []).length], ["formularios", "Formularios", (d.formularios || []).length],
+  const trabActivos = (d.trabajos || []).filter(t => t.estado === "activo").length;
+  const tabsCli = [["datos", "Datos"], ["trabajos", "Trabajos", trabActivos], ["poderes", "Poderes", (d.poderes || []).length], ["informes", "Informes", (d.informes || []).length], ["formularios", "Formularios", (d.formularios || []).length],
     ["marcas", "Marcas", d.marcas.length], ["vigilancia", "Vigilancia", alertasAbiertas], ["plazos", "Plazos", d.plazos.length],
     ["novedades", "Novedades", d.novedades.length]];
 
@@ -587,6 +620,12 @@ async function abrirCliente(id) {
         <button type="button" class="cl-btn sec" id="cli-unir" title="Pasa las marcas y todo lo demás de otro cliente duplicado a este, y borra el duplicado">🔗 Unir otro cliente a este</button>
         <button type="button" class="cl-btn peligro" id="cli-borrar">Borrar cliente</button>
         <span class="cl-estado" id="cli-estado"></span></div>
+      </div>
+
+      <div data-cpanel="trabajos" ${est.clienteTab === "trabajos" ? "" : "hidden"}>
+        <div class="cl-acciones" style="margin-top:12px"><button type="button" class="cl-btn" id="cli-nuevo-trabajo">＋ Nuevo trabajo</button>
+          <span class="crm-gris">Los trabajos se siguen en <a href="/seguimientos" target="_top">Seguimientos</a>; un clic en uno abre su ficha.</span></div>
+        ${htmlTrabajos(d.trabajos, d.servicios_trabajo) || '<p class="crm-gris">Este cliente no tiene trabajos en Seguimientos.</p>'}
       </div>
 
       <div data-cpanel="poderes" ${est.clienteTab === "poderes" ? "" : "hidden"}>
@@ -672,6 +711,8 @@ async function abrirCliente(id) {
   conectarInformes(id);
   conectarFichaCliente(cont, d);
   conectarVigilanciaCliente(cont, d, irTab);
+  cont.querySelectorAll("[data-ir-trabajo]").forEach(b => b.addEventListener("click", () => irATrabajo(b.dataset.irTrabajo)));
+  $("cli-nuevo-trabajo").addEventListener("click", () => nuevoTrabajoPara(c));
 }
 
 // ── Solapa Vigilancia (27/11/2026): qué marcas vigilamos y cuáles nos paga el cliente, por separado ──────────
@@ -1825,7 +1866,7 @@ document.querySelectorAll("#pestanas button").forEach(b => b.addEventListener("c
   if (p.get("cliente")) {
     // ?ctab=informes (desde Más → Informes) abre la ficha directo en esa solapa
     if (p.get("ctab") === "alertas") p.set("ctab", "vigilancia");
-    if (["datos", "poderes", "informes", "formularios", "marcas", "vigilancia", "plazos", "novedades"].includes(p.get("ctab"))) { est.clienteTab = p.get("ctab"); est.clienteTabId = +p.get("cliente"); }
+    if (["datos", "trabajos", "poderes", "informes", "formularios", "marcas", "vigilancia", "plazos", "novedades"].includes(p.get("ctab"))) { est.clienteTab = p.get("ctab"); est.clienteTabId = +p.get("cliente"); }
     abrirCliente(+p.get("cliente"));
   }
   if (EMBEBIDO) return;
