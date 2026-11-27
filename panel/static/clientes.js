@@ -684,10 +684,10 @@ function htmlVigilanciaCliente(d) {
   const nV = ms.filter(m => m.vigilar).length, nP = ms.filter(m => m.vigilancia_paga).length;
   const sw = (m, campo, on, titulo) => `<label class="cl-switch" title="${titulo}"><input type="checkbox" data-vig="${campo}" data-acta="${esc(m.acta)}" ${on ? "checked" : ""}><span></span></label>`;
   return `
-    <p class="crm-gris" style="margin:12px 0 8px"><strong>Vigilamos</strong>: el panel compara todos los días las marcas nuevas contra esta y avisa si aparece una parecida. <strong>Paga</strong>: el cliente nos paga la vigilancia de esta marca (se le cobra y se le manda el informe). Son independientes.</p>
+    <p class="crm-gris" style="margin:12px 0 8px"><strong>Vigilamos</strong>: el panel compara todos los días las marcas nuevas contra esta y avisa si aparece una parecida. <strong>Paga</strong>: el cliente nos pagó la vigilancia de esta marca este año (se le cobra y se le manda el informe). Son independientes. Los otros años están en Clientes → Vigilancia → <em>Vigilancia paga por año</em>.</p>
     <div style="overflow-x:auto"><table class="cl-tabla cl-vig-tabla"><thead><tr><th>Marca</th>
       <th>Vigilamos <small class="crm-gris">${nV}/${ms.length}</small><br><span class="cl-vig-todas"><button type="button" data-vig-todas="vigilar" data-valor="1">Todas</button> · <button type="button" data-vig-todas="vigilar" data-valor="0">Ninguna</button></span></th>
-      <th>Paga <small class="crm-gris">${nP}/${ms.length}</small><br><span class="cl-vig-todas"><button type="button" data-vig-todas="vigilancia_paga" data-valor="1">Todas</button> · <button type="button" data-vig-todas="vigilancia_paga" data-valor="0">Ninguna</button></span></th>
+      <th title="Pagó la vigilancia este año (el historial por año está en Clientes → Vigilancia)">Paga ${new Date().getFullYear()} <small class="crm-gris">${nP}/${ms.length}</small><br><span class="cl-vig-todas"><button type="button" data-vig-todas="vigilancia_paga" data-valor="1">Todas</button> · <button type="button" data-vig-todas="vigilancia_paga" data-valor="0">Ninguna</button></span></th>
       <th>Más opciones</th></tr></thead><tbody>
     ${ms.map(m => `<tr data-acta="${esc(m.acta)}">
       <td>${logoMarca(m)}<strong>${esc(m.denominacion || (m.tipo === "F" ? "(figurativa)" : "(pendiente)"))}</strong><br><small class="crm-gris">acta ${esc(m.acta)}${m.clase ? ` · clase ${esc(m.clase)}` : ""}${m.alertas_abiertas ? ` · <span class="cl-tag mal">${m.alertas_abiertas} alerta${m.alertas_abiertas === 1 ? "" : "s"}</span>` : ""}</small></td>
@@ -970,6 +970,9 @@ async function pintarVigilancia() {
             <label>Clase (opcional)<input id="pr-clase" type="number" min="1" max="45" style="width:90px"></label>
             <button type="button" class="cl-btn" id="pr-ir">Buscar parecidas</button></div>
           <div id="pr-res"></div></div>
+        <details class="cl-caja" id="vg-pagos-det" style="margin-top:12px">
+          <summary><strong>Vigilancia paga por año</strong> <span class="crm-gris">— qué marcas pagaron la vigilancia y cuáles no, para ofrecerla el año que viene</span></summary>
+          <div id="vg-pagos" style="margin-top:8px"></div></details>
         <details class="cl-caja" id="vg-marcas-det" style="margin-top:12px">
           <summary><strong>Qué se vigila</strong> <span class="crm-gris">— marcas vigiladas, umbral de parecido de cada una y alertas abiertas</span></summary>
           <div id="vg-marcas" style="margin-top:8px"></div></details>
@@ -993,6 +996,7 @@ async function pintarVigilancia() {
     $("vg-estado").innerHTML = `<option value="abiertas">Abiertas</option>` + Object.entries(aj.estados).map(([k, v]) => `<option value="${k}">${esc(v)}</option>`).join("") + `<option value="">Todas</option>`;
     ["vg-estado", "vg-nivel", "vg-tipo", "vg-periodo", "vg-segun", "vg-cliente", "vg-sc"].forEach(id => $(id).addEventListener("change", pintarVigilancia));
     $("vg-marcas-det").addEventListener("toggle", () => { if ($("vg-marcas-det").open) pintarVigilanciaMarcas(); });
+    $("vg-pagos-det").addEventListener("toggle", () => { if ($("vg-pagos-det").open && !$("vg-pagos").dataset.armado) pintarPagosVigilancia(); });
     $("pr-ir").addEventListener("click", probarNombre);
     $("vg-consumo-btn").addEventListener("click", () => {
       const caja = $("vg-consumo"); caja.hidden = !caja.hidden;
@@ -1080,6 +1084,132 @@ async function pintarConsumoIA() {
 }
 
 /* Tabla «Qué se vigila»: una fila por marca vigilada, con su umbral (editable) y sus alertas abiertas. */
+// ── Vigilancia paga por año (27/11/2026) ─────────────────────────────────────────────────────────────────
+// Todas las marcas de la cartera (clientes activos) con su clase y tipo, y si pagaron la vigilancia en el año
+// elegido. Sirve para ver quién pagó este año y a quién ofrecérsela el que viene. Se marca con el interruptor, en
+// bloque (las filtradas) o pegando las filas de la planilla (MARCA, CLASE, TIPO).
+const pagosVig = { anio: null, filtro: "", q: "", datos: null };
+async function pintarPagosVigilancia() {
+  const cont = $("vg-pagos");
+  if (!cont.dataset.armado) {
+    cont.dataset.armado = "1";
+    cont.innerHTML = `
+      <div class="cl-barra" style="padding:0 0 8px">
+        <label>Año<select id="pg-anio"></select></label>
+        <label>Ver<select id="pg-filtro"><option value="">Todas</option><option value="si">Pagaron</option><option value="no">No pagaron</option>
+          <option value="antes">Pagaron el año anterior y este no</option></select></label>
+        <label>Buscar<input type="search" id="pg-q" placeholder="marca, cliente o acta…"></label>
+        <button type="button" class="cl-btn sec" id="pg-importar-btn">📋 Pegar desde la planilla</button>
+        <button type="button" class="cl-btn sec" id="pg-csv">⬇ Descargar CSV</button>
+      </div>
+      <div class="cl-caja" id="pg-importar" hidden>
+        <p class="crm-gris" style="margin:0 0 6px">Copiá de la planilla las columnas <strong>MARCA, CLASE y TIPO</strong> (con o sin encabezado) y pegalas acá. Se busca cada una en la cartera por nombre y clase (si en la clase hay un número de acta, por acta). Primero se muestra qué encontró; nada se marca hasta confirmar.</p>
+        <textarea id="pg-texto" rows="6" placeholder="SI VIAJO	39	Denominativa"></textarea>
+        <div class="cl-acciones"><button type="button" class="cl-btn" id="pg-revisar">Revisar</button><span class="cl-estado" id="pg-imp-estado"></span></div>
+        <div id="pg-imp-res"></div>
+      </div>
+      <div id="pg-tabla"></div>`;
+    $("pg-anio").addEventListener("change", () => { pagosVig.anio = +$("pg-anio").value; cargarPagosVigilancia(); });
+    $("pg-filtro").addEventListener("change", () => { pagosVig.filtro = $("pg-filtro").value; tablaPagosVigilancia(); });
+    let t; $("pg-q").addEventListener("input", () => { clearTimeout(t); t = setTimeout(() => { pagosVig.q = $("pg-q").value.trim(); tablaPagosVigilancia(); }, 200); });
+    $("pg-importar-btn").addEventListener("click", () => { $("pg-importar").hidden = !$("pg-importar").hidden; });
+    $("pg-revisar").addEventListener("click", () => importarPagos(false));
+    $("pg-csv").addEventListener("click", csvPagosVigilancia);
+  }
+  await cargarPagosVigilancia();
+}
+
+async function cargarPagosVigilancia() {
+  $("pg-tabla").innerHTML = '<p class="crm-cargando">Cargando…</p>';
+  try { pagosVig.datos = await api(`/api/cartera/vigilancia-pagos${pagosVig.anio ? `?anio=${pagosVig.anio}` : ""}`); }
+  catch (e) { $("pg-tabla").innerHTML = `<p class="crm-error">No se pudo cargar (${esc(e.message)}).</p>`; return; }
+  pagosVig.anio = pagosVig.datos.anio;
+  $("pg-anio").innerHTML = pagosVig.datos.anios.map(a => `<option ${a === pagosVig.anio ? "selected" : ""}>${a}</option>`).join("");
+  tablaPagosVigilancia();
+}
+
+function filasPagosVisibles() {
+  const q = pagosVig.q.toLowerCase(), anio = pagosVig.anio;
+  return pagosVig.datos.marcas.filter(m => {
+    if (pagosVig.filtro === "si" && !m.pago) return false;
+    if (pagosVig.filtro === "no" && m.pago) return false;
+    if (pagosVig.filtro === "antes" && (m.pago || !(m.anios || []).includes(anio - 1))) return false;
+    return !q || [m.denominacion, m.cliente, m.acta].some(x => String(x || "").toLowerCase().includes(q));
+  });
+}
+
+function tablaPagosVigilancia() {
+  const d = pagosVig.datos, anio = pagosVig.anio, filas = filasPagosVisibles();
+  const pagaron = d.marcas.filter(m => m.pago).length;
+  let anterior = null, par = false;
+  $("pg-tabla").innerHTML = `
+    <p class="cl-pie" style="margin:0 0 6px"><strong>${pagaron}</strong> de ${d.marcas.length} marcas pagaron la vigilancia en ${anio}. Mostrando ${filas.length}.
+      ${filas.length ? `Las que se ven: <button type="button" class="cl-link" data-pg-todas="1">marcar todas como pagas</button> · <button type="button" class="cl-link" data-pg-todas="0">desmarcar todas</button>` : ""}</p>
+    <div style="overflow-x:auto"><table class="cl-tabla cl-pagos"><thead><tr><th>Marca</th><th>Clase</th><th>Tipo</th><th>Cliente</th><th>Vigilamos</th><th>Pagó ${anio}</th><th>Otros años</th></tr></thead><tbody>
+    ${filas.map(m => {
+      const nombre = (m.denominacion || "(sin nombre)").toUpperCase();
+      if (nombre !== anterior) { par = !par; anterior = nombre; }
+      const otros = (m.anios || []).filter(a => a !== anio);
+      return `<tr class="${par ? "pg-par" : ""} ${m.pago ? "pg-pago" : ""}">
+        <td><strong>${esc(nombre)}</strong><br><small class="crm-gris"><a href="javascript:void(0)" data-abrir-acta="${esc(m.acta)}">acta ${esc(m.acta)}</a>${m.estado_tramite ? " · " + esc(m.estado_tramite) : ""}</small></td>
+        <td>${esc(m.clase ?? "")}</td><td>${esc(tipoLegible(m.tipo))}</td>
+        <td><a href="javascript:void(0)" data-pg-cliente="${m.cliente_id}">${esc(m.cliente)}</a></td>
+        <td>${m.vigilar ? "Sí" : '<span class="crm-gris">No</span>'}</td>
+        <td><label class="cl-switch" title="Pagó la vigilancia de esta marca en ${anio}"><input type="checkbox" data-pg-acta="${esc(m.acta)}" ${m.pago ? "checked" : ""}><span></span></label></td>
+        <td><small class="crm-gris">${otros.join(", ") || "—"}</small></td></tr>`;
+    }).join("") || '<tr><td colspan="7" class="crm-gris">Nada con ese filtro.</td></tr>'}</tbody></table></div>`;
+  const tabla = $("pg-tabla");
+  tabla.querySelectorAll("[data-pg-acta]").forEach(inp => inp.addEventListener("change", async () => {
+    try {
+      await apiJson("/api/cartera/vigilancia-pagos", "PUT", { anio, actas: [inp.dataset.pgActa], pago: inp.checked });
+      const m = d.marcas.find(x => x.acta === inp.dataset.pgActa); m.pago = inp.checked;
+      m.anios = inp.checked ? [...new Set([...(m.anios || []), anio])].sort() : (m.anios || []).filter(a => a !== anio);
+      tablaPagosVigilancia(); est.resumen = null;
+    } catch (e) { alert(e.message); inp.checked = !inp.checked; }
+  }));
+  tabla.querySelectorAll("[data-pg-todas]").forEach(b => b.addEventListener("click", async () => {
+    const pago = b.dataset.pgTodas === "1";
+    if (!confirm(`¿${pago ? "Marcar" : "Desmarcar"} como pagas en ${anio} las ${filas.length} marcas que se ven?`)) return;
+    try { await apiJson("/api/cartera/vigilancia-pagos", "PUT", { anio, actas: filas.map(m => m.acta), pago }); cargarPagosVigilancia(); }
+    catch (e) { alert(e.message); }
+  }));
+  tabla.querySelectorAll("[data-pg-cliente]").forEach(a => a.addEventListener("click", () => abrirCliente(+a.dataset.pgCliente)));
+  tabla.querySelectorAll("[data-abrir-acta]").forEach(a => a.addEventListener("click", () => abrirActa(a.dataset.abrirActa)));
+}
+
+async function importarPagos(confirmar) {
+  const e = $("pg-imp-estado"), res = $("pg-imp-res"), anio = pagosVig.anio;
+  const texto = $("pg-texto").value;
+  if (!texto.trim()) { e.textContent = "Pegá las filas de la planilla."; e.className = "cl-estado mal"; return; }
+  e.textContent = confirmar ? "Marcando…" : "Buscando en la cartera…"; e.className = "cl-estado";
+  try {
+    const r = await apiJson("/api/cartera/vigilancia-pagos/importar", "POST", { anio, texto, confirmar });
+    if (confirmar) {
+      e.textContent = `Listo: ${r.encontradas.length} marcas quedaron como pagas en ${anio}.`; res.innerHTML = "";
+      $("pg-texto").value = ""; return cargarPagosVigilancia();
+    }
+    e.textContent = "";
+    res.innerHTML = `
+      <p style="margin:8px 0 4px"><strong>${r.encontradas.length}</strong> encontradas en la cartera${r.no_encontradas.length ? ` · <strong class="crm-error" style="padding:0">${r.no_encontradas.length} no encontradas</strong>` : ""}.</p>
+      ${r.no_encontradas.length ? `<details open><summary>No encontradas (sumalas al cliente en su ficha → Marcas, o corregí el nombre y volvé a pegar)</summary>
+        <ul class="cl-lista-simple">${r.no_encontradas.map(f => `<li>${esc(f.linea)} <span class="crm-gris">— ${esc(f.error)}</span></li>`).join("")}</ul></details>` : ""}
+      ${r.encontradas.length ? `<details><summary>Ver las encontradas</summary><ul class="cl-lista-simple">${r.encontradas.map(m =>
+        `<li>${esc(m.denominacion || "")} · clase ${esc(m.clase ?? "")} · ${esc(tipoLegible(m.tipo))} · acta ${esc(m.acta)} · ${esc(m.cliente)}</li>`).join("")}</ul></details>
+        <div class="cl-acciones"><button type="button" class="cl-btn" id="pg-confirmar">Marcar las ${r.encontradas.length} como pagas en ${anio}</button></div>` : ""}`;
+    const b = $("pg-confirmar"); if (b) b.addEventListener("click", () => importarPagos(true));
+  } catch (err) { e.textContent = err.message; e.className = "cl-estado mal"; }
+}
+
+function csvPagosVigilancia() {
+  const anio = pagosVig.anio, filas = filasPagosVisibles();
+  const c = v => `"${String(v ?? "").replace(/"/g, '""')}"`;
+  const txt = [["Marca", "Clase", "Tipo", "Acta", "Cliente", "Vigilamos", `Pagó ${anio}`, "Años pagos"].map(c).join(";"),
+    ...filas.map(m => [m.denominacion, m.clase, tipoLegible(m.tipo), m.acta, m.cliente, m.vigilar ? "Sí" : "No", m.pago ? "Sí" : "No", (m.anios || []).join(" ")].map(c).join(";"))].join("\r\n");
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob(["\ufeff" + txt], { type: "text/csv;charset=utf-8" }));
+  a.download = `Vigilancia paga ${anio}.csv`; document.body.appendChild(a); a.click(); a.remove();
+}
+
 async function pintarVigilanciaMarcas() {
   const cont = $("vg-marcas");
   if (!est.vgMarcas) cont.innerHTML = '<p class="crm-cargando">Cargando…</p>';

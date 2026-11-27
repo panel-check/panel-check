@@ -350,6 +350,14 @@ def crear_tablas(cur):
         cur.execute("UPDATE vigilancia_config SET valor = '65' WHERE clave = 'umbral' AND valor = '75'")
         cur.execute("INSERT INTO vigilancia_config (clave, valor) VALUES ('umbral_65_aplicado', now()::text) "
                     "ON CONFLICT (clave) DO NOTHING")
+    # Vigilancia paga por año (27/11/2026): qué marcas pagaron la vigilancia cada año (para ofrecerla el año
+    # siguiente). cartera_marcas.vigilancia_paga = pagó el año en curso (ver sincronizar_pagas).
+    cur.execute("""CREATE TABLE IF NOT EXISTS cartera_vigilancia_pagos (
+                       acta        TEXT NOT NULL REFERENCES cartera_marcas(acta) ON DELETE CASCADE ON UPDATE CASCADE,
+                       anio        INTEGER NOT NULL,
+                       marcado_por TEXT,
+                       marcado_en  TIMESTAMPTZ NOT NULL DEFAULT now(),
+                       PRIMARY KEY (acta, anio))""")
     # 27/11/2026: la vigilancia paga pasa del cliente a cada marca. Una sola vez: en los clientes que la tenían
     # contratada, quedan pagas las marcas que se estaban vigilando (o todas, si no vigilaba ninguna).
     cur.execute("SELECT 1 FROM vigilancia_config WHERE clave = 'vigilancia_paga_por_marca'")
@@ -359,6 +367,104 @@ def crear_tablas(cur):
                          AND (cm.vigilar OR NOT EXISTS (SELECT 1 FROM cartera_marcas x WHERE x.cliente_id = c.id AND x.vigilar))""")
         cur.execute("INSERT INTO vigilancia_config (clave, valor) VALUES ('vigilancia_paga_por_marca', now()::text) "
                     "ON CONFLICT (clave) DO NOTHING")
+    cur.execute("SELECT 1 FROM vigilancia_config WHERE clave = 'vigilancia_pagos_por_anio'")
+    if not cur.fetchone():   # lo marcado como pago hasta hoy cuenta como pagado en el año en curso
+        cur.execute("INSERT INTO cartera_vigilancia_pagos (acta, anio, marcado_por) "
+                    "SELECT acta, %s, 'migración' FROM cartera_marcas WHERE vigilancia_paga ON CONFLICT DO NOTHING",
+                    (hoy_ar().year,))
+        cur.execute("INSERT INTO vigilancia_config (clave, valor) VALUES ('vigilancia_pagos_por_anio', now()::text) "
+                    "ON CONFLICT (clave) DO NOTHING")
+    sincronizar_pagas(cur)
+
+
+def sincronizar_pagas(cur, actas=None):
+    """cartera_marcas.vigilancia_paga = pagó la vigilancia el año en curso; y con eso, la vigilancia contratada del
+    cliente. Al cambiar el año, las marcas que todavía no pagaron el nuevo año quedan como no pagas."""
+    anio = hoy_ar().year
+    cur.execute("""UPDATE cartera_marcas cm SET vigilancia_paga = x.paga
+                   FROM (SELECT m.acta, EXISTS (SELECT 1 FROM cartera_vigilancia_pagos p WHERE p.acta = m.acta AND p.anio = %s) AS paga
+                         FROM cartera_marcas m""" + (" WHERE m.acta = ANY(%s)" if actas else "") + """) x
+                   WHERE cm.acta = x.acta AND cm.vigilancia_paga IS DISTINCT FROM x.paga
+                   RETURNING cm.cliente_id""", [anio] + ([list(actas)] if actas else []))
+    ids = [f["cliente_id"] if isinstance(f, dict) else f[0] for f in cur.fetchall()]
+    if actas:
+        cur.execute("SELECT DISTINCT cliente_id FROM cartera_marcas WHERE acta = ANY(%s)", (list(actas),))
+        ids += [f["cliente_id"] if isinstance(f, dict) else f[0] for f in cur.fetchall()]
+    sincronizar_contratada(cur, ids)
+
+
+def marcar_pagos(cur, actas, anio: int, pago: bool, usuario: str = None):
+    """Marca (o desmarca) que esas actas pagaron la vigilancia en `anio`, y sincroniza lo del año en curso."""
+    actas = [str(a).strip() for a in actas or [] if str(a).strip()]
+    if not actas:
+        return 0
+    if pago:
+        cur.execute("INSERT INTO cartera_vigilancia_pagos (acta, anio, marcado_por) "
+                    "SELECT acta, %s, %s FROM cartera_marcas WHERE acta = ANY(%s) ON CONFLICT DO NOTHING",
+                    (anio, usuario, actas))
+    else:
+        cur.execute("DELETE FROM cartera_vigilancia_pagos WHERE anio = %s AND acta = ANY(%s)", (anio, actas))
+    n = cur.rowcount
+    sincronizar_pagas(cur, actas)
+    return n
+
+
+# ── Importar los pagos de vigilancia de una planilla (27/11/2026) ─────────────────────────────────────────
+# Se pegan las filas copiadas de la planilla: MARCA, CLASE y TIPO separados por tabulación (o «;»). Si en la
+# columna de la clase viene un número de acta (7 o más dígitos), se busca por acta.
+def parsear_pagos(texto: str) -> list:
+    import re
+    filas = []
+    for linea in (texto or "").splitlines():
+        if not linea.strip():
+            continue
+        partes = [p.strip() for p in re.split(r"\t|;|\s{2,}", linea.strip()) if p.strip()]
+        if len(partes) < 2 and re.search(r"\s(\d{1,2}|\d{7,})\s*$", linea.strip()):
+            m = re.match(r"(.*?)\s+(\d+)\s*$", linea.strip())
+            partes = [m.group(1), m.group(2)]
+        if len(partes) < 2:
+            filas.append({"linea": linea.strip(), "marca": partes[0] if partes else "", "error": "falta la clase"})
+            continue
+        marca, segundo, tipo = partes[0], re.sub(r"\D", "", partes[1]), (partes[2] if len(partes) > 2 else "")
+        if normalizar_nombre(marca) in ("MARCA",) and not segundo:
+            continue   # encabezado de la planilla
+        fila = {"linea": linea.strip(), "marca": marca, "tipo": tipo[:1].upper() if tipo else ""}
+        if len(segundo) >= 7:
+            fila["acta"] = segundo
+        elif segundo:
+            fila["clase"] = int(segundo)
+        else:
+            fila["error"] = "falta la clase"
+        filas.append(fila)
+    return filas
+
+
+def emparejar_pagos(filas: list, marcas: list) -> dict:
+    """filas de parsear_pagos + marcas de la cartera [{acta, denominacion, clase, tipo, ...}] →
+    {"encontradas": [marca + linea], "no_encontradas": [fila]}. Mismo nombre (sin tildes ni signos) y misma clase;
+    si hay varias (por ejemplo denominativa y mixta) y la fila dice el tipo, se usa el tipo; si no, van todas."""
+    por_acta = {str(m["acta"]): m for m in marcas}
+    por_nombre = {}
+    for m in marcas:
+        por_nombre.setdefault((normalizar_nombre(m.get("denominacion")), str(m.get("clase") or "")), []).append(m)
+    enc, no, vistas = [], [], set()
+    for f in filas:
+        if f.get("error"):
+            no.append(f); continue
+        if f.get("acta"):
+            cand = [por_acta[f["acta"]]] if f["acta"] in por_acta else []
+        else:
+            cand = por_nombre.get((normalizar_nombre(f["marca"]), str(f["clase"])), [])
+            if len(cand) > 1 and f.get("tipo"):
+                del_tipo = [m for m in cand if (m.get("tipo") or "")[:1].upper() == f["tipo"]]
+                cand = del_tipo or cand
+        if not cand:
+            no.append({**f, "error": "no está en la cartera"}); continue
+        for m in cand:
+            if m["acta"] not in vistas:
+                vistas.add(m["acta"])
+                enc.append({**m, "linea": f["linea"]})
+    return {"encontradas": enc, "no_encontradas": no}
 
 
 def sincronizar_contratada(cur, cliente_ids):

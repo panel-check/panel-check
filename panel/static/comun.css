@@ -2233,3 +2233,9 @@ button.crm-chip.crm-chip-ir:hover { border-color: var(--azul); }
 .cl-vig-mas input[type=text] { width: 100%; min-width: 160px; font-size: 12px; padding: 3px 6px; margin-top: 6px; }
 .cl-vig-estado { font: inherit; background: none; border: 0; padding: 0; cursor: pointer; text-align: left; }
 .cl-tag.apagado { opacity: .6; }
+/* Clientes → Vigilancia → Vigilancia paga por año (27/11/2026) */
+.cl-link { font: inherit; background: none; border: 0; padding: 0; color: var(--azul); text-decoration: underline; cursor: pointer; }
+.cl-pagos tr.pg-par td { background: #f8fafc; }
+.cl-pagos tr.pg-pago td:first-child { box-shadow: inset 3px 0 0 var(--verde, #16a34a); }
+.cl-pagos td { vertical-align: middle; }
+#pg-texto { width: 100%; font: 12.5px ui-monospace, monospace; padding: 6px 8px; border: 1px solid var(--borde, #d1d5db); border-radius: 6px; }
