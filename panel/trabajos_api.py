@@ -578,8 +578,11 @@ def crear_router(verificar_login, conexion) -> APIRouter:
                 "cuentas": cuentas, "notion_procesos": tc.NOTION_PROCESOS, "vigilancia": vigilancia}
 
     def _resultados_inpi(cur, filas):
-        """t["resultado_inpi"]: el último dictamen o resolución de la grilla (en el acta del trabajo o sus actas
-        extra) desde la contratación, para marcarlo en la tarjeta (27/11/2026, MATEACIDO). Nunca frena la lista."""
+        """t["resultado_inpi"]: el último dictamen o resolución del INPI en las actas del trabajo (la principal y
+        las extra) desde la contratación, para marcarlo en la tarjeta y en la ficha (27/11/2026, MATEACIDO:
+        «25/11/2026 Dictamen aconseja denegatoria fondo»). Se busca en todo lo que el panel guardó del
+        expediente: la grilla completa (grilla_claves), el último movimiento, la ubicación, el estado del trámite
+        y las novedades. Nunca frena la lista."""
         import notificaciones_inpi as ni
         por_acta = {}
         for t in filas:
@@ -588,27 +591,61 @@ def crear_router(verificar_login, conexion) -> APIRouter:
                     por_acta.setdefault(str(a), []).append(t)
         if not por_acta:
             return
+        hallados = []   # (fecha ISO o "", acta, texto)
+
+        def _iso(v):
+            if not v:
+                return ""
+            if hasattr(v, "isoformat"):
+                return v.isoformat()[:10]
+            m = re.search(r"(\d{2})/(\d{2})/(\d{4})", str(v))
+            return f"{m.group(3)}-{m.group(2)}-{m.group(1)}" if m else str(v)[:10]
+
         try:
             cur.execute("SAVEPOINT res_inpi")
             cur.execute(
+                """SELECT acta, grilla_claves, ultimo_movimiento, ultimo_movimiento_fecha, ubicacion_actual,
+                          ubicacion_fecha, estado_tramite, consultado_en
+                   FROM cartera_marcas WHERE acta = ANY(%s)""", (list(por_acta),))
+            for m in cur.fetchall():
+                claves = m.get("grilla_claves") or []
+                if isinstance(claves, str):
+                    import json as _json
+                    try:
+                        claves = _json.loads(claves)
+                    except ValueError:
+                        claves = []
+                for c in claves:
+                    fecha, _, resto = str(c).partition("|")
+                    hallados.append((fecha, m["acta"], resto.replace("|", " ")))
+                if m.get("ultimo_movimiento"):
+                    hallados.append((_iso(m.get("ultimo_movimiento_fecha")), m["acta"], m["ultimo_movimiento"]))
+                if m.get("ubicacion_actual"):
+                    hallados.append((_iso(m.get("ubicacion_fecha")), m["acta"], m["ubicacion_actual"]))
+                if m.get("estado_tramite"):
+                    hallados.append((_iso(m.get("consultado_en")), m["acta"], "Resolución " + m["estado_tramite"]
+                                     if m["estado_tramite"] in ("Denegada", "Concedida") else m["estado_tramite"]))
+            cur.execute(
                 """SELECT acta, texto, detectado_en FROM cartera_novedades
-                   WHERE tipo = 'movimiento' AND acta = ANY(%s)
-                     AND (texto ILIKE '%%dictamen%%' OR texto ILIKE '%%resoluci%%')
-                   ORDER BY detectado_en""", (list(por_acta),))
+                   WHERE acta = ANY(%s) AND (texto ILIKE '%%dictamen%%' OR texto ILIKE '%%resoluci%%'
+                                             OR texto ILIKE '%%deneg%%')""", (list(por_acta),))
             for f in cur.fetchall():
-                res = ni.resultado_inpi(f["texto"])
-                if not res:
-                    continue
-                m = re.search(r"(\d{2}/\d{2}/\d{4})", f["texto"] or "")
-                for t in por_acta.get(str(f["acta"]), []):
-                    desde = t.get("contratacion")
-                    if desde and f["detectado_en"].date() < tc.a_fecha(desde):
-                        continue
-                    t["resultado_inpi"] = {**res, "acta": f["acta"], "fecha": m.group(1) if m else None}
+                hallados.append((_iso(f["texto"]) if re.search(r"\d{2}/\d{2}/\d{4}", f["texto"] or "")
+                                 else _iso(f["detectado_en"]), f["acta"], f["texto"]))
             cur.execute("RELEASE SAVEPOINT res_inpi")
         except Exception as e:
             cur.execute("ROLLBACK TO SAVEPOINT res_inpi")
             print(f"[seguimientos] dictámenes del INPI: {e}")
+        for fecha, acta, texto in sorted(hallados, key=lambda h: h[0] or ""):
+            res = ni.resultado_inpi(texto)
+            if not res:
+                continue
+            for t in por_acta.get(str(acta), []):
+                desde = t.get("contratacion")
+                if desde and fecha and fecha < _iso(tc.a_fecha(desde)):
+                    continue
+                t["resultado_inpi"] = {**res, "acta": acta, "texto": texto,
+                                       "fecha": (f"{fecha[8:10]}/{fecha[5:7]}/{fecha[:4]}" if len(fecha) == 10 else None)}
 
     def _clientes_con_vigilancia(cur, q=""):
         """Columna «Vigilancia marcaria» del tablero: los clientes activos que tienen la vigilancia contratada de
@@ -652,6 +689,7 @@ def crear_router(verificar_login, conexion) -> APIRouter:
                 cur.execute("ROLLBACK TO SAVEPOINT conf_ficha")
                 print(f"[seguimientos] actas con vista/oposición (ficha {tid}): {e}")
             t = _uno(cur, tid)
+            _resultados_inpi(cur, [t])
             # Todas las solicitudes de la marca (una por clase), primero la que tiene la vista u oposición
             solicitudes = tc.solicitudes_de_marca(t, _solicitudes_cliente(
                 cur, {"id": t["cliente_id"], "nombre": t.get("cliente"), "cuit": t.get("cliente_cuit")}))

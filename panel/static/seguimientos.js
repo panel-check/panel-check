@@ -476,10 +476,10 @@ function listaSolicitudes(d) {
 }
 
 function avisoResultado(d) {
-  const r = (d.expediente?.novedades || []).find((n) => n.importante && (!d.trabajo.contratacion || String(n.detectado_en).slice(0, 10) >= d.trabajo.contratacion));
+  const r = d.trabajo.resultado_inpi;
   if (!r) return "";
-  const f = (r.texto.match(/(\d{2}\/\d{2}\/\d{4})/) || [])[1];
-  return `<div class="sg-resultado-ficha ${esc(r.importante.nivel)}"><b>${r.importante.icono} ${esc(r.importante.titulo)}</b>${f ? ` · ${esc(f)}` : ""}${r.mostrar_acta ? ` · acta ${esc(r.acta)}` : ""}<br>${esc(r.importante.explicacion)}</div>`;
+  const varias = [d.trabajo.acta_efectiva, ...(d.trabajo.actas_extra || [])].filter(Boolean).length > 1;
+  return `<div class="sg-resultado-ficha ${esc(r.nivel)}"><b>${r.icono} ${esc(r.titulo)}</b>${r.fecha ? ` · ${esc(r.fecha)}` : ""}${varias ? ` · acta ${esc(r.acta)}` : ""}<br><span class="dato">INPI: «${esc(r.texto)}»</span><br>${esc(r.explicacion)}</div>`;
 }
 
 function bloqueExpediente(d) {
