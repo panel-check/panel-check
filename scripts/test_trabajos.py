@@ -28,7 +28,7 @@ class Vencimiento(unittest.TestCase):
         self.assertEqual(tc.vencimiento("vista", "2026-11-05"), dt.date(2026, 12, 5))
 
     def test_sin_vencimiento(self):
-        for sid in ("registro", "oposicion_adm", "vigilancia"):
+        for sid in ("registro", "oposicion_adm", "desistimiento", "vigilancia"):
             self.assertIsNone(tc.vencimiento(sid, "2026-11-01"))
         self.assertIsNone(tc.vencimiento("vista", None))
         self.assertIsNone(tc.vencimiento("desconocido", "2026-11-01"))

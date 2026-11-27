@@ -33,7 +33,8 @@ TABLAS = [
 
 CANALES = {"mail": "Mail", "whatsapp": "WhatsApp"}
 SERVICIOS_PLANTILLA = {"registro": "Registro de marca", "oposicion": "Oposición", "vista": "Contestación de vista",
-                       "oposicion_adm": "Oposición administrativa", "vigilancia": "Vigilancia marcaria",
+                       "oposicion_adm": "Oposición administrativa", "desistimiento": "Desistimiento",
+                       "vigilancia": "Vigilancia marcaria",
                        "general": "General"}
 
 _TRANSFERENCIA = """- Alias: pamedguzzardi
