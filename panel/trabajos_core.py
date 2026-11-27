@@ -638,6 +638,49 @@ def texto_conflicto(elegidas, motivo, sid, notif=None) -> str:
     return texto
 
 
+
+# ── Desistimiento: la marca ya existe (27/11/2026) ────────────────────────
+# Un desistimiento es sobre una solicitud que el cliente YA presentó (casi siempre porque recibió una
+# oposición), así que el acta no se busca entre las solicitudes nuevas sino entre las del cliente:
+#   1. las del cliente con el mismo nombre de marca (una por clase) → todas, primero las que tienen oposición;
+#   2. si ninguna tiene el mismo nombre pero el cliente tiene UNA sola acta con oposición → esa;
+#   3. si no, se busca en vivo en el INPI por denominación (sin límite de fecha) y se toman las del
+#      mismo nombre cuyo titular es el cliente (mismo CUIT o su nombre en el titular).
+def elegir_actas_desistimiento(trabajo, solicitudes, cliente=None, inpi=None):
+    """→ (elegidas, motivo, candidatas). elegidas: la primera va al campo Acta."""
+    nombre = comparable(trabajo.get("marca"))
+    orden = lambda c: (not c.get("tuvo_oposicion"), str(c.get("acta")))
+    unicas = {}
+    for c in solicitudes or []:
+        if c.get("acta"):
+            unicas.setdefault(c["acta"], c)
+    propias = sorted(unicas.values(), key=orden)
+    mismas = [c for c in propias if nombre and comparable(c.get("denominacion")) == nombre]
+    if mismas:
+        return mismas, "mismo nombre de marca", propias
+    con_op = [c for c in propias if c.get("tuvo_oposicion")]
+    if len(con_op) == 1:
+        return con_op, "única acta del cliente con oposición", propias
+    ccuit = re.sub(r"\D", "", str((cliente or {}).get("cuit") or ""))
+    vivas, vistas = [], set()
+    for c in inpi or []:
+        if not c.get("acta") or c["acta"] in vistas or comparable(c.get("denominacion")) != nombre:
+            continue
+        mismo_cuit = ccuit and ccuit == re.sub(r"\D", "", str(c.get("cuit") or ""))
+        if mismo_cuit or _nombre_en_titular((cliente or {}).get("nombre"), c.get("titular")):
+            vistas.add(c["acta"])
+            vivas.append({**c, "motivos": ["mismo CUIT que el cliente" if mismo_cuit else "el titular es el cliente"]})
+    if vivas:
+        return sorted(vivas, key=lambda c: str(c["acta"])), "búsqueda en el INPI, titular el cliente", propias
+    return [], None, propias
+
+
+def texto_desistimiento(elegidas, motivo) -> str:
+    actas = ", ".join(c["acta"] + (f" (cl. {c['clase']})" if c.get("clase") else "") for c in elegidas)
+    return (f"Acta {actas} detectada sola: es la solicitud del cliente a desistir ({motivo})." if len(elegidas) == 1 else
+            f"Actas {actas} detectadas solas: son las solicitudes del cliente con esta marca ({motivo}). "
+            "Si el desistimiento es solo de alguna clase, sacá las otras en Datos.")
+
 # ── Informes ya hechos (Más → Informes / ficha del cliente) ───────────────
 TIPOS_INFORME = {"cliente": "Informe preliminar", "interno": "Informe IA interno",
                  "oposicion": "Informe Oposición IA", "vista": "Informe Vista IA"}

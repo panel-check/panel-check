@@ -412,6 +412,26 @@ class TomaIntervencion(unittest.TestCase):
         self.assertEqual(tc.menciones_en("@pamela no existe", us), [])
         self.assertEqual(tc.menciones_en("@pame @PAME", us), ["pame"])
 
+    def test_actas_desistimiento(self):
+        t = {"marca": "Apex Lab", "servicio": "desistimiento"}
+        cli = {"nombre": "Juan Perez", "cuit": "20-12345678-9"}
+        sol = [{"acta": "4100001", "denominacion": "APEX LAB", "clase": "5"},
+               {"acta": "4100002", "denominacion": "APEX LAB", "clase": "3", "tuvo_oposicion": True},
+               {"acta": "3900000", "denominacion": "OTRA", "tuvo_oposicion": True}]
+        el, motivo, _ = tc.elegir_actas_desistimiento(t, sol, cli)
+        self.assertEqual([c["acta"] for c in el], ["4100002", "4100001"])   # primero la que tiene oposición
+        self.assertEqual(motivo, "mismo nombre de marca")
+        el, motivo, _ = tc.elegir_actas_desistimiento(t, sol[2:], cli)       # única con oposición
+        self.assertEqual([c["acta"] for c in el], ["3900000"])
+        inpi = [{"acta": "4200000", "denominacion": "APEX-LAB", "titular": "PEREZ JUAN", "cuit": ""},
+                {"acta": "4200001", "denominacion": "APEX LAB", "titular": "OTRO SA", "cuit": "30111111119"},
+                {"acta": "4200002", "denominacion": "APEX LAB", "titular": "X", "cuit": "20123456789"}]
+        el, motivo, _ = tc.elegir_actas_desistimiento(t, [], cli, inpi)
+        self.assertEqual([c["acta"] for c in el], ["4200000", "4200002"])
+        el, _, _ = tc.elegir_actas_desistimiento(t, [], cli, inpi[1:2])
+        self.assertEqual(el, [])
+        self.assertIn("a desistir", tc.texto_desistimiento(el or inpi[:1], "x"))
+
     def test_etapa_automatica(self):
         for sid in tc.SERVICIOS_TOMA:
             s = tc.POR_ID[sid]
