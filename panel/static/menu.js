@@ -910,16 +910,17 @@
 
   function itemCampana(n) {
     if (n.origen === "men") {   // «@usuario» en una nota de Seguimientos (26/11/2026)
-      const link = `/seguimientos?trabajo=${encodeURIComponent(n.trabajo_id)}`;
+      // Sin trabajo = nota del cliente (Clientes → ficha → Historial, 27/11/2026)
+      const link = n.trabajo_id ? `/seguimientos?trabajo=${encodeURIComponent(n.trabajo_id)}` : `/clientes?cliente=${encodeURIComponent(n.cliente_id)}&ctab=historial`;
       return `<li class="nc-item men${n.nueva ? " nueva" : ""}">
       <span class="nc-ico" aria-hidden="true">💬</span>
       <div class="nc-cuerpo">
         <div class="nc-l1"><strong>${esc(n.de)} te mencionó</strong>${n.nueva ? '<span class="nc-nueva">nueva</span>' : ""}<span class="nc-fecha">${fechaCorta(n.fecha)}</span></div>
-        <div class="nc-l2"><a href="${link}" title="Abrir el trabajo en Seguimientos">${esc(n.marca || "Trabajo")}</a> · ${esc(n.servicio || "")}</div>
+        <div class="nc-l2"><a href="${link}" title="${n.trabajo_id ? "Abrir el trabajo en Seguimientos" : "Abrir la ficha del cliente"}">${esc(n.marca || n.cliente || "Trabajo")}</a> · ${esc(n.servicio || "")}</div>
         <div class="nc-texto nc-mencion">${esc(n.texto)}</div>
         ${n.cliente ? `<div class="nc-l3">${esc(n.cliente)}</div>` : ""}
       </div>
-      <div class="nc-acciones"><a class="nc-pdf" href="${link}" title="Abrir la nota en Seguimientos">Ver</a></div>
+      <div class="nc-acciones"><a class="nc-pdf" href="${link}" title="Abrir la nota">Ver</a></div>
     </li>`;
     }
     const marca = n.marca ? esc(n.marca) : `Acta ${esc(n.acta)}`;

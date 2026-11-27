@@ -51,13 +51,14 @@ def disposicion(acta: str, marca, descargar: bool = True) -> str:
 
 
 SELECT_MENCIONES = """
-    SELECT mn.id, mn.trabajo_id, mn.de, mn.creado_en, b.texto, t.marca, t.servicio, t.cliente_id,
-           c.nombre AS cliente
+    SELECT mn.id, mn.trabajo_id, mn.de, mn.creado_en, COALESCE(b.texto, cn.texto) AS texto, t.marca, t.servicio,
+           COALESCE(t.cliente_id, mn.cliente_id) AS cliente_id, c.nombre AS cliente
     FROM trabajos_menciones mn
-    JOIN trabajos_bitacora b ON b.id = mn.nota_id
-    JOIN trabajos t ON t.id = mn.trabajo_id
-    LEFT JOIN clientes c ON c.id = t.cliente_id
-    WHERE mn.para = %s"""
+    LEFT JOIN trabajos_bitacora b ON b.id = mn.nota_id
+    LEFT JOIN clientes_notas cn ON cn.id = mn.cliente_nota_id
+    LEFT JOIN trabajos t ON t.id = mn.trabajo_id
+    LEFT JOIN clientes c ON c.id = COALESCE(t.cliente_id, mn.cliente_id)
+    WHERE mn.para = %s AND (b.id IS NOT NULL OR cn.id IS NOT NULL)"""
 
 
 def _mencion(f: dict) -> dict:
@@ -65,7 +66,7 @@ def _mencion(f: dict) -> dict:
     texto = (f["texto"] or "").strip()
     return {"origen": "men", "id": f["id"], "trabajo_id": f["trabajo_id"], "de": f["de"] or "alguien",
             "marca": f["marca"], "cliente": f["cliente"], "cliente_id": f["cliente_id"],
-            "servicio": (tc.POR_ID.get(f["servicio"]) or {}).get("nombre", f["servicio"]),
+            "servicio": (tc.POR_ID.get(f["servicio"]) or {}).get("nombre", f["servicio"]) if f["servicio"] else "Nota del cliente",
             "texto": texto[:400] + ("…" if len(texto) > 400 else ""), "icono": "💬",
             "fecha": f["creado_en"].isoformat(), "_creado": f["creado_en"]}
 
