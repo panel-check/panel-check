@@ -25,3 +25,4 @@ jobs:
       - run: cd scripts && python3 diag_tmp_actas.py 4811668 4811635 4811661
         env:
           PYTHONUNBUFFERED: "1"
+          DATABASE_URL: ${{ secrets.DATABASE_URL || secrets.DATABASE_PUBLIC_URL }}
