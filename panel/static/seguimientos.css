@@ -353,3 +353,14 @@
 .sg-resultado-ficha { margin: 0 0 12px; padding: 10px 12px; border-radius: 10px; font-size: 13.5px; line-height: 1.45; }
 .sg-linea li.importante .tag { font-weight: 800; }
 .sg-linea li.importante { background: #fff7f7; border-radius: 8px; }
+
+/* Estado del INPI dentro de las etapas (27/11/2026) */
+.sg-paso-estado { cursor: default; align-items: flex-start; }
+.sg-paso-estado:hover { background: transparent; }
+.sg-paso-estado .bola { background: #fff; border-color: currentColor; font-size: 12px; }
+.sg-paso-estado.rojo { color: #b91c1c; background: #fef2f2; }
+.sg-paso-estado.verde { color: #15803d; background: #f0fdf4; }
+.sg-paso-estado.ambar { color: #b45309; background: #fffbeb; }
+.sg-paso-estado .nombre { display: flex; flex-direction: column; gap: 2px; }
+.sg-paso-estado .nombre small { font-size: 12px; font-weight: 400; color: #4b5563; }
+.sg-estado-rojo { color: #b91c1c; } .sg-estado-verde { color: #15803d; } .sg-estado-ambar { color: #b45309; }
