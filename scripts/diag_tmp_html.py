@@ -1,20 +1,10 @@
-"""Diagnóstico temporal (27/11/2026): secciones de ubicación/estado del expediente y pedidos AJAX que usa."""
-import re, sys
-from validar_leads import BASE, crear_sesion, _get_con_reintentos
+"""Diagnóstico temporal (27/11/2026): filas de la Grilla Digital (fecha, índice, referencia)."""
+import sys
+sys.path.insert(0, "../panel")
+import inpi_lead as il
 acta = sys.argv[1]
-s = crear_sesion()
-r = _get_con_reintentos(lambda: s.post(f"{BASE}/MarcasConsultas/Resultado",
-                                       headers={"Referer": f"{BASE}/MarcasConsultas/Grilla"}, data={"acta": acta}, timeout=30))
-html = r.text
-def limpio(x):
-    x = re.sub(r"<script.*?</script>", " ", x, flags=re.S)
-    return re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", x))
-for pat in ("UBICACI", "ESTADO"):
-    for m in re.finditer(pat, html):
-        print(f"== {pat} @{m.start()}: {limpio(html[m.start()-200:m.start()+1500])[:900]}")
-for m in re.finditer(r"url\s*:\s*['\"]([^'\"]+)['\"]", html):
-    print("== ajax url:", m.group(1))
-for m in re.finditer(r"\$\.(?:post|get|ajax)\(\s*['\"]([^'\"]+)", html):
-    print("== ajax:", m.group(1))
-for m in re.finditer(r"data-url=['\"]([^'\"]+)", html):
-    print("== data-url:", m.group(1))
+s = il._crear_sesion()
+arch = il._buscar_archivos_grilla(s, acta, timeout=40)
+print(f"== filas: {None if arch is None else len(arch)}")
+for a in arch or []:
+    print(f"== grilla: {a.get('Fecha')} | {a.get('Indice')} | {a.get('Referencia')}")
