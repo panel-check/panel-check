@@ -27,17 +27,21 @@ más atrasada si la marca tiene varias actas). Solo avanzan, nunca retroceden, y
 La lógica (servicios, etapas, vencimientos, alertas, orden) está en trabajos_core.py.
 """
 
+import asyncio
 import re
 import threading
 import time
 from typing import Optional
 
 import psycopg2.extras
-from fastapi import APIRouter, Depends, HTTPException
+from urllib.parse import quote
+
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel
 
 import buscador_inpi as bi
 import trabajos_core as tc
+import trabajos_documentos as td
 
 RE_ACTA = re.compile(r"^\d{4,9}$")
 CADA_DETECCION = 600          # segundos entre detecciones automáticas al abrir el tablero
@@ -786,8 +790,10 @@ def crear_router(verificar_login, conexion) -> APIRouter:
                 "SELECT id, tipo, marca, generado_en, generado_por FROM informes_viabilidad "
                 "WHERE cliente_id = %s AND archivado_en IS NULL ORDER BY generado_en DESC LIMIT 50", (t["cliente_id"],))
             informes, otros_informes = tc.separar_informes(t, cur.fetchall())
+            documentos = _documentos(cur, tid)
         return {"trabajo": t, "expediente": expediente, "bitacora": bitacora, "inpi": inpi, "solicitudes": solicitudes,
-                "informes": informes, "otros_informes": otros_informes,
+                "informes": informes, "otros_informes": otros_informes, "documentos": documentos,
+                "tipos_documento": td.TIPOS,
                 "servicios": tc.servicios_publicos(), "notion_procesos": tc.NOTION_PROCESOS}
 
     @router.post("/api/trabajos")
@@ -985,6 +991,71 @@ def crear_router(verificar_login, conexion) -> APIRouter:
                 cur.execute("DELETE FROM trabajos_orden_columnas WHERE usuario = %s", (usuario,))
             conn.commit()
         return {"orden": orden, "servicios": tc.ordenar_servicios(tc.servicios_publicos(), orden)}
+
+    # ── Documentos firmados (27/11/2026): fotos o PDF del poder / toma / desiste firmado → un PDF para el INPI ──
+    def _documentos(cur, tid):
+        try:
+            cur.execute("SAVEPOINT docs")
+            cur.execute("SELECT id, tipo, nombre, paginas, bytes, subido_por, subido_en FROM trabajos_documentos "
+                        "WHERE trabajo_id = %s ORDER BY subido_en DESC, id DESC", (tid,))
+            filas = cur.fetchall()
+            cur.execute("RELEASE SAVEPOINT docs")
+            return filas
+        except Exception as e:
+            cur.execute("ROLLBACK TO SAVEPOINT docs")
+            print(f"[seguimientos] documentos del trabajo {tid}: {e}")
+            return []
+
+    @router.post("/api/trabajos/{tid}/documentos")
+    async def subir_documento(tid: int, request: Request, usuario: str = Depends(verificar_login)):
+        """multipart: tipo (poder | toma | desiste | otro), escaneo (1/0) y archivos (fotos o PDF, en el orden de
+        las páginas). Se guarda un solo PDF."""
+        largo = int(request.headers.get("content-length") or 0)
+        if largo > td.MAX_BYTES:
+            raise HTTPException(status_code=413, detail="Los archivos pesan demasiado (máximo 40 MB entre todos).")
+        form = await request.form(max_files=td.MAX_ARCHIVOS + 1, max_fields=10)
+        tipo = form.get("tipo") if form.get("tipo") in td.TIPOS else "otro"
+        escaneo = str(form.get("escaneo") or "1") != "0"
+        archivos = []
+        for f in form.getlist("archivos"):
+            if hasattr(f, "read"):
+                archivos.append((f.filename or "archivo", await f.read()))
+        if sum(len(b) for _, b in archivos) > td.MAX_BYTES:
+            raise HTTPException(status_code=413, detail="Los archivos pesan demasiado (máximo 40 MB entre todos).")
+        try:
+            pdf, paginas = await asyncio.to_thread(td.a_pdf, archivos, escaneo)
+        except td.ArchivoInvalido as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        with conexion() as conn, rcur(conn) as cur:
+            t = _uno(cur, tid)
+            nombre = td.nombre_archivo(t.get("acta_efectiva") or t.get("acta"), t.get("marca"), tipo)
+            cur.execute("INSERT INTO trabajos_documentos (trabajo_id, tipo, nombre, pdf, paginas, bytes, subido_por) "
+                        "VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id",
+                        (tid, tipo, nombre, psycopg2.Binary(pdf), paginas, len(pdf), usuario))
+            did = cur.fetchone()["id"]
+            cur.execute("INSERT INTO trabajos_bitacora (trabajo_id, fecha, texto, usuario) VALUES (%s, %s, %s, %s)",
+                        (tid, tc.hoy_ar(), f"Se subió «{td.TIPOS[tipo]}» ({paginas} página{'s' if paginas != 1 else ''}): "
+                         "listo en PDF para el INPI.", usuario))
+            conn.commit()
+            return {"id": did, "nombre": nombre, "paginas": paginas, "bytes": len(pdf), "documentos": _documentos(cur, tid)}
+
+    @router.get("/api/trabajos/{tid}/documentos/{did}")
+    def bajar_documento(tid: int, did: int, ver: bool = False, _: str = Depends(verificar_login)):
+        with conexion() as conn, rcur(conn) as cur:
+            cur.execute("SELECT nombre, pdf FROM trabajos_documentos WHERE id = %s AND trabajo_id = %s", (did, tid))
+            d = cur.fetchone()
+        if not d:
+            raise HTTPException(status_code=404, detail="No existe ese documento")
+        modo = "inline" if ver else "attachment"
+        return Response(bytes(d["pdf"]), media_type="application/pdf",
+                        headers={"Content-Disposition": f"{modo}; filename=\"documento.pdf\"; filename*=UTF-8''{quote(d['nombre'])}"})
+
+    @router.delete("/api/trabajos/{tid}/documentos/{did}")
+    def borrar_documento(tid: int, did: int, _: str = Depends(verificar_login)):
+        with conexion() as conn, rcur(conn) as cur:
+            cur.execute("DELETE FROM trabajos_documentos WHERE id = %s AND trabajo_id = %s", (did, tid))
+            conn.commit()
+            return {"ok": cur.rowcount > 0, "documentos": _documentos(cur, tid)}
 
     @router.get("/api/trabajos-usuarios")
     def usuarios_para_mencionar(usuario: str = Depends(verificar_login)):

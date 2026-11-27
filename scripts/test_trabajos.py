@@ -453,6 +453,27 @@ class TomaIntervencion(unittest.TestCase):
         self.assertEqual(sorted(o), sorted(s["id"] for s in tc.SERVICIOS))
         self.assertEqual(o[2], tc.SERVICIOS[0]["id"])
 
+    def test_documentos_firmados_a_pdf(self):
+        import io
+        from PIL import Image
+        from pypdf import PdfReader
+        import trabajos_documentos as td
+        def foto(w, h, fmt="JPEG", modo="RGB"):
+            b = io.BytesIO(); Image.new(modo, (w, h), "gray").save(b, fmt); return b.getvalue()
+        pdf, n = td.a_pdf([("1.jpg", foto(3000, 4000)), ("2.png", foto(800, 600, "PNG", "RGBA"))])
+        self.assertEqual(n, 2)
+        pdf2, n2 = td.a_pdf([("a.pdf", pdf), ("3.jpg", foto(1000, 1400))], escaneo=False)
+        self.assertEqual(n2, 3)
+        anchos = {round(float(p.mediabox.width)) for p in PdfReader(io.BytesIO(pdf2)).pages}
+        self.assertEqual(anchos, {595})   # todas del ancho de una A4
+        with self.assertRaises(td.ArchivoInvalido):
+            td.a_pdf([("x.heic", b"\0\0\0\x18ftypheic" + b"0" * 20)])
+        with self.assertRaises(td.ArchivoInvalido):
+            td.a_pdf([("x.txt", b"hola")])
+        with self.assertRaises(td.ArchivoInvalido):
+            td.a_pdf([])
+        self.assertEqual(td.nombre_archivo("4790681", "Más", "desiste"), "4790681-MÁS - Desiste firmado.pdf")
+
     def test_etapa_automatica(self):
         for sid in tc.SERVICIOS_TOMA:
             s = tc.POR_ID[sid]

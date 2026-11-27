@@ -1291,194 +1291,34 @@ function htmlPoderes(lista) {
       <button type="button" class="cl-btn peligro mini" data-borrar-poder title="Saca este poder de la lista">×</button></li>`).join("")}</ul>`;
 }
 
-async function abrirGeneradorPoder(clienteId) {
-  const caja = $("cli-poder");
-  if (!caja.hidden) { caja.hidden = true; return; }
+// Los generadores de escritos viven en escritos.js (27/11/2026): se usan igual desde la ficha del trabajo en
+// Seguimientos. Acá solo se abre / cierra cada caja y, al generar un poder, se recarga la lista de poderes.
+function _cajaEscrito(id) {
+  const caja = $(id);
+  if (!caja.hidden) { caja.hidden = true; return null; }
   caja.hidden = false;
-  caja.innerHTML = '<p class="crm-cargando">Preparando…</p>';
-  let r;
-  try { r = await api(`/api/clientes/${clienteId}/poder`); }
-  catch (e) { caja.innerHTML = `<p class="crm-error">No se pudo preparar (${esc(e.message)}).</p>`; return; }
-  const p = r.propuesta;
-  const faltan = [];
-  if (!p.otorgante.match(/domicili/)) faltan.push("domicilio");
-  if (p.tipo_persona === "fisica" && !p.otorgante.match(/DNI/)) faltan.push("DNI");
-  if (p.tipo_persona === "juridica" && /^_+ en representación/.test(p.otorgante)) faltan.push("quién firma por la empresa");
-  const etiquetaOtorgante = p.tipo_persona === "juridica"
-    ? "Otorgante: quien firma «en representación de» la empresa, y el domicilio de la empresa"
-    : "Otorgante(s): nombre, DNI y domicilio de cada titular (si son varios, separados por «;»)";
-  caja.innerHTML = `
-    <p class="crm-gris" style="margin:0 0 8px">Se arma con el modelo del estudio y los datos del cliente. Revisá el texto (por ejemplo «domiciliado» / «domiciliada») y descargalo para mandárselo a firmar. La aclaración (y el cargo, si es empresa) salen en blanco: los completa a mano quien firma.</p>
-    ${p.firmantes > 1 ? `<p class="crm-nota" style="margin:0 0 8px">La marca tiene <strong>${p.firmantes} titulares</strong> (según el formulario): el poder los nombra a todos y lleva un lugar de firma, aclaración y DNI para cada uno.</p>` : ""}
-    ${faltan.length ? `<p class="crm-error" style="padding:0 0 8px">Ojo: falta ${faltan.join(", ")} en la ficha. Podés completarlo acá abajo o en «Datos para el trámite».</p>` : ""}
-    <form class="cl-form" id="poder-form" style="margin-top:0">
-      <label>Tipo<select name="tipo_persona">${Object.entries(est.tiposPersona).map(([k, v]) => `<option value="${k}" ${k === p.tipo_persona ? "selected" : ""}>${esc(v)}</option>`).join("")}</select></label>
-      <label>Lugar<input name="lugar" value="${esc(p.lugar)}"></label>
-      <label>Fecha<input type="date" name="fecha" value="${esc(p.fecha)}"></label>
-      <label title="Persona física: cuántos titulares firman (cada uno tiene su lugar de firma)">Titulares que firman<input type="number" name="firmantes" min="1" max="6" value="${esc(p.firmantes || 1)}"></label>
-      <label>Encabezado<select name="genero">
-        <option value="masculino" ${p.genero === "masculino" ? "selected" : ""}>El abajo firmante / Los abajo firmantes</option>
-        <option value="femenino" ${p.genero === "femenino" ? "selected" : ""}>La abajo firmante / Las abajo firmantes</option>
-        <option value="neutro" ${p.genero === "neutro" ? "selected" : ""}>El/La abajo firmante</option></select></label>
-      <label class="ancho">${etiquetaOtorgante}<textarea name="otorgante" rows="${p.firmantes > 1 ? 6 : 3}">${esc(p.otorgante)}</textarea></label>
-    </form>
-    <p class="crm-nota">Apoderado: ${esc(r.apoderado)} <a href="/clientes?vista=ajustes" title="Se cambia en Ajustes">(cambiar)</a></p>
-    <div class="cl-acciones"><button type="button" class="cl-btn" data-generar="pdf">Descargar PDF</button>
-      <button type="button" class="cl-btn sec" data-generar="docx">Descargar Word</button>
-      <span class="cl-estado" id="poder-estado"></span></div>`;
-  const form = $("poder-form");
-  caja.querySelectorAll("[data-generar]").forEach(b => b.addEventListener("click", async () => {
-    const f = form.elements;
-    const datos = { tipo_persona: f.tipo_persona.value, otorgante: f.otorgante.value, lugar: f.lugar.value,
-                    fecha: f.fecha.value, firmantes: String(f.firmantes.value || 1), genero: f.genero.value };
-    const e = $("poder-estado"); e.className = "cl-estado"; e.textContent = "Generando…"; b.disabled = true;
-    try {
-      await bajarArchivo(`/api/clientes/${clienteId}/poder?formato=${b.dataset.generar}`,
-        { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(datos) }, `Poder.${b.dataset.generar}`);
-      e.textContent = "Listo: se descargó y quedó en «Poderes generados».";
-      const d = await api(`/api/clientes/${clienteId}`);
-      $("cli-poderes-lista").innerHTML = "<h4>Poderes generados</h4>" + htmlPoderes(d.poderes);
-      conectarPoderes(clienteId);
-    } catch (err) { e.textContent = err.message; e.className = "cl-estado mal"; }
-    b.disabled = false;
-  }));
+  return caja;
 }
-
-// Poder simple marcas: modelo acotado a marcas (INPI y negociaciones/acuerdos), solo persona humana (uno o varios titulares).
-async function abrirGeneradorPoderSimple(clienteId) {
-  const caja = $("cli-poder-simple");
-  if (!caja.hidden) { caja.hidden = true; return; }
-  caja.hidden = false;
-  caja.innerHTML = '<p class="crm-cargando">Preparando…</p>';
-  let r;
-  try { r = await api(`/api/clientes/${clienteId}/poder?modelo=simple_marcas`); }
-  catch (e) { caja.innerHTML = `<p class="crm-error">No se pudo preparar (${esc(e.message)}).</p>`; return; }
-  const p = r.propuesta;
-  const faltan = [];
-  if (!p.otorgante.match(/domicilio/)) faltan.push("domicilio");
-  if (!p.otorgante.match(/DNI/)) faltan.push("DNI");
-  caja.innerHTML = `
-    <h4 style="margin-top:0">Poder simple marcas</h4>
-    <p class="crm-gris" style="margin:0 0 8px">Poder acotado a marcas: trámites ante el INPI y negociaciones y acuerdos (oposiciones, coexistencia). Es para <strong>persona humana</strong> (con DNI). Firma, aclaración y DNI salen como líneas en blanco para completar a mano. Sale siempre en una sola hoja.</p>
-    ${p.cliente_juridica ? '<p class="crm-error" style="padding:0 0 8px">Ojo: este cliente figura como persona jurídica y este modelo es para persona humana. Usá «Generar poder para firmar», que en persona jurídica arma el modelo de empresa («El abajo firmante … en representación de …»).</p>' : ""}
-    ${faltan.length ? `<p class="crm-error" style="padding:0 0 8px">Ojo: falta ${faltan.join(", ")} en la ficha. Podés completarlo acá abajo o en «Datos para el trámite».</p>` : ""}
-    ${p.firmantes > 1 ? `<p class="crm-nota" style="margin:0 0 8px">La marca tiene <strong>${p.firmantes} titulares</strong> (según el formulario): el poder los nombra a todos, en plural («Los abajo firmantes… otorgan…»), y lleva un lugar de firma, aclaración y DNI para cada uno.</p>` : ""}
-    <form class="cl-form" id="poder-simple-form" style="margin-top:0">
-      <label>Firmante<select name="genero">
-        <option value="neutro" ${p.genero === "neutro" ? "selected" : ""}>El/La (como el modelo) · Los/Las si son varios</option>
-        <option value="masculino" ${p.genero === "masculino" ? "selected" : ""}>El (representarlo, del mandante) · Los si son varios</option>
-        <option value="femenino" ${p.genero === "femenino" ? "selected" : ""}>La (representarla, de la mandante) · Las si son varios</option></select></label>
-      <label title="Cuántos titulares firman (cada uno tiene su lugar de firma)">Titulares que firman<input type="number" name="firmantes" min="1" max="6" value="${esc(p.firmantes || 1)}"></label>
-      <label>Lugar<input name="lugar" value="${esc(p.lugar)}"></label>
-      <label>Fecha<input type="date" name="fecha" value="${esc(p.fecha)}"></label>
-      <label class="ancho">El/La abajo firmante… (nombre, DNI y domicilio de cada titular; si son varios, separados por «;»)<textarea name="otorgante" rows="${p.firmantes > 1 ? 6 : 3}">${esc(p.otorgante)}</textarea></label>
-    </form>
-    <p class="crm-nota">Apoderado (fijo en este modelo): ${esc(r.apoderado)}</p>
-    <div class="cl-acciones"><button type="button" class="cl-btn" data-generar-simple="pdf">Descargar PDF</button>
-      <button type="button" class="cl-btn sec" data-generar-simple="docx">Descargar Word</button>
-      <span class="cl-estado" id="poder-simple-estado"></span></div>`;
-  const form = $("poder-simple-form");
-  caja.querySelectorAll("[data-generar-simple]").forEach(b => b.addEventListener("click", async () => {
-    const f = form.elements;
-    const datos = { modelo: "simple_marcas", tipo_persona: "fisica", genero: f.genero.value, otorgante: f.otorgante.value,
-                    lugar: f.lugar.value, fecha: f.fecha.value, firmantes: String(f.firmantes.value || 1) };
-    const e = $("poder-simple-estado"); e.className = "cl-estado"; e.textContent = "Generando…"; b.disabled = true;
-    try {
-      await bajarArchivo(`/api/clientes/${clienteId}/poder?formato=${b.dataset.generarSimple}`,
-        { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(datos) },
-        `Poder_simple_marcas.${b.dataset.generarSimple}`);
-      e.textContent = "Listo: se descargó y quedó en «Poderes generados».";
-      const d = await api(`/api/clientes/${clienteId}`);
-      $("cli-poderes-lista").innerHTML = "<h4>Poderes generados</h4>" + htmlPoderes(d.poderes);
-      conectarPoderes(clienteId);
-    } catch (err) { e.textContent = err.message; e.className = "cl-estado mal"; }
-    b.disabled = false;
-  }));
+async function _recargarPoderes(clienteId) {
+  const d = await api(`/api/clientes/${clienteId}`);
+  $("cli-poderes-lista").innerHTML = "<h4>Poderes generados</h4>" + htmlPoderes(d.poderes);
+  conectarPoderes(clienteId);
 }
-
-// Toma de intervención: un documento por marca. Las marcas con oposición abierta vienen tildadas.
-async function abrirGeneradorToma(clienteId) {
-  const caja = $("cli-toma");
-  if (!caja.hidden) { caja.hidden = true; return; }
-  caja.hidden = false;
-  caja.innerHTML = '<p class="crm-cargando">Preparando…</p>';
-  let r;
-  try { r = await api(`/api/clientes/${clienteId}/toma-intervencion`); }
-  catch (e) { caja.innerHTML = `<p class="crm-error">No se pudo preparar (${esc(e.message)}).</p>`; return; }
-  if (!r.marcas.length) { caja.innerHTML = '<p class="crm-gris">Este cliente no tiene marcas cargadas.</p>'; return; }
-  const hayOp = r.marcas.some(m => m.con_oposicion);
-  caja.innerHTML = `
-    <p class="crm-gris" style="margin:0 0 8px">Se genera <strong>un documento por marca</strong> con el modelo del estudio. ${hayOp ? "Vienen tildadas las marcas con oposición abierta." : "Ninguna marca tiene oposición abierta: tildá las que necesites."} Podés corregir los datos antes de bajarlos; si elegís varias, se baja un ZIP.</p>
-    <div style="overflow-x:auto"><table class="cl-tabla"><thead><tr><th></th><th>Acta</th><th>Marca</th><th>Clase</th><th>Tipo</th><th>Solicitante</th><th>Fecha</th></tr></thead><tbody>
-    ${r.marcas.map((m, i) => `<tr data-i="${i}">
-      <td><input type="checkbox" data-sel ${m.con_oposicion ? "checked" : ""}></td>
-      <td><input data-k="acta" value="${esc(m.acta)}" size="9"></td>
-      <td><input data-k="marca" value="${esc(m.marca)}">${m.con_oposicion ? '<br><span class="cl-tag aviso">⚖ oposición / vista</span>' : ""}</td>
-      <td><input data-k="clase" value="${esc(m.clase)}" size="3"></td>
-      <td><input data-k="tipo" value="${esc(m.tipo)}" size="12"></td>
-      <td><input data-k="solicitante" value="${esc(m.solicitante)}"></td>
-      <td><input type="date" data-k="fecha" value="${esc(m.fecha)}"></td></tr>`).join("")}</tbody></table></div>
-    <div class="cl-acciones"><button type="button" class="cl-btn" data-toma="docx">Descargar Word</button>
-      <button type="button" class="cl-btn sec" data-toma="pdf">Descargar PDF</button>
-      <span class="cl-estado" id="toma-estado"></span></div>`;
-  caja.querySelectorAll("[data-toma]").forEach(b => b.addEventListener("click", async () => {
-    const items = [...caja.querySelectorAll("tr[data-i]")].filter(tr => tr.querySelector("[data-sel]").checked).map(tr => {
-      const o = {}; tr.querySelectorAll("[data-k]").forEach(i => { o[i.dataset.k] = i.value; }); return o; });
-    const e = $("toma-estado"); e.className = "cl-estado";
-    if (!items.length) { e.textContent = "Tildá al menos una marca."; e.className = "cl-estado mal"; return; }
-    e.textContent = "Generando…"; b.disabled = true;
-    try {
-      await bajarArchivo(`/api/clientes/${clienteId}/toma-intervencion?formato=${b.dataset.toma}`,
-        { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ items }) }, "Toma_de_intervencion");
-      e.textContent = items.length > 1 ? `Listo: se descargó un ZIP con ${items.length} documentos.` : "Listo: se descargó.";
-    } catch (err) { e.textContent = err.message; e.className = "cl-estado mal"; }
-    b.disabled = false;
-  }));
+function abrirGeneradorPoder(clienteId) {
+  const caja = _cajaEscrito("cli-poder");
+  if (caja) Escritos.poder(caja, clienteId, { tiposPersona: est.tiposPersona, alListo: () => _recargarPoderes(clienteId) });
 }
-
-// DESISTE: escrito para desistir de la solicitud de registro de una marca, uno por marca (acta).
-// Si el cliente tiene una sola marca viene tildada; con varias, se tilda a mano la que corresponda.
-async function abrirGeneradorDesiste(clienteId) {
-  const caja = $("cli-desiste");
-  if (!caja.hidden) { caja.hidden = true; return; }
-  caja.hidden = false;
-  caja.innerHTML = '<p class="crm-cargando">Preparando…</p>';
-  let r;
-  try { r = await api(`/api/clientes/${clienteId}/desiste`); }
-  catch (e) { caja.innerHTML = `<p class="crm-error">No se pudo preparar (${esc(e.message)}).</p>`; return; }
-  if (!r.marcas.length) { caja.innerHTML = '<p class="crm-gris">Este cliente no tiene marcas cargadas.</p>'; return; }
-  const una = r.marcas.length === 1;
-  const opcGenero = g => ["domiciliada", "domiciliado", "domiciliado/a"].map(x => `<option ${x === g ? "selected" : ""}>${x}</option>`).join("");
-  caja.innerHTML = `
-    <h4 style="margin-top:0">Desiste</h4>
-    <p class="crm-gris" style="margin:0 0 8px">Escrito para <strong>desistir de la solicitud de registro</strong> de la marca ante el INPI, firmado por ${esc(r.apoderada)} (Matrícula INPI N.º ${esc(r.matricula)}) como apoderada del titular, «conforme al poder que obra en el expediente». Se genera <strong>uno por marca</strong>: ${una ? "la marca del cliente ya viene tildada." : "tildá la o las marcas a desistir."} Podés corregir los datos antes de bajarlo; si elegís varias, se baja un ZIP.</p>
-    <div style="overflow-x:auto"><table class="cl-tabla"><thead><tr><th></th><th>Acta</th><th>Marca</th><th>Clase</th><th>Tipo</th><th>Titular</th><th>CUIT / DNI</th><th>Domicilio</th></tr></thead><tbody>
-    ${r.marcas.map((m, i) => `<tr data-i="${i}">
-      <td><input type="checkbox" data-sel ${una ? "checked" : ""}></td>
-      <td><input data-k="acta" value="${esc(m.acta)}" size="9">${m.estado ? `<br><span class="crm-gris">${esc(m.estado)}</span>` : ""}</td>
-      <td><input data-k="marca" value="${esc(m.marca)}"></td>
-      <td><input data-k="clase" value="${esc(m.clase)}" size="3"></td>
-      <td><input data-k="tipo" value="${esc(m.tipo)}" size="12"></td>
-      <td><input data-k="titular" value="${esc(m.titular)}"></td>
-      <td><input data-k="identificacion" value="${esc(m.identificacion)}" size="18" placeholder="CUIT 30-…"></td>
-      <td><select data-k="genero">${opcGenero(m.genero)}</select> en<br><input data-k="domicilio" value="${esc(m.domicilio)}" size="34"><input type="hidden" data-k="fecha" value="${esc(m.fecha)}"></td></tr>`).join("")}</tbody></table></div>
-    <div class="cl-acciones"><button type="button" class="cl-btn" data-desiste="pdf">Descargar PDF</button>
-      <button type="button" class="cl-btn sec" data-desiste="docx">Descargar Word</button>
-      <span class="cl-estado" id="desiste-estado"></span></div>`;
-  caja.querySelectorAll("[data-desiste]").forEach(b => b.addEventListener("click", async () => {
-    const items = [...caja.querySelectorAll("tr[data-i]")].filter(tr => tr.querySelector("[data-sel]").checked).map(tr => {
-      const o = {}; tr.querySelectorAll("[data-k]").forEach(i => { o[i.dataset.k] = i.value; }); return o; });
-    const e = $("desiste-estado"); e.className = "cl-estado";
-    if (!items.length) { e.textContent = "Tildá al menos una marca."; e.className = "cl-estado mal"; return; }
-    if (items.some(o => !o.acta.trim() || !o.marca.trim() || !o.titular.trim())) { e.textContent = "Falta el acta, la marca o el titular."; e.className = "cl-estado mal"; return; }
-    e.textContent = "Generando…"; b.disabled = true;
-    try {
-      await bajarArchivo(`/api/clientes/${clienteId}/desiste?formato=${b.dataset.desiste}`,
-        { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ items }) }, "Desiste");
-      e.textContent = items.length > 1 ? `Listo: se descargó un ZIP con ${items.length} escritos.` : "Listo: se descargó.";
-    } catch (err) { e.textContent = err.message; e.className = "cl-estado mal"; }
-    b.disabled = false;
-  }));
+function abrirGeneradorPoderSimple(clienteId) {
+  const caja = _cajaEscrito("cli-poder-simple");
+  if (caja) Escritos.poderSimple(caja, clienteId, { alListo: () => _recargarPoderes(clienteId) });
+}
+function abrirGeneradorToma(clienteId) {
+  const caja = _cajaEscrito("cli-toma");
+  if (caja) Escritos.toma(caja, clienteId);
+}
+function abrirGeneradorDesiste(clienteId) {
+  const caja = _cajaEscrito("cli-desiste");
+  if (caja) Escritos.desiste(caja, clienteId);
 }
 
 function conectarPoderes(clienteId) {
