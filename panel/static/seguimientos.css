@@ -207,6 +207,7 @@
   .sg-tablero[data-col-movil="oposicion"] .sg-col[data-col="oposicion"],
   .sg-tablero[data-col-movil="oposicion_adm"] .sg-col[data-col="oposicion_adm"],
   .sg-tablero[data-col-movil="registro"] .sg-col[data-col="registro"],
+  .sg-tablero[data-col-movil="desistimiento"] .sg-col[data-col="desistimiento"],
   .sg-tablero[data-col-movil="vigilancia"] .sg-col[data-col="vigilancia"] { display: block; }
   .sg-tablero .sg-col-cab { display: none; }
   .sg-tablero .sg-col-sub { margin: 0 2px 8px; }
@@ -371,3 +372,10 @@
 .sg-check { display: flex !important; flex-direction: row !important; align-items: center; gap: 6px; }
 .sg-check input { width: auto !important; margin: 0; }
 .sg-check[hidden] { display: none !important; }
+
+/* Orden de las columnas arrastrando la cabecera (27/11/2026) */
+.sg-col-cab[draggable="true"] { cursor: grab; }
+.sg-col-cab .agarre { color: #9aa1ab; font-size: 13px; margin-right: -2px; }
+.sg-col.arrastrando { opacity: .45; }
+.sg-col.destino { outline: 2px dashed var(--sg-color, #64748b); outline-offset: -2px; }
+#btn-orden[hidden] { display: none; }
