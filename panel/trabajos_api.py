@@ -1032,10 +1032,7 @@ def crear_router(verificar_login, conexion) -> APIRouter:
             cur.execute("INSERT INTO trabajos_documentos (trabajo_id, tipo, nombre, pdf, paginas, bytes, subido_por) "
                         "VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id",
                         (tid, tipo, nombre, psycopg2.Binary(pdf), paginas, len(pdf), usuario))
-            did = cur.fetchone()["id"]
-            cur.execute("INSERT INTO trabajos_bitacora (trabajo_id, fecha, texto, usuario) VALUES (%s, %s, %s, %s)",
-                        (tid, tc.hoy_ar(), f"Se subió «{td.TIPOS[tipo]}» ({paginas} página{'s' if paginas != 1 else ''}): "
-                         "listo en PDF para el INPI.", usuario))
+            did = cur.fetchone()["id"]   # sin nota en la bitácora: el PDF ya se ve en «Escritos y firmados»
             conn.commit()
             return {"id": did, "nombre": nombre, "paginas": paginas, "bytes": len(pdf), "documentos": _documentos(cur, tid)}
 

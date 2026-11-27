@@ -39,6 +39,8 @@ ESQUEMA = [
         subido_en   TIMESTAMPTZ NOT NULL DEFAULT now()
     )""",
     "CREATE INDEX IF NOT EXISTS idx_trabajos_documentos ON trabajos_documentos(trabajo_id, subido_en DESC)",
+    # 27/11/2026: subir un firmado ya no deja nota en la bitácora; se borran las que quedaron de las primeras subidas.
+    "DELETE FROM trabajos_bitacora WHERE texto LIKE 'Se subió «%»%: listo en PDF para el INPI.'",
 ]
 
 
