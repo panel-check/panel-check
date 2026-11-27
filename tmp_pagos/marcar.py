@@ -45,7 +45,14 @@ for f in sigue:
     pista = sorted({f"{m['denominacion']} cl.{m['clase']} ({m['acta']})" for m in marcas
                     if b and b in cartera.normalizar_nombre(m["denominacion"])})[:6]
     print(f"  {f['linea']}  — {f.get('error')}" + (f"   · en la cartera hay: {'; '.join(pista)}" if pista else ""))
+cur.execute("""SELECT p.acta, m.denominacion, m.clase, p.marcado_por FROM cartera_vigilancia_pagos p
+               JOIN cartera_marcas m ON m.acta = p.acta WHERE p.anio = 2026 AND NOT (p.acta = ANY(%s))""", (list(enc),))
+extra = cur.fetchall()
+print(f"\nPagas 2026 que NO están en la planilla (se desmarcan): {len(extra)}")
+for m in extra:
+    print(f"  {m['acta']}  {m['denominacion']}  cl.{m['clase']}  (marcada por: {m['marcado_por']})")
 if APLICAR:
+    cartera.marcar_pagos(cur, [m["acta"] for m in extra], 2026, False)
     n = cartera.marcar_pagos(cur, list(enc), 2026, True, "planilla 2026")
     conn.commit()
     cur.execute("SELECT COUNT(*) AS n FROM cartera_vigilancia_pagos WHERE anio = 2026")
