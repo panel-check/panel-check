@@ -701,6 +701,18 @@ document.addEventListener("submit", async (ev) => {
   }
 });
 
+// Otros trabajos del mismo cliente (27/11/2026): chips arriba de la ficha para pasar de TIMBEROS a MAPIAPPS sin volver al tablero.
+function otrosTrabajos(d) {
+  const otros = d.otros_trabajos || [];
+  if (!otros.length) return "";
+  const chip = (o) => { const s = servicioDe(o.servicio) || {}; return `<button type="button" class="sg-otro ${o.estado === "cerrado" ? "cerrado" : ""}" data-abrir-trabajo="${o.id}" style="--sg-color:${s.color || "#64748b"}" title="${esc(o.servicio_nombre || "")} · ${esc(o.etapa_nombre || "")}${o.estado === "cerrado" ? " · cerrado" : ""}"><span class="punto"></span>${esc(o.marca)} <small>${esc(s.corto || o.servicio_nombre || "")}</small></button>`; };
+  return `<div class="sg-otros"><span>Otros trabajos del cliente:</span>${otros.map(chip).join("")}</div>`;
+}
+document.addEventListener("click", (ev) => {
+  const b = ev.target.closest("[data-abrir-trabajo]");
+  if (b) abrirFicha(Number(b.dataset.abrirTrabajo));
+});
+
 function bloqueInformes(d) {
   const item = (i) => `<li><a href="/informes/${i.id}" target="_blank" rel="noopener"><b>${esc(i.tipo_nombre)}</b>${i.marca ? ` · ${esc(i.marca)}` : ""}</a>
       <small>${fecha(i.generado_en)}${i.generado_por ? ` · ${esc(i.generado_por)}` : ""}</small></li>`;
@@ -745,6 +757,7 @@ function pintarFicha(d) {
       <div class="sg-f-marca"><span class="nombre" data-editar-marca title="Clic para editar el nombre de la marca">${esc(t.marca)}</span><button type="button" class="sg-f-lapiz" data-editar-marca title="Editar el nombre de la marca" aria-label="Editar el nombre de la marca">✎</button></div>
       <div class="sg-f-cliente"><a href="/clientes?cliente=${t.cliente_id}" data-cliente-popup="${t.cliente_id}" title="Ver la ficha del cliente">${esc(t.cliente)}</a>${t.cliente_telefono ? ` · ${esc(t.cliente_telefono)}` : ""}${t.cliente_email ? ` · ${esc(t.cliente_email)}` : ""}</div>
       ${t.nos_oponemos ? `<div class="sg-f-contra">Nos oponemos a <b>${esc(t.contraparte || "la marca nueva")}</b>${t.acta_contraria ? ` · acta ${linkActa(t.acta_contraria)}` : ""} <small>(desde una alerta de vigilancia)</small></div>` : ""}
+      ${otrosTrabajos(d)}
       <div class="sg-f-links">
         ${enlace(t.carpeta_drive, "📁 Carpeta Drive")}
         <button type="button" class="sg-btn sg-btn-mini" data-armar-mail title="Armar un mail o WhatsApp con una plantilla y los datos de este trabajo ya completados">✉️ Mail</button>
@@ -841,6 +854,15 @@ document.addEventListener("click", async (ev) => {
     $("n-marca").focus();
   } catch (e) { est.textContent = e.message; }
 });
+
+function nuevoConCliente(id, nombre) {
+  abrirNuevo();
+  if (!id) return;
+  $("n-cliente").value = `${nombre || "Cliente"} · #${id}`;
+  $("n-cliente-ayuda").textContent = "✓ Cliente elegido desde su ficha.";
+  $("n-cliente-ayuda").classList.add("ok");
+  $("n-marca").focus();
+}
 
 function clienteElegido() {
   const m = $("n-cliente").value.match(/#(\d+)\s*$/);
@@ -1250,7 +1272,11 @@ document.addEventListener("click", (ev) => {
   abrirClientePopup(a.dataset.clientePopup, a.dataset.ctab);
 });
 window.addEventListener("message", (ev) => {
-  if (ev.origin === location.origin && ev.data && ev.data.tipo === "panel-cerrar-cliente") cerrarClientePopup();
+  if (ev.origin !== location.origin || !ev.data) return;
+  if (ev.data.tipo === "panel-cerrar-cliente") cerrarClientePopup();
+  // Desde la ficha del cliente abierta acá (27/11/2026): abrir uno de sus trabajos o el alta de uno nuevo
+  if (ev.data.tipo === "panel-abrir-trabajo" && ev.data.id) { sg.abierto = Number(ev.data.id); cerrarClientePopup(); }
+  if (ev.data.tipo === "panel-nuevo-trabajo") { cerrarClientePopup(); nuevoConCliente(ev.data.cliente_id, ev.data.nombre); }
 });
 document.addEventListener("keydown", (ev) => { if (ev.key === "Escape" && popupClienteAbierto()) cerrarClientePopup(); });
 
@@ -1293,13 +1319,7 @@ document.addEventListener("click", (ev) => {
   else if (Number(p.get("vigilancia"))) abrirVigilancia(Number(p.get("vigilancia")));
   else if (p.get("nuevo")) {
     // Desde la ficha del cliente (Clientes → Trabajos → «＋ Nuevo trabajo»): el alta ya con el cliente elegido.
-    abrirNuevo();
-    if (Number(p.get("cliente"))) {
-      $("n-cliente").value = `${p.get("cliente_nombre") || "Cliente"} #${Number(p.get("cliente"))}`;
-      $("n-cliente-ayuda").textContent = "✓ Cliente elegido desde su ficha.";
-      $("n-cliente-ayuda").classList.add("ok");
-      $("n-marca").focus();
-    }
+    nuevoConCliente(Number(p.get("cliente")), p.get("cliente_nombre"));
     history.replaceState(null, "", "/seguimientos");
   }
 })();

@@ -195,8 +195,15 @@ function chipsTrabajos(lista) {
   return lista.map(x => { const s = sv[x.s] || { corto: x.s, color: "#64748b" };
     return `<span class="cl-chip-trabajo" style="--c:${s.color}">${esc(s.corto)}${x.n > 1 ? ` · ${x.n}` : ""}</span>`; }).join(" ");
 }
-function irATrabajo(id) { (window.top || window).location.href = `/seguimientos?trabajo=${id}`; }
+// Si la ficha está abierta como panel dentro de Seguimientos, se le pide a Seguimientos que abra el trabajo (o el
+// alta) sin recargar la página; si no, se navega.
+function enSeguimientos() { try { return window.top !== window && window.top.location.pathname === "/seguimientos"; } catch (_) { return false; } }
+function irATrabajo(id) {
+  if (enSeguimientos()) return window.top.postMessage({ tipo: "panel-abrir-trabajo", id: +id }, location.origin);
+  (window.top || window).location.href = `/seguimientos?trabajo=${id}`;
+}
 function nuevoTrabajoPara(c) {
+  if (enSeguimientos()) return window.top.postMessage({ tipo: "panel-nuevo-trabajo", cliente_id: c.id, nombre: c.nombre }, location.origin);
   (window.top || window).location.href = `/seguimientos?nuevo=1&cliente=${c.id}&cliente_nombre=${encodeURIComponent(c.nombre)}`;
 }
 const NIVEL_TAG = { rojo: "mal", vencido: "mal", amarillo: "aviso", falta: "aviso", cumplido: "ok" };

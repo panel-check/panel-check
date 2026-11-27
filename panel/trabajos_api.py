@@ -791,7 +791,12 @@ def crear_router(verificar_login, conexion) -> APIRouter:
                 "WHERE cliente_id = %s AND archivado_en IS NULL ORDER BY generado_en DESC LIMIT 50", (t["cliente_id"],))
             informes, otros_informes = tc.separar_informes(t, cur.fetchall())
             documentos = _documentos(cur, tid)
-        return {"trabajo": t, "expediente": expediente, "bitacora": bitacora, "inpi": inpi, "solicitudes": solicitudes,
+            # Otros trabajos del mismo cliente (27/11/2026): para saltar de uno a otro sin volver al tablero.
+            cur.execute("SELECT id, marca, servicio, estado, etapa, sin_cargo FROM trabajos WHERE cliente_id = %s AND id <> %s "
+                        "ORDER BY (estado = 'activo') DESC, contratacion DESC NULLS LAST, id DESC LIMIT 20", (t["cliente_id"], tid))
+            otros = [{k: f.get(k) for k in ("id", "marca", "servicio", "servicio_nombre", "estado", "etapa_nombre")}
+                     for f in (tc.completar(dict(x)) for x in cur.fetchall())]
+        return {"otros_trabajos": otros, "trabajo": t, "expediente": expediente, "bitacora": bitacora, "inpi": inpi, "solicitudes": solicitudes,
                 "informes": informes, "otros_informes": otros_informes, "documentos": documentos,
                 "tipos_documento": td.TIPOS,
                 "servicios": tc.servicios_publicos(), "notion_procesos": tc.NOTION_PROCESOS}

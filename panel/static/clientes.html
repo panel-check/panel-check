@@ -17,6 +17,11 @@
   html.embebido, html.embebido body { background: transparent !important; }
   html.embebido body > *:not(.modal-fondo):not(.pl-fondo) { display: none !important; }
   html.embebido .modal-fondo { background: transparent; }
+  /* Desde Seguimientos (27/11/2026): la ficha del cliente se abre como panel lateral a la derecha, a toda altura */
+  html.embebido #modal-cliente.abierto { justify-content: flex-end; align-items: stretch; }
+  html.embebido #modal-cliente .modal-caja { max-width: 980px; width: min(980px, 100vw); max-height: none; height: 100vh; border-radius: 0;
+    animation: panelEntra .18s ease-out; }
+  @keyframes panelEntra { from { transform: translateX(40px); opacity: .4; } to { transform: none; opacity: 1; } }
 </style>
 <script src="/static/sesion.js" defer></script>
 <script src="/static/menu.js?v=his1" defer></script>
@@ -92,7 +97,7 @@
 <script src="/static/informes_comun.js?v=arch1"></script>
 <script src="/static/plantillas.js?v=pl4"></script>
 <script src="/static/escritos.js?v=es1"></script>
-<script src="/static/clientes.js?v=doc1"></script>
+<script src="/static/clientes.js?v=pan1"></script>
 <script src="/static/ficha_marca.js?v=tr1"></script>
 </body>
 </html>
