@@ -572,7 +572,8 @@ async function abrirCliente(id) {
   const scroll = cont.parentElement.scrollTop;
   if (est.clienteTabId !== id) { est.clienteTab = "resumen"; est.clienteTabId = id; }
   if (est.clienteTab === "alertas") est.clienteTab = "vigilancia";
-  if (est.clienteTab === "novedades") est.clienteTab = "historial";   // Novedades quedó dentro de Historial   // la solapa Alertas quedó dentro de Vigilancia
+  if (est.clienteTab === "novedades") est.clienteTab = "historial";
+  if (["poderes", "informes", "formularios"].includes(est.clienteTab)) est.clienteTab = "documentos";   // Novedades quedó dentro de Historial   // la solapa Alertas quedó dentro de Vigilancia
 
   const marcasHtml = d.marcas.length ? `
     <div style="overflow-x:auto"><table class="cl-tabla cl-marcas"><thead><tr><th>Acta</th><th>Marca</th><th>Clase</th><th>Estado</th><th>Agente</th><th>Vigilancia</th><th></th></tr></thead><tbody>
@@ -603,7 +604,7 @@ async function abrirCliente(id) {
 
   const alertasAbiertas = d.alertas.filter(a => ["nueva", "monitorear", "oponer"].includes(a.estado)).length;
   const trabActivos = (d.trabajos || []).filter(t => t.estado === "activo").length;
-  const tabsCli = [["resumen", "Resumen"], ["trabajos", "Trabajos", trabActivos], ["poderes", "Poderes", (d.poderes || []).length], ["informes", "Informes", (d.informes || []).length], ["formularios", "Formularios", (d.formularios || []).length],
+  const tabsCli = [["resumen", "Resumen"], ["trabajos", "Trabajos", trabActivos], ["documentos", "Documentos", (d.poderes || []).length + (d.informes || []).length + (d.formularios || []).length],
     ["marcas", "Marcas", d.marcas.length], ["vigilancia", "Vigilancia", alertasAbiertas], ["plazos", "Plazos", d.plazos.length],
     ["historial", "Historial", (d.historial || []).filter(h => h.tipo === "nota").length], ["datos", "Datos"]];
 
@@ -633,7 +634,9 @@ async function abrirCliente(id) {
         ${htmlTrabajos(d.trabajos, d.servicios_trabajo) || '<p class="crm-gris">Este cliente no tiene trabajos en Seguimientos.</p>'}
       </div>
 
-      <div data-cpanel="poderes" ${est.clienteTab === "poderes" ? "" : "hidden"}>
+      <div data-cpanel="documentos" ${est.clienteTab === "documentos" ? "" : "hidden"}>
+      <nav class="cl-doc-indice">Ir a: <a href="#cli-sec-poderes">Poderes y escritos</a> · <a href="#cli-sec-informes">Informes</a> · <a href="#cli-sec-formularios">Formularios</a></nav>
+      <h4 class="cl-doc-sec" id="cli-sec-poderes">Poderes y escritos</h4>
         <div class="cl-acciones" style="margin-top:12px"><button type="button" class="cl-btn" id="cli-poder-btn2">📄 Generar poder para firmar</button>
           <button type="button" class="cl-btn" id="cli-poder-simple-btn" title="Poder acotado a marcas (INPI y negociaciones), para persona humana">📄 Poder simple marcas</button>
           <button type="button" class="cl-btn" id="cli-toma-btn">📑 Generar toma de intervención</button>
@@ -643,9 +646,8 @@ async function abrirCliente(id) {
         <div class="cl-caja" id="cli-toma" hidden style="margin-top:10px"></div>
         <div class="cl-caja" id="cli-desiste" hidden style="margin-top:10px"></div>
         <div id="cli-poderes-lista">${d.poderes && d.poderes.length ? "<h4>Poderes generados</h4>" + htmlPoderes(d.poderes) : '<p class="crm-gris">Todavía no se generó ningún poder.</p>'}</div>
-      </div>
 
-      <div data-cpanel="informes" ${est.clienteTab === "informes" ? "" : "hidden"}>
+      <h4 class="cl-doc-sec" id="cli-sec-informes">Informes</h4>
         <div class="cl-acciones" style="margin-top:12px"><button type="button" class="cl-btn" id="cli-inf-btn">📄 Generar informe de viabilidad marcaria</button>
           <button type="button" class="cl-btn sec" id="cli-iai-btn">🧠 Adjuntar informe IA interno</button>
           <button type="button" class="cl-btn sec" id="cli-iop-btn" title="El JSON que entrega la skill revisador-de-oposiciones">⚖️ Cargar informe de oposición IA</button>
@@ -653,9 +655,8 @@ async function abrirCliente(id) {
         <div class="cl-caja" id="cli-inf" hidden style="margin-top:10px"></div>
         <div class="cl-caja" id="cli-iai" hidden style="margin-top:10px"></div>
         <div id="cli-informes-lista">${htmlInformes(d.informes)}</div>
-      </div>
 
-      <div data-cpanel="formularios" ${est.clienteTab === "formularios" ? "" : "hidden"}>
+      <h4 class="cl-doc-sec" id="cli-sec-formularios">Formularios</h4>
         ${d.formularios && d.formularios.length ? d.formularios.map(f => htmlRespuesta(f, { enFicha: true })).join("") : '<p class="crm-gris">Este cliente no completó ningún formulario.</p>'}
       </div>
 
@@ -689,6 +690,10 @@ async function abrirCliente(id) {
   cont.parentElement.scrollTop = scroll;
   conectarRespuestas(cont, () => abrirCliente(id));
   const irTab = k => {
+    if (["poderes", "informes", "formularios"].includes(k)) {   // quedaron dentro de Documentos (27/11/2026)
+      const sec = k === "poderes" ? "cli-sec-poderes" : k === "informes" ? "cli-sec-informes" : "cli-sec-formularios";
+      k = "documentos"; setTimeout(() => { const el = document.getElementById(sec); if (el) el.scrollIntoView({ block: "start" }); }, 0);
+    }
     est.clienteTab = k;
     cont.querySelectorAll("[data-ctab]").forEach(b => b.classList.toggle("activa", b.dataset.ctab === k));
     cont.querySelectorAll("[data-cpanel]").forEach(p => { p.hidden = p.dataset.cpanel !== k; });
@@ -724,6 +729,14 @@ async function abrirCliente(id) {
   cont.querySelectorAll("[data-res-accion]").forEach(b => b.addEventListener("click", () => {
     const a = b.dataset.resAccion;
     if (a === "trabajo") return nuevoTrabajoPara(c);
+    if (a === "mail" && window.Plantillas) {
+      const activos = (d.trabajos || []).filter(t => t.estado === "activo");
+      const t = activos.length === 1 ? activos[0] : null;   // con un solo trabajo abierto, la plantilla sale de ese servicio
+      const nombres = [...new Set(d.marcas.map(m => m.denominacion).filter(Boolean))];
+      return Plantillas.abrir({ titulo: c.nombre, servicio: t ? t.servicio : "", etapa: t ? t.etapa : undefined,
+        nombre: c.contacto || c.nombre, email: c.email, telefono: c.telefono, marca: t ? t.marca : (nombres.length === 1 ? nombres[0] : ""),
+        acta: t ? t.acta : "", clases: [...new Set(d.marcas.map(m => m.clase).filter(x => x != null))].join(", ") });
+    }
     if (a === "poder") { irTab("poderes"); if ($("cli-poder").hidden) abrirGeneradorPoder(id); }
     if (a === "toma") { irTab("poderes"); if ($("cli-toma").hidden) abrirGeneradorToma(id); }
     if (a === "desiste") { irTab("poderes"); if ($("cli-desiste").hidden) abrirGeneradorDesiste(id); }
@@ -749,6 +762,7 @@ function htmlResumenCliente(d, plazoLi) {
       ${!c.cuit && !c.email && !c.telefono ? '<span class="crm-gris">Sin datos de contacto: cargalos en <button type="button" class="cl-link" data-ir-tab="datos">Datos</button>.</span>' : ""}</div>
     <div class="cl-res-acciones">
       <button type="button" class="cl-btn" data-res-accion="trabajo">＋ Nuevo trabajo</button>
+      <button type="button" class="cl-btn sec" data-res-accion="mail" title="Armar un mail o WhatsApp con una plantilla y los datos del cliente">✉️ Mail</button>
       <button type="button" class="cl-btn sec" data-res-accion="poder">📄 Poder</button>
       <button type="button" class="cl-btn sec" data-res-accion="toma">📑 Toma de intervención</button>
       <button type="button" class="cl-btn sec" data-res-accion="desiste">🚫 Desiste</button>
@@ -2001,7 +2015,8 @@ document.querySelectorAll("#pestanas button").forEach(b => b.addEventListener("c
     // ?ctab=informes (desde Más → Informes) abre la ficha directo en esa solapa
     if (p.get("ctab") === "alertas") p.set("ctab", "vigilancia");
     if (p.get("ctab") === "novedades") p.set("ctab", "historial");
-    if (["resumen", "datos", "trabajos", "poderes", "informes", "formularios", "marcas", "vigilancia", "plazos", "historial"].includes(p.get("ctab"))) { est.clienteTab = p.get("ctab"); est.clienteTabId = +p.get("cliente"); }
+    if (["poderes", "informes", "formularios"].includes(p.get("ctab"))) p.set("ctab", "documentos");
+    if (["resumen", "datos", "trabajos", "documentos", "poderes", "informes", "formularios", "marcas", "vigilancia", "plazos", "historial"].includes(p.get("ctab"))) { est.clienteTab = p.get("ctab"); est.clienteTabId = +p.get("cliente"); }
     abrirCliente(+p.get("cliente"));
   }
   if (EMBEBIDO) return;
