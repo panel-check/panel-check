@@ -2239,3 +2239,14 @@ button.crm-chip.crm-chip-ir:hover { border-color: var(--azul); }
 .cl-pagos tr.pg-pago td:first-child { box-shadow: inset 3px 0 0 var(--verde, #16a34a); }
 .cl-pagos td { vertical-align: middle; }
 #pg-texto { width: 100%; font: 12.5px ui-monospace, monospace; padding: 6px 8px; border: 1px solid var(--borde, #d1d5db); border-radius: 6px; }
+/* El cuadro entra entero en la pantalla, sin deslizar (27/11/2026) */
+.pg-tabla-caja { width: 100%; }
+.cl-pagos { table-layout: fixed; width: 100%; }
+.cl-pagos td, .cl-pagos th { overflow-wrap: anywhere; padding-left: 8px; padding-right: 8px; }
+.cl-pagos col.c-marca { width: 30%; } .cl-pagos col.c-clase { width: 7%; } .cl-pagos col.c-tipo { width: 12%; }
+.cl-pagos col.c-cliente { width: 22%; } .cl-pagos col.c-vig { width: 8%; } .cl-pagos col.c-pago { width: 10%; } .cl-pagos col.c-otros { width: 11%; }
+@media (max-width: 700px) {
+  .cl-pagos col.c-tipo, .cl-pagos col.c-otros { width: 0; }
+  .cl-pagos td:nth-child(3), .cl-pagos th:nth-child(3), .cl-pagos td:nth-child(7), .cl-pagos th:nth-child(7) { display: none; }
+  .cl-pagos col.c-marca { width: 38%; } .cl-pagos col.c-cliente { width: 26%; }
+}

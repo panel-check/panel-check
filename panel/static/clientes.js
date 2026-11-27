@@ -1145,7 +1145,7 @@ function tablaPagosVigilancia() {
   $("pg-tabla").innerHTML = `
     <p class="cl-pie" style="margin:0 0 6px"><strong>${pagaron}</strong> de ${d.marcas.length} marcas pagaron la vigilancia en ${anio}. Mostrando ${filas.length}.
       ${filas.length ? `Las que se ven: <button type="button" class="cl-link" data-pg-todas="1">marcar todas como pagas</button> · <button type="button" class="cl-link" data-pg-todas="0">desmarcar todas</button>` : ""}</p>
-    <div style="overflow-x:auto"><table class="cl-tabla cl-pagos"><thead><tr><th>Marca</th><th>Clase</th><th>Tipo</th><th>Cliente</th><th>Vigilamos</th><th>Pagó ${anio}</th><th>Otros años</th></tr></thead><tbody>
+    <div class="pg-tabla-caja"><table class="cl-tabla cl-pagos"><colgroup><col class="c-marca"><col class="c-clase"><col class="c-tipo"><col class="c-cliente"><col class="c-vig"><col class="c-pago"><col class="c-otros"></colgroup><thead><tr><th>Marca</th><th>Clase</th><th>Tipo</th><th>Cliente</th><th>Vigila</th><th>Pagó ${anio}</th><th>Otros años</th></tr></thead><tbody>
     ${filas.map(m => {
       const nombre = (m.denominacion || "(sin nombre)").toUpperCase();
       if (nombre !== anterior) { par = !par; anterior = nombre; }
