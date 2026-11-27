@@ -56,8 +56,56 @@ async function cargar() {
     return;
   }
   $("link-procesos").href = sg.datos.notion_procesos;
+  $("btn-orden").hidden = !sg.datos.orden_personal;
   pintar();
 }
+
+// ── Orden de las columnas (27/11/2026): cada usuario las ordena a su gusto arrastrando la cabecera. Se guarda
+// en el panel (por usuario), así se ve igual en cualquier compu. «↺ Orden original» vuelve al de siempre. ──
+async function guardarOrden(orden) {
+  try {
+    const r = await pedir("/api/trabajos-columnas", { method: "PUT", body: { orden } });
+    sg.datos.servicios = r.servicios;
+    sg.datos.orden_personal = r.orden.length > 0;
+    $("btn-orden").hidden = !sg.datos.orden_personal;
+    pintar();
+  } catch (e) { mostrarAviso(`No se guardó el orden: ${e.message}`, "aviso"); }
+}
+document.addEventListener("dragstart", (ev) => {
+  const cab = ev.target.closest?.(".sg-col-cab");
+  if (!cab) return;
+  sg.arrastrando = cab.closest(".sg-col").dataset.col;
+  ev.dataTransfer.effectAllowed = "move";
+  ev.dataTransfer.setData("text/plain", sg.arrastrando);
+  cab.closest(".sg-col").classList.add("arrastrando");
+});
+document.addEventListener("dragover", (ev) => {
+  const col = ev.target.closest?.(".sg-col");
+  if (!sg.arrastrando || !col) return;
+  ev.preventDefault();
+  document.querySelectorAll(".sg-col.destino").forEach((c) => c !== col && c.classList.remove("destino"));
+  if (col.dataset.col !== sg.arrastrando) col.classList.add("destino");
+});
+document.addEventListener("dragend", () => {
+  sg.arrastrando = null;
+  document.querySelectorAll(".sg-col.arrastrando, .sg-col.destino").forEach((c) => c.classList.remove("arrastrando", "destino"));
+});
+document.addEventListener("drop", (ev) => {
+  const col = ev.target.closest?.(".sg-col");
+  const desde = sg.arrastrando;
+  if (!desde || !col) return;
+  ev.preventDefault();
+  const hasta = col.dataset.col;
+  if (hasta === desde) return;
+  const ids = sg.datos.servicios.map((s) => s.id);
+  const a = ids.indexOf(desde), b = ids.indexOf(hasta);
+  ids.splice(a, 1);
+  ids.splice(b, 0, desde);   // queda en el lugar de la columna donde se soltó
+  guardarOrden(ids);
+});
+document.addEventListener("click", (ev) => {
+  if (ev.target.closest("#btn-orden")) guardarOrden([]);
+});
 
 function pasaFiltro(t) {
   const n = t.alerta?.nivel;
@@ -137,7 +185,7 @@ function columnaVigilancia(s, trabajos) {
 }
 function columnaSimple(s, html, n, sub = "Más nuevos arriba") {
   return `<section class="sg-col" data-col="${s.id}" data-n="${n}" style="--sg-color:${s.color}">
-      <div class="sg-col-cab"><span class="punto" style="background:${s.color}"></span>${esc(s.nombre)}<span class="cant">${n}</span></div>
+      <div class="sg-col-cab" draggable="true" title="Arrastrá para cambiar el orden de las columnas"><span class="agarre" aria-hidden="true">⠿</span><span class="punto" style="background:${s.color}"></span>${esc(s.nombre)}<span class="cant">${n}</span></div>
       <div class="sg-col-sub">${sub}</div>
       <div class="sg-cards">${html || '<div class="sg-col-vacia">Ningún cliente tiene la vigilancia contratada</div>'}</div>
     </section>`;
@@ -176,7 +224,7 @@ function pintar() {
     if (!suyos.length && (sg.filtro || sg.q || !todos.some((t) => t.servicio === s.id))) return "";
     const sub = s.con_vencimiento ? `Ordenado por vencimiento · ${esc(s.plazo_texto)} desde la notificación` : "Más nuevos arriba";
     return `<section class="sg-col" data-col="${s.id}" data-n="${suyos.length}" style="--sg-color:${s.color}">
-      <div class="sg-col-cab"><span class="punto" style="background:${s.color}"></span>${esc(s.nombre)}<span class="cant">${suyos.length}</span></div>
+      <div class="sg-col-cab" draggable="true" title="Arrastrá para cambiar el orden de las columnas"><span class="agarre" aria-hidden="true">⠿</span><span class="punto" style="background:${s.color}"></span>${esc(s.nombre)}<span class="cant">${suyos.length}</span></div>
       <div class="sg-col-sub">${sub}</div>
       <div class="sg-cards">${suyos.map(tarjeta).join("") || '<div class="sg-col-vacia">Nada por acá</div>'}</div>
     </section>`;

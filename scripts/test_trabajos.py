@@ -444,6 +444,15 @@ class TomaIntervencion(unittest.TestCase):
         self.assertEqual(t["etapas"][0], "Seña cobrada")
         self.assertTrue([x for x in tc.servicios_publicos() if x["id"] == "desistimiento"][0]["permite_sin_cargo"])
 
+    def test_orden_columnas(self):
+        pub = tc.servicios_publicos()
+        ids = lambda o: [s["id"] for s in tc.ordenar_servicios(pub, o)]
+        self.assertEqual(ids([]), [s["id"] for s in tc.SERVICIOS])
+        o = ids(["registro", "vigilancia", "nada"])
+        self.assertEqual(o[:2], ["registro", "vigilancia"])
+        self.assertEqual(sorted(o), sorted(s["id"] for s in tc.SERVICIOS))
+        self.assertEqual(o[2], tc.SERVICIOS[0]["id"])
+
     def test_etapa_automatica(self):
         for sid in tc.SERVICIOS_TOMA:
             s = tc.POR_ID[sid]

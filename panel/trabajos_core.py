@@ -75,6 +75,13 @@ def servicios_publicos():
              "plazo_texto": _plazo_texto(s["plazo"])} for s in SERVICIOS]
 
 
+def ordenar_servicios(servicios, orden):
+    """Las columnas en el orden que eligió el usuario; las que no nombra (un servicio nuevo) van al final, en el
+    orden de siempre. Ids desconocidos se ignoran."""
+    pos = {sid: i for i, sid in enumerate(orden or [])}
+    return sorted(servicios, key=lambda s: (pos.get(s["id"], len(pos)), SERVICIOS.index(POR_ID[s["id"]]) if s["id"] in POR_ID else 99))
+
+
 def _plazo_texto(p):
     if not p:
         return None
@@ -276,6 +283,12 @@ TABLAS = [
         creado_en   TIMESTAMPTZ NOT NULL DEFAULT now()
     )""",
     "CREATE INDEX IF NOT EXISTS idx_trabajos_menciones ON trabajos_menciones(para, creado_en DESC)",
+    # Orden de las columnas del tablero elegido por cada usuario (27/11/2026), arrastrando la cabecera.
+    """CREATE TABLE IF NOT EXISTS trabajos_orden_columnas (
+        usuario       TEXT PRIMARY KEY,
+        orden         TEXT[] NOT NULL,
+        modificado_en TIMESTAMPTZ NOT NULL DEFAULT now()
+    )""",
 ]
 
 

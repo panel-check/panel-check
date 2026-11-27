@@ -78,6 +78,10 @@ class TrabajoCambios(BaseModel):
     sin_cargo: Optional[bool] = None
 
 
+class OrdenColumnas(BaseModel):
+    orden: Optional[list[str]] = None
+
+
 class NotaBitacora(BaseModel):
     texto: str
     fecha: Optional[str] = None
@@ -595,7 +599,7 @@ def crear_router(verificar_login, conexion) -> APIRouter:
         return {"id": tid, "creado": True}
 
     @router.get("/api/trabajos")
-    def listar(estado: str = "activo", q: str = "", _: str = Depends(verificar_login)):
+    def listar(estado: str = "activo", q: str = "", usuario: str = Depends(verificar_login)):
         cond, val = [], []
         if estado in tc.ESTADOS:
             cond.append("t.estado = %s"); val.append(estado)
@@ -614,7 +618,9 @@ def crear_router(verificar_login, conexion) -> APIRouter:
             cur.execute("SELECT estado, COUNT(*) AS n FROM trabajos GROUP BY estado")
             cuentas = {f["estado"]: f["n"] for f in cur.fetchall()}
             vigilancia = _clientes_con_vigilancia(cur, q)
-        return {"hoy": hoy, "servicios": tc.servicios_publicos(), "trabajos": filas,
+            orden = _orden_columnas(cur, usuario)
+        return {"hoy": hoy, "servicios": tc.ordenar_servicios(tc.servicios_publicos(), orden),
+                "orden_personal": bool(orden), "trabajos": filas,
                 "cuentas": cuentas, "notion_procesos": tc.NOTION_PROCESOS, "vigilancia": vigilancia}
 
     def _resultados_inpi(cur, filas):
@@ -953,6 +959,32 @@ def crear_router(verificar_login, conexion) -> APIRouter:
             cur.execute("UPDATE trabajos SET modificado_en = now(), modificado_por = %s WHERE id = %s", (usuario, tid))
             conn.commit()
             return {"nota": nota, "mencionados": para}
+
+    def _orden_columnas(cur, usuario):
+        try:
+            cur.execute("SAVEPOINT orden_cols")
+            cur.execute("SELECT orden FROM trabajos_orden_columnas WHERE usuario = %s", (usuario,))
+            f = cur.fetchone()
+            cur.execute("RELEASE SAVEPOINT orden_cols")
+            return list(f["orden"]) if f else []
+        except Exception as e:
+            cur.execute("ROLLBACK TO SAVEPOINT orden_cols")
+            print(f"[seguimientos] orden de columnas: {e}")
+            return []
+
+    @router.put("/api/trabajos-columnas")
+    def guardar_orden_columnas(body: OrdenColumnas, usuario: str = Depends(verificar_login)):
+        """Orden de las columnas del tablero para este usuario. Vacío = volver al orden de siempre."""
+        orden = [sid for sid in dict.fromkeys(body.orden or []) if tc.servicio(sid)]
+        with conexion() as conn, rcur(conn) as cur:
+            if orden:
+                cur.execute("INSERT INTO trabajos_orden_columnas (usuario, orden) VALUES (%s, %s) "
+                            "ON CONFLICT (usuario) DO UPDATE SET orden = EXCLUDED.orden, modificado_en = now()",
+                            (usuario, orden))
+            else:
+                cur.execute("DELETE FROM trabajos_orden_columnas WHERE usuario = %s", (usuario,))
+            conn.commit()
+        return {"orden": orden, "servicios": tc.ordenar_servicios(tc.servicios_publicos(), orden)}
 
     @router.get("/api/trabajos-usuarios")
     def usuarios_para_mencionar(usuario: str = Depends(verificar_login)):
