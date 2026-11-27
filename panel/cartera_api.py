@@ -129,6 +129,10 @@ class ImportarPagos(BaseModel):
     confirmar: bool = False
 
 
+class NotaCliente(BaseModel):
+    texto: str
+
+
 class Mover(BaseModel):
     cliente_id: int
 
@@ -385,6 +389,63 @@ def crear_router(verificar_login, conexion, crm) -> APIRouter:
         return {s["id"]: {"nombre": s["nombre"], "corto": s.get("corto") or s["nombre"], "color": s["color"]}
                 for s in tc.servicios_publicos()}
 
+    # ── Historial del cliente (27/11/2026): sus notas (con @menciones), las notas de sus trabajos y los movimientos
+    # del INPI de sus marcas, todo en una sola línea de tiempo. ──────────────────────────────────────────────────
+    def _historial(cur, cliente_id, novedades):
+        items = []
+        try:
+            cur.execute("SAVEPOINT hist")
+            cur.execute("SELECT id, texto, usuario, creado_en FROM clientes_notas WHERE cliente_id = %s "
+                        "ORDER BY creado_en DESC LIMIT 200", (cliente_id,))
+            items += [{"tipo": "nota", "id": f["id"], "texto": f["texto"], "usuario": f["usuario"], "fecha": f["creado_en"]}
+                      for f in cur.fetchall()]
+            cur.execute("""SELECT b.id, b.texto, b.usuario, b.fecha, b.creado_en, t.id AS trabajo_id, t.marca, t.servicio
+                           FROM trabajos_bitacora b JOIN trabajos t ON t.id = b.trabajo_id
+                           WHERE t.cliente_id = %s ORDER BY b.creado_en DESC LIMIT 200""", (cliente_id,))
+            import trabajos_core as tc
+            items += [{"tipo": "trabajo", "id": f["id"], "texto": f["texto"], "usuario": f["usuario"],
+                       "fecha": f["creado_en"] or f["fecha"], "trabajo_id": f["trabajo_id"], "marca": f["marca"],
+                       "servicio": (tc.POR_ID.get(f["servicio"]) or {}).get("nombre", f["servicio"])} for f in cur.fetchall()]
+            cur.execute("RELEASE SAVEPOINT hist")
+        except Exception as e:
+            cur.execute("ROLLBACK TO SAVEPOINT hist")
+            print(f"[clientes] historial: {e}")
+        items += [{"tipo": "inpi", "id": n["id"], "texto": n["texto"], "acta": n["acta"], "fecha": n["detectado_en"]}
+                  for n in novedades]
+        items.sort(key=lambda x: str(x.get("fecha") or ""), reverse=True)
+        return items[:300]
+
+    @router.post("/api/clientes/{cliente_id}/notas")
+    def nota_cliente(cliente_id: int, body: NotaCliente, usuario: str = Depends(verificar_login)):
+        import trabajos_core as tc
+        texto = (body.texto or "").strip()[:4000]
+        if not texto:
+            raise HTTPException(status_code=400, detail="La nota está vacía")
+        with nueva_conexion() as conn:
+            with rcur(conn) as cur:
+                cur.execute("SELECT 1 FROM clientes WHERE id = %s", (cliente_id,))
+                if not cur.fetchone():
+                    raise HTTPException(status_code=404, detail="No existe ese cliente")
+                cur.execute("INSERT INTO clientes_notas (cliente_id, texto, usuario) VALUES (%s, %s, %s) RETURNING id",
+                            (cliente_id, texto, usuario))
+                nid = cur.fetchone()["id"]
+                cur.execute("SELECT usuario FROM usuarios_panel WHERE activo")
+                para = tc.menciones_en(texto, [r["usuario"] for r in cur.fetchall()], autor=usuario)
+                for u in para:
+                    cur.execute("INSERT INTO trabajos_menciones (cliente_nota_id, cliente_id, para, de) VALUES (%s, %s, %s, %s)",
+                                (nid, cliente_id, u, usuario))
+            conn.commit()
+        return {"ok": True, "id": nid, "mencionados": para}
+
+    @router.delete("/api/clientes/{cliente_id}/notas/{nid}")
+    def borrar_nota_cliente(cliente_id: int, nid: int, _: str = Depends(verificar_login)):
+        with nueva_conexion() as conn:
+            with rcur(conn) as cur:
+                cur.execute("DELETE FROM clientes_notas WHERE id = %s AND cliente_id = %s", (nid, cliente_id))
+                ok = cur.rowcount > 0
+            conn.commit()
+        return {"ok": ok}
+
     def _plazos_trabajos(trabajos, hoy, nombres=None):
         """Vencimientos de los trabajos abiertos de Seguimientos, con la misma forma que los plazos de la cartera,
         para mostrarlos juntos (ficha del cliente y Clientes → Vencimientos). 27/11/2026."""
@@ -596,9 +657,12 @@ def crear_router(verificar_login, conexion, crm) -> APIRouter:
         with nueva_conexion() as conn:
             with rcur(conn) as cur:
                 trabajos = _trabajos_de(cur, cliente_id=cliente_id)
+                historial = _historial(cur, cliente_id, novedades)
+                cur.execute("SELECT usuario FROM usuarios_panel WHERE activo ORDER BY usuario")
+                usuarios = [r["usuario"] for r in cur.fetchall()]
         plazos = sorted(plazos + _plazos_trabajos(trabajos, hoy, {cliente_id: cliente["nombre"]}), key=lambda p: p["fecha"])
         return {"cliente": cliente, "marcas": marcas, "novedades": novedades, "alertas": alertas,
-                "trabajos": trabajos, "servicios_trabajo": _servicios_trabajo(),
+                "trabajos": trabajos, "servicios_trabajo": _servicios_trabajo(), "historial": historial, "usuarios": usuarios,
                 "plazos": plazos, "formularios": formularios, "poderes": poderes_cli, "informes": informes, "tipos_persona": formularios_core.TIPO_LEGIBLE,
                 "origenes": cartera.ORIGENES_CLIENTE, "estados_alerta": cartera.ESTADOS_ALERTA, "referidos": referidos}
 

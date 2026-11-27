@@ -283,6 +283,26 @@ TABLAS = [
         creado_en   TIMESTAMPTZ NOT NULL DEFAULT now()
     )""",
     "CREATE INDEX IF NOT EXISTS idx_trabajos_menciones ON trabajos_menciones(para, creado_en DESC)",
+    # Notas del cliente (27/11/2026): lo que no es de un trámite puntual («prefiere WhatsApp»), con fecha, autor y
+    # @menciones a la campanita. Se ven en Clientes → ficha → Historial, junto con las notas de sus trabajos y los
+    # movimientos del INPI. Las menciones usan la misma tabla que las de los trabajos.
+    """CREATE TABLE IF NOT EXISTS clientes_notas (
+        id          BIGSERIAL PRIMARY KEY,
+        cliente_id  INTEGER NOT NULL REFERENCES clientes(id) ON DELETE CASCADE,
+        texto       TEXT NOT NULL,
+        usuario     TEXT,
+        creado_en   TIMESTAMPTZ NOT NULL DEFAULT now()
+    )""",
+    "CREATE INDEX IF NOT EXISTS idx_clientes_notas ON clientes_notas(cliente_id, creado_en DESC)",
+    "ALTER TABLE trabajos_menciones ALTER COLUMN nota_id DROP NOT NULL",
+    "ALTER TABLE trabajos_menciones ALTER COLUMN trabajo_id DROP NOT NULL",
+    "ALTER TABLE trabajos_menciones ADD COLUMN IF NOT EXISTS cliente_nota_id BIGINT REFERENCES clientes_notas(id) ON DELETE CASCADE",
+    "ALTER TABLE trabajos_menciones ADD COLUMN IF NOT EXISTS cliente_id INTEGER REFERENCES clientes(id) ON DELETE CASCADE",
+    # Las «Notas internas» que había en la ficha del cliente pasan a ser su primera nota (una sola vez por cliente).
+    """INSERT INTO clientes_notas (cliente_id, texto, usuario, creado_en)
+       SELECT c.id, c.notas, COALESCE(c.modificado_por, 'notas internas'), COALESCE(c.modificado_en, now())
+       FROM clientes c WHERE COALESCE(trim(c.notas), '') <> ''
+         AND NOT EXISTS (SELECT 1 FROM clientes_notas n WHERE n.cliente_id = c.id)""",
     # Orden de las columnas del tablero elegido por cada usuario (27/11/2026), arrastrando la cabecera.
     """CREATE TABLE IF NOT EXISTS trabajos_orden_columnas (
         usuario       TEXT PRIMARY KEY,

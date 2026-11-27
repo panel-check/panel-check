@@ -476,7 +476,7 @@ $("modal-cliente").addEventListener("click", cerrarModal);
 document.querySelector("#modal-cliente .modal-cerrar").addEventListener("click", cerrarModal);
 document.addEventListener("keydown", ev => { if (ev.key === "Escape") cerrarModal(); });
 
-function camposClienteHtml(c = {}) {
+function camposClienteHtml(c = {}, { sinNotas = false } = {}) {
   const origenes = Object.entries(est.origenes).map(([k, v]) => `<option value="${k}" ${k === (c.origen || "cartera") ? "selected" : ""}>${esc(v)}</option>`).join("");
   return `
     <label>Nombre o razón social<input name="nombre" value="${esc(c.nombre || "")}" required></label>
@@ -490,7 +490,7 @@ function camposClienteHtml(c = {}) {
     <label>Tipo de persona<select name="tipo_persona"><option value="">—</option>${Object.entries(est.tiposPersona).map(([k, v]) => `<option value="${k}" ${k === c.tipo_persona ? "selected" : ""}>${esc(v)}</option>`).join("")}</select></label>
     <details class="cl-mas ancho" ${CAMPOS_EXTRA.some(([k]) => c[k]) ? "open" : ""}><summary>Datos para el trámite (DNI, domicilio, estado civil…)</summary>
       <div class="cl-form">${CAMPOS_EXTRA.map(([k, t]) => `<label>${t}<input name="${k}" value="${esc(c[k] || "")}"></label>`).join("")}</div></details>
-    <label class="ancho">Notas internas<textarea name="notas" rows="2">${esc(c.notas || "")}</textarea></label>`;
+    ${sinNotas ? "" : `<label class="ancho">Notas internas<textarea name="notas" rows="2">${esc(c.notas || "")}</textarea></label>`}`;
 }
 
 // Datos que completa el cliente en el formulario web (también editables a mano).
@@ -517,11 +517,12 @@ function leerCampos(form, conActivo = false) {
   const v = {
     nombre: f.nombre.value.trim(), cuit: f.cuit.value.trim() || null, email: f.email.value.trim() || null,
     telefono: f.telefono.value.trim() || null, contacto: f.contacto.value.trim() || null,
-    origen: f.origen.value, notas: f.notas.value.trim() || null,
+    origen: f.origen.value,
     referido: f.referido.value.trim() || null,
     tipo_persona: f.tipo_persona.value || null,
   };
   CAMPOS_EXTRA.forEach(([k]) => { v[k] = f[k].value.trim() || null; });
+  if (f.notas) v.notas = f.notas.value.trim() || null;   // en la ficha las notas van al Historial (27/11/2026)
   if (conActivo && f.activo) v.activo = f.activo.checked;
   return v;
 }
@@ -570,7 +571,8 @@ async function abrirCliente(id) {
   const c = d.cliente;
   const scroll = cont.parentElement.scrollTop;
   if (est.clienteTabId !== id) { est.clienteTab = "resumen"; est.clienteTabId = id; }
-  if (est.clienteTab === "alertas") est.clienteTab = "vigilancia";   // la solapa Alertas quedó dentro de Vigilancia
+  if (est.clienteTab === "alertas") est.clienteTab = "vigilancia";
+  if (est.clienteTab === "novedades") est.clienteTab = "historial";   // Novedades quedó dentro de Historial   // la solapa Alertas quedó dentro de Vigilancia
 
   const marcasHtml = d.marcas.length ? `
     <div style="overflow-x:auto"><table class="cl-tabla cl-marcas"><thead><tr><th>Acta</th><th>Marca</th><th>Clase</th><th>Estado</th><th>Agente</th><th>Vigilancia</th><th></th></tr></thead><tbody>
@@ -603,7 +605,7 @@ async function abrirCliente(id) {
   const trabActivos = (d.trabajos || []).filter(t => t.estado === "activo").length;
   const tabsCli = [["resumen", "Resumen"], ["trabajos", "Trabajos", trabActivos], ["poderes", "Poderes", (d.poderes || []).length], ["informes", "Informes", (d.informes || []).length], ["formularios", "Formularios", (d.formularios || []).length],
     ["marcas", "Marcas", d.marcas.length], ["vigilancia", "Vigilancia", alertasAbiertas], ["plazos", "Plazos", d.plazos.length],
-    ["novedades", "Novedades", d.novedades.length], ["datos", "Datos"]];
+    ["historial", "Historial", (d.historial || []).filter(h => h.tipo === "nota").length], ["datos", "Datos"]];
 
   cont.innerHTML = `
     <div class="cl-ficha">
@@ -613,7 +615,7 @@ async function abrirCliente(id) {
       <div class="fm-tabs" role="tablist">${tabsCli.map(([k, t, n]) => `<button type="button" role="tab" data-ctab="${k}" class="${est.clienteTab === k ? "activa" : ""}">${t}${n ? ` <span class="fm-n">${n}</span>` : ""}</button>`).join("")}</div>
 
       <div data-cpanel="datos" ${est.clienteTab === "datos" ? "" : "hidden"}>
-      <form class="cl-form" id="form-cliente">${camposClienteHtml(c)}
+      <form class="cl-form" id="form-cliente">${camposClienteHtml(c, { sinNotas: true })}
         <label class="check"><input type="checkbox" name="activo" ${c.activo ? "checked" : ""}> Cliente activo (los inactivos no se vigilan)</label></form>
       <div class="cl-acciones">
         <button type="button" class="cl-btn" id="cli-guardar">Guardar datos</button>
@@ -682,7 +684,7 @@ async function abrirCliente(id) {
         <h4>Alertas${alertasAbiertas ? ` (${alertasAbiertas} abiertas)` : ""}</h4>
         ${d.alertas.length ? d.alertas.slice(0, 30).map(a => htmlAlerta(a, { sinCliente: true })).join("") : '<p class="crm-gris">Sin alertas.</p>'}</div>
 
-      <div data-cpanel="novedades" ${est.clienteTab === "novedades" ? "" : "hidden"}><div style="margin-top:12px">${novedadesHtml}</div></div>
+      <div data-cpanel="historial" ${est.clienteTab === "historial" ? "" : "hidden"}>${htmlHistorialCliente(d)}</div>
     </div>`;
   cont.parentElement.scrollTop = scroll;
   conectarRespuestas(cont, () => abrirCliente(id));
@@ -714,6 +716,7 @@ async function abrirCliente(id) {
   conectarInformes(id);
   conectarFichaCliente(cont, d);
   conectarVigilanciaCliente(cont, d, irTab);
+  conectarHistorialCliente(cont, d);
   cont.querySelectorAll("[data-ir-trabajo]").forEach(b => b.addEventListener("click", () => irATrabajo(b.dataset.irTrabajo)));
   $("cli-nuevo-trabajo").addEventListener("click", () => nuevoTrabajoPara(c));
   // Resumen: accesos a las otras solapas y acciones rápidas
@@ -740,6 +743,7 @@ function htmlResumenCliente(d, plazoLi) {
   const proximos = d.plazos.filter(p => p.dias >= -30).slice(0, 6);
   const nV = d.marcas.filter(m => m.vigilar).length, nP = d.marcas.filter(m => m.vigilancia_paga).length;
   const abiertas = d.alertas.filter(a => ["nueva", "monitorear", "oponer"].includes(a.estado)).length;
+  const notas = (d.historial || []).filter(h => h.tipo === "nota");
   return `
     <div class="cl-res-contacto">${dato("CUIT", c.cuit)}${dato("Email", c.email)}${dato("Teléfono", c.telefono)}${dato("Contacto", c.contacto)}
       ${!c.cuit && !c.email && !c.telefono ? '<span class="crm-gris">Sin datos de contacto: cargalos en <button type="button" class="cl-link" data-ir-tab="datos">Datos</button>.</span>' : ""}</div>
@@ -755,12 +759,93 @@ function htmlResumenCliente(d, plazoLi) {
         ${htmlTrabajos(activos, d.servicios_trabajo) || '<p class="crm-gris">Ningún trabajo abierto en Seguimientos.</p>'}</section>
       <section class="cl-res-caja"><h4>Próximos vencimientos <button type="button" class="cl-link" data-ir-tab="plazos">ver todos →</button></h4>
         ${proximos.length ? `<ul class="crm-plazos">${proximos.map(plazoLi).join("")}</ul>` : '<p class="crm-gris">Nada a la vista.</p>'}</section>
-      <section class="cl-res-caja"><h4>Últimos movimientos del INPI <button type="button" class="cl-link" data-ir-tab="novedades">ver todos →</button></h4>
+      <section class="cl-res-caja"><h4>Últimos movimientos del INPI <button type="button" class="cl-link" data-ir-tab="historial">ver todos →</button></h4>
         ${d.novedades.length ? `<ul class="cl-lista-simple">${d.novedades.slice(0, 5).map(n => `<li><span class="crm-gris">${fmtFechaHora(n.detectado_en)}</span> · acta ${esc(n.acta)} · ${esc(n.texto)}</li>`).join("")}</ul>` : '<p class="crm-gris">Sin novedades todavía.</p>'}</section>
       <section class="cl-res-caja"><h4>Vigilancia <button type="button" class="cl-link" data-ir-tab="vigilancia">abrir →</button></h4>
         <p style="margin:0">${d.marcas.length} marca${d.marcas.length === 1 ? "" : "s"} · vigilamos ${nV} · paga ${nP} en ${new Date().getFullYear()}${abiertas ? ` · <span class="cl-tag mal">${abiertas} alerta${abiertas === 1 ? "" : "s"} abierta${abiertas === 1 ? "" : "s"}</span>` : ""}</p></section>
-      ${c.notas ? `<section class="cl-res-caja ancho"><h4>Notas internas</h4><p style="margin:0;white-space:pre-wrap">${esc(c.notas)}</p></section>` : ""}
+      ${notas.length ? `<section class="cl-res-caja ancho"><h4>Últimas notas <button type="button" class="cl-link" data-ir-tab="historial">ver todas →</button></h4>
+        <ul class="cl-hist">${notas.slice(0, 3).map(itemHistorial).join("")}</ul></section>` : ""}
     </div>`;
+}
+
+// ── Solapa Historial (27/11/2026): una sola línea de tiempo con las notas del cliente (con @menciones a la
+// campanita), las notas de sus trabajos de Seguimientos y los movimientos del INPI de sus marcas. ─────────────
+const HIST_TIPOS = { nota: ["📝", "Nota del cliente"], trabajo: ["💼", "Nota de un trabajo"], inpi: ["🏛", "Movimiento del INPI"] };
+function textoConMenciones(t, usuarios) {
+  let h = esc(t || "").replace(/\*([^*\n]+?)\*/g, "<b>$1</b>");
+  const us = (usuarios || []).filter(Boolean).sort((a, b) => b.length - a.length).map(u => u.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+  if (us.length) h = h.replace(new RegExp(`(^|[^\\w@.])@(${us.join("|")})(?![\\w@])`, "gi"), '$1<span class="cl-mencion">@$2</span>');
+  return h;
+}
+function itemHistorial(h) {
+  const [ico, nombre] = HIST_TIPOS[h.tipo] || ["•", ""];
+  const cuando = h.fecha ? fmtFechaHora(h.fecha) : "";
+  const donde = h.tipo === "trabajo" ? ` · <a href="javascript:void(0)" data-ir-trabajo="${h.trabajo_id}">${esc(h.marca || "trabajo")}</a> <span class="crm-gris">(${esc(h.servicio || "")})</span>`
+    : h.tipo === "inpi" ? ` · acta ${esc(h.acta)}` : "";
+  return `<li class="cl-hist-item t-${h.tipo}" data-tipo="${h.tipo}">
+    <span class="ico" title="${nombre}">${ico}</span>
+    <div><div class="cab"><span class="crm-gris">${cuando}${h.usuario ? " · " + esc(h.usuario) : ""}</span>${donde}
+      ${h.tipo === "nota" ? `<button type="button" class="cl-link cl-hist-borrar" data-borrar-nota-cli="${h.id}" title="Borrar esta nota">borrar</button>` : ""}</div>
+      <div class="txt">${textoConMenciones(h.texto, est.usuariosPanel)}</div></div></li>`;
+}
+function htmlHistorialCliente(d) {
+  est.usuariosPanel = d.usuarios || [];
+  const h = d.historial || [];
+  const n = t => h.filter(x => x.tipo === t).length;
+  return `
+    <form class="cl-nota-nueva" id="cli-nota-form">
+      <textarea id="cli-nota-texto" rows="2" placeholder="Agregar una nota del cliente… (@ para avisarle a alguien en su campanita)"></textarea>
+      <div class="cl-menciones" id="cli-menciones" hidden></div>
+      <div class="cl-acciones" style="margin-top:6px"><button type="submit" class="cl-btn">Agregar nota</button>
+        <span class="crm-gris" style="font-size:12px">Cmd/Ctrl + Enter guarda · *texto* en negrita</span><span class="cl-estado" id="cli-nota-estado"></span></div>
+    </form>
+    <div class="cl-hist-filtros" id="cli-hist-filtros">
+      <button type="button" class="activa" data-hist="">Todo (${h.length})</button>
+      <button type="button" data-hist="nota">📝 Notas (${n("nota")})</button>
+      <button type="button" data-hist="trabajo">💼 Trabajos (${n("trabajo")})</button>
+      <button type="button" data-hist="inpi">🏛 INPI (${n("inpi")})</button>
+    </div>
+    ${h.length ? `<ul class="cl-hist" id="cli-hist">${h.map(itemHistorial).join("")}</ul>` : '<p class="crm-gris">Todavía no hay nada en el historial.</p>'}`;
+}
+function conectarHistorialCliente(cont, d) {
+  const id = d.cliente.id, ta = $("cli-nota-texto"), sug = $("cli-menciones");
+  const guardar = async ev => {
+    ev && ev.preventDefault();
+    const texto = ta.value.trim();
+    if (!texto) return;
+    const e = $("cli-nota-estado"); e.textContent = "Guardando…"; e.className = "cl-estado";
+    try {
+      const r = await apiJson(`/api/clientes/${id}/notas`, "POST", { texto });
+      await abrirCliente(id);
+      if (r.mencionados && r.mencionados.length) mostrarAviso(`Nota guardada. Se le avisó a ${r.mencionados.map(u => "@" + u).join(", ")} en su campanita.`);
+    } catch (err) { e.textContent = err.message; e.className = "cl-estado mal"; }
+  };
+  $("cli-nota-form").addEventListener("submit", guardar);
+  ta.addEventListener("keydown", ev => { if (ev.key === "Enter" && (ev.metaKey || ev.ctrlKey)) guardar(ev); });
+  // @ autocompleta con los usuarios del panel: aparecen como botones abajo apenas se escribe «@» o «@pa».
+  ta.addEventListener("input", () => {
+    const antes = ta.value.slice(0, ta.selectionStart), m = antes.match(/(?:^|[^\w@.])@([\w.\-]*)$/);
+    if (!m) { sug.hidden = true; return; }
+    const q = m[1].toLowerCase(), lista = est.usuariosPanel;
+    const opc = [...lista.filter(u => u.toLowerCase().startsWith(q)), ...lista.filter(u => !u.toLowerCase().startsWith(q) && u.toLowerCase().includes(q))];
+    if (!opc.length) { sug.hidden = true; return; }
+    sug.innerHTML = opc.map(u => `<button type="button" data-mencionar="${esc(u)}">@${esc(u)}</button>`).join("");
+    sug.hidden = false;
+    sug.querySelectorAll("[data-mencionar]").forEach(b => b.addEventListener("mousedown", ev => {
+      ev.preventDefault();
+      const ini = antes.length - m[1].length, resto = ta.value.slice(ta.selectionStart);
+      ta.value = ta.value.slice(0, ini) + b.dataset.mencionar + " " + resto;
+      const pos = ini + b.dataset.mencionar.length + 1; ta.setSelectionRange(pos, pos); ta.focus(); sug.hidden = true;
+    }));
+  });
+  cont.querySelectorAll("[data-hist]").forEach(b => b.addEventListener("click", () => {
+    cont.querySelectorAll("[data-hist]").forEach(x => x.classList.toggle("activa", x === b));
+    cont.querySelectorAll("#cli-hist [data-tipo]").forEach(li => { li.hidden = !!b.dataset.hist && li.dataset.tipo !== b.dataset.hist; });
+  }));
+  cont.querySelectorAll("[data-borrar-nota-cli]").forEach(b => b.addEventListener("click", async () => {
+    if (!confirm("¿Borrar esta nota?")) return;
+    try { await apiJson(`/api/clientes/${id}/notas/${b.dataset.borrarNotaCli}`, "DELETE"); await abrirCliente(id); } catch (e) { alert(e.message); }
+  }));
 }
 
 // ── Solapa Vigilancia (27/11/2026): qué marcas vigilamos y cuáles nos paga el cliente, por separado ──────────
@@ -1915,7 +2000,8 @@ document.querySelectorAll("#pestanas button").forEach(b => b.addEventListener("c
   if (p.get("cliente")) {
     // ?ctab=informes (desde Más → Informes) abre la ficha directo en esa solapa
     if (p.get("ctab") === "alertas") p.set("ctab", "vigilancia");
-    if (["resumen", "datos", "trabajos", "poderes", "informes", "formularios", "marcas", "vigilancia", "plazos", "novedades"].includes(p.get("ctab"))) { est.clienteTab = p.get("ctab"); est.clienteTabId = +p.get("cliente"); }
+    if (p.get("ctab") === "novedades") p.set("ctab", "historial");
+    if (["resumen", "datos", "trabajos", "poderes", "informes", "formularios", "marcas", "vigilancia", "plazos", "historial"].includes(p.get("ctab"))) { est.clienteTab = p.get("ctab"); est.clienteTabId = +p.get("cliente"); }
     abrirCliente(+p.get("cliente"));
   }
   if (EMBEBIDO) return;
