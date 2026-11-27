@@ -194,6 +194,10 @@ def crear_tablas(cur):
     cur.execute("ALTER TABLE cartera_marcas ADD COLUMN IF NOT EXISTS conceptos_previos TEXT")
     # Sensibilidad de la vigilancia con juez IA: 'identicas' | 'similares' (NULL = similares) | 'amplia'.
     cur.execute("ALTER TABLE cartera_marcas ADD COLUMN IF NOT EXISTS sensibilidad_vigilancia TEXT")
+    # Vigilancia paga por marca (27/11/2026): si el cliente nos paga la vigilancia de esta marca (se le cobra y se le
+    # manda el informe), aparte de si la vigilamos (`vigilar`). clientes.vigilancia_contratada pasa a ser la suma:
+    # el cliente la tiene contratada si paga al menos una marca (ver sincronizar_contratada).
+    cur.execute("ALTER TABLE cartera_marcas ADD COLUMN IF NOT EXISTS vigilancia_paga BOOLEAN NOT NULL DEFAULT false")
     cur.execute(
         """
         CREATE TABLE IF NOT EXISTS cartera_novedades (
@@ -346,6 +350,30 @@ def crear_tablas(cur):
         cur.execute("UPDATE vigilancia_config SET valor = '65' WHERE clave = 'umbral' AND valor = '75'")
         cur.execute("INSERT INTO vigilancia_config (clave, valor) VALUES ('umbral_65_aplicado', now()::text) "
                     "ON CONFLICT (clave) DO NOTHING")
+    # 27/11/2026: la vigilancia paga pasa del cliente a cada marca. Una sola vez: en los clientes que la tenían
+    # contratada, quedan pagas las marcas que se estaban vigilando (o todas, si no vigilaba ninguna).
+    cur.execute("SELECT 1 FROM vigilancia_config WHERE clave = 'vigilancia_paga_por_marca'")
+    if not cur.fetchone():
+        cur.execute("""UPDATE cartera_marcas cm SET vigilancia_paga = true FROM clientes c
+                       WHERE c.id = cm.cliente_id AND c.vigilancia_contratada
+                         AND (cm.vigilar OR NOT EXISTS (SELECT 1 FROM cartera_marcas x WHERE x.cliente_id = c.id AND x.vigilar))""")
+        cur.execute("INSERT INTO vigilancia_config (clave, valor) VALUES ('vigilancia_paga_por_marca', now()::text) "
+                    "ON CONFLICT (clave) DO NOTHING")
+
+
+def sincronizar_contratada(cur, cliente_ids):
+    """clientes.vigilancia_contratada = paga al menos una marca. La fecha «desde» se pone la primera vez que pasa a
+    contratada y se borra si deja de estarlo. Se llama después de tocar vigilancia_paga, mover o sacar marcas."""
+    ids = [i for i in set(cliente_ids or []) if i]
+    if not ids:
+        return
+    cur.execute("""UPDATE clientes c SET
+                       vigilancia_contratada = x.paga,
+                       vigilancia_desde = CASE WHEN x.paga THEN COALESCE(c.vigilancia_desde, %s) ELSE NULL END
+                   FROM (SELECT c2.id, EXISTS (SELECT 1 FROM cartera_marcas cm WHERE cm.cliente_id = c2.id AND cm.vigilancia_paga) AS paga
+                         FROM clientes c2 WHERE c2.id = ANY(%s)) x
+                   WHERE c.id = x.id AND (c.vigilancia_contratada IS DISTINCT FROM x.paga
+                                          OR (x.paga AND c.vigilancia_desde IS NULL))""", (hoy_ar(), ids))
 
 
 # ── Unir clientes duplicados ──────────────────────────────────────────────
@@ -427,6 +455,7 @@ def unir_clientes(cur, origen_id: int, destino_id: int, forzar: bool = False, us
                     ((previas + "\n\n" if previas else "") + org["notas"].strip(), destino_id))
     cur.execute("UPDATE clientes SET modificado_en = now(), modificado_por = %s WHERE id = %s", (usuario, destino_id))
     cur.execute("DELETE FROM clientes WHERE id = %s", (origen_id,))
+    sincronizar_contratada(cur, [destino_id])
     return {"movidas": movidas, "completados": completados}
 
 

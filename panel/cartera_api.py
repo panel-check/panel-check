@@ -103,11 +103,18 @@ class MarcaCambios(BaseModel):
     grupo_marca: Optional[str] = None
     vigilar: Optional[bool] = None
     vigilar_todas_clases: Optional[bool] = None
+    vigilancia_paga: Optional[bool] = None
     terminos_vigilancia: Optional[str] = None
     umbral_vigilancia: Optional[int] = None   # 40-100; null = usar el de Ajustes
     conceptos_vigilancia: Optional[str] = None  # traducciones/sinónimos (coma); corregidos a mano
     sensibilidad_vigilancia: Optional[str] = None  # identicas | similares | amplia (juez IA); vale para toda la marca
     notas: Optional[str] = None
+
+
+class VigilanciaEnBloque(BaseModel):
+    campo: str                      # vigilar | vigilancia_paga
+    valor: bool
+    actas: Optional[list] = None    # vacío = todas las marcas del cliente
 
 
 class Mover(BaseModel):
@@ -335,6 +342,8 @@ def crear_router(verificar_login, conexion, crm) -> APIRouter:
                     f"""
                     SELECT c.*,
                       (SELECT COUNT(*) FROM cartera_marcas m WHERE m.cliente_id = c.id) AS marcas,
+                      (SELECT COUNT(*) FROM cartera_marcas m WHERE m.cliente_id = c.id AND m.vigilar) AS marcas_vigiladas,
+                      (SELECT COUNT(*) FROM cartera_marcas m WHERE m.cliente_id = c.id AND m.vigilancia_paga) AS marcas_pagas,
                       (SELECT COUNT(*) FROM cartera_marcas m WHERE m.cliente_id = c.id AND m.tuvo_oposicion
                           AND COALESCE(m.estado_tramite,'') NOT IN ('Concedida','Denegada')) AS con_oposicion,
                       (SELECT COUNT(*) FROM vigilancia_alertas a WHERE a.cliente_id = c.id
@@ -384,8 +393,8 @@ def crear_router(verificar_login, conexion, crm) -> APIRouter:
             if body.origen not in cartera.ORIGENES_CLIENTE:
                 raise HTTPException(status_code=400, detail=f"Origen desconocido: {body.origen}")
             out["origen"] = body.origen
-        if hay("vigilancia_contratada") and body.vigilancia_contratada is not None:
-            out["vigilancia_contratada"] = bool(body.vigilancia_contratada)
+        # vigilancia_contratada ya no se edita a mano (27/11/2026): sale de las marcas con vigilancia paga
+        # (solapa Vigilancia de la ficha; cartera.sincronizar_contratada).
         if hay("activo") and getattr(body, "activo", None) is not None:
             out["activo"] = bool(body.activo)
         return out
@@ -649,6 +658,8 @@ def crear_router(verificar_login, conexion, crm) -> APIRouter:
             sets.append("vigilar = %s"); val.append(bool(body.vigilar))
         if "vigilar_todas_clases" in enviados and body.vigilar_todas_clases is not None:
             sets.append("vigilar_todas_clases = %s"); val.append(bool(body.vigilar_todas_clases))
+        if "vigilancia_paga" in enviados and body.vigilancia_paga is not None:
+            sets.append("vigilancia_paga = %s"); val.append(bool(body.vigilancia_paga))
         if "terminos_vigilancia" in enviados:
             t = _limpio(body.terminos_vigilancia, 500)
             sets.append("terminos_vigilancia = %s"); val.append(t)
@@ -691,8 +702,28 @@ def crear_router(verificar_login, conexion, crm) -> APIRouter:
                     actas = [r["acta"] for r in cur.fetchall() if vig.clave_grupo(r) == g]
                     cur.execute("UPDATE cartera_marcas SET sensibilidad_vigilancia = %s WHERE acta = ANY(%s)", (sens_nueva, actas))
                     vig.reaplicar_sensibilidad(cur, actas)
+                if "vigilancia_paga" in enviados:
+                    cartera.sincronizar_contratada(cur, [fila["cliente_id"]])
             conn.commit()
         return {"ok": True, "marca": fila}
+
+    @router.put("/api/clientes/{cliente_id}/vigilancia")
+    def vigilancia_en_bloque(cliente_id: int, body: VigilanciaEnBloque, _: str = Depends(verificar_login)):
+        """Solapa Vigilancia de la ficha del cliente: «Vigilar todas / ninguna» y «Pagan todas / ninguna»."""
+        if body.campo not in ("vigilar", "vigilancia_paga"):
+            raise HTTPException(status_code=400, detail="Campo: vigilar o vigilancia_paga")
+        actas = [str(a).strip() for a in (body.actas or []) if str(a).strip()]
+        with nueva_conexion() as conn:
+            with rcur(conn) as cur:
+                cur.execute(f"UPDATE cartera_marcas SET {body.campo} = %s WHERE cliente_id = %s"
+                            + (" AND acta = ANY(%s)" if actas else ""),
+                            [bool(body.valor), cliente_id] + ([actas] if actas else []))
+                n = cur.rowcount
+                cartera.sincronizar_contratada(cur, [cliente_id])
+                cur.execute("SELECT vigilancia_contratada FROM clientes WHERE id = %s", (cliente_id,))
+                c = cur.fetchone()
+            conn.commit()
+        return {"ok": True, "cambiadas": n, "vigilancia_contratada": bool(c and c["vigilancia_contratada"])}
 
     @router.post("/api/cartera/marcas/{acta}/conceptos")
     def rearmar_conceptos(acta: str, _: str = Depends(verificar_login)):
@@ -716,9 +747,11 @@ def crear_router(verificar_login, conexion, crm) -> APIRouter:
     def sacar_marca(acta: str, _: str = Depends(verificar_login)):
         with nueva_conexion() as conn:
             with rcur(conn) as cur:
-                cur.execute("DELETE FROM cartera_marcas WHERE acta = %s RETURNING acta", (acta,))
-                if not cur.fetchone():
+                cur.execute("DELETE FROM cartera_marcas WHERE acta = %s RETURNING acta, cliente_id", (acta,))
+                fila = cur.fetchone()
+                if not fila:
                     raise HTTPException(status_code=404, detail="Esa marca no está en la cartera")
+                cartera.sincronizar_contratada(cur, [fila["cliente_id"]])
             conn.commit()
         return {"ok": True}
 
@@ -729,9 +762,12 @@ def crear_router(verificar_login, conexion, crm) -> APIRouter:
                 cur.execute("SELECT id FROM clientes WHERE id = %s", (body.cliente_id,))
                 if not cur.fetchone():
                     raise HTTPException(status_code=404, detail="No existe el cliente de destino")
+                cur.execute("SELECT cliente_id FROM cartera_marcas WHERE acta = %s", (acta,))
+                antes = cur.fetchone()
                 cur.execute("UPDATE cartera_marcas SET cliente_id = %s WHERE acta = %s RETURNING acta", (body.cliente_id, acta))
                 if not cur.fetchone():
                     raise HTTPException(status_code=404, detail="Esa marca no está en la cartera")
+                cartera.sincronizar_contratada(cur, [body.cliente_id, antes and antes["cliente_id"]])
                 cur.execute("UPDATE vigilancia_alertas SET cliente_id = %s WHERE acta_cliente = %s", (body.cliente_id, acta))
                 cur.execute("UPDATE cartera_novedades SET cliente_id = %s WHERE acta = %s", (body.cliente_id, acta))
             conn.commit()

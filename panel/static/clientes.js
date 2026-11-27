@@ -164,7 +164,7 @@ async function pintarClientes() {
         <td><strong>${esc(c.nombre)}</strong>${c.activo ? "" : ' <span class="cl-tag">inactivo</span>'}${c.referido ? " " + tagReferido(c.referido) : ""}<br><small class="crm-gris">${esc(c.email || "")}</small></td>
         <td>${esc(c.cuit || "—")}</td>
         <td>${c.marcas}${c.con_oposicion ? ` <span class="cl-tag aviso" title="Marcas con oposición o vista">⚖ ${c.con_oposicion}</span>` : ""}${c.sin_consultar ? ` <span class="cl-tag" title="Pendientes de consultar en INPI">⏳ ${c.sin_consultar}</span>` : ""}</td>
-        <td>${c.vigilancia_contratada ? '<span class="cl-tag ok">Contratada</span>' : '<span class="cl-tag">Interna</span>'}</td>
+        <td>${c.marcas_pagas ? `<span class="cl-tag ok" title="Marcas con la vigilancia paga (se le cobra y se le manda el informe)">Paga ${c.marcas_pagas} de ${c.marcas}</span>` : '<span class="cl-tag" title="No paga la vigilancia de ninguna marca">No paga</span>'}<br><small class="crm-gris">vigilamos ${c.marcas_vigiladas || 0}</small></td>
         <td>${c.alertas_abiertas ? `<span class="cl-tag mal">${c.alertas_abiertas}</span>` : "—"}</td>
         <td>${c.proximo_vencimiento ? crmFecha(c.proximo_vencimiento) : "—"}</td>
         <td>${esc(est.origenes[c.origen] || c.origen)}</td>
@@ -456,7 +456,6 @@ function camposClienteHtml(c = {}) {
     <label class="cl-referido">¿Quién es el referido? (se muestra como tag)<input name="referido" list="lista-referidos" value="${esc(c.referido || "")}" placeholder="ej.: KOM, agencia de marketing, diseñador…" maxlength="120" autocomplete="off"></label>
     <datalist id="lista-referidos">${(est.referidos || []).map(r => `<option value="${esc(r)}">`).join("")}</datalist>
     <label>Tipo de persona<select name="tipo_persona"><option value="">—</option>${Object.entries(est.tiposPersona).map(([k, v]) => `<option value="${k}" ${k === c.tipo_persona ? "selected" : ""}>${esc(v)}</option>`).join("")}</select></label>
-    <label class="check"><input type="checkbox" name="vigilancia_contratada" ${c.vigilancia_contratada ? "checked" : ""}> Tiene contratada la vigilancia (se le cobra y se le manda el informe)</label>
     <details class="cl-mas ancho" ${CAMPOS_EXTRA.some(([k]) => c[k]) ? "open" : ""}><summary>Datos para el trámite (DNI, domicilio, estado civil…)</summary>
       <div class="cl-form">${CAMPOS_EXTRA.map(([k, t]) => `<label>${t}<input name="${k}" value="${esc(c[k] || "")}"></label>`).join("")}</div></details>
     <label class="ancho">Notas internas<textarea name="notas" rows="2">${esc(c.notas || "")}</textarea></label>`;
@@ -488,7 +487,6 @@ function leerCampos(form, conActivo = false) {
     telefono: f.telefono.value.trim() || null, contacto: f.contacto.value.trim() || null,
     origen: f.origen.value, notas: f.notas.value.trim() || null,
     referido: f.referido.value.trim() || null,
-    vigilancia_contratada: f.vigilancia_contratada.checked,
     tipo_persona: f.tipo_persona.value || null,
   };
   CAMPOS_EXTRA.forEach(([k]) => { v[k] = f[k].value.trim() || null; });
@@ -540,6 +538,7 @@ async function abrirCliente(id) {
   const c = d.cliente;
   const scroll = cont.parentElement.scrollTop;
   if (est.clienteTabId !== id) { est.clienteTab = "datos"; est.clienteTabId = id; }
+  if (est.clienteTab === "alertas") est.clienteTab = "vigilancia";   // la solapa Alertas quedó dentro de Vigilancia
 
   const marcasHtml = d.marcas.length ? `
     <div style="overflow-x:auto"><table class="cl-tabla cl-marcas"><thead><tr><th>Acta</th><th>Marca</th><th>Clase</th><th>Estado</th><th>Agente</th><th>Vigilancia</th><th></th></tr></thead><tbody>
@@ -551,11 +550,7 @@ async function abrirCliente(id) {
       <td>${esc(m.clase ?? "")}</td>
       <td>${tagEstadoMarca(m)}</td>
       <td><small>${esc(m.agente || (m.matricula_agente ? "matrícula " + m.matricula_agente : m.caracter || "—"))}</small></td>
-      <td><div class="cl-vig">
-        <label><input type="checkbox" data-campo="vigilar" ${m.vigilar ? "checked" : ""}> Vigilar ${m.alertas_abiertas ? `<span class="cl-tag mal">${m.alertas_abiertas}</span>` : ""}</label>
-        <label title="Comparar también contra todas las clases, no solo la propia y las relacionadas"><input type="checkbox" data-campo="vigilar_todas_clases" ${m.vigilar_todas_clases ? "checked" : ""}> En todas las clases</label>
-        <input type="text" data-campo="terminos_vigilancia" value="${esc(m.terminos_vigilancia || "")}" placeholder="otros nombres a vigilar (coma)" title="Nombres extra para vigilar: variantes, abreviaturas, el nombre comercial…">
-      </div></td>
+      <td><button type="button" class="cl-vig-estado" data-ir-vigilancia title="Se cambia en la solapa Vigilancia">${m.vigilar ? '<span class="cl-tag">👁 Vigilamos</span>' : '<span class="cl-tag apagado">No vigilamos</span>'}${m.vigilancia_paga ? ' <span class="cl-tag ok">Paga</span>' : ""}${m.alertas_abiertas ? ` <span class="cl-tag mal">${m.alertas_abiertas}</span>` : ""}</button></td>
       <td style="white-space:nowrap"><button type="button" class="cl-btn sec mini" data-accion="ficha" title="Abrir la ficha de la marca (con todos sus expedientes)">Ficha</button>
         <button type="button" class="cl-btn sec mini" data-accion="actualizar" title="Volver a consultar el expediente en INPI">↻</button>
         <button type="button" class="cl-btn sec mini" data-accion="mover">Mover</button>
@@ -573,7 +568,7 @@ async function abrirCliente(id) {
 
   const alertasAbiertas = d.alertas.filter(a => ["nueva", "monitorear", "oponer"].includes(a.estado)).length;
   const tabsCli = [["datos", "Datos"], ["poderes", "Poderes", (d.poderes || []).length], ["informes", "Informes", (d.informes || []).length], ["formularios", "Formularios", (d.formularios || []).length],
-    ["marcas", "Marcas", d.marcas.length], ["plazos", "Plazos", d.plazos.length], ["alertas", "Alertas", alertasAbiertas],
+    ["marcas", "Marcas", d.marcas.length], ["vigilancia", "Vigilancia", alertasAbiertas], ["plazos", "Plazos", d.plazos.length],
     ["novedades", "Novedades", d.novedades.length]];
 
   cont.innerHTML = `
@@ -641,8 +636,9 @@ async function abrirCliente(id) {
 
       <div data-cpanel="plazos" ${est.clienteTab === "plazos" ? "" : "hidden"}><div style="margin-top:12px">${plazosHtml}</div></div>
 
-      <div data-cpanel="alertas" ${est.clienteTab === "alertas" ? "" : "hidden"}><div style="margin-top:12px">
-        ${d.alertas.length ? d.alertas.slice(0, 30).map(a => htmlAlerta(a, { sinCliente: true })).join("") : '<p class="crm-gris">Sin alertas.</p>'}</div></div>
+      <div data-cpanel="vigilancia" ${est.clienteTab === "vigilancia" ? "" : "hidden"}>${htmlVigilanciaCliente(d)}
+        <h4>Alertas${alertasAbiertas ? ` (${alertasAbiertas} abiertas)` : ""}</h4>
+        ${d.alertas.length ? d.alertas.slice(0, 30).map(a => htmlAlerta(a, { sinCliente: true })).join("") : '<p class="crm-gris">Sin alertas.</p>'}</div>
 
       <div data-cpanel="novedades" ${est.clienteTab === "novedades" ? "" : "hidden"}><div style="margin-top:12px">${novedadesHtml}</div></div>
     </div>`;
@@ -675,6 +671,52 @@ async function abrirCliente(id) {
   conectarPoderes(id);
   conectarInformes(id);
   conectarFichaCliente(cont, d);
+  conectarVigilanciaCliente(cont, d, irTab);
+}
+
+// ── Solapa Vigilancia (27/11/2026): qué marcas vigilamos y cuáles nos paga el cliente, por separado ──────────
+// «Vigilamos» = el panel compara todos los días las marcas nuevas contra esta (genera alertas). «Paga» = el cliente
+// nos paga la vigilancia de esta marca (se le cobra y se le manda el informe), la vigilemos o no. El cliente figura
+// con «Vigilancia contratada» si paga al menos una.
+function htmlVigilanciaCliente(d) {
+  const ms = d.marcas;
+  if (!ms.length) return '<p class="crm-gris" style="margin-top:12px">Este cliente todavía no tiene marcas cargadas (se suman en la solapa Marcas).</p>';
+  const nV = ms.filter(m => m.vigilar).length, nP = ms.filter(m => m.vigilancia_paga).length;
+  const sw = (m, campo, on, titulo) => `<label class="cl-switch" title="${titulo}"><input type="checkbox" data-vig="${campo}" data-acta="${esc(m.acta)}" ${on ? "checked" : ""}><span></span></label>`;
+  return `
+    <p class="crm-gris" style="margin:12px 0 8px"><strong>Vigilamos</strong>: el panel compara todos los días las marcas nuevas contra esta y avisa si aparece una parecida. <strong>Paga</strong>: el cliente nos paga la vigilancia de esta marca (se le cobra y se le manda el informe). Son independientes.</p>
+    <div style="overflow-x:auto"><table class="cl-tabla cl-vig-tabla"><thead><tr><th>Marca</th>
+      <th>Vigilamos <small class="crm-gris">${nV}/${ms.length}</small><br><span class="cl-vig-todas"><button type="button" data-vig-todas="vigilar" data-valor="1">Todas</button> · <button type="button" data-vig-todas="vigilar" data-valor="0">Ninguna</button></span></th>
+      <th>Paga <small class="crm-gris">${nP}/${ms.length}</small><br><span class="cl-vig-todas"><button type="button" data-vig-todas="vigilancia_paga" data-valor="1">Todas</button> · <button type="button" data-vig-todas="vigilancia_paga" data-valor="0">Ninguna</button></span></th>
+      <th>Más opciones</th></tr></thead><tbody>
+    ${ms.map(m => `<tr data-acta="${esc(m.acta)}">
+      <td>${logoMarca(m)}<strong>${esc(m.denominacion || (m.tipo === "F" ? "(figurativa)" : "(pendiente)"))}</strong><br><small class="crm-gris">acta ${esc(m.acta)}${m.clase ? ` · clase ${esc(m.clase)}` : ""}${m.alertas_abiertas ? ` · <span class="cl-tag mal">${m.alertas_abiertas} alerta${m.alertas_abiertas === 1 ? "" : "s"}</span>` : ""}</small></td>
+      <td>${sw(m, "vigilar", m.vigilar, "Vigilar esta marca")}</td>
+      <td>${sw(m, "vigilancia_paga", m.vigilancia_paga, "El cliente paga la vigilancia de esta marca")}</td>
+      <td><details class="cl-vig-mas"><summary>Opciones</summary>
+        <label><input type="checkbox" data-vig="vigilar_todas_clases" data-acta="${esc(m.acta)}" ${m.vigilar_todas_clases ? "checked" : ""}> Comparar en todas las clases</label>
+        <input type="text" data-vig="terminos_vigilancia" data-acta="${esc(m.acta)}" value="${esc(m.terminos_vigilancia || "")}" placeholder="otros nombres a vigilar (coma)" title="Nombres extra para vigilar: variantes, abreviaturas, el nombre comercial…">
+      </details></td></tr>`).join("")}</tbody></table></div>`;
+}
+
+function conectarVigilanciaCliente(cont, d, irTab) {
+  const id = d.cliente.id;
+  cont.querySelectorAll("[data-ir-vigilancia]").forEach(b => b.addEventListener("click", () => irTab("vigilancia")));
+  cont.querySelectorAll("[data-vig]").forEach(inp => inp.addEventListener("change", async () => {
+    const campo = inp.dataset.vig, valor = inp.type === "checkbox" ? inp.checked : inp.value.trim();
+    try {
+      await apiJson(`/api/cartera/marcas/${encodeURIComponent(inp.dataset.acta)}`, "PUT", { [campo]: valor });
+      if (campo === "vigilar" || campo === "vigilancia_paga") { cargarResumen(); pintarClientes(); await abrirCliente(id); }
+      else { inp.style.outline = "2px solid var(--verde)"; setTimeout(() => { inp.style.outline = ""; }, 900); }
+    } catch (e) { alert(e.message); inp.checked = !inp.checked; }
+  }));
+  cont.querySelectorAll("[data-vig-todas]").forEach(b => b.addEventListener("click", async () => {
+    b.disabled = true;
+    try {
+      await apiJson(`/api/clientes/${id}/vigilancia`, "PUT", { campo: b.dataset.vigTodas, valor: b.dataset.valor === "1" });
+      cargarResumen(); pintarClientes(); await abrirCliente(id);
+    } catch (e) { alert(e.message); b.disabled = false; }
+  }));
 }
 
 // Une un cliente duplicado a este: sus marcas, poderes, formularios y alertas pasan acá y el duplicado se borra.
@@ -1652,7 +1694,8 @@ document.querySelectorAll("#pestanas button").forEach(b => b.addEventListener("c
   else { cargarResumen(); cambiarVista(v, { sinURL: true }); }
   if (p.get("cliente")) {
     // ?ctab=informes (desde Más → Informes) abre la ficha directo en esa solapa
-    if (["datos", "poderes", "informes", "formularios"].includes(p.get("ctab"))) { est.clienteTab = p.get("ctab"); est.clienteTabId = +p.get("cliente"); }
+    if (p.get("ctab") === "alertas") p.set("ctab", "vigilancia");
+    if (["datos", "poderes", "informes", "formularios", "marcas", "vigilancia", "plazos", "novedades"].includes(p.get("ctab"))) { est.clienteTab = p.get("ctab"); est.clienteTabId = +p.get("cliente"); }
     abrirCliente(+p.get("cliente"));
   }
   if (EMBEBIDO) return;

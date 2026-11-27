@@ -2216,3 +2216,20 @@ button.crm-chip.crm-chip-ir:hover { border-color: var(--azul); }
 
 /* Campanita: menciones en notas de Seguimientos (26/11/2026) */
 .panel-campana .nc-mencion { white-space: pre-line; display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; background: #f5f7ff; border-left: 3px solid #2563eb; padding: 4px 8px; border-radius: 4px; }
+
+/* Clientes → ficha → solapa Vigilancia (27/11/2026) */
+.cl-switch { position: relative; display: inline-block; width: 38px; height: 22px; cursor: pointer; }
+.cl-switch input { opacity: 0; width: 0; height: 0; position: absolute; }
+.cl-switch span { position: absolute; inset: 0; background: #d1d5db; border-radius: 999px; transition: background .15s; }
+.cl-switch span::before { content: ""; position: absolute; left: 3px; top: 3px; width: 16px; height: 16px; border-radius: 50%; background: #fff; transition: transform .15s; box-shadow: 0 1px 2px rgba(0,0,0,.2); }
+.cl-switch input:checked + span { background: var(--verde, #16a34a); }
+.cl-switch input:checked + span::before { transform: translateX(16px); }
+.cl-switch input:focus-visible + span { box-shadow: var(--foco); }
+.cl-vig-tabla td, .cl-vig-tabla th { vertical-align: middle; }
+.cl-vig-todas { font-weight: 400; font-size: 12px; white-space: nowrap; }
+.cl-vig-todas button { font: inherit; background: none; border: 0; padding: 0; color: var(--azul); text-decoration: underline; cursor: pointer; }
+.cl-vig-mas summary { cursor: pointer; font-size: 12px; color: var(--azul); }
+.cl-vig-mas label { display: flex; align-items: center; gap: 6px; font-size: 12px; margin-top: 6px; }
+.cl-vig-mas input[type=text] { width: 100%; min-width: 160px; font-size: 12px; padding: 3px 6px; margin-top: 6px; }
+.cl-vig-estado { font: inherit; background: none; border: 0; padding: 0; cursor: pointer; text-align: left; }
+.cl-tag.apagado { opacity: .6; }

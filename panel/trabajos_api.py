@@ -707,10 +707,10 @@ def crear_router(verificar_login, conexion) -> APIRouter:
                 cond, val = " AND c.nombre ILIKE %s", [f"%{q.strip()}%"]
             cur.execute(
                 f"""SELECT c.id, c.nombre, c.vigilancia_desde,
-                          (SELECT COUNT(*) FROM cartera_marcas cm WHERE cm.cliente_id = c.id AND cm.vigilar) AS marcas,
+                          (SELECT COUNT(*) FROM cartera_marcas cm WHERE cm.cliente_id = c.id AND cm.vigilancia_paga) AS marcas,
                           (SELECT COALESCE(json_agg(json_build_object('d', cm.denominacion, 'c', cm.clase)
                                     ORDER BY cm.denominacion, cm.clase), '[]'::json)
-                             FROM cartera_marcas cm WHERE cm.cliente_id = c.id AND cm.vigilar) AS marcas_lista,
+                             FROM cartera_marcas cm WHERE cm.cliente_id = c.id AND cm.vigilancia_paga) AS marcas_lista,
                           (SELECT COUNT(*) FROM vigilancia_alertas a WHERE a.cliente_id = c.id AND a.estado = 'nueva') AS alertas_nuevas,
                           (SELECT COUNT(*) FROM vigilancia_alertas a WHERE a.cliente_id = c.id
                              AND a.estado IN ('monitorear', 'oponer')) AS alertas_en_curso
