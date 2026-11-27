@@ -94,6 +94,7 @@ function tarjeta(t) {
     <div class="marca">${esc(t.marca)}</div>
     <div class="cliente">${esc(t.cliente)}</div>
     ${t.nos_oponemos ? `<div class="sg-contra" title="Oposición que presentamos nosotros (sale de una alerta de vigilancia)">Nos oponemos a <b>${esc(t.contraparte || "marca nueva")}</b></div>` : ""}
+    ${t.resultado_inpi ? `<div class="sg-resultado ${esc(t.resultado_inpi.nivel)}" title="${esc(t.resultado_inpi.explicacion)} (acta ${esc(t.resultado_inpi.acta)})">${t.resultado_inpi.icono} ${esc(t.resultado_inpi.titulo)}${t.resultado_inpi.fecha ? ` · ${esc(t.resultado_inpi.fecha.slice(0, 5))}` : ""}</div>` : ""}
     <div class="fila">${t.alerta?.nivel === "ninguno" ? `<span class="contratado">Contratado el ${fecha(t.contratacion)}</span>` : chipAlerta(t.alerta) + venc}${inf}</div>
     <div class="sg-avance"><div class="barra">${barra}</div>
       <div class="txt"><span><b>${esc(t.etapa_nombre)}</b>${t.etapas_total ? ` · ${t.etapa}/${t.etapas_total}` : ""}</span>${acta}</div></div>
@@ -408,14 +409,18 @@ function lineaTiempo(d) {
   const t = d.trabajo, ex = d.expediente;
   const items = [];
   (d.bitacora || []).forEach((b) => items.push({ fecha: b.fecha, orden: b.creado_en, tipo: "Nota", color: "#2563eb", texto: b.texto, quien: b.usuario, id: b.id }));
-  (ex?.novedades || []).forEach((n) => items.push({ fecha: n.detectado_en, orden: n.detectado_en, tipo: "INPI", color: "#7c3aed", texto: n.texto }));
+  (ex?.novedades || []).forEach((n) => items.push({
+    fecha: n.detectado_en, orden: n.detectado_en, color: n.importante?.nivel === "rojo" ? "#dc2626" : n.importante?.nivel === "verde" ? "#16a34a" : "#7c3aed",
+    tipo: n.importante ? `${n.importante.icono} ${n.importante.titulo}` : "INPI",
+    texto: (n.mostrar_acta ? `Acta ${n.acta} · ` : "") + n.texto + (n.importante ? `\n${n.importante.explicacion}` : ""),
+    importante: !!n.importante }));
   if (ex?.marca?.fecha_publicacion) items.push({ fecha: ex.marca.fecha_publicacion, orden: ex.marca.fecha_publicacion, tipo: "INPI", color: "#7c3aed", texto: "Publicada en el boletín" });
   if (ex?.marca?.fecha_presentacion) items.push({ fecha: ex.marca.fecha_presentacion, orden: ex.marca.fecha_presentacion, tipo: "INPI", color: "#7c3aed", texto: "Solicitud presentada" });
   if (t.notificacion) items.push({ fecha: t.notificacion, orden: t.notificacion, tipo: "Plazo", color: "#ea580c", texto: `Notificación (${t.servicio_nombre})` });
   if (t.contratacion) items.push({ fecha: t.contratacion, orden: t.contratacion, tipo: "Contratación", color: "#16a34a", texto: "Nos contrató" });
   items.sort((a, b) => String(b.fecha).localeCompare(String(a.fecha)) || String(b.orden).localeCompare(String(a.orden)));
   if (!items.length) return '<p class="sg-exp-aviso">Todavía no hay movimientos.</p>';
-  return `<ul class="sg-linea">${items.map((i) => `<li style="--c:${i.color}">
+  return `<ul class="sg-linea">${items.map((i) => `<li style="--c:${i.color}"${i.importante ? ' class="importante"' : ""}>
       <div class="cuando"><span class="tag" style="color:${i.color}">${esc(i.tipo)}</span>${fecha(i.fecha)}${i.quien ? ` · ${esc(i.quien)}` : ""}
         ${i.id ? `<button type="button" class="borrar" data-borrar-nota="${i.id}" title="Borrar esta nota">✕</button>` : ""}</div>
       ${textoNota(i.texto)}</li>`).join("")}</ul>`;
@@ -470,6 +475,13 @@ function listaSolicitudes(d) {
     <ul>${sols.map(fila).join("")}</ul></div>`;
 }
 
+function avisoResultado(d) {
+  const r = (d.expediente?.novedades || []).find((n) => n.importante && (!d.trabajo.contratacion || String(n.detectado_en).slice(0, 10) >= d.trabajo.contratacion));
+  if (!r) return "";
+  const f = (r.texto.match(/(\d{2}\/\d{2}\/\d{4})/) || [])[1];
+  return `<div class="sg-resultado-ficha ${esc(r.importante.nivel)}"><b>${r.importante.icono} ${esc(r.importante.titulo)}</b>${f ? ` · ${esc(f)}` : ""}${r.mostrar_acta ? ` · acta ${esc(r.acta)}` : ""}<br>${esc(r.importante.explicacion)}</div>`;
+}
+
 function bloqueExpediente(d) {
   const t = d.trabajo, ex = d.expediente;
   let datos = "";
@@ -497,7 +509,7 @@ function bloqueExpediente(d) {
       ${m.tuvo_oposicion ? celda("Oposición", detalleOposicion(m.detalle_oposicion)) : ""}
     </div>`;
   }
-  return `<div class="sg-bloque"><h3>📂 Expediente y bitácora</h3>${datos}${listaSolicitudes(d)}
+  return `<div class="sg-bloque"><h3>📂 Expediente y bitácora</h3>${avisoResultado(d)}${datos}${listaSolicitudes(d)}
     <form class="sg-nota-nueva" id="form-nota"><textarea id="nota-texto" rows="1" placeholder="Agregar una nota… (@ para avisarle a alguien)" title="Enter: salto de línea · Cmd/Ctrl + Enter: guardar · *texto* en negrita · @usuario le avisa en su campanita" maxlength="50000"></textarea>
       <button type="submit" class="sg-btn sg-btn-mini">Agregar</button></form>
     ${lineaTiempo(d)}</div>`;
