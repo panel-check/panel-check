@@ -2261,3 +2261,16 @@ button.crm-chip.crm-chip-ir:hover { border-color: var(--azul); }
 .cl-trabajo .barra i { flex: 1; height: 4px; border-radius: 2px; background: #e5e7eb; }
 .cl-trabajo .barra i.hecha { background: var(--c); }
 .cl-trabajo .det { font-size: 12px; color: var(--gris); }
+/* Ficha del cliente → Resumen (27/11/2026) */
+.cl-res-contacto { display: flex; flex-wrap: wrap; gap: 8px 18px; margin: 12px 0 10px; font-size: 13.5px; }
+.cl-res-dato small { display: block; font-size: 11px; color: var(--gris); text-transform: uppercase; letter-spacing: .04em; }
+.cl-copiar { font: inherit; font-size: 12px; background: none; border: 0; color: var(--azul); cursor: pointer; padding: 0 2px; }
+.cl-res-acciones { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+.cl-res-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.cl-res-grid .ancho { grid-column: 1 / -1; }
+.cl-res-caja { border: 1px solid var(--borde); border-radius: 10px; padding: 10px 12px; background: #fff; min-width: 0; }
+.cl-res-caja h4 { margin: 0 0 8px; display: flex; align-items: baseline; gap: 8px; font-size: 13px; }
+.cl-res-caja h4 .cl-link { margin-left: auto; font-size: 12px; font-weight: 400; }
+.cl-res-caja .cl-trabajos { margin: 0; }
+.cl-plazo-trabajo, .cl-venc[data-trabajo] { cursor: pointer; }
+@media (max-width: 700px) { .cl-res-grid { grid-template-columns: 1fr; } }

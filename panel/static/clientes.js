@@ -569,7 +569,7 @@ async function abrirCliente(id) {
   if (d.tipos_persona) est.tiposPersona = d.tipos_persona;
   const c = d.cliente;
   const scroll = cont.parentElement.scrollTop;
-  if (est.clienteTabId !== id) { est.clienteTab = "datos"; est.clienteTabId = id; }
+  if (est.clienteTabId !== id) { est.clienteTab = "resumen"; est.clienteTabId = id; }
   if (est.clienteTab === "alertas") est.clienteTab = "vigilancia";   // la solapa Alertas quedó dentro de Vigilancia
 
   const marcasHtml = d.marcas.length ? `
@@ -589,10 +589,11 @@ async function abrirCliente(id) {
         <button type="button" class="cl-btn peligro mini" data-accion="sacar">Sacar</button></td>
     </tr>`).join("")}</tbody></table></div>` : '<p class="crm-gris">Todavía no hay marcas cargadas.</p>';
 
-  const plazosHtml = d.plazos.length ? `<ul class="crm-plazos">${d.plazos.map(p => `
-      <li class="crm-plazo crm-urg-${p.urgencia}"><span class="crm-plazo-fecha">${crmFecha(p.fecha)}<small>${crmUrgencia(p)}</small></span>
-        <span class="crm-plazo-texto"><strong>${esc(p.titulo)}</strong>${p.acta ? ` · ${esc(p.marca)} (acta ${esc(p.acta)}, clase ${esc(p.clase)})` : ""}
-        ${p.detalle ? `<br><small class="crm-gris">${esc(p.detalle)}</small>` : ""}</span></li>`).join("")}</ul>
+  const plazoLi = p => `
+      <li class="crm-plazo crm-urg-${p.urgencia} ${p.trabajo_id ? "cl-plazo-trabajo" : ""}" ${p.trabajo_id ? `data-ir-trabajo="${p.trabajo_id}" title="Abrir el trabajo en Seguimientos"` : ""}><span class="crm-plazo-fecha">${crmFecha(p.fecha)}<small>${crmUrgencia(p)}</small></span>
+        <span class="crm-plazo-texto"><strong>${esc(p.titulo)}</strong>${p.acta || p.trabajo_id ? ` · ${esc(p.marca)}${p.acta ? ` (acta ${esc(p.acta)}${p.clase ? `, clase ${esc(p.clase)}` : ""})` : ""}` : ""}
+        ${p.detalle ? `<br><small class="crm-gris">${esc(p.detalle)}</small>` : ""}</span></li>`;
+  const plazosHtml = d.plazos.length ? `<ul class="crm-plazos">${d.plazos.map(plazoLi).join("")}</ul>
       <p class="crm-nota">Fechas orientativas calculadas por el sistema: confirmar siempre en el expediente.</p>` : '<p class="crm-gris">Sin plazos a la vista.</p>';
 
   const novedadesHtml = d.novedades.length ? `<ul class="cl-lista-simple">${d.novedades.map(n => `
@@ -600,9 +601,9 @@ async function abrirCliente(id) {
 
   const alertasAbiertas = d.alertas.filter(a => ["nueva", "monitorear", "oponer"].includes(a.estado)).length;
   const trabActivos = (d.trabajos || []).filter(t => t.estado === "activo").length;
-  const tabsCli = [["datos", "Datos"], ["trabajos", "Trabajos", trabActivos], ["poderes", "Poderes", (d.poderes || []).length], ["informes", "Informes", (d.informes || []).length], ["formularios", "Formularios", (d.formularios || []).length],
+  const tabsCli = [["resumen", "Resumen"], ["trabajos", "Trabajos", trabActivos], ["poderes", "Poderes", (d.poderes || []).length], ["informes", "Informes", (d.informes || []).length], ["formularios", "Formularios", (d.formularios || []).length],
     ["marcas", "Marcas", d.marcas.length], ["vigilancia", "Vigilancia", alertasAbiertas], ["plazos", "Plazos", d.plazos.length],
-    ["novedades", "Novedades", d.novedades.length]];
+    ["novedades", "Novedades", d.novedades.length], ["datos", "Datos"]];
 
   cont.innerHTML = `
     <div class="cl-ficha">
@@ -621,6 +622,8 @@ async function abrirCliente(id) {
         <button type="button" class="cl-btn peligro" id="cli-borrar">Borrar cliente</button>
         <span class="cl-estado" id="cli-estado"></span></div>
       </div>
+
+      <div data-cpanel="resumen" ${est.clienteTab === "resumen" ? "" : "hidden"}>${htmlResumenCliente(d, plazoLi)}</div>
 
       <div data-cpanel="trabajos" ${est.clienteTab === "trabajos" ? "" : "hidden"}>
         <div class="cl-acciones" style="margin-top:12px"><button type="button" class="cl-btn" id="cli-nuevo-trabajo">＋ Nuevo trabajo</button>
@@ -713,6 +716,51 @@ async function abrirCliente(id) {
   conectarVigilanciaCliente(cont, d, irTab);
   cont.querySelectorAll("[data-ir-trabajo]").forEach(b => b.addEventListener("click", () => irATrabajo(b.dataset.irTrabajo)));
   $("cli-nuevo-trabajo").addEventListener("click", () => nuevoTrabajoPara(c));
+  // Resumen: accesos a las otras solapas y acciones rápidas
+  cont.querySelectorAll("[data-ir-tab]").forEach(b => b.addEventListener("click", () => irTab(b.dataset.irTab)));
+  cont.querySelectorAll("[data-res-accion]").forEach(b => b.addEventListener("click", () => {
+    const a = b.dataset.resAccion;
+    if (a === "trabajo") return nuevoTrabajoPara(c);
+    if (a === "poder") { irTab("poderes"); if ($("cli-poder").hidden) abrirGeneradorPoder(id); }
+    if (a === "toma") { irTab("poderes"); if ($("cli-toma").hidden) abrirGeneradorToma(id); }
+    if (a === "desiste") { irTab("poderes"); if ($("cli-desiste").hidden) abrirGeneradorDesiste(id); }
+    if (a === "informe") irTab("informes");
+  }));
+  cont.querySelectorAll("[data-copiar-dato]").forEach(b => b.addEventListener("click", async () => {
+    try { await navigator.clipboard.writeText(b.dataset.copiarDato); const t = b.textContent; b.textContent = "✓"; setTimeout(() => { b.textContent = t; }, 1000); } catch (_) {}
+  }));
+}
+
+// ── Solapa Resumen (27/11/2026): la entrada de la ficha. Cómo está el cliente de un vistazo: contacto, trabajos en
+// curso, próximos vencimientos (de los trabajos y de la cartera, juntos), últimos movimientos del INPI y vigilancia.
+function htmlResumenCliente(d, plazoLi) {
+  const c = d.cliente;
+  const dato = (etq, v) => v ? `<span class="cl-res-dato"><small>${etq}</small>${esc(v)} <button type="button" class="cl-copiar" data-copiar-dato="${esc(v)}" title="Copiar">⧉</button></span>` : "";
+  const activos = (d.trabajos || []).filter(t => t.estado === "activo");
+  const proximos = d.plazos.filter(p => p.dias >= -30).slice(0, 6);
+  const nV = d.marcas.filter(m => m.vigilar).length, nP = d.marcas.filter(m => m.vigilancia_paga).length;
+  const abiertas = d.alertas.filter(a => ["nueva", "monitorear", "oponer"].includes(a.estado)).length;
+  return `
+    <div class="cl-res-contacto">${dato("CUIT", c.cuit)}${dato("Email", c.email)}${dato("Teléfono", c.telefono)}${dato("Contacto", c.contacto)}
+      ${!c.cuit && !c.email && !c.telefono ? '<span class="crm-gris">Sin datos de contacto: cargalos en <button type="button" class="cl-link" data-ir-tab="datos">Datos</button>.</span>' : ""}</div>
+    <div class="cl-res-acciones">
+      <button type="button" class="cl-btn" data-res-accion="trabajo">＋ Nuevo trabajo</button>
+      <button type="button" class="cl-btn sec" data-res-accion="poder">📄 Poder</button>
+      <button type="button" class="cl-btn sec" data-res-accion="toma">📑 Toma de intervención</button>
+      <button type="button" class="cl-btn sec" data-res-accion="desiste">🚫 Desiste</button>
+      <button type="button" class="cl-btn sec" data-res-accion="informe">📄 Informes</button>
+    </div>
+    <div class="cl-res-grid">
+      <section class="cl-res-caja ancho"><h4>Trabajos en curso <button type="button" class="cl-link" data-ir-tab="trabajos">ver todos →</button></h4>
+        ${htmlTrabajos(activos, d.servicios_trabajo) || '<p class="crm-gris">Ningún trabajo abierto en Seguimientos.</p>'}</section>
+      <section class="cl-res-caja"><h4>Próximos vencimientos <button type="button" class="cl-link" data-ir-tab="plazos">ver todos →</button></h4>
+        ${proximos.length ? `<ul class="crm-plazos">${proximos.map(plazoLi).join("")}</ul>` : '<p class="crm-gris">Nada a la vista.</p>'}</section>
+      <section class="cl-res-caja"><h4>Últimos movimientos del INPI <button type="button" class="cl-link" data-ir-tab="novedades">ver todos →</button></h4>
+        ${d.novedades.length ? `<ul class="cl-lista-simple">${d.novedades.slice(0, 5).map(n => `<li><span class="crm-gris">${fmtFechaHora(n.detectado_en)}</span> · acta ${esc(n.acta)} · ${esc(n.texto)}</li>`).join("")}</ul>` : '<p class="crm-gris">Sin novedades todavía.</p>'}</section>
+      <section class="cl-res-caja"><h4>Vigilancia <button type="button" class="cl-link" data-ir-tab="vigilancia">abrir →</button></h4>
+        <p style="margin:0">${d.marcas.length} marca${d.marcas.length === 1 ? "" : "s"} · vigilamos ${nV} · paga ${nP} en ${new Date().getFullYear()}${abiertas ? ` · <span class="cl-tag mal">${abiertas} alerta${abiertas === 1 ? "" : "s"} abierta${abiertas === 1 ? "" : "s"}</span>` : ""}</p></section>
+      ${c.notas ? `<section class="cl-res-caja ancho"><h4>Notas internas</h4><p style="margin:0;white-space:pre-wrap">${esc(c.notas)}</p></section>` : ""}
+    </div>`;
 }
 
 // ── Solapa Vigilancia (27/11/2026): qué marcas vigilamos y cuáles nos paga el cliente, por separado ──────────
@@ -1334,14 +1382,15 @@ async function pintarVencimientos() {
       const items = r.plazos.filter(f);
       if (!items.length) return;
       html += `<div class="cl-venc-sec"><h4>${titulo} (${items.length})</h4>${items.map(p => `
-        <div class="cl-venc u-${p.urgencia}" data-cliente="${p.cliente_id}">
+        <div class="cl-venc u-${p.urgencia}" data-cliente="${p.cliente_id}" ${p.trabajo_id ? `data-trabajo="${p.trabajo_id}" title="Abrir el trabajo en Seguimientos"` : ""}>
           <span class="f">${crmFecha(p.fecha)}<small>${crmUrgencia(p)}</small></span>
           <span><strong>${esc(p.titulo)}</strong><br><span class="crm-gris">${esc(p.cliente || "")}${p.marca ? " · " + esc(p.marca) : ""}${p.clase ? " (clase " + esc(p.clase) + ")" : ""}${p.acta ? " · acta " + esc(p.acta) : ""}</span>
           ${p.detalle ? `<br><small class="crm-gris">${esc(p.detalle)}</small>` : ""}</span></div>`).join("")}</div>`;
     });
     cont.innerHTML = `<div class="cl-vista">${html || '<p class="vacio">No hay plazos a la vista en la cartera.</p>'}
-      <p class="crm-nota">Incluye renovaciones, DJ de uso de medio término, cierre de oposiciones de terceros, oposiciones recibidas y los plazos para oponerse a marcas parecidas detectadas por la vigilancia. Fechas orientativas: confirmar siempre en el expediente.</p></div>`;
-    cont.querySelectorAll("[data-cliente]").forEach(el => el.addEventListener("click", () => el.dataset.cliente && el.dataset.cliente !== "null" && abrirCliente(+el.dataset.cliente)));
+      <p class="crm-nota">Incluye los vencimientos de los trabajos abiertos en Seguimientos (un clic abre el trabajo), renovaciones, DJ de uso de medio término, cierre de oposiciones de terceros, oposiciones recibidas y los plazos para oponerse a marcas parecidas detectadas por la vigilancia. Fechas orientativas: confirmar siempre en el expediente.</p></div>`;
+    cont.querySelectorAll("[data-cliente]").forEach(el => el.addEventListener("click", () => el.dataset.trabajo ? irATrabajo(el.dataset.trabajo)
+      : el.dataset.cliente && el.dataset.cliente !== "null" && abrirCliente(+el.dataset.cliente)));
   } catch (e) { cont.innerHTML = `<div class="cl-vista"><p class="crm-error">No se pudo cargar (${esc(e.message)}).</p></div>`; }
 }
 
@@ -1866,7 +1915,7 @@ document.querySelectorAll("#pestanas button").forEach(b => b.addEventListener("c
   if (p.get("cliente")) {
     // ?ctab=informes (desde Más → Informes) abre la ficha directo en esa solapa
     if (p.get("ctab") === "alertas") p.set("ctab", "vigilancia");
-    if (["datos", "trabajos", "poderes", "informes", "formularios", "marcas", "vigilancia", "plazos", "novedades"].includes(p.get("ctab"))) { est.clienteTab = p.get("ctab"); est.clienteTabId = +p.get("cliente"); }
+    if (["resumen", "datos", "trabajos", "poderes", "informes", "formularios", "marcas", "vigilancia", "plazos", "novedades"].includes(p.get("ctab"))) { est.clienteTab = p.get("ctab"); est.clienteTabId = +p.get("cliente"); }
     abrirCliente(+p.get("cliente"));
   }
   if (EMBEBIDO) return;

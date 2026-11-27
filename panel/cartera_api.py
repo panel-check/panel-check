@@ -385,13 +385,37 @@ def crear_router(verificar_login, conexion, crm) -> APIRouter:
         return {s["id"]: {"nombre": s["nombre"], "corto": s.get("corto") or s["nombre"], "color": s["color"]}
                 for s in tc.servicios_publicos()}
 
-    def _trabajos_de(cur, cliente_id=None, actas=None):
+    def _plazos_trabajos(trabajos, hoy, nombres=None):
+        """Vencimientos de los trabajos abiertos de Seguimientos, con la misma forma que los plazos de la cartera,
+        para mostrarlos juntos (ficha del cliente y Clientes → Vencimientos). 27/11/2026."""
+        out = []
+        for t in trabajos:
+            a = t.get("alerta") or {}
+            v = t.get("vencimiento")
+            if t.get("estado") != "activo" or not v or a.get("nivel") in ("cumplido", "cerrado", "ninguno"):
+                continue
+            v = cartera._a_fecha(v)
+            if not v:
+                continue
+            dias = (v - hoy).days
+            out.append({"acta": t.get("acta"), "marca": t.get("marca"), "clase": None,
+                        "cliente_id": t.get("cliente_id"), "cliente": (nombres or {}).get(t.get("cliente_id")),
+                        "tipo": "trabajo", "trabajo_id": t["id"],
+                        "titulo": f"{t.get('servicio_nombre')}: vence el plazo",
+                        "detalle": f"Trabajo en Seguimientos · {t.get('etapa_nombre') or ''}".strip(" ·"),
+                        "fecha": v, "dias": dias, "urgencia": cartera.urgencia(dias)})
+        return out
+
+    def _trabajos_de(cur, cliente_id=None, actas=None, activos_todos=False):
         """Los trabajos de Seguimientos de un cliente (o de unas actas), con etapa y vencimiento calculados.
         Primero los activos; nunca frena la ficha."""
         import trabajos_core as tc
         try:
             cur.execute("SAVEPOINT trab")
-            if actas:
+            if activos_todos:
+                cur.execute("SELECT t.* FROM trabajos t JOIN clientes c ON c.id = t.cliente_id "
+                            "WHERE t.estado = 'activo' AND c.activo")
+            elif actas:
                 cur.execute("SELECT * FROM trabajos WHERE acta = ANY(%s) OR actas_extra && %s::text[] "
                             "ORDER BY (estado = 'activo') DESC, contratacion DESC NULLS LAST, id DESC", (list(actas), list(actas)))
             else:
@@ -403,7 +427,7 @@ def crear_router(verificar_login, conexion, crm) -> APIRouter:
             cur.execute("ROLLBACK TO SAVEPOINT trab")
             print(f"[clientes] trabajos: {e}")
             return []
-        campos = ("id", "marca", "servicio", "servicio_nombre", "estado", "etapa", "etapas_total", "etapa_nombre",
+        campos = ("id", "cliente_id", "marca", "servicio", "servicio_nombre", "estado", "etapa", "etapas_total", "etapa_nombre",
                   "proxima_etapa", "alerta", "vencimiento", "acta", "actas_extra", "contratacion", "notificacion", "sin_cargo")
         return [{k: f.get(k) for k in campos} for f in filas]
 
@@ -572,6 +596,7 @@ def crear_router(verificar_login, conexion, crm) -> APIRouter:
         with nueva_conexion() as conn:
             with rcur(conn) as cur:
                 trabajos = _trabajos_de(cur, cliente_id=cliente_id)
+        plazos = sorted(plazos + _plazos_trabajos(trabajos, hoy, {cliente_id: cliente["nombre"]}), key=lambda p: p["fecha"])
         return {"cliente": cliente, "marcas": marcas, "novedades": novedades, "alertas": alertas,
                 "trabajos": trabajos, "servicios_trabajo": _servicios_trabajo(),
                 "plazos": plazos, "formularios": formularios, "poderes": poderes_cli, "informes": informes, "tipos_persona": formularios_core.TIPO_LEGIBLE,
@@ -1177,7 +1202,10 @@ def crear_router(verificar_login, conexion, crm) -> APIRouter:
                 )
                 marcas = cur.fetchall()
                 alertas = _alertas(cur, {"estado": "abiertas", "tipo": "similitud"}, limite=1000)
-        plazos = []
+                trabajos = _trabajos_de(cur, activos_todos=True)
+                cur.execute("SELECT id, nombre FROM clientes WHERE activo")
+                nombres = {f["id"]: f["nombre"] for f in cur.fetchall()}
+        plazos = _plazos_trabajos(trabajos, hoy, nombres)
         for m in marcas:
             plazos += cartera.plazos_marca_cartera(m, hoy)
         plazos += [p for p in (cartera.plazo_oposicion_alerta(a, hoy) for a in alertas) if p]
