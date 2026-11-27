@@ -117,6 +117,18 @@ class VigilanciaEnBloque(BaseModel):
     actas: Optional[list] = None    # vacío = todas las marcas del cliente
 
 
+class PagosVigilancia(BaseModel):
+    anio: int
+    actas: list
+    pago: bool
+
+
+class ImportarPagos(BaseModel):
+    anio: int
+    texto: str
+    confirmar: bool = False
+
+
 class Mover(BaseModel):
     cliente_id: int
 
@@ -651,15 +663,16 @@ def crear_router(verificar_login, conexion, crm) -> APIRouter:
 
     # ── Una marca de la cartera ───────────────────────────────────────
     @router.put("/api/cartera/marcas/{acta}")
-    def editar_marca(acta: str, body: MarcaCambios, _: str = Depends(verificar_login)):
+    def editar_marca(acta: str, body: MarcaCambios, usuario: str = Depends(verificar_login)):
         enviados = body.model_fields_set
         sets, val = [], []
         if "vigilar" in enviados and body.vigilar is not None:
             sets.append("vigilar = %s"); val.append(bool(body.vigilar))
         if "vigilar_todas_clases" in enviados and body.vigilar_todas_clases is not None:
             sets.append("vigilar_todas_clases = %s"); val.append(bool(body.vigilar_todas_clases))
-        if "vigilancia_paga" in enviados and body.vigilancia_paga is not None:
-            sets.append("vigilancia_paga = %s"); val.append(bool(body.vigilancia_paga))
+        paga = body.vigilancia_paga if "vigilancia_paga" in enviados else None   # = pagó el año en curso
+        if paga is not None:
+            sets.append("acta = acta")   # el pago va a cartera_vigilancia_pagos (abajo)
         if "terminos_vigilancia" in enviados:
             t = _limpio(body.terminos_vigilancia, 500)
             sets.append("terminos_vigilancia = %s"); val.append(t)
@@ -702,23 +715,28 @@ def crear_router(verificar_login, conexion, crm) -> APIRouter:
                     actas = [r["acta"] for r in cur.fetchall() if vig.clave_grupo(r) == g]
                     cur.execute("UPDATE cartera_marcas SET sensibilidad_vigilancia = %s WHERE acta = ANY(%s)", (sens_nueva, actas))
                     vig.reaplicar_sensibilidad(cur, actas)
-                if "vigilancia_paga" in enviados:
-                    cartera.sincronizar_contratada(cur, [fila["cliente_id"]])
+                if paga is not None:
+                    cartera.marcar_pagos(cur, [acta], cartera.hoy_ar().year, bool(paga), usuario)
             conn.commit()
         return {"ok": True, "marca": fila}
 
     @router.put("/api/clientes/{cliente_id}/vigilancia")
-    def vigilancia_en_bloque(cliente_id: int, body: VigilanciaEnBloque, _: str = Depends(verificar_login)):
+    def vigilancia_en_bloque(cliente_id: int, body: VigilanciaEnBloque, usuario: str = Depends(verificar_login)):
         """Solapa Vigilancia de la ficha del cliente: «Vigilar todas / ninguna» y «Pagan todas / ninguna»."""
         if body.campo not in ("vigilar", "vigilancia_paga"):
             raise HTTPException(status_code=400, detail="Campo: vigilar o vigilancia_paga")
         actas = [str(a).strip() for a in (body.actas or []) if str(a).strip()]
         with nueva_conexion() as conn:
             with rcur(conn) as cur:
-                cur.execute(f"UPDATE cartera_marcas SET {body.campo} = %s WHERE cliente_id = %s"
-                            + (" AND acta = ANY(%s)" if actas else ""),
-                            [bool(body.valor), cliente_id] + ([actas] if actas else []))
-                n = cur.rowcount
+                if body.campo == "vigilancia_paga":
+                    cur.execute("SELECT acta FROM cartera_marcas WHERE cliente_id = %s" + (" AND acta = ANY(%s)" if actas else ""),
+                                [cliente_id] + ([actas] if actas else []))
+                    n = cartera.marcar_pagos(cur, [f["acta"] for f in cur.fetchall()], cartera.hoy_ar().year, bool(body.valor), usuario)
+                else:
+                    cur.execute("UPDATE cartera_marcas SET vigilar = %s WHERE cliente_id = %s"
+                                + (" AND acta = ANY(%s)" if actas else ""),
+                                [bool(body.valor), cliente_id] + ([actas] if actas else []))
+                    n = cur.rowcount
                 cartera.sincronizar_contratada(cur, [cliente_id])
                 cur.execute("SELECT vigilancia_contratada FROM clientes WHERE id = %s", (cliente_id,))
                 c = cur.fetchone()
@@ -742,6 +760,54 @@ def crear_router(verificar_login, conexion, crm) -> APIRouter:
                     raise HTTPException(status_code=424, detail=str(e))
             conn.commit()
         return {"ok": True, "conceptos_vigilancia": ", ".join(lista)}
+
+    # ── Vigilancia paga por año (27/11/2026): Clientes → Vigilancia → «Vigilancia paga por año» ──────────────
+    @router.get("/api/cartera/vigilancia-pagos")
+    def pagos_vigilancia(anio: int = 0, _: str = Depends(verificar_login)):
+        anio = anio or cartera.hoy_ar().year
+        with nueva_conexion() as conn:
+            with rcur(conn) as cur:
+                cartera.sincronizar_pagas(cur)   # por si cambió el año
+                cur.execute("""SELECT cm.acta, cm.denominacion, cm.clase, cm.tipo, cm.vigilar, cm.estado_tramite,
+                                      c.id AS cliente_id, c.nombre AS cliente,
+                                      EXISTS (SELECT 1 FROM cartera_vigilancia_pagos p WHERE p.acta = cm.acta AND p.anio = %s) AS pago,
+                                      (SELECT COALESCE(array_agg(p.anio ORDER BY p.anio), '{}') FROM cartera_vigilancia_pagos p
+                                        WHERE p.acta = cm.acta) AS anios
+                               FROM cartera_marcas cm JOIN clientes c ON c.id = cm.cliente_id
+                               WHERE c.activo
+                               ORDER BY upper(COALESCE(NULLIF(cm.grupo_marca, ''), cm.denominacion, '')), cm.clase, cm.acta""", (anio,))
+                filas = cur.fetchall()
+                cur.execute("SELECT DISTINCT anio FROM cartera_vigilancia_pagos ORDER BY anio")
+                anios = [f["anio"] for f in cur.fetchall()]
+            conn.commit()
+        hoy = cartera.hoy_ar().year
+        return {"anio": anio, "anios": sorted(set(anios) | {hoy, hoy + 1}), "marcas": filas}
+
+    @router.put("/api/cartera/vigilancia-pagos")
+    def marcar_pagos_vigilancia(body: PagosVigilancia, usuario: str = Depends(verificar_login)):
+        if not 2000 <= body.anio <= 2100:
+            raise HTTPException(status_code=400, detail="Año inválido")
+        with nueva_conexion() as conn:
+            with rcur(conn) as cur:
+                n = cartera.marcar_pagos(cur, body.actas, body.anio, body.pago, usuario)
+            conn.commit()
+        return {"ok": True, "cambiadas": n}
+
+    @router.post("/api/cartera/vigilancia-pagos/importar")
+    def importar_pagos_vigilancia(body: ImportarPagos, usuario: str = Depends(verificar_login)):
+        """Pegar filas de la planilla (MARCA, CLASE, TIPO). Sin `confirmar` solo muestra qué se encontró."""
+        if not 2000 <= body.anio <= 2100:
+            raise HTTPException(status_code=400, detail="Año inválido")
+        filas = cartera.parsear_pagos(body.texto[:200000])
+        with nueva_conexion() as conn:
+            with rcur(conn) as cur:
+                cur.execute("""SELECT cm.acta, cm.denominacion, cm.clase, cm.tipo, c.nombre AS cliente
+                               FROM cartera_marcas cm JOIN clientes c ON c.id = cm.cliente_id""")
+                r = cartera.emparejar_pagos(filas, cur.fetchall())
+                if body.confirmar:
+                    r["marcadas"] = cartera.marcar_pagos(cur, [m["acta"] for m in r["encontradas"]], body.anio, True, usuario)
+            conn.commit()
+        return r
 
     @router.delete("/api/cartera/marcas/{acta}")
     def sacar_marca(acta: str, _: str = Depends(verificar_login)):

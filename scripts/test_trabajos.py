@@ -474,6 +474,16 @@ class TomaIntervencion(unittest.TestCase):
             td.a_pdf([])
         self.assertEqual(td.nombre_archivo("4790681", "Más", "desiste"), "4790681-MÁS - Desiste firmado.pdf")
 
+    def test_importar_pagos_vigilancia(self):
+        import cartera
+        f = cartera.parsear_pagos("MARCA\tCLASE\tTIPO\nSí viajo\t39\tMixta\nER EL RENACER\t4401705\tDenominativa\nFUEGO ETERNO 11\nSIN CLASE\nOTRA\t9")
+        self.assertEqual([x.get("clase") or x.get("acta") or x.get("error") for x in f], [39, "4401705", 11, "falta la clase", 9])
+        ms = [{"acta": "1", "denominacion": "SI VIAJO", "clase": 39, "tipo": "D"}, {"acta": "2", "denominacion": "SI VIAJO", "clase": 39, "tipo": "M"},
+              {"acta": "4401705", "denominacion": "ER EL RENACER", "clase": 41, "tipo": "D"}, {"acta": "5", "denominacion": "FUEGO ETERNO", "clase": 11, "tipo": "M"}]
+        r = cartera.emparejar_pagos(f, ms)
+        self.assertEqual([m["acta"] for m in r["encontradas"]], ["2", "4401705", "5"])   # la mixta, por el tipo
+        self.assertEqual([x["marca"] for x in r["no_encontradas"]], ["SIN CLASE", "OTRA"])
+
     def test_etapa_automatica(self):
         for sid in tc.SERVICIOS_TOMA:
             s = tc.POR_ID[sid]
