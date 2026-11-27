@@ -86,7 +86,8 @@ function tarjeta(t) {
   const barra = s.etapas.map((_, i) => `<span class="${i < t.etapa ? "hecha" : ""}"></span>`).join("");
   const venc = t.vencimiento && t.alerta?.nivel !== "cumplido" ? `<span class="venc-fecha">${fecha(t.vencimiento)}</span>` : "";
   const inf = t.informes ? `<span class="sg-inf" title="${t.informes} informe${t.informes > 1 ? "s" : ""} de esta marca">📄 ${t.informes}</span>` : "";
-  const sigue = t.estado !== "cerrado" && t.proxima_etapa
+  // Con un dictamen o resolución del INPI (27/11/2026) la «próxima etapa» deja de tener sentido: manda el aviso.
+  const sigue = t.estado !== "cerrado" && t.proxima_etapa && !t.resultado_inpi
     ? `<div class="sg-sigue" title="Próxima etapa"><span class="prox">Prox.</span>${esc(t.proxima_etapa)}</div>` : "";
   const extra = (t.actas_extra || []).length;
   const acta = t.acta_efectiva ? `<span class="acta" ${extra ? `title="También: ${esc(t.actas_extra.join(", "))}"` : ""}>Acta ${esc(t.acta_efectiva)}${extra ? ` +${extra}` : ""}</span>` : `<span class="acta">Sin acta</span>`;
@@ -532,12 +533,16 @@ function pintarFicha(d) {
   const s = servicioDe(t.servicio);
   const f = $("ficha");
   f.style.setProperty("--sg-color", s.color);
+  const r = t.resultado_inpi;
+  const filaEstado = r ? `<li class="sg-paso sg-paso-estado ${esc(r.nivel)}" title="${esc(r.explicacion)}">
+      <span class="bola">${r.icono}</span><span class="nombre"><b>${esc(r.titulo)}</b>${r.fecha ? ` · ${esc(r.fecha)}` : ""}<small>${esc(r.explicacion)}</small></span><span class="sg-auto">INPI</span></li>` : "";
   const pasos = s.etapas.map((e, i) => {
     const n = i + 1;
     const cls = n <= t.etapa ? "hecho" : "";
     const auto = (s.auto_desde && n >= s.auto_desde) || (s.auto_etapas || []).includes(n);
     return `<li class="sg-paso ${cls} ${n === t.etapa ? "actual" : ""}" data-etapa="${n}" title="${auto ? `Se marca sola cuando el INPI lo muestra (también se puede marcar a mano)` : `Marcar «${esc(e)}» como etapa actual`}">
-      <span class="bola">${n <= t.etapa ? "✓" : ""}</span><span class="nombre">${esc(e)}</span>${auto ? '<span class="sg-auto">INPI</span>' : ""}</li>`;
+      <span class="bola">${n <= t.etapa ? "✓" : ""}</span><span class="nombre">${esc(e)}</span>${auto ? '<span class="sg-auto">INPI</span>' : ""}</li>`
+      + (n === Math.max(t.etapa, 1) ? filaEstado : "");
   }).join("");
   const inpi = d.inpi;
   const bloqueInpi = !s.auto_desde ? "" : !inpi || !inpi.actas.length
@@ -559,13 +564,14 @@ function pintarFicha(d) {
         ${enlace(t.carpeta_drive, "📁 Carpeta Drive")}
         ${enlace(t.comprobante, "🧾 Comprobante")}
         <button type="button" class="sg-btn sg-btn-mini" data-armar-mail title="Armar un mail o WhatsApp con una plantilla y los datos de este trabajo ya completados">✉️ Mail</button>
+        ${t.acta_efectiva ? `<button type="button" class="sg-btn sg-btn-suave sg-btn-mini" data-actualizar-inpi title="Volver a leer ahora en el INPI el expediente de ${[t.acta_efectiva, ...(t.actas_extra || [])].length > 1 ? "las actas" : "el acta"} de este trabajo (${esc([t.acta_efectiva, ...(t.actas_extra || [])].join(", "))})">↻ Actualizar INPI</button>` : ""}
         <button type="button" class="sg-btn sg-btn-suave sg-btn-mini" data-copiar="${esc(textoParaCopiar(d))}" data-etiqueta="⧉ Copiar marca" title="Copiar «${esc(textoParaCopiar(d))}» para pegar en un mail">⧉ Copiar marca</button>
         <a class="sg-btn sg-btn-suave sg-btn-mini" href="/mails?tab=clientes" target="_blank" rel="noopener" title="Plantillas para clientes (en Mails)">📋 Plantillas</a>
       </div>
     </div>
     <div class="sg-f-cuerpo">
       ${bloqueCuenta(t, s)}
-      <div class="sg-bloque"><h3>Etapas <span class="der">${t.proxima_etapa ? `Sigue: <b>${esc(t.proxima_etapa)}</b>` : "✓ Todas completas"}</span></h3>
+      <div class="sg-bloque"><h3>Etapas <span class="der">${r ? `Estado: <b class="sg-estado-${esc(r.nivel)}">${r.icono} ${esc(r.titulo)}</b>` : t.proxima_etapa ? `Sigue: <b>${esc(t.proxima_etapa)}</b>` : "✓ Todas completas"}</span></h3>
         <ol class="sg-pasos">${pasos}</ol>${bloqueInpi}</div>
       ${bloqueInformes(d)}
       ${bloqueExpediente(d)}
@@ -743,6 +749,39 @@ document.addEventListener("change", (ev) => {
   const valor = c.value.trim() || null;
   // Los campos que cambian cálculos o el diseño de la ficha la redibujan; el resto no (así no se pierde el foco).
   guardar({ [campo]: valor }, ["servicio", "notificacion", "acta", "contratacion", "carpeta_drive", "comprobante"].includes(campo));
+});
+
+// ── ↻ Actualizar INPI desde la ficha del trabajo (27/11/2026): lo mismo que el botón de la ficha de la marca en
+// Clientes, para todas las actas del trabajo, sin salir de Seguimientos. ──────────────────────────────────
+document.addEventListener("click", async (ev) => {
+  const b = ev.target.closest("[data-actualizar-inpi]");
+  if (!b || b.disabled) return;
+  const t = sg.ficha?.trabajo;
+  const actas = t ? [t.acta_efectiva, ...(t.actas_extra || [])].filter(Boolean) : [];
+  if (!actas.length) return;
+  b.disabled = true;
+  const txt = b.textContent;
+  let ok = 0, nuevas = 0, fuera = 0, fallas = 0;
+  for (const [i, acta] of actas.entries()) {
+    b.textContent = `↻ Leyendo ${actas.length > 1 ? `${i + 1}/${actas.length}` : "el INPI"}…`;
+    try {
+      const r = await pedir(`/api/cartera/marcas/${encodeURIComponent(acta)}/actualizar`, { method: "POST" });
+      if (r.ok) { ok++; nuevas += (r.novedades || []).length; } else fallas++;
+    } catch (e) {
+      if (/no está en la cartera/i.test(e.message)) fuera++; else fallas++;
+    }
+  }
+  b.disabled = false;
+  b.textContent = txt;
+  const partes = [];
+  if (ok) partes.push(`${ok === actas.length ? (actas.length > 1 ? "Actas actualizadas" : "Acta actualizada") : `${ok} de ${actas.length} actas actualizadas`}: ${nuevas ? `${nuevas} novedad${nuevas > 1 ? "es" : ""}` : "sin novedades"}`);
+  if (fuera) partes.push(`${fuera} no ${fuera > 1 ? "están" : "está"} en Clientes → Marcas (agregala ahí para leerla)`);
+  if (fallas) partes.push(`el INPI no respondió en ${fallas}: probá de nuevo en unos minutos`);
+  mostrarAviso(partes.join(" · ") || "Sin cambios", fallas && !ok ? "error" : "ok");
+  if (ok) {
+    if (typeof cargar === "function") cargar();
+    if (sg.abierto) abrirFicha(sg.abierto);
+  }
 });
 
 // ── Menciones en las notas (26/11/2026): «@» + usuario le avisa en su campanita 🔔 ──────────────
