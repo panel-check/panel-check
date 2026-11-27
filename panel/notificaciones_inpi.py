@@ -270,6 +270,36 @@ def _fechas_inpi(texto: str) -> str:
     return _re.sub(r"/?Date\((\d+)\)/?", f, texto or "")
 
 
+def resultado_inpi(texto: str):
+    """Dictámenes y resoluciones de la grilla («Dictamen aconseja denegatoria fondo», 25/11/2026 en MATEACIDO):
+    son lo más importante que le puede pasar a una marca y antes se mostraban como un movimiento más. Devuelve
+    {"titulo", "icono", "nivel" (rojo/verde/ambar), "explicacion"} o None."""
+    limpio = _sin_tildes(_fechas_inpi(texto or ""))
+    if "ratifica" in limpio:
+        return None
+    deneg = _re.search(r"\bdeneg", limpio) is not None
+    conce = _re.search(r"\b(conce[ds]|conceder|otorga)", limpio) is not None
+    if _re.search(r"\bdictamen", limpio):
+        if deneg:
+            motivo = " por motivos de fondo" if "fondo" in limpio else (" por motivos de forma" if "forma" in limpio else "")
+            return {"titulo": "Dictamen: aconseja denegar", "icono": "⛔", "nivel": "rojo",
+                    "explicacion": f"El examinador del INPI aconsejó denegar la marca{motivo}. Todavía no es la "
+                                   "resolución final: hay que hablar con el cliente sobre cómo seguir."}
+        if conce:
+            return {"titulo": "Dictamen: aconseja conceder", "icono": "✅", "nivel": "verde",
+                    "explicacion": "El examinador del INPI aconsejó conceder la marca. Falta la resolución."}
+        return {"titulo": "Dictamen del INPI", "icono": "📋", "nivel": "ambar",
+                "explicacion": "El INPI cargó un dictamen en el expediente: revisarlo en la grilla."}
+    if _re.search(r"\bresolucion", limpio) and not _re.search(r"\bproyecto", limpio):
+        if deneg:
+            return {"titulo": "Resolución: denegada", "icono": "⛔", "nivel": "rojo",
+                    "explicacion": "El INPI resolvió denegar la marca."}
+        if conce:
+            return {"titulo": "Resolución: concedida", "icono": "🏅", "nivel": "verde",
+                    "explicacion": "El INPI resolvió conceder la marca."}
+    return None
+
+
 def clasificar_movimiento(f: dict):
     """Para la campanita: None si no es importante; si no, la fila con tipo, ícono, explicación y detalle."""
     tipo, texto = f.get("tipo"), _fechas_inpi(f.get("texto") or "")
@@ -308,6 +338,10 @@ def clasificar_movimiento(f: dict):
             return {**base, "tipo": "Oposición recibida", "icono": "⚠️",
                     "explicacion": "Un tercero presentó una oposición. Figura en el expediente antes de que el "
                                    "INPI la notifique.", "_grupo": "oposicion"}
+        res = resultado_inpi(texto)
+        if res:
+            return {**base, "tipo": res["titulo"], "icono": res["icono"], "explicacion": res["explicacion"],
+                    "_grupo": "dictamen"}
         if "vista de marcas" in limpio:
             if f.get("tuvo_oposicion"):
                 return {**base, "tipo": "Notificación de la oposición", "icono": "📨",
@@ -338,7 +372,8 @@ def filtrar_movimientos(filas: list[dict]) -> list[dict]:
 
 
 # ── Mail diario «Cartera y vigilancia» (scripts/notificar_cartera.py) ───────
-# Criterio del 22/11/2026: el mail lleva lo mismo que la campanita (ubicación, vista, oposición, concedida…)
+# Criterio del 22/11/2026: el mail lleva lo mismo que la campanita (ubicación, vista, oposición, concedida,
+# y desde el 27/11/2026 los dictámenes y resoluciones de la grilla)
 # y además los avances del trámite que hace el estudio: toma de intervención, poder y contestación de vista.
 # Formularios, recibos sueltos y escritos genéricos no van. El INPI a veces carga dos veces lo mismo (y cada
 # presentación trae su «Recibo de Ingreso — …» aparte): se deja una sola línea por acta, avance y fecha.

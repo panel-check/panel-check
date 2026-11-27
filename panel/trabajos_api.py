@@ -570,11 +570,45 @@ def crear_router(verificar_login, conexion) -> APIRouter:
             cur.execute(SQL_LISTA + donde, val)
             hoy = tc.hoy_ar()
             filas = tc.ordenar([tc.completar(dict(f), hoy) for f in cur.fetchall()])
+            _resultados_inpi(cur, filas)
             cur.execute("SELECT estado, COUNT(*) AS n FROM trabajos GROUP BY estado")
             cuentas = {f["estado"]: f["n"] for f in cur.fetchall()}
             vigilancia = _clientes_con_vigilancia(cur, q)
         return {"hoy": hoy, "servicios": tc.servicios_publicos(), "trabajos": filas,
                 "cuentas": cuentas, "notion_procesos": tc.NOTION_PROCESOS, "vigilancia": vigilancia}
+
+    def _resultados_inpi(cur, filas):
+        """t["resultado_inpi"]: el último dictamen o resolución de la grilla (en el acta del trabajo o sus actas
+        extra) desde la contratación, para marcarlo en la tarjeta (27/11/2026, MATEACIDO). Nunca frena la lista."""
+        import notificaciones_inpi as ni
+        por_acta = {}
+        for t in filas:
+            for a in [t.get("acta_efectiva"), *(t.get("actas_extra") or [])]:
+                if a:
+                    por_acta.setdefault(str(a), []).append(t)
+        if not por_acta:
+            return
+        try:
+            cur.execute("SAVEPOINT res_inpi")
+            cur.execute(
+                """SELECT acta, texto, detectado_en FROM cartera_novedades
+                   WHERE tipo = 'movimiento' AND acta = ANY(%s)
+                     AND (texto ILIKE '%%dictamen%%' OR texto ILIKE '%%resoluci%%')
+                   ORDER BY detectado_en""", (list(por_acta),))
+            for f in cur.fetchall():
+                res = ni.resultado_inpi(f["texto"])
+                if not res:
+                    continue
+                m = re.search(r"(\d{2}/\d{2}/\d{4})", f["texto"] or "")
+                for t in por_acta.get(str(f["acta"]), []):
+                    desde = t.get("contratacion")
+                    if desde and f["detectado_en"].date() < tc.a_fecha(desde):
+                        continue
+                    t["resultado_inpi"] = {**res, "acta": f["acta"], "fecha": m.group(1) if m else None}
+            cur.execute("RELEASE SAVEPOINT res_inpi")
+        except Exception as e:
+            cur.execute("ROLLBACK TO SAVEPOINT res_inpi")
+            print(f"[seguimientos] dictámenes del INPI: {e}")
 
     def _clientes_con_vigilancia(cur, q=""):
         """Columna «Vigilancia marcaria» del tablero: los clientes activos que tienen la vigilancia contratada de
@@ -637,13 +671,25 @@ def crear_router(verificar_login, conexion) -> APIRouter:
                               consultado_en, agente
                        FROM cartera_marcas WHERE acta = %s""", (t["acta_efectiva"],))
                 marca = cur.fetchone()
+                # Las novedades de todas las actas del trabajo (la principal y las extra), con el acta a la vista
+                # cuando hay más de una; los dictámenes y resoluciones van resaltados (27/11/2026).
+                actas_t = [str(a) for a in [t["acta_efectiva"], *(t.get("actas_extra") or [])] if a]
                 cur.execute(
-                    """SELECT tipo, texto, detectado_en FROM cartera_novedades
-                       WHERE acta = %s ORDER BY detectado_en DESC LIMIT 40""", (t["acta_efectiva"],))
+                    """SELECT acta, tipo, texto, detectado_en FROM cartera_novedades
+                       WHERE acta = ANY(%s) ORDER BY detectado_en DESC LIMIT 60""", (actas_t,))
                 import notificaciones_inpi as ni   # el INPI carga dos veces la toma de intervención y el poder
+                novs = []
+                todas = cur.fetchall()
+                for a in actas_t:
+                    for n in ni.novedades_sin_repetir([f for f in todas if str(f["acta"]) == a]):
+                        n = dict(n)
+                        n["importante"] = ni.resultado_inpi(n["texto"]) if n.get("tipo") == "movimiento" else None
+                        n["mostrar_acta"] = len(actas_t) > 1
+                        novs.append(n)
+                novs.sort(key=lambda n: n["detectado_en"], reverse=True)
                 expediente = {"acta": t["acta_efectiva"], "automatica": bool(t.get("acta_auto")),
                               "en_cartera": bool(marca), "marca": marca,
-                              "novedades": ni.novedades_sin_repetir(cur.fetchall()),
+                              "novedades": novs[:40],
                               # «MÁS (clase 36, acta 4790681, MIXTA)», para el botón de copiar al lado del acta
                               "para_copiar": tc.texto_solicitud(t.get("marca") or (marca or {}).get("denominacion"),
                                                                 marca) if marca else None}

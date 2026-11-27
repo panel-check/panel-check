@@ -390,6 +390,19 @@ class TomaIntervencion(unittest.TestCase):
         self.assertEqual(out, ["Otros — Escrito de contestación de la vista", "Formulario de cambio de domicilio",
                                "Formulario"])
 
+    def test_dictamenes_y_resoluciones(self):
+        import notificaciones_inpi as ni
+        pre = "Nuevo movimiento en el expediente: 25/11/2026 · "
+        r = ni.resultado_inpi(pre + "Dictamen aconseja denegatoria fondo")
+        self.assertEqual((r["titulo"], r["nivel"]), ("Dictamen: aconseja denegar", "rojo"))
+        self.assertIn("fondo", r["explicacion"])
+        self.assertEqual(ni.resultado_inpi(pre + "Dictamen aconseja concesión")["nivel"], "verde")
+        self.assertEqual(ni.resultado_inpi(pre + "Resolución Denegatoria")["titulo"], "Resolución: denegada")
+        self.assertIsNone(ni.resultado_inpi(pre + "Proyecto de resolución"))
+        self.assertIsNone(ni.resultado_inpi(pre + "Escrito de contestación de la vista"))
+        c = ni.clasificar_movimiento({"tipo": "movimiento", "acta": "1", "texto": pre + "Dictamen aconseja denegatoria fondo"})
+        self.assertEqual((c["tipo"], c["icono"]), ("Dictamen: aconseja denegar", "⛔"))
+
     def test_menciones_en_notas(self):
         us = ["pame", "tomi", "Pame.G"]
         self.assertEqual(tc.menciones_en("Hola @Pame, mirá esto. @tomi", us, autor="tomi"), ["pame"])
