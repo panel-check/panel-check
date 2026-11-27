@@ -93,7 +93,7 @@ function tarjeta(t) {
   const acta = t.acta_efectiva ? `<span class="acta" ${extra ? `title="También: ${esc(t.actas_extra.join(", "))}"` : ""}>Acta ${esc(t.acta_efectiva)}${extra ? ` +${extra}` : ""}</span>` : `<span class="acta">Sin acta</span>`;
   return `<button type="button" class="sg-card ${t.estado === "cerrado" ? "cerrado" : ""}" data-id="${t.id}" style="--sg-color:${s.color}">
     <div class="marca">${esc(t.marca)}</div>
-    <div class="cliente">${esc(t.cliente)}</div>
+    <div class="cliente">${esc(t.cliente)}${t.sin_cargo ? ` <span class="sg-sin-cargo" title="Trámite sin cargo: no se cobró seña">Sin cargo</span>` : ""}</div>
     ${t.nos_oponemos ? `<div class="sg-contra" title="Oposición que presentamos nosotros (sale de una alerta de vigilancia)">Nos oponemos a <b>${esc(t.contraparte || "marca nueva")}</b></div>` : ""}
     ${t.resultado_inpi ? `<div class="sg-resultado ${esc(t.resultado_inpi.nivel)}" title="${esc(t.resultado_inpi.explicacion)} (acta ${esc(t.resultado_inpi.acta)})">${t.resultado_inpi.icono} ${esc(t.resultado_inpi.titulo)}${t.resultado_inpi.fecha ? ` · ${esc(t.resultado_inpi.fecha.slice(0, 5))}` : ""}</div>` : ""}
     <div class="fila">${t.alerta?.nivel === "ninguno" ? `<span class="contratado">Contratado el ${fecha(t.contratacion)}</span>` : chipAlerta(t.alerta) + venc}${inf}</div>
@@ -538,7 +538,7 @@ function pintarFicha(d) {
   const r = t.resultado_inpi;
   const filaEstado = r ? `<li class="sg-paso sg-paso-estado ${esc(r.nivel)}" title="${esc(r.explicacion)}">
       <span class="bola">${r.icono}</span><span class="nombre"><b>${esc(r.titulo)}</b>${r.fecha ? ` · ${esc(r.fecha)}` : ""}<small>${esc(r.explicacion)}</small></span><span class="sg-auto">INPI</span></li>` : "";
-  const pasos = s.etapas.map((e, i) => {
+  const pasos = (t.etapas || s.etapas).map((e, i) => {
     const n = i + 1;
     const cls = n <= t.etapa ? "hecho" : "";
     const auto = (s.auto_desde && n >= s.auto_desde) || (s.auto_etapas || []).includes(n);
@@ -582,6 +582,7 @@ function pintarFicha(d) {
           <label>Servicio <select data-campo="servicio">${opServ}</select></label>
           <label>Acta <input type="text" inputmode="numeric" data-campo="acta" value="${esc(t.acta || "")}" placeholder="${t.acta_auto ? esc(t.acta_efectiva) + " (sola)" : "Sin presentar"}" />${(t.actas_extra || []).length ? `<small class="sg-actas-extra">También: ${t.actas_extra.map(linkActa).join(", ")}</small>` : ""}</label>
           <label>Contratación <input type="date" data-campo="contratacion" value="${esc(t.contratacion || "")}" /></label>
+          ${s.permite_sin_cargo ? `<label class="sg-check"><input type="checkbox" data-campo="sin_cargo" ${t.sin_cargo ? "checked" : ""} /> Trámite sin cargo <small>(no se cobró seña)</small></label>` : ""}
           ${s.con_vencimiento ? `<label>Notificación <input type="date" data-campo="notificacion" value="${esc(t.notificacion || "")}" /></label>
           <label>Vencimiento <span class="calc">${t.vencimiento ? fecha(t.vencimiento, true) : "—"}</span></label>` : ""}
           ${campoLink("carpeta_drive", "Carpeta de Drive", t.carpeta_drive, "https://drive.google.com/…", "cargada")}
@@ -651,6 +652,7 @@ function abrirNuevo() {
 function actualizarNotif() {
   const s = servicioDe($("n-servicio").value);
   $("n-notif-label").hidden = !s.con_vencimiento;
+  $("n-sin-cargo-label").hidden = !s.permite_sin_cargo;
 }
 
 async function crearTrabajo(ev) {
@@ -662,6 +664,7 @@ async function crearTrabajo(ev) {
     cliente_id, marca: $("n-marca").value, servicio: $("n-servicio").value,
     contratacion: $("n-contratacion").value || null,
     notificacion: servicioDe($("n-servicio").value).con_vencimiento ? ($("n-notificacion").value || null) : null,
+    sin_cargo: servicioDe($("n-servicio").value).permite_sin_cargo ? $("n-sin-cargo").checked : false,
     acta: $("n-acta").value || null, carpeta_drive: $("n-drive").value || null, notas: $("n-notas").value || null,
   };
   try {
@@ -748,9 +751,9 @@ document.addEventListener("change", (ev) => {
   const c = ev.target.closest("#ficha [data-campo]");
   if (!c) return;
   const campo = c.dataset.campo;
-  const valor = c.value.trim() || null;
+  const valor = c.type === "checkbox" ? c.checked : (c.value.trim() || null);
   // Los campos que cambian cálculos o el diseño de la ficha la redibujan; el resto no (así no se pierde el foco).
-  guardar({ [campo]: valor }, ["servicio", "notificacion", "acta", "contratacion", "carpeta_drive", "comprobante"].includes(campo));
+  guardar({ [campo]: valor }, ["servicio", "notificacion", "acta", "contratacion", "carpeta_drive", "comprobante", "sin_cargo"].includes(campo));
 });
 
 // ── ↻ Actualizar INPI desde la ficha del trabajo (27/11/2026): lo mismo que el botón de la ficha de la marca en

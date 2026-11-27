@@ -59,6 +59,7 @@ class TrabajoNuevo(BaseModel):
     comprobante: Optional[str] = None
     notas: Optional[str] = None
     responsable: Optional[str] = None
+    sin_cargo: Optional[bool] = None
 
 
 class TrabajoCambios(BaseModel):
@@ -74,6 +75,7 @@ class TrabajoCambios(BaseModel):
     comprobante: Optional[str] = None
     notas: Optional[str] = None
     responsable: Optional[str] = None
+    sin_cargo: Optional[bool] = None
 
 
 class NotaBitacora(BaseModel):
@@ -143,6 +145,8 @@ def _campos(body, parcial):
         out["notas"] = _texto(body.notas, 4000)
     if "responsable" in enviados:
         out["responsable"] = _texto(body.responsable, 60)
+    if "sin_cargo" in enviados and body.sin_cargo is not None:
+        out["sin_cargo"] = bool(body.sin_cargo)
     return out
 
 
@@ -832,10 +836,12 @@ def crear_router(verificar_login, conexion) -> APIRouter:
             cur.execute(f"UPDATE trabajos SET {', '.join(sets)} WHERE id = %s", val + [tid])
             if cur.rowcount == 0:
                 raise HTTPException(status_code=404, detail="No existe ese trabajo")
+            if campos.get("sin_cargo"):   # sin seña: la primera etapa queda hecha
+                cur.execute("UPDATE trabajos SET etapa = GREATEST(etapa, 1) WHERE id = %s", (tid,))
             if campos.get("acta"):
                 cur.execute("SELECT cliente_id, marca, servicio FROM trabajos WHERE id = %s", (tid,))
                 t = cur.fetchone()
-                if t["servicio"] in ("registro", "vista", "oposicion"):
+                if t["servicio"] in ("registro", "vista", "oposicion", "desistimiento"):
                     _a_cartera(cur, t["cliente_id"], campos["acta"], t["marca"], usuario)
             conn.commit()
             return {"trabajo": _uno(cur, tid)}
