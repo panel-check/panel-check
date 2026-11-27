@@ -595,7 +595,10 @@ function bloqueDocumentos(d) {
         <a class="sg-btn sg-btn-suave sg-btn-mini" href="/api/trabajos/${t.id}/documentos/${x.id}?ver=1" target="_blank" rel="noopener" title="Verlo en otra pestaña">Ver</a>
         <button type="button" class="sg-btn sg-btn-suave sg-btn-mini" data-borrar-doc="${x.id}" title="Borrar este PDF">×</button></span></li>`).join("")}</ul>` : "";
   const opTipos = Object.entries(tipos).map(([k, v]) => `<option value="${k}" ${k === tipoDocPorDefecto(t.servicio) ? "selected" : ""}>${esc(v)}</option>`).join("");
-  return `<div class="sg-bloque" id="bloque-docs"><h3>📑 Escritos y firmados</h3>
+  // Plegado por defecto (27/11/2026): se abre con un clic y queda abierto mientras se trabaja en esa ficha.
+  const abierto = sg.docsAbierto === t.id;
+  return `<details class="sg-bloque sg-plegable" id="bloque-docs" ${abierto ? "open" : ""}>
+    <summary><h3>📑 Escritos y firmados ${docs.length ? `<span class="sg-cant-docs">${docs.length} firmado${docs.length === 1 ? "" : "s"}</span>` : ""}<span class="der sg-plegar-ico" aria-hidden="true">▾</span></h3></summary>
     <div class="sg-escritos"><span class="sg-escritos-lbl">Generar:</span>${botones}</div>
     <div class="sg-escrito-caja" id="escrito-caja" hidden></div>
     <div class="sg-docs-cab"><span>Firmados, en PDF para el INPI</span>
@@ -611,8 +614,12 @@ function bloqueDocumentos(d) {
       <div class="sg-subir-fila"><button type="submit" class="sg-btn sg-btn-mini" id="subir-ir" disabled>Armar el PDF</button>
         <button type="button" class="sg-btn sg-btn-suave sg-btn-mini" data-cancelar-subida>Cancelar</button><span class="sg-subir-estado" id="subir-estado"></span></div>
     </form>
-    ${lista || '<p class="sg-quieto sg-docs-vacio">Todavía no se subió nada firmado.</p>'}</div>`;
+    ${lista || '<p class="sg-quieto sg-docs-vacio">Todavía no se subió nada firmado.</p>'}</details>`;
 }
+document.addEventListener("toggle", (ev) => {
+  if (ev.target.id !== "bloque-docs" || !sg.ficha?.trabajo) return;
+  sg.docsAbierto = ev.target.open ? sg.ficha.trabajo.id : null;
+}, true);
 
 // Generar: abre el generador en la caja de la ficha (el mismo de Clientes → Poderes), con las actas del trabajo tildadas.
 document.addEventListener("click", (ev) => {
@@ -740,7 +747,6 @@ function pintarFicha(d) {
       ${t.nos_oponemos ? `<div class="sg-f-contra">Nos oponemos a <b>${esc(t.contraparte || "la marca nueva")}</b>${t.acta_contraria ? ` · acta ${linkActa(t.acta_contraria)}` : ""} <small>(desde una alerta de vigilancia)</small></div>` : ""}
       <div class="sg-f-links">
         ${enlace(t.carpeta_drive, "📁 Carpeta Drive")}
-        ${enlace(t.comprobante, "🧾 Comprobante")}
         <button type="button" class="sg-btn sg-btn-mini" data-armar-mail title="Armar un mail o WhatsApp con una plantilla y los datos de este trabajo ya completados">✉️ Mail</button>
         ${t.acta_efectiva ? `<button type="button" class="sg-btn sg-btn-suave sg-btn-mini" data-actualizar-inpi title="Volver a leer ahora en el INPI el expediente de ${[t.acta_efectiva, ...(t.actas_extra || [])].length > 1 ? "las actas" : "el acta"} de este trabajo (${esc([t.acta_efectiva, ...(t.actas_extra || [])].join(", "))})">↻ Actualizar INPI</button>` : ""}
         <button type="button" class="sg-btn sg-btn-suave sg-btn-mini" data-copiar="${esc(textoParaCopiar(d))}" data-etiqueta="⧉ Copiar marca" title="Copiar «${esc(textoParaCopiar(d))}» para pegar en un mail">⧉ Copiar marca</button>
