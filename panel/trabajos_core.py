@@ -449,7 +449,8 @@ def migrar_etapas(cur):
 
 
 def crear_tablas(cur):
-    for sql in TABLAS:
+    import trabajos_documentos
+    for sql in TABLAS + trabajos_documentos.ESQUEMA:
         cur.execute(sql)
     migrar_etapas(cur)   # antes de la carga inicial: CARGA_INICIAL ya usa la numeración nueva
     for (clave, cid, marca, sid, etapa, contr, notif, acta, drive, comp, notas) in CARGA_INICIAL:

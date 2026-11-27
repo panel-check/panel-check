@@ -14,7 +14,7 @@ const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "
 
 async function pedir(path, opciones = {}) {
   const o = { credentials: "include", ...opciones };
-  if (o.body && typeof o.body !== "string") {
+  if (o.body && typeof o.body !== "string" && !(o.body instanceof FormData)) {
     o.body = JSON.stringify(o.body);
     o.headers = { "Content-Type": "application/json", ...(o.headers || {}) };
   }
@@ -566,6 +566,134 @@ function bloqueExpediente(d) {
     ${lineaTiempo(d)}</div>`;
 }
 
+// ── Escritos y documentos firmados (27/11/2026) ─────────────────────────────────────────────────────────────
+// Desde la ficha del trabajo se genera el poder, la toma de intervención o el desiste (con las actas del trabajo
+// ya tildadas), y después se sube la foto de lo firmado (JPG, PNG… o PDF, una o varias páginas): el panel arma un
+// solo PDF liviano para subir al Portal de Trámites del INPI, y queda guardado en el trabajo para bajarlo cuando haga falta.
+const ESCRITOS = {
+  poder: ["📄 Poder", "Poder completo, con el modelo del estudio"],
+  poderSimple: ["📄 Poder simple marcas", "Poder acotado a marcas (persona humana)"],
+  toma: ["📑 Toma de intervención", "Un documento por acta"],
+  desiste: ["🚫 Desiste", "Escrito para desistir de la solicitud"],
+};
+function escritosDelServicio(servicio) {
+  if (servicio === "desistimiento") return ["desiste", "poder", "poderSimple", "toma"];
+  if (servicio === "vista" || servicio === "oposicion" || servicio === "oposicion_adm") return ["toma", "poder", "poderSimple", "desiste"];
+  return ["poder", "poderSimple", "toma", "desiste"];
+}
+function tipoDocPorDefecto(servicio) { return servicio === "desistimiento" ? "desiste" : "poder"; }
+function tamano(b) { return b >= 1048576 ? `${(b / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(b / 1024))} KB`; }
+
+function bloqueDocumentos(d) {
+  const t = d.trabajo, docs = d.documentos || [], tipos = d.tipos_documento || {};
+  const botones = escritosDelServicio(t.servicio).map((k) =>
+    `<button type="button" class="sg-btn sg-btn-suave sg-btn-mini" data-escrito="${k}" title="${esc(ESCRITOS[k][1])}">${ESCRITOS[k][0]}</button>`).join("");
+  const lista = docs.length ? `<ul class="sg-docs">${docs.map((x) => `<li>
+      <div><b>${esc(tipos[x.tipo] || x.tipo)}</b> · ${x.paginas} pág. · ${tamano(x.bytes)}
+        <br><small>${esc(x.nombre)} · ${fecha(String(x.subido_en).slice(0, 10))}${x.subido_por ? ` · ${esc(x.subido_por)}` : ""}</small></div>
+      <span class="acc"><a class="sg-btn sg-btn-mini" href="/api/trabajos/${t.id}/documentos/${x.id}" download>⬇ PDF</a>
+        <a class="sg-btn sg-btn-suave sg-btn-mini" href="/api/trabajos/${t.id}/documentos/${x.id}?ver=1" target="_blank" rel="noopener" title="Verlo en otra pestaña">Ver</a>
+        <button type="button" class="sg-btn sg-btn-suave sg-btn-mini" data-borrar-doc="${x.id}" title="Borrar este PDF">×</button></span></li>`).join("")}</ul>` : "";
+  const opTipos = Object.entries(tipos).map(([k, v]) => `<option value="${k}" ${k === tipoDocPorDefecto(t.servicio) ? "selected" : ""}>${esc(v)}</option>`).join("");
+  return `<div class="sg-bloque" id="bloque-docs"><h3>📑 Escritos y firmados</h3>
+    <div class="sg-escritos"><span class="sg-escritos-lbl">Generar:</span>${botones}</div>
+    <div class="sg-escrito-caja" id="escrito-caja" hidden></div>
+    <div class="sg-docs-cab"><span>Firmados, en PDF para el INPI</span>
+      <button type="button" class="sg-btn sg-btn-mini" data-subir-doc>⬆ Subir firmado</button></div>
+    <form class="sg-subir" id="form-subir-doc" hidden>
+      <p class="sg-exp-aviso">Sacale una foto a cada hoja firmada (o subí el PDF). Podés elegir varias: cada foto es una página, en el orden de abajo. El panel las endereza, las achica y arma un solo PDF.</p>
+      <div class="sg-subir-fila">
+        <label>Qué es <select name="tipo">${opTipos}</select></label>
+        <label class="sg-check"><input type="checkbox" name="escaneo" checked /> Blanco y negro, como escaneo</label>
+      </div>
+      <label class="sg-subir-archivos">📷 Elegir fotos o PDF<input type="file" name="archivos" multiple accept="image/*,application/pdf" /></label>
+      <ol class="sg-subir-lista" id="subir-lista"></ol>
+      <div class="sg-subir-fila"><button type="submit" class="sg-btn sg-btn-mini" id="subir-ir" disabled>Armar el PDF</button>
+        <button type="button" class="sg-btn sg-btn-suave sg-btn-mini" data-cancelar-subida>Cancelar</button><span class="sg-subir-estado" id="subir-estado"></span></div>
+    </form>
+    ${lista || '<p class="sg-quieto sg-docs-vacio">Todavía no se subió nada firmado.</p>'}</div>`;
+}
+
+// Generar: abre el generador en la caja de la ficha (el mismo de Clientes → Poderes), con las actas del trabajo tildadas.
+document.addEventListener("click", (ev) => {
+  const b = ev.target.closest("[data-escrito]");
+  if (!b || !sg.ficha || !sg.ficha.trabajo) return;
+  const caja = $("escrito-caja"), k = b.dataset.escrito, t = sg.ficha.trabajo;
+  if (!caja.hidden && caja.dataset.escrito === k) { caja.hidden = true; caja.dataset.escrito = ""; b.classList.remove("activo"); return; }
+  document.querySelectorAll("[data-escrito]").forEach((x) => x.classList.toggle("activo", x === b));
+  caja.hidden = false; caja.dataset.escrito = k;
+  const actas = [t.acta_efectiva, ...(t.actas_extra || [])].filter(Boolean);
+  Escritos[k](caja, t.cliente_id, { actas });
+});
+
+// Subir lo firmado: se eligen los archivos, se ordenan con ↑ ↓ y se manda todo junto.
+const subida = { archivos: [] };
+function pintarSubida() {
+  const ol = $("subir-lista");
+  if (!ol) return;
+  subida.urls?.forEach((u) => URL.revokeObjectURL(u));
+  subida.urls = [];
+  ol.innerHTML = subida.archivos.map((f, i) => {
+    const img = f.type.startsWith("image/") && !/hei[cf]/i.test(f.type) ? URL.createObjectURL(f) : null;
+    if (img) subida.urls.push(img);
+    return `<li>${img ? `<img src="${img}" alt="" />` : `<span class="ico">${/pdf/i.test(f.type) ? "PDF" : "?"}</span>`}
+      <span class="nom">${esc(f.name)} <small>${tamano(f.size)}</small></span>
+      <span class="acc"><button type="button" data-mover="${i}" data-dir="-1" ${i ? "" : "disabled"} title="Subir">↑</button>
+        <button type="button" data-mover="${i}" data-dir="1" ${i < subida.archivos.length - 1 ? "" : "disabled"} title="Bajar">↓</button>
+        <button type="button" data-quitar="${i}" title="Sacar">✕</button></span></li>`;
+  }).join("");
+  $("subir-ir").disabled = !subida.archivos.length;
+  $("subir-ir").textContent = subida.archivos.length > 1 ? `Armar el PDF (${subida.archivos.length} archivos)` : "Armar el PDF";
+}
+document.addEventListener("click", async (ev) => {
+  if (ev.target.closest("[data-subir-doc]")) {
+    const f = $("form-subir-doc"); f.hidden = !f.hidden;
+    if (!f.hidden) { subida.archivos = []; f.reset(); $("subir-estado").textContent = ""; pintarSubida(); }
+    return;
+  }
+  if (ev.target.closest("[data-cancelar-subida]")) { $("form-subir-doc").hidden = true; subida.archivos = []; pintarSubida(); return; }
+  const mv = ev.target.closest("[data-mover]");
+  if (mv) {
+    const i = Number(mv.dataset.mover), j = i + Number(mv.dataset.dir);
+    [subida.archivos[i], subida.archivos[j]] = [subida.archivos[j], subida.archivos[i]];
+    return pintarSubida();
+  }
+  const q = ev.target.closest("[data-quitar]");
+  if (q) { subida.archivos.splice(Number(q.dataset.quitar), 1); return pintarSubida(); }
+  const del = ev.target.closest("[data-borrar-doc]");
+  if (del && sg.abierto && confirm("¿Borrar este PDF firmado del trabajo?")) {
+    try { await pedir(`/api/trabajos/${sg.abierto}/documentos/${del.dataset.borrarDoc}`, { method: "DELETE" }); abrirFicha(sg.abierto); }
+    catch (e) { mostrarAviso(`No se pudo borrar: ${e.message}`, "aviso"); }
+  }
+});
+document.addEventListener("change", (ev) => {
+  const inp = ev.target.closest('#form-subir-doc input[type="file"]');
+  if (!inp) return;
+  subida.archivos.push(...inp.files);   // se pueden elegir de a tandas: se suman al final
+  inp.value = "";
+  pintarSubida();
+});
+document.addEventListener("submit", async (ev) => {
+  const f = ev.target.closest("#form-subir-doc");
+  if (!f) return;
+  ev.preventDefault();
+  const est = $("subir-estado"), boton = $("subir-ir"), tid = sg.abierto;
+  const fd = new FormData();
+  fd.append("tipo", f.elements.tipo.value);
+  fd.append("escaneo", f.elements.escaneo.checked ? "1" : "0");
+  subida.archivos.forEach((a) => fd.append("archivos", a, a.name));
+  boton.disabled = true; est.className = "sg-subir-estado"; est.textContent = "Armando el PDF…";
+  try {
+    const r = await pedir(`/api/trabajos/${tid}/documentos`, { method: "POST", body: fd });
+    subida.archivos = [];
+    await Escritos.bajar(`/api/trabajos/${tid}/documentos/${r.id}`, {}, r.nombre);   // se baja solo, listo para el INPI
+    mostrarAviso(`Listo: «${r.nombre}» (${r.paginas} pág., ${tamano(r.bytes)}) se descargó y quedó guardado en el trabajo.`);
+    abrirFicha(tid);
+  } catch (e) {
+    est.className = "sg-subir-estado mal"; est.textContent = e.message; boton.disabled = false;
+  }
+});
+
 function bloqueInformes(d) {
   const item = (i) => `<li><a href="/informes/${i.id}" target="_blank" rel="noopener"><b>${esc(i.tipo_nombre)}</b>${i.marca ? ` · ${esc(i.marca)}` : ""}</a>
       <small>${fecha(i.generado_en)}${i.generado_por ? ` · ${esc(i.generado_por)}` : ""}</small></li>`;
@@ -623,6 +751,7 @@ function pintarFicha(d) {
       ${bloqueCuenta(t, s)}
       <div class="sg-bloque"><h3>Etapas <span class="der">${r ? `Estado: <b class="sg-estado-${esc(r.nivel)}">${r.icono} ${esc(r.titulo)}</b>` : t.proxima_etapa ? `Sigue: <b>${esc(t.proxima_etapa)}</b>` : "✓ Todas completas"}</span></h3>
         <ol class="sg-pasos">${pasos}</ol>${bloqueInpi}</div>
+      ${bloqueDocumentos(d)}
       ${bloqueInformes(d)}
       ${bloqueExpediente(d)}
       <div class="sg-bloque"><h3>Datos <span class="der sg-guardado" id="guardado">✓ Guardado</span></h3>
