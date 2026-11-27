@@ -490,8 +490,10 @@ function bloqueExpediente(d) {
     const conflicto = t.servicio === "vista" || t.servicio === "oposicion";
     datos = `<div class="sg-exp-aviso">${conflicto
       ? `Sin número de acta todavía. El panel busca solo las actas de este cliente con ${t.servicio === "vista" ? "vista" : "oposición"} (por su CUIT, su nombre como titular y sus marcas de Clientes) y carga las que tienen el mismo nombre de marca, con la fecha de notificación si ya la tiene.`
+      : t.servicio === "desistimiento"
+      ? `Sin número de acta todavía. La marca ya existe: el panel busca sola la solicitud del cliente con este nombre (por su CUIT, su nombre como titular y sus marcas de Clientes; primero las que tienen oposición) y la carga al crear el trabajo, al abrir la ficha y cada 10 minutos. El botón también la busca en vivo en el INPI.`
       : `Sin número de acta todavía. El panel la busca sola todos los días en las solicitudes nuevas del INPI (también las que presentamos con agente) y la carga cuando es seguro que es esta marca.`}
-      <div class="sg-buscar-acta"><button type="button" class="sg-btn sg-btn-mini" data-buscar-acta>${conflicto ? `🔎 Buscar las actas con ${t.servicio === "vista" ? "vista" : "oposición"}` : "🔎 Buscar el acta en el INPI"}</button></div>
+      <div class="sg-buscar-acta"><button type="button" class="sg-btn sg-btn-mini" data-buscar-acta>${conflicto ? `🔎 Buscar las actas con ${t.servicio === "vista" ? "vista" : "oposición"}` : t.servicio === "desistimiento" ? "🔎 Buscar la solicitud del cliente" : "🔎 Buscar el acta en el INPI"}</button></div>
       <div id="resultado-acta"></div></div>`;
   } else if (!ex.en_cartera) {
     datos = `<p class="sg-exp-aviso">Acta <b>${linkActa(ex.acta)}</b>. Esta marca todavía no está en Clientes → Marcas, por eso no hay datos del INPI. Agregala ahí (en la ficha del cliente) y el expediente se completa solo.</p>`;

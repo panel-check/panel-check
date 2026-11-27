@@ -392,7 +392,7 @@ def crear_router(verificar_login, conexion) -> APIRouter:
 
     def _detectar(cur, solo_id=None):
         """Busca en la base el acta de los trabajos activos sin acta. Devuelve {id: (elegida, evaluadas, texto)}."""
-        cond = ("t.acta IS NULL AND t.estado = 'activo' AND t.servicio NOT IN ('vista', 'oposicion')"
+        cond = ("t.acta IS NULL AND t.estado = 'activo' AND t.servicio NOT IN ('vista', 'oposicion', 'desistimiento')"
                 + (" AND t.id = %s" if solo_id else ""))
         cur.execute(f"SELECT t.id, t.marca, t.servicio, t.contratacion, t.cliente_id, c.nombre AS cliente_nombre, c.cuit AS cliente_cuit "
                     f"FROM trabajos t JOIN clientes c ON c.id = t.cliente_id WHERE {cond}", (solo_id,) if solo_id else None)
@@ -496,6 +496,41 @@ def crear_router(verificar_login, conexion) -> APIRouter:
             res[t["id"]] = (elegidas, del_tipo, texto)
         return res
 
+    def _detectar_desistimientos(cur, solo_id=None, en_vivo=False):
+        """Desistimiento: la marca ya existe, el acta es una solicitud del cliente. {id: (elegidas, candidatas, texto)}.
+        en_vivo: si en la base no aparece, también se busca en el INPI por denominación (botón de la ficha)."""
+        cond = ("t.acta IS NULL AND t.estado = 'activo' AND t.servicio = 'desistimiento'"
+                + (" AND t.id = %s" if solo_id else ""))
+        cur.execute(f"SELECT t.id, t.marca, t.servicio, t.cliente_id, c.nombre, c.cuit "
+                    f"FROM trabajos t JOIN clientes c ON c.id = t.cliente_id WHERE {cond}", (solo_id,) if solo_id else None)
+        res = {}
+        for t in cur.fetchall():
+            cliente = {"id": t["cliente_id"], "nombre": t["nombre"], "cuit": t["cuit"]}
+            sol = _solicitudes_cliente(cur, cliente)
+            elegidas, motivo, cands = tc.elegir_actas_desistimiento(t, sol, cliente)
+            if not elegidas and en_vivo:
+                r = bi.buscar_avanzada({"denominacion": t["marca"], "limit": 100})   # puede tirar BuscadorError
+                inpi = [{"acta": f.get("acta"), "denominacion": f.get("denominacion"), "titular": f.get("titulares"),
+                         "cuit": f.get("cuit"), "fecha": f.get("fecha_ingreso"), "clase": f.get("clase"),
+                         "estado": f.get("estado"), "fuente": "inpi"} for f in r.get("filas") or []]
+                elegidas, motivo, cands = tc.elegir_actas_desistimiento(t, sol, cliente, inpi)
+                if not elegidas:
+                    nombre = tc.comparable(t["marca"])
+                    cands = cands + [c for c in inpi if tc.comparable(c.get("denominacion")) == nombre]
+            texto = None
+            if elegidas:
+                texto = tc.texto_desistimiento(elegidas, motivo)
+                cur.execute("UPDATE trabajos SET acta = %s, actas_extra = %s, modificado_en = now(), modificado_por = 'sistema' "
+                            "WHERE id = %s AND acta IS NULL",
+                            (elegidas[0]["acta"], [c["acta"] for c in elegidas[1:]] or None, t["id"]))
+                if cur.rowcount:
+                    cur.execute("INSERT INTO trabajos_bitacora (trabajo_id, fecha, texto, usuario) VALUES (%s, %s, %s, 'sistema')",
+                                (t["id"], tc.hoy_ar(), texto))
+                    for c in elegidas:
+                        _a_cartera(cur, t["cliente_id"], c["acta"], t["marca"], "sistema")
+            res[t["id"]] = (elegidas, cands, texto)
+        return res
+
     def _deteccion_periodica(conn, cur):
         global _ultima_deteccion
         if time.time() - _ultima_deteccion < CADA_DETECCION or not _candado_deteccion.acquire(blocking=False):
@@ -504,6 +539,7 @@ def crear_router(verificar_login, conexion) -> APIRouter:
             _ultima_deteccion = time.time()
             _detectar(cur)
             _detectar_conflictos(cur)
+            _detectar_desistimientos(cur)
             conn.commit()
         except Exception as e:
             conn.rollback()
@@ -683,6 +719,7 @@ def crear_router(verificar_login, conexion) -> APIRouter:
             try:   # vista/oposición: que el acta principal sea la que tiene el problema (al momento, no cada 10 min)
                 cur.execute("SAVEPOINT conf_ficha")
                 _detectar_conflictos(cur, solo_id=tid)
+                _detectar_desistimientos(cur, solo_id=tid)
                 cur.execute("RELEASE SAVEPOINT conf_ficha")
                 conn.commit()
             except Exception as e:
@@ -761,6 +798,13 @@ def crear_router(verificar_login, conexion) -> APIRouter:
                 [campos[c] for c in cols] + [usuario, usuario])
             tid = cur.fetchone()["id"]
             conn.commit()
+            if campos["servicio"] == "desistimiento" and not campos.get("acta"):
+                try:   # la marca ya existe: el acta se busca al momento entre las solicitudes del cliente
+                    _detectar_desistimientos(cur, solo_id=tid)
+                    conn.commit()
+                except Exception as e:
+                    conn.rollback()
+                    print(f"[seguimientos] acta del desistimiento {tid}: {e}")
             return {"trabajo": _uno(cur, tid)}
 
     @router.put("/api/trabajos/{tid}")
@@ -819,6 +863,23 @@ def crear_router(verificar_login, conexion) -> APIRouter:
                 else:
                     texto = f"El cliente tiene {len(del_tipo)} actas con {que} y ninguna con el nombre «{t['marca']}»: elegí la correcta."
                 return {"asignada": None, "texto": texto, "candidatas": cands}
+            if t["servicio"] == "desistimiento":
+                try:
+                    elegidas, cands, texto = _detectar_desistimientos(cur, solo_id=tid, en_vivo=True).get(tid, ([], [], None))
+                except Exception as e:
+                    conn.rollback()
+                    return {"asignada": None, "texto": f"El INPI no respondió ({e}). Probá de nuevo en un rato.",
+                            "candidatas": [], "error_inpi": True}
+                conn.commit()
+                pub = [{"acta": c.get("acta"), "denominacion": c.get("denominacion"), "titular": c.get("titular"),
+                        "clase": c.get("clase"), "estado": c.get("estado") or ("con oposición" if c.get("tuvo_oposicion") else None),
+                        "fuente": c.get("fuente"), "segura": c in elegidas} for c in (elegidas or cands)][:30]
+                if elegidas:
+                    return {"asignada": elegidas[0]["acta"], "texto": texto, "candidatas": pub}
+                texto = (f"No encontré la solicitud «{t['marca']}» del cliente: ni en el panel (por su CUIT, su nombre como "
+                         "titular y Clientes → Marcas) ni en el INPI con el cliente como titular. "
+                         + ("Elegí la correcta entre estas." if pub else "Cargá el acta a mano en Datos."))
+                return {"asignada": None, "texto": texto, "candidatas": pub}
             res = _detectar(cur, solo_id=tid).get(tid)
             conn.commit()
             if res and res[0]:
